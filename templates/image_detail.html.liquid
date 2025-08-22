@@ -25,32 +25,50 @@
         <div class="image-main">
             <div class="image-container">
                 <img src="{{ image.medium_url }}" alt="{{ image.name }}" id="main-image">
-                
-                <!-- Navigation arrows -->
-                <div class="carousel-nav">
+            </div>
+            
+            <!-- Image Navigation Bar -->
+            {% if prev_image or next_image %}
+                <div class="image-navigation">
                     {% if prev_image %}
-                        <a href="/gallery/detail/{{ prev_image.path }}" class="nav-arrow nav-prev" title="Previous: {{ prev_image.name }}">
-                            <div class="nav-arrow-content">
-                                <img src="{{ prev_image.thumbnail_url }}" alt="{{ prev_image.name }}" class="nav-preview">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon">
-                                    <polyline points="15,18 9,12 15,6"></polyline>
-                                </svg>
+                        <a href="/gallery/detail/{{ prev_image.path }}" class="nav-item nav-prev" title="Previous: {{ prev_image.name }}">
+                            <div class="nav-thumbnail">
+                                <img src="{{ prev_image.thumbnail_url }}" alt="{{ prev_image.name }}">
+                            </div>
+                            <div class="nav-info">
+                                <div class="nav-direction">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="15,18 9,12 15,6"></polyline>
+                                    </svg>
+                                    Previous
+                                </div>
+                                <div class="nav-filename">{{ prev_image.name }}</div>
                             </div>
                         </a>
+                    {% else %}
+                        <div class="nav-spacer"></div>
                     {% endif %}
                     
                     {% if next_image %}
-                        <a href="/gallery/detail/{{ next_image.path }}" class="nav-arrow nav-next" title="Next: {{ next_image.name }}">
-                            <div class="nav-arrow-content">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon">
-                                    <polyline points="9,6 15,12 9,18"></polyline>
-                                </svg>
-                                <img src="{{ next_image.thumbnail_url }}" alt="{{ next_image.name }}" class="nav-preview">
+                        <a href="/gallery/detail/{{ next_image.path }}" class="nav-item nav-next" title="Next: {{ next_image.name }}">
+                            <div class="nav-info">
+                                <div class="nav-direction">
+                                    Next
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9,6 15,12 9,18"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="nav-filename">{{ next_image.name }}</div>
+                            </div>
+                            <div class="nav-thumbnail">
+                                <img src="{{ next_image.thumbnail_url }}" alt="{{ next_image.name }}">
                             </div>
                         </a>
+                    {% else %}
+                        <div class="nav-spacer"></div>
                     {% endif %}
                 </div>
-            </div>
+            {% endif %}
             
             <div class="image-controls">
                 <div class="control-buttons">
@@ -58,13 +76,13 @@
                     <a href="{{ image.url }}" download="{{ image.name }}" class="btn">Download</a>
                 </div>
                 {% if prev_image or next_image %}
-                    <div class="nav-info">
+                    <div class="nav-hint-container">
                         {% if prev_image and next_image %}
-                            <span class="nav-hint">Use ← → keys or arrows to navigate</span>
+                            <span class="nav-hint">Use ← → keys to navigate between images</span>
                         {% elsif prev_image %}
-                            <span class="nav-hint">Use ← key or arrow to go back</span>
+                            <span class="nav-hint">Use ← key to go to previous image</span>
                         {% elsif next_image %}
-                            <span class="nav-hint">Use → key or arrow to go forward</span>
+                            <span class="nav-hint">Use → key to go to next image</span>
                         {% endif %}
                     </div>
                 {% endif %}
@@ -219,7 +237,6 @@
 }
 
 .image-container {
-    position: relative;
     display: inline-block;
     max-width: 100%;
 }
@@ -232,79 +249,105 @@
     display: block;
 }
 
-.carousel-nav {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+.image-navigation {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    padding: 0 1rem;
-    pointer-events: none;
+    align-items: center;
+    margin-top: 1.5rem;
+    gap: 1rem;
 }
 
-.nav-arrow {
+.nav-item {
     display: flex;
     align-items: center;
-    justify-content: center;
-    min-width: 80px;
-    height: 80px;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    border-radius: 12px;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
     text-decoration: none;
+    color: #333;
     transition: all 0.3s ease;
-    opacity: 0;
-    pointer-events: auto;
-    backdrop-filter: blur(8px);
-    padding: 8px;
+    flex: 1;
+    max-width: 300px;
 }
 
-.image-container:hover .nav-arrow {
-    opacity: 1;
-}
-
-.nav-arrow:hover {
-    background: rgba(0, 0, 0, 0.95);
-    transform: scale(1.05);
-    color: white;
-}
-
-.nav-arrow-content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-direction: row;
-}
-
-.nav-prev .nav-arrow-content {
-    flex-direction: row;
-}
-
-.nav-next .nav-arrow-content {
-    flex-direction: row-reverse;
-}
-
-.nav-preview {
-    width: 40px;
-    height: 40px;
-    object-fit: cover;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.nav-icon {
-    flex-shrink: 0;
+.nav-item:hover {
+    background: #fff;
+    border-color: #2c3e50;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
 .nav-prev {
-    align-self: center;
+    justify-content: flex-start;
 }
 
 .nav-next {
-    align-self: center;
+    justify-content: flex-end;
+}
+
+.nav-thumbnail {
+    flex-shrink: 0;
+}
+
+.nav-thumbnail img {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+}
+
+.nav-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.nav-direction {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #666;
+}
+
+.nav-filename {
+    font-size: 0.85rem;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nav-spacer {
+    flex: 1;
+    max-width: 300px;
+}
+
+@media (max-width: 768px) {
+    .image-navigation {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .nav-item {
+        max-width: 100%;
+        width: 100%;
+    }
+    
+    .nav-spacer {
+        display: none;
+    }
+    
+    .nav-filename {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+    }
 }
 
 .image-controls {
@@ -320,7 +363,7 @@
     gap: 1rem;
 }
 
-.nav-info {
+.nav-hint-container {
     margin-top: 0.5rem;
 }
 
