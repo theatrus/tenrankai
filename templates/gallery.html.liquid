@@ -58,7 +58,7 @@
                 <h3>Images</h3>
                 <div class="image-grid">
                     {% for image in images %}
-                        <div class="image-item" data-path="{{ image.path }}">
+                        <div class="image-item" id="{{ image.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" data-path="{{ image.path }}">
                             <a href="/gallery/detail/{{ image.path }}" class="image-link">
                                 <img src="{{ image.gallery_url }}" alt="{{ image.name }}" loading="lazy">
                             </a>

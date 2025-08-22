@@ -28,6 +28,7 @@ pub struct GalleryItem {
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub path: String,
+    pub parent_path: Option<String>,
     pub is_directory: bool,
     pub thumbnail_url: Option<String>,
     pub preview_images: Option<Vec<String>>,
@@ -138,6 +139,7 @@ impl Gallery {
                     display_name,
                     description,
                     path: item_path,
+                    parent_path: Some(relative_path.to_string()),
                     is_directory: true,
                     thumbnail_url: None,
                     preview_images: Some(preview_images),
@@ -155,6 +157,7 @@ impl Gallery {
                     display_name: None,
                     description: None,
                     path: item_path,
+                    parent_path: Some(relative_path.to_string()),
                     is_directory: false,
                     thumbnail_url: Some(thumbnail_url),
                     preview_images: None,
@@ -707,12 +710,19 @@ impl Gallery {
         self.collect_items_recursive("", &mut all_items, max_items)
             .await?;
 
+        // Filter to only include images (not directories)
+        let images_only: Vec<GalleryItem> = all_items
+            .into_iter()
+            .filter(|item| !item.is_directory)
+            .collect();
+
         // Shuffle and take a subset
         let mut rng = rand::thread_rng();
-        all_items.shuffle(&mut rng);
-        all_items.truncate(max_items);
+        let mut selected_images = images_only;
+        selected_images.shuffle(&mut rng);
+        selected_images.truncate(max_items);
 
-        Ok(all_items)
+        Ok(selected_images)
     }
 
     fn collect_items_recursive<'a>(
@@ -762,6 +772,7 @@ impl Gallery {
                             display_name,
                             description,
                             path: item_path.clone(),
+                            parent_path: Some(relative_path.to_string()),
                             is_directory: true,
                             thumbnail_url: preview_images.first().cloned(),
                             preview_images: Some(preview_images),
@@ -787,6 +798,7 @@ impl Gallery {
                         display_name: None,
                         description: None,
                         path: item_path,
+                        parent_path: Some(relative_path.to_string()),
                         is_directory: false,
                         thumbnail_url: Some(thumbnail_url),
                         preview_images: None,
