@@ -1518,17 +1518,20 @@ pub async fn image_handler(
             "large" => {
                 // Large size requires authentication
                 if !has_download_permission(&headers, &app_state.config.app.download_secret) {
+                    tracing::warn!(path = %path, "Large image request denied - authentication required");
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }
             }
             _ => {
                 // Invalid size parameter
+                tracing::warn!(path = %path, size = %size, "Invalid size parameter requested");
                 return (StatusCode::BAD_REQUEST, "Invalid size parameter. Valid sizes: thumbnail, gallery, medium, large").into_response();
             }
         }
     } else {
         // No size parameter means full-size original image - requires authentication
         if !has_download_permission(&headers, &app_state.config.app.download_secret) {
+            tracing::warn!(path = %path, "Full-size image request denied - authentication required");
             return (StatusCode::FORBIDDEN, "Download permission required").into_response();
         }
     }

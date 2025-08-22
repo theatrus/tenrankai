@@ -49,9 +49,11 @@ pub async fn authenticate_handler(
     State(app_state): State<crate::AppState>,
     Json(payload): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    tracing::info!("Authentication attempt received");
     let config = &app_state.config;
     
     if payload.password == config.app.download_password {
+        tracing::info!("Authentication successful");
         match create_signed_cookie(&config.app.download_secret, "true") {
             Ok(signed_value) => {
                 let cookie = format!(
@@ -78,6 +80,7 @@ pub async fn authenticate_handler(
             }
         }
     } else {
+        tracing::warn!("Authentication failed - invalid password");
         let response = AuthResponse {
             success: false,
             message: "Invalid password".to_string(),

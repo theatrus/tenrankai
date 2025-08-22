@@ -257,10 +257,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/gallery/{*path}", get(gallery_handler))
         .route("/", get(template_with_gallery_handler))
         .route("/{*path}", get(template_with_gallery_handler))
+        .layer(
+            tower_http::trace::TraceLayer::new_for_http()
+                .make_span_with(tower_http::trace::DefaultMakeSpan::new()
+                    .level(tracing::Level::INFO)
+                    .include_headers(true))
+                .on_request(tower_http::trace::DefaultOnRequest::new()
+                    .level(tracing::Level::INFO))
+                .on_response(tower_http::trace::DefaultOnResponse::new()
+                    .level(tracing::Level::INFO)
+                    .latency_unit(tower_http::LatencyUnit::Micros))
+        )
         .with_state(app_state);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Server listening on {}", addr);
+    info!("HTTP request logging enabled - set RUST_LOG environment variable to control verbosity");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
