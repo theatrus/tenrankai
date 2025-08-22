@@ -267,7 +267,16 @@ pub async fn template_with_gallery_handler(
     
     let template_file_path = app_state.template_engine.template_dir.join(template_path);
     if !template_file_path.exists() {
-        debug!("Template not found: {}, returning 404", template_path);
+        debug!("Template not found: {}, checking for static file", template_path);
+        
+        // Check if there's a matching static file
+        let static_file_path = app_state.static_handler.static_dir.join(&path);
+        if static_file_path.exists() && static_file_path.starts_with(&app_state.static_handler.static_dir) {
+            debug!("Found static file for path: {}, serving it", path);
+            return app_state.static_handler.serve(&path).await;
+        }
+        
+        debug!("No template or static file found for: {}, returning 404", path);
         return match app_state.template_engine.render_404_page(&app_state.gallery).await {
             Ok(html) => (StatusCode::NOT_FOUND, html).into_response(),
             Err(_) => StatusCode::NOT_FOUND.into_response(),

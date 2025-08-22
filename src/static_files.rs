@@ -10,7 +10,7 @@ use tracing::{debug, error};
 
 #[derive(Clone)]
 pub struct StaticFileHandler {
-    static_dir: PathBuf,
+    pub static_dir: PathBuf,
 }
 
 impl StaticFileHandler {
