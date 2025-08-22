@@ -1,14 +1,17 @@
 {{ header }}
 
 <div class="container home-container">
-    <h2>Welcome to theatr.us</h2>
-    <p>A curated photo gallery featuring portraits, landscapes, and travel photography.</p>
+    <h2>Welcome to theatr.us</h2> <p>Do you like pictures? I do. Here are some
+    of them. If you're more interested in me, well keeping blogs up to date
+    wasn't really my thing, but I've added links to various places that may
+    interest you with my profile. You can find those on the About page.</p>
     
     <!-- Gallery preview will be available when component data is loaded -->
     {% if gallery_preview.size > 0 %}
         {{ gallery_preview_component }}
     {% endif %}
     
+    <!--
     <section class="about-section">
         <h3>About</h3>
         <p>This gallery showcases a collection of photography work spanning multiple years and subjects. Each image tells a story, captured with attention to composition, lighting, and technical excellence.</p>
@@ -28,6 +31,7 @@
             </div>
         </div>
     </section>
+    -->
 </div>
 
 <style>

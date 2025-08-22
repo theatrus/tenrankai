@@ -33,6 +33,7 @@ pub struct GalleryItem {
     pub thumbnail_url: Option<String>,
     pub preview_images: Option<Vec<String>>,
     pub item_count: Option<usize>,
+    pub dimensions: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -144,6 +145,7 @@ impl Gallery {
                     thumbnail_url: None,
                     preview_images: Some(preview_images),
                     item_count: Some(item_count),
+                    dimensions: None,
                 });
             } else if self.is_image(&file_name) {
                 let thumbnail_url = format!(
@@ -162,6 +164,7 @@ impl Gallery {
                     thumbnail_url: Some(thumbnail_url),
                     preview_images: None,
                     item_count: None,
+                    dimensions: None, // Could add dimensions here too if needed
                 });
             }
         }
@@ -603,6 +606,64 @@ impl Gallery {
         }
     }
 
+    fn get_image_dimensions_fast(&self, path: &PathBuf) -> Option<(u32, u32)> {
+        use std::fs::File;
+        use std::io::BufReader;
+        
+        let file = File::open(path).ok()?;
+        let reader = BufReader::new(file);
+        
+        // Use ImageReader to get dimensions without decoding the full image
+        let reader = image::ImageReader::new(reader)
+            .with_guessed_format()
+            .ok()?;
+            
+        if let Ok(dimensions) = reader.into_dimensions() {
+            Some(dimensions)
+        } else {
+            None
+        }
+    }
+
+    async fn build_breadcrumbs(&self, current_path: &str) -> Vec<liquid::model::Object> {
+        let mut breadcrumbs = Vec::new();
+        
+        // Add root breadcrumb
+        let mut root_crumb = liquid::model::Object::new();
+        root_crumb.insert("name".into(), liquid::model::Value::scalar("Gallery"));
+        root_crumb.insert("display_name".into(), liquid::model::Value::scalar("Gallery"));
+        root_crumb.insert("path".into(), liquid::model::Value::scalar(""));
+        root_crumb.insert("is_current".into(), liquid::model::Value::scalar(current_path.is_empty()));
+        breadcrumbs.push(root_crumb);
+        
+        if !current_path.is_empty() {
+            let path_parts: Vec<&str> = current_path.split('/').collect();
+            let mut accumulated_path = String::new();
+            
+            for (index, part) in path_parts.iter().enumerate() {
+                if !accumulated_path.is_empty() {
+                    accumulated_path.push('/');
+                }
+                accumulated_path.push_str(part);
+                
+                let is_current = index == path_parts.len() - 1;
+                
+                // Get display name for this folder
+                let (display_name, _) = self.read_folder_metadata(&accumulated_path).await;
+                let display_name = display_name.unwrap_or_else(|| part.to_string());
+                
+                let mut crumb = liquid::model::Object::new();
+                crumb.insert("name".into(), liquid::model::Value::scalar(part.to_string()));
+                crumb.insert("display_name".into(), liquid::model::Value::scalar(display_name));
+                crumb.insert("path".into(), liquid::model::Value::scalar(accumulated_path.clone()));
+                crumb.insert("is_current".into(), liquid::model::Value::scalar(is_current));
+                breadcrumbs.push(crumb);
+            }
+        }
+        
+        breadcrumbs
+    }
+
     pub async fn serve_image(&self, relative_path: &str, size: Option<String>) -> Response {
         let full_path = self.config.source_directory.join(relative_path);
 
@@ -779,6 +840,7 @@ impl Gallery {
                             thumbnail_url: preview_images.first().cloned(),
                             preview_images: Some(preview_images),
                             item_count: Some(item_count),
+                            dimensions: None,
                         });
 
                         // Recursively collect from subdirectories (limited depth)
@@ -795,6 +857,10 @@ impl Gallery {
                         urlencoding::encode(&item_path)
                     );
 
+                    // Get image dimensions efficiently without loading full image
+                    let image_path = self.config.source_directory.join(&item_path);
+                    let dimensions = self.get_image_dimensions_fast(&image_path);
+
                     folder_images.push(GalleryItem {
                         name: file_name,
                         display_name: None,
@@ -805,6 +871,7 @@ impl Gallery {
                         thumbnail_url: Some(thumbnail_url),
                         preview_images: None,
                         item_count: None,
+                        dimensions,
                     });
                 }
             }
@@ -874,6 +941,9 @@ pub async fn gallery_handler(
 
     // Get folder metadata for current directory
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
+    
+    // Build breadcrumb data with proper display names
+    let breadcrumbs = gallery.build_breadcrumbs(&path).await;
 
     let total_images = items.iter().filter(|i| !i.is_directory).count();
     let total_pages =
@@ -886,6 +956,7 @@ pub async fn gallery_handler(
         "gallery_path": path,
         "folder_title": folder_title,
         "folder_description": folder_description,
+        "breadcrumbs": breadcrumbs,
         "items": items,
         "images": images_with_layout,
         "images_json": images_json,

@@ -1,6 +1,20 @@
 {{ header }}
 
 <div class="container gallery-container">
+    <!-- Navigation Breadcrumb -->
+    <nav class="gallery-nav">
+        {% for crumb in breadcrumbs %}
+            {% unless forloop.first %}
+                <span class="nav-separator">→</span>
+            {% endunless %}
+            {% if crumb.is_current %}
+                <span class="nav-current">{{ crumb.display_name }}</span>
+            {% else %}
+                <a href="/gallery{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
+            {% endif %}
+        {% endfor %}
+    </nav>
+
     {% if folder_title %}
         <h2>{{ folder_title }}</h2>
     {% else %}
@@ -96,6 +110,35 @@ body {
 .gallery-container {
     max-width: 1400px;
     background-color: #1a1a1a;
+}
+
+.gallery-nav {
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #404040;
+    font-size: 0.9rem;
+    display: inline-block;
+    width: auto;
+}
+
+.nav-link {
+    color: #888;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.nav-link:hover {
+    color: #e0e0e0;
+}
+
+.nav-separator {
+    color: #666;
+    margin: 0 0.5rem;
+}
+
+.nav-current {
+    color: #e0e0e0;
+    font-weight: 500;
 }
 
 .folder-description {

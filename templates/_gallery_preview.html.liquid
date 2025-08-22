@@ -51,17 +51,12 @@
 
 .gallery-preview-component .preview-image {
     position: relative;
-    width: 100%;
     overflow: hidden;
-    background: #2a2a2a;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background: transparent;
+    display: block;
 }
 
 .gallery-preview-component .preview-image img {
-    width: 100%;
-    height: auto;
     object-fit: cover;
     transition: transform 0.3s;
     display: block;
@@ -156,20 +151,24 @@
         const link = document.createElement('a');
         link.href = '/gallery/' + image.parent_path + '#' + cleanName;
         link.className = 'preview-item image-preview-item';
+        link.style.width = displayDimensions.width + 'px';
+        link.style.display = 'inline-block';
         
         const imageDiv = document.createElement('div');
         imageDiv.className = 'preview-image';
         imageDiv.style.width = displayDimensions.width + 'px';
         imageDiv.style.height = displayDimensions.height + 'px';
+        imageDiv.style.backgroundColor = 'transparent';
         
         const img = document.createElement('img');
         img.src = image.thumbnail_url;
         img.alt = image.name;
         img.width = displayDimensions.width;
         img.height = displayDimensions.height;
-        img.style.width = '100%';
-        img.style.height = '100%';
+        img.style.width = displayDimensions.width + 'px';
+        img.style.height = displayDimensions.height + 'px';
         img.style.objectFit = 'cover';
+        img.style.display = 'block';
         
         imageDiv.appendChild(img);
         link.appendChild(imageDiv);
@@ -195,20 +194,31 @@
         // Track column heights
         const columnHeights = new Array(numColumns).fill(0);
         
-        // Process each image (note: preview images don't have dimensions, so we'll estimate)
+        // Process each image using actual dimensions
         previewImages.forEach(image => {
-            // Estimate dimensions for preview images (assume roughly square for gallery thumbnails)
-            const estimatedDimensions = { width: columnWidth, height: columnWidth };
+            let displayDimensions;
+            
+            if (image.dimensions && image.dimensions.length === 2) {
+                // Use actual image dimensions
+                displayDimensions = calculatePreviewDisplayDimensions(
+                    image.dimensions[0], 
+                    image.dimensions[1], 
+                    columnWidth
+                );
+            } else {
+                // Fallback to square estimation if dimensions not available
+                displayDimensions = { width: columnWidth, height: columnWidth };
+            }
             
             // Find shortest column
             const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights));
             
             // Create and append image element
-            const imageElement = createPreviewImageElement(image, estimatedDimensions);
+            const imageElement = createPreviewImageElement(image, displayDimensions);
             columns[shortestColumnIndex].appendChild(imageElement);
             
-            // Update column height (estimate)
-            columnHeights[shortestColumnIndex] += estimatedDimensions.height + 24; // gap
+            // Update column height
+            columnHeights[shortestColumnIndex] += displayDimensions.height + 24; // gap
         });
     }
     
