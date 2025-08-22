@@ -39,11 +39,10 @@ impl TemplateEngine {
 
         let mut cache = self.cache.write().await;
 
-        if let Some(cached) = cache.get(path) {
-            if cached.modified >= modified {
-                debug!("Using cached template for {}", path);
-                return Ok(cached.content.clone());
-            }
+        if let Some(cached) = cache.get(path)
+            && cached.modified >= modified {
+            debug!("Using cached template for {}", path);
+            return Ok(cached.content.clone());
         }
 
         info!("Loading template: {}", path);

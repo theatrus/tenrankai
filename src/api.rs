@@ -36,13 +36,11 @@ pub fn create_signed_cookie(secret: &str, value: &str) -> Result<String, String>
 }
 
 pub fn verify_signed_cookie(secret: &str, signed_value: &str) -> bool {
-    if let Some((value, signature_b64)) = signed_value.split_once(':') {
-        if let Ok(signature) = general_purpose::URL_SAFE_NO_PAD.decode(signature_b64) {
-            if let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) {
-                mac.update(value.as_bytes());
-                return mac.verify_slice(&signature).is_ok();
-            }
-        }
+    if let Some((value, signature_b64)) = signed_value.split_once(':')
+        && let Ok(signature) = general_purpose::URL_SAFE_NO_PAD.decode(signature_b64)
+        && let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) {
+        mac.update(value.as_bytes());
+        return mac.verify_slice(&signature).is_ok();
     }
     false
 }

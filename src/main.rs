@@ -52,7 +52,7 @@ struct Args {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct Config {
+pub struct Config {
     server: ServerConfig,
     app: AppConfig,
     templates: TemplateConfig,
@@ -61,13 +61,13 @@ struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct ServerConfig {
+pub struct ServerConfig {
     host: String,
     port: u16,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct AppConfig {
+pub struct AppConfig {
     name: String,
     log_level: String,
     download_secret: String,
@@ -75,12 +75,12 @@ struct AppConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct TemplateConfig {
+pub struct TemplateConfig {
     directory: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct StaticConfig {
+pub struct StaticConfig {
     directory: PathBuf,
 }
 
@@ -219,14 +219,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start background cache refresh if configured
-    if let Some(interval_minutes) = config_clone.gallery.cache_refresh_interval_minutes {
-        if interval_minutes > 0 {
-            info!(
-                "Starting background metadata cache refresh every {} minutes",
-                interval_minutes
-            );
-            Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
-        }
+    if let Some(interval_minutes) = config_clone.gallery.cache_refresh_interval_minutes
+        && interval_minutes > 0 {
+        info!(
+            "Starting background metadata cache refresh every {} minutes",
+            interval_minutes
+        );
+        Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
     }
 
     // Clone gallery for shutdown handler before moving it into router state

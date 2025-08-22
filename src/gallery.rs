@@ -567,8 +567,8 @@ impl Gallery {
         }
     }
 
-    async fn extract_all_exif_data(&self, path: &PathBuf) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
-        let path = path.clone();
+    async fn extract_all_exif_data(&self, path: &std::path::Path) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
+        let path = path.to_path_buf();
         tokio::task::spawn_blocking(move || -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
             let file_contents = match std::fs::read(&path) {
                 Ok(contents) => contents,
@@ -907,10 +907,9 @@ impl Gallery {
         let result = self.refresh_metadata_cache_internal(true).await;
         
         // Save the updated metadata
-        if result.is_ok() {
-            if let Err(e) = self.save_cache_metadata().await {
-                tracing::warn!("Failed to save cache metadata after full refresh: {}", e);
-            }
+        if result.is_ok()
+            && let Err(e) = self.save_cache_metadata().await {
+            tracing::warn!("Failed to save cache metadata after full refresh: {}", e);
         }
         
         result
@@ -961,7 +960,7 @@ impl Gallery {
                 .collect::<Vec<String>>()
         })
         .await
-        .map_err(|e| GalleryError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| GalleryError::IoError(std::io::Error::other(e)))?;
 
         for relative_path_str in discovered_files {
             discovered_paths.insert(relative_path_str.clone());
@@ -1066,8 +1065,8 @@ impl Gallery {
         });
     }
 
-    async fn get_image_dimensions_fast(&self, path: &PathBuf) -> Option<(u32, u32)> {
-        let path = path.clone();
+    async fn get_image_dimensions_fast(&self, path: &std::path::Path) -> Option<(u32, u32)> {
+        let path = path.to_path_buf();
         tokio::task::spawn_blocking(move || -> Option<(u32, u32)> {
             use std::fs::File;
             use std::io::BufReader;
@@ -1078,11 +1077,7 @@ impl Gallery {
             // Use ImageReader to get dimensions without decoding the full image
             let reader = image::ImageReader::new(reader).with_guessed_format().ok()?;
 
-            if let Ok(dimensions) = reader.into_dimensions() {
-                Some(dimensions)
-            } else {
-                None
-            }
+            reader.into_dimensions().ok()
         })
         .await
         .ok()
@@ -1197,10 +1192,9 @@ impl Gallery {
         let original_modified = original_metadata.modified()?;
 
         let cache = self.cache.read().await;
-        if let Some(cached) = cache.get(&hash) {
-            if cached.modified >= original_modified && cached.path.exists() {
-                return Ok(cached.path.clone());
-            }
+        if let Some(cached) = cache.get(&hash)
+            && cached.modified >= original_modified && cached.path.exists() {
+            return Ok(cached.path.clone());
         }
         drop(cache);
 
@@ -1229,7 +1223,7 @@ impl Gallery {
             Ok(())
         })
         .await
-        .map_err(|e| GalleryError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+        .map_err(|e| GalleryError::IoError(std::io::Error::other(e)))??;
 
         let mut cache = self.cache.write().await;
         cache.insert(
@@ -1445,8 +1439,7 @@ pub async fn gallery_handler(
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
 
     let total_images = items.iter().filter(|i| !i.is_directory).count();
-    let total_pages =
-        (total_images + gallery.config.images_per_page - 1) / gallery.config.images_per_page;
+    let total_pages = total_images.div_ceil(gallery.config.images_per_page);
 
     // Serialize images to JSON string for client-side use
     let images_json =
