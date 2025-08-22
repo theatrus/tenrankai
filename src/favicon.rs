@@ -134,58 +134,92 @@ impl FaviconRenderer {
     async fn generate_png(&self, size: u32) -> Result<Vec<u8>, String> {
         let svg_content = self.load_svg().await?;
         
-        let rtree = usvg::Tree::from_str(&svg_content, &usvg::Options::default())
-            .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+        // Move CPU-intensive SVG rendering and PNG encoding to blocking thread pool
+        tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+            let rtree = usvg::Tree::from_str(&svg_content, &usvg::Options::default())
+                .map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
-        let mut pixmap = tiny_skia::Pixmap::new(size, size)
-            .ok_or("Failed to create pixmap")?;
+            let mut pixmap = tiny_skia::Pixmap::new(size, size)
+                .ok_or("Failed to create pixmap")?;
 
-        let transform = tiny_skia::Transform::from_scale(
-            size as f32 / rtree.size().width(),
-            size as f32 / rtree.size().height(),
-        );
+            let transform = tiny_skia::Transform::from_scale(
+                size as f32 / rtree.size().width(),
+                size as f32 / rtree.size().height(),
+            );
 
-        resvg::render(&rtree, transform, &mut pixmap.as_mut());
+            resvg::render(&rtree, transform, &mut pixmap.as_mut());
 
-        // Convert to PNG using image crate
-        let rgba_image: RgbaImage = ImageBuffer::from_raw(size, size, pixmap.take())
-            .ok_or("Failed to create image buffer")?;
+            // Convert to PNG using image crate
+            let rgba_image: RgbaImage = ImageBuffer::from_raw(size, size, pixmap.take())
+                .ok_or("Failed to create image buffer")?;
 
-        let mut png_data = Vec::new();
-        {
-            use image::{ImageEncoder, codecs::png::PngEncoder};
-            let encoder = PngEncoder::new(&mut png_data);
-            encoder
-                .write_image(rgba_image.as_raw(), size, size, image::ExtendedColorType::Rgba8)
-                .map_err(|e| format!("Failed to encode PNG: {}", e))?;
-        }
+            let mut png_data = Vec::new();
+            {
+                use image::{ImageEncoder, codecs::png::PngEncoder};
+                let encoder = PngEncoder::new(&mut png_data);
+                encoder
+                    .write_image(rgba_image.as_raw(), size, size, image::ExtendedColorType::Rgba8)
+                    .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+            }
 
-        Ok(png_data)
+            Ok(png_data)
+        }).await.map_err(|e| format!("Task join error: {}", e))?
     }
 
     async fn generate_ico(&self) -> Result<Vec<u8>, String> {
-        // Generate multiple sizes for ICO
-        let png_16 = self.generate_png(16).await?;
-        let png_32 = self.generate_png(32).await?;
-        let png_48 = self.generate_png(48).await?;
+        // Generate raw RGBA data for ICO (not PNG encoded)
+        let (rgba_16_result, rgba_32_result, rgba_48_result) = tokio::join!(
+            self.generate_rgba_data(16),
+            self.generate_rgba_data(32), 
+            self.generate_rgba_data(48)
+        );
 
-        // Create ICO file
-        let mut ico_dir = ico::IconDir::new(ico::ResourceType::Icon);
-        
-        ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(16, 16, png_16))
-            .map_err(|e| format!("Failed to encode 16x16 icon: {}", e))?);
-        
-        ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(32, 32, png_32))
-            .map_err(|e| format!("Failed to encode 32x32 icon: {}", e))?);
-        
-        ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(48, 48, png_48))
-            .map_err(|e| format!("Failed to encode 48x48 icon: {}", e))?);
+        let rgba_16 = rgba_16_result?;
+        let rgba_32 = rgba_32_result?;
+        let rgba_48 = rgba_48_result?;
 
-        let mut ico_data = Vec::new();
-        ico_dir.write(&mut ico_data)
-            .map_err(|e| format!("Failed to write ICO: {}", e))?;
+        // Create ICO file - this is also CPU intensive, so move to blocking pool
+        tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+            let mut ico_dir = ico::IconDir::new(ico::ResourceType::Icon);
+            
+            ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(16, 16, rgba_16))
+                .map_err(|e| format!("Failed to encode 16x16 icon: {}", e))?);
+            
+            ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(32, 32, rgba_32))
+                .map_err(|e| format!("Failed to encode 32x32 icon: {}", e))?);
+            
+            ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(48, 48, rgba_48))
+                .map_err(|e| format!("Failed to encode 48x48 icon: {}", e))?);
 
-        Ok(ico_data)
+            let mut ico_data = Vec::new();
+            ico_dir.write(&mut ico_data)
+                .map_err(|e| format!("Failed to write ICO: {}", e))?;
+
+            Ok(ico_data)
+        }).await.map_err(|e| format!("Task join error: {}", e))?
+    }
+
+    async fn generate_rgba_data(&self, size: u32) -> Result<Vec<u8>, String> {
+        let svg_content = self.load_svg().await?;
+        
+        // Move CPU-intensive SVG rendering to blocking thread pool
+        tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+            let rtree = usvg::Tree::from_str(&svg_content, &usvg::Options::default())
+                .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+
+            let mut pixmap = tiny_skia::Pixmap::new(size, size)
+                .ok_or("Failed to create pixmap")?;
+
+            let transform = tiny_skia::Transform::from_scale(
+                size as f32 / rtree.size().width(),
+                size as f32 / rtree.size().height(),
+            );
+
+            resvg::render(&rtree, transform, &mut pixmap.as_mut());
+
+            // Return raw RGBA data (4 bytes per pixel)
+            Ok(pixmap.take())
+        }).await.map_err(|e| format!("Task join error: {}", e))?
     }
 }
 

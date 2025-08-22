@@ -485,15 +485,17 @@ impl Gallery {
         &self,
         path: &PathBuf,
     ) -> (Option<CameraInfo>, Option<LocationInfo>) {
-        let file_contents = match std::fs::read(path) {
-            Ok(contents) => contents,
-            Err(_) => return (None, None),
-        };
+        let path = path.clone();
+        let result = tokio::task::spawn_blocking(move || -> (Option<CameraInfo>, Option<LocationInfo>) {
+            let file_contents = match std::fs::read(&path) {
+                Ok(contents) => contents,
+                Err(_) => return (None, None),
+            };
 
-        let exif_data = match rexif::parse_buffer(&file_contents) {
-            Ok(data) => data,
-            Err(_) => return (None, None),
-        };
+            let exif_data = match rexif::parse_buffer(&file_contents) {
+                Ok(data) => data,
+                Err(_) => return (None, None),
+            };
 
         let mut camera_info = CameraInfo {
             camera_make: None,
@@ -534,12 +536,12 @@ impl Gallery {
                     camera_info.focal_length = Some(format!("{}mm", entry.value_more_readable));
                 }
                 rexif::ExifTag::GPSLatitude => {
-                    if let Ok(lat) = self.parse_gps_coordinate(&entry.value_more_readable) {
+                    if let Ok(lat) = Self::parse_gps_coordinate(&entry.value_more_readable) {
                         latitude = Some(lat);
                     }
                 }
                 rexif::ExifTag::GPSLongitude => {
-                    if let Ok(lon) = self.parse_gps_coordinate(&entry.value_more_readable) {
+                    if let Ok(lon) = Self::parse_gps_coordinate(&entry.value_more_readable) {
                         longitude = Some(lon);
                     }
                 }
@@ -612,9 +614,12 @@ impl Gallery {
         };
 
         (final_camera_info, location_info)
+        }).await.unwrap_or((None, None));
+        
+        result
     }
 
-    fn parse_gps_coordinate(&self, coord_str: &str) -> Result<f64, String> {
+    fn parse_gps_coordinate(coord_str: &str) -> Result<f64, String> {
         // Parse GPS coordinate in format like "40° 45' 30.00''"
         let parts: Vec<&str> = coord_str.split_whitespace().collect();
         if parts.len() >= 3 {
@@ -686,7 +691,7 @@ impl Gallery {
         }
 
         // Cache miss or invalid - read image dimensions
-        let dimensions = self.get_image_dimensions_fast(&full_path)
+        let dimensions = self.get_image_dimensions_fast(&full_path).await
             .ok_or(GalleryError::ImageError(image::ImageError::Unsupported(
                 image::error::UnsupportedError::from(image::error::ImageFormatHint::Unknown)
             )))?;
@@ -752,23 +757,26 @@ impl Gallery {
         let _ = self.save_metadata_cache().await;
     }
 
-    fn get_image_dimensions_fast(&self, path: &PathBuf) -> Option<(u32, u32)> {
-        use std::fs::File;
-        use std::io::BufReader;
-        
-        let file = File::open(path).ok()?;
-        let reader = BufReader::new(file);
-        
-        // Use ImageReader to get dimensions without decoding the full image
-        let reader = image::ImageReader::new(reader)
-            .with_guessed_format()
-            .ok()?;
+    async fn get_image_dimensions_fast(&self, path: &PathBuf) -> Option<(u32, u32)> {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || -> Option<(u32, u32)> {
+            use std::fs::File;
+            use std::io::BufReader;
             
-        if let Ok(dimensions) = reader.into_dimensions() {
-            Some(dimensions)
-        } else {
-            None
-        }
+            let file = File::open(&path).ok()?;
+            let reader = BufReader::new(file);
+            
+            // Use ImageReader to get dimensions without decoding the full image
+            let reader = image::ImageReader::new(reader)
+                .with_guessed_format()
+                .ok()?;
+                
+            if let Ok(dimensions) = reader.into_dimensions() {
+                Some(dimensions)
+            } else {
+                None
+            }
+        }).await.ok().flatten()
     }
 
     async fn build_breadcrumbs(&self, current_path: &str) -> Vec<liquid::model::Object> {
@@ -867,21 +875,28 @@ impl Gallery {
 
         tokio::fs::create_dir_all(&self.config.cache_directory).await?;
 
-        // Open image with decoder to access ICC profile
-        let original_file = std::fs::File::open(original_path)?;
+        // Move CPU-intensive and blocking I/O operations to blocking thread pool
+        let original_path = original_path.clone();
+        let cache_path_clone = cache_path.clone();
+        tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+            // Open image with decoder to access ICC profile
+            let original_file = std::fs::File::open(&original_path)?;
 
-        let decoder = image::ImageReader::new(std::io::BufReader::new(original_file))
-            .with_guessed_format()?;
+            let decoder = image::ImageReader::new(std::io::BufReader::new(original_file))
+                .with_guessed_format()?;
 
-        let img = decoder.decode()?;
+            let img = decoder.decode()?;
 
-        let resized = img.resize(width, height, FilterType::Lanczos3);
+            let resized = img.resize(width, height, FilterType::Lanczos3);
 
-        // Save resized image
-        // Note: The standard image crate JPEG encoder doesn't support embedding ICC profiles
-        // For production use, consider using a library like turbojpeg-sys or mozjpeg
-        // that supports ICC profile embedding during encoding
-        resized.save_with_format(&cache_path, ImageFormat::Jpeg)?;
+            // Save resized image
+            // Note: The standard image crate JPEG encoder doesn't support embedding ICC profiles
+            // For production use, consider using a library like turbojpeg-sys or mozjpeg
+            // that supports ICC profile embedding during encoding
+            resized.save_with_format(&cache_path_clone, ImageFormat::Jpeg)?;
+            
+            Ok(())
+        }).await.map_err(|e| GalleryError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
 
         let mut cache = self.cache.write().await;
         cache.insert(
