@@ -296,15 +296,11 @@ impl Gallery {
         let full_path = self.config.source_directory.join(relative_path);
         let mut count = 0;
 
-        for entry in WalkDir::new(full_path).min_depth(1) {
-            if let Ok(entry) = entry {
-                if entry.file_type().is_file() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if self.is_image(name) && !name.starts_with('.') {
-                            count += 1;
-                        }
-                    }
-                }
+        for entry in WalkDir::new(full_path).min_depth(1).into_iter().flatten() {
+            if entry.file_type().is_file()
+                && let Some(name) = entry.file_name().to_str()
+                && self.is_image(name) && !name.starts_with('.') {
+                count += 1;
             }
         }
 
@@ -321,30 +317,25 @@ impl Gallery {
         for entry in WalkDir::new(&full_path)
             .min_depth(1)
             .max_depth(self.config.preview.max_depth)
+            .into_iter()
+            .flatten()
         {
             if preview_images.len() >= max_preview_images {
                 break;
             }
 
-            if let Ok(entry) = entry {
-                if entry.file_type().is_file() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if self.is_image(name) && !name.starts_with('.') {
-                            // Calculate relative path from gallery source directory
-                            if let Ok(relative_to_source) =
-                                entry.path().strip_prefix(&self.config.source_directory)
-                            {
-                                let path_string = relative_to_source.to_string_lossy().to_string();
-                                let encoded_path = urlencoding::encode(&path_string);
-                                let thumbnail_url = format!(
-                                    "/{}/image/{}?size=thumbnail",
-                                    self.config.path_prefix, encoded_path
-                                );
-                                preview_images.push(thumbnail_url);
-                            }
-                        }
-                    }
-                }
+            if entry.file_type().is_file()
+                && let Some(name) = entry.file_name().to_str()
+                && self.is_image(name) && !name.starts_with('.')
+                && let Ok(relative_to_source) = entry.path().strip_prefix(&self.config.source_directory)
+            {
+                let path_string = relative_to_source.to_string_lossy().to_string();
+                let encoded_path = urlencoding::encode(&path_string);
+                let thumbnail_url = format!(
+                    "/{}/image/{}?size=thumbnail",
+                    self.config.path_prefix, encoded_path
+                );
+                preview_images.push(thumbnail_url);
             }
         }
 
@@ -1728,7 +1719,7 @@ mod tests {
         assert!(needs_refresh, "Should need refresh when version is empty/different");
         
         // After initialization, version should be updated
-        if let Err(_) = gallery.initialize_and_check_version().await {
+        if gallery.initialize_and_check_version().await.is_err() {
             // Expected to fail due to test directory, but that's okay
         }
         
@@ -1794,7 +1785,7 @@ mod tests {
             // Test valid sizes that should be allowed without authentication
             let valid_sizes = vec!["thumbnail", "gallery", "medium"];
             for size in valid_sizes {
-                let result = validate_size_parameter(Some(size.to_string()), &"secret".to_string());
+                let result = validate_size_parameter(Some(size.to_string()), "secret");
                 match result {
                     SizeValidationResult::AllowedWithoutAuth => {
                         // Expected for thumbnail, gallery, medium
@@ -1804,7 +1795,7 @@ mod tests {
             }
 
             // Test large size that requires authentication
-            let result = validate_size_parameter(Some("large".to_string()), &"secret".to_string());
+            let result = validate_size_parameter(Some("large".to_string()), "secret");
             match result {
                 SizeValidationResult::RequiresAuth => {
                     // Expected for large
@@ -1813,7 +1804,7 @@ mod tests {
             }
 
             // Test no size parameter (full-size) that requires authentication
-            let result = validate_size_parameter(None, &"secret".to_string());
+            let result = validate_size_parameter(None, "secret");
             match result {
                 SizeValidationResult::RequiresAuth => {
                     // Expected for no size
@@ -1824,7 +1815,7 @@ mod tests {
             // Test invalid size parameters
             let invalid_sizes = vec!["full", "huge", "invalid", "xxl"];
             for size in invalid_sizes {
-                let result = validate_size_parameter(Some(size.to_string()), &"secret".to_string());
+                let result = validate_size_parameter(Some(size.to_string()), "secret");
                 match result {
                     SizeValidationResult::InvalidSize => {
                         // Expected for invalid sizes
@@ -1889,7 +1880,7 @@ mod tests {
         }
 
         // Helper function to test size validation logic
-        fn validate_size_parameter(size: Option<String>, _secret: &String) -> SizeValidationResult {
+        fn validate_size_parameter(size: Option<String>, _secret: &str) -> SizeValidationResult {
             if let Some(ref size_str) = size {
                 match size_str.as_str() {
                     "thumbnail" | "gallery" | "medium" => SizeValidationResult::AllowedWithoutAuth,
