@@ -215,7 +215,17 @@ impl Gallery {
         items.sort_by(|a, b| match (a.is_directory, b.is_directory) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.cmp(&b.name),
+            _ => {
+                // For directories, sort by display_name if available, otherwise by name
+                if a.is_directory && b.is_directory {
+                    let a_sort_name = a.display_name.as_ref().unwrap_or(&a.name);
+                    let b_sort_name = b.display_name.as_ref().unwrap_or(&b.name);
+                    a_sort_name.cmp(b_sort_name)
+                } else {
+                    // For files, continue sorting by name
+                    a.name.cmp(&b.name)
+                }
+            }
         });
 
         Ok(items)

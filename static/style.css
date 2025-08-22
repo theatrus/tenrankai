@@ -31,6 +31,16 @@ nav h1 {
     font-size: 1.25rem;
 }
 
+nav h1 a {
+    color: #e0e0e0;
+    text-decoration: none;
+    transition: opacity 0.3s;
+}
+
+nav h1 a:hover {
+    opacity: 0.8;
+}
+
 nav ul {
     list-style: none;
     margin: 0;
