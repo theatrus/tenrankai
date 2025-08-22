@@ -1,7 +1,17 @@
 {{ header }}
 
 <div class="container gallery-container">
-    <h2>Photo Gallery{% if gallery_path != "" %}: {{ gallery_path }}{% endif %}</h2>
+    {% if folder_title %}
+        <h2>{{ folder_title }}</h2>
+    {% else %}
+        <h2>Photo Gallery{% if gallery_path != "" %}: {{ gallery_path }}{% endif %}</h2>
+    {% endif %}
+    
+    {% if folder_description %}
+        <div class="folder-description">
+            {{ folder_description }}
+        </div>
+    {% endif %}
     
     {% if items.size > 0 %}
         <!-- Directory Navigation -->
@@ -24,8 +34,17 @@
                                 {% endif %}
                             </div>
                             <div class="folder-info">
-                                <div class="folder-name">{{ dir.name }}</div>
+                                <div class="folder-name">
+                                    {% if dir.display_name %}
+                                        {{ dir.display_name }}
+                                    {% else %}
+                                        {{ dir.name }}
+                                    {% endif %}
+                                </div>
                                 <div class="folder-count">{{ dir.item_count }} images</div>
+                                {% if dir.description %}
+                                    <div class="folder-description-preview">{{ dir.description | strip_html | truncate: 100 }}</div>
+                                {% endif %}
                             </div>
                         </a>
                     {% endfor %}
@@ -77,6 +96,32 @@ body {
 .gallery-container {
     max-width: 1400px;
     background-color: #1a1a1a;
+}
+
+.folder-description {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: #404040;
+    border-radius: 8px;
+    color: #e0e0e0;
+    line-height: 1.6;
+}
+
+.folder-description h1,
+.folder-description h2,
+.folder-description h3,
+.folder-description h4,
+.folder-description h5,
+.folder-description h6 {
+    color: #e0e0e0;
+}
+
+.folder-description p {
+    margin-bottom: 1rem;
+}
+
+.folder-description p:last-child {
+    margin-bottom: 0;
 }
 
 .folder-grid {
@@ -178,6 +223,13 @@ body {
 .folder-count {
     font-size: 0.8rem;
     color: #999;
+}
+
+.folder-description-preview {
+    font-size: 0.75rem;
+    color: #bbb;
+    margin-top: 0.5rem;
+    line-height: 1.3;
 }
 
 .image-grid {
