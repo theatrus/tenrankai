@@ -10,7 +10,6 @@ use std::{path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::error;
 
-
 #[derive(Clone)]
 pub struct FaviconRenderer {
     static_dir: PathBuf,
@@ -65,7 +64,11 @@ impl FaviconRenderer {
             }
             Err(e) => {
                 error!("Failed to generate favicon.ico: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate favicon").into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate favicon",
+                )
+                    .into_response()
             }
         }
     }
@@ -119,7 +122,11 @@ impl FaviconRenderer {
             }
             Err(e) => {
                 error!("Failed to generate favicon PNG: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate favicon PNG").into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate favicon PNG",
+                )
+                    .into_response()
             }
         }
     }
@@ -133,14 +140,13 @@ impl FaviconRenderer {
 
     async fn generate_png(&self, size: u32) -> Result<Vec<u8>, String> {
         let svg_content = self.load_svg().await?;
-        
+
         // Move CPU-intensive SVG rendering and PNG encoding to blocking thread pool
         tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
             let rtree = usvg::Tree::from_str(&svg_content, &usvg::Options::default())
                 .map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
-            let mut pixmap = tiny_skia::Pixmap::new(size, size)
-                .ok_or("Failed to create pixmap")?;
+            let mut pixmap = tiny_skia::Pixmap::new(size, size).ok_or("Failed to create pixmap")?;
 
             let transform = tiny_skia::Transform::from_scale(
                 size as f32 / rtree.size().width(),
@@ -158,19 +164,26 @@ impl FaviconRenderer {
                 use image::{ImageEncoder, codecs::png::PngEncoder};
                 let encoder = PngEncoder::new(&mut png_data);
                 encoder
-                    .write_image(rgba_image.as_raw(), size, size, image::ExtendedColorType::Rgba8)
+                    .write_image(
+                        rgba_image.as_raw(),
+                        size,
+                        size,
+                        image::ExtendedColorType::Rgba8,
+                    )
                     .map_err(|e| format!("Failed to encode PNG: {}", e))?;
             }
 
             Ok(png_data)
-        }).await.map_err(|e| format!("Task join error: {}", e))?
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
     }
 
     async fn generate_ico(&self) -> Result<Vec<u8>, String> {
         // Generate raw RGBA data for ICO (not PNG encoded)
         let (rgba_16_result, rgba_32_result, rgba_48_result) = tokio::join!(
             self.generate_rgba_data(16),
-            self.generate_rgba_data(32), 
+            self.generate_rgba_data(32),
             self.generate_rgba_data(48)
         );
 
@@ -181,34 +194,42 @@ impl FaviconRenderer {
         // Create ICO file - this is also CPU intensive, so move to blocking pool
         tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
             let mut ico_dir = ico::IconDir::new(ico::ResourceType::Icon);
-            
-            ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(16, 16, rgba_16))
-                .map_err(|e| format!("Failed to encode 16x16 icon: {}", e))?);
-            
-            ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(32, 32, rgba_32))
-                .map_err(|e| format!("Failed to encode 32x32 icon: {}", e))?);
-            
-            ico_dir.add_entry(ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(48, 48, rgba_48))
-                .map_err(|e| format!("Failed to encode 48x48 icon: {}", e))?);
+
+            ico_dir.add_entry(
+                ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(16, 16, rgba_16))
+                    .map_err(|e| format!("Failed to encode 16x16 icon: {}", e))?,
+            );
+
+            ico_dir.add_entry(
+                ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(32, 32, rgba_32))
+                    .map_err(|e| format!("Failed to encode 32x32 icon: {}", e))?,
+            );
+
+            ico_dir.add_entry(
+                ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(48, 48, rgba_48))
+                    .map_err(|e| format!("Failed to encode 48x48 icon: {}", e))?,
+            );
 
             let mut ico_data = Vec::new();
-            ico_dir.write(&mut ico_data)
+            ico_dir
+                .write(&mut ico_data)
                 .map_err(|e| format!("Failed to write ICO: {}", e))?;
 
             Ok(ico_data)
-        }).await.map_err(|e| format!("Task join error: {}", e))?
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
     }
 
     async fn generate_rgba_data(&self, size: u32) -> Result<Vec<u8>, String> {
         let svg_content = self.load_svg().await?;
-        
+
         // Move CPU-intensive SVG rendering to blocking thread pool
         tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
             let rtree = usvg::Tree::from_str(&svg_content, &usvg::Options::default())
                 .map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
-            let mut pixmap = tiny_skia::Pixmap::new(size, size)
-                .ok_or("Failed to create pixmap")?;
+            let mut pixmap = tiny_skia::Pixmap::new(size, size).ok_or("Failed to create pixmap")?;
 
             let transform = tiny_skia::Transform::from_scale(
                 size as f32 / rtree.size().width(),
@@ -219,30 +240,24 @@ impl FaviconRenderer {
 
             // Return raw RGBA data (4 bytes per pixel)
             Ok(pixmap.take())
-        }).await.map_err(|e| format!("Task join error: {}", e))?
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
     }
 }
 
-pub async fn favicon_ico_handler(
-    State(app_state): State<crate::AppState>,
-) -> impl IntoResponse {
+pub async fn favicon_ico_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
     app_state.favicon_renderer.render_favicon_ico().await
 }
 
-pub async fn favicon_png_16_handler(
-    State(app_state): State<crate::AppState>,
-) -> impl IntoResponse {
+pub async fn favicon_png_16_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
     app_state.favicon_renderer.render_favicon_png(16).await
 }
 
-pub async fn favicon_png_32_handler(
-    State(app_state): State<crate::AppState>,
-) -> impl IntoResponse {
+pub async fn favicon_png_32_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
     app_state.favicon_renderer.render_favicon_png(32).await
 }
 
-pub async fn favicon_png_48_handler(
-    State(app_state): State<crate::AppState>,
-) -> impl IntoResponse {
+pub async fn favicon_png_48_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
     app_state.favicon_renderer.render_favicon_png(48).await
 }

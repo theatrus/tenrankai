@@ -8,8 +8,8 @@ use image::{ImageFormat, imageops::FilterType};
 use pulldown_cmark::{Parser, html};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use sha2::{Digest, Sha256};
+use std::fs;
 use std::{
     collections::HashMap,
     path::{Path as StdPath, PathBuf},
@@ -143,7 +143,10 @@ impl Gallery {
         }
     }
 
-    pub async fn scan_directory(&self, relative_path: &str) -> Result<Vec<GalleryItem>, GalleryError> {
+    pub async fn scan_directory(
+        &self,
+        relative_path: &str,
+    ) -> Result<Vec<GalleryItem>, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
 
         if !full_path.starts_with(&self.config.source_directory) {
@@ -244,7 +247,10 @@ impl Gallery {
         // Get up to configured number of images for preview
         let max_preview_images = self.config.preview.max_images;
 
-        for entry in WalkDir::new(&full_path).min_depth(1).max_depth(self.config.preview.max_depth) {
+        for entry in WalkDir::new(&full_path)
+            .min_depth(1)
+            .max_depth(self.config.preview.max_depth)
+        {
             if preview_images.len() >= max_preview_images {
                 break;
             }
@@ -407,8 +413,6 @@ impl Gallery {
         })
     }
 
-
-
     async fn read_folder_metadata(&self, folder_path: &str) -> (Option<String>, Option<String>) {
         let folder_md_path = self
             .config
@@ -486,136 +490,143 @@ impl Gallery {
         path: &PathBuf,
     ) -> (Option<CameraInfo>, Option<LocationInfo>) {
         let path = path.clone();
-        let result = tokio::task::spawn_blocking(move || -> (Option<CameraInfo>, Option<LocationInfo>) {
-            let file_contents = match std::fs::read(&path) {
-                Ok(contents) => contents,
-                Err(_) => return (None, None),
-            };
+        let result =
+            tokio::task::spawn_blocking(move || -> (Option<CameraInfo>, Option<LocationInfo>) {
+                let file_contents = match std::fs::read(&path) {
+                    Ok(contents) => contents,
+                    Err(_) => return (None, None),
+                };
 
-            let exif_data = match rexif::parse_buffer(&file_contents) {
-                Ok(data) => data,
-                Err(_) => return (None, None),
-            };
+                let exif_data = match rexif::parse_buffer(&file_contents) {
+                    Ok(data) => data,
+                    Err(_) => return (None, None),
+                };
 
-        let mut camera_info = CameraInfo {
-            camera_make: None,
-            camera_model: None,
-            lens_model: None,
-            iso: None,
-            aperture: None,
-            shutter_speed: None,
-            focal_length: None,
-        };
+                let mut camera_info = CameraInfo {
+                    camera_make: None,
+                    camera_model: None,
+                    lens_model: None,
+                    iso: None,
+                    aperture: None,
+                    shutter_speed: None,
+                    focal_length: None,
+                };
 
-        let mut latitude: Option<f64> = None;
-        let mut longitude: Option<f64> = None;
-        let mut lat_ref: Option<String> = None;
-        let mut lon_ref: Option<String> = None;
+                let mut latitude: Option<f64> = None;
+                let mut longitude: Option<f64> = None;
+                let mut lat_ref: Option<String> = None;
+                let mut lon_ref: Option<String> = None;
 
-        for entry in &exif_data.entries {
-            match entry.tag {
-                rexif::ExifTag::Make => {
-                    camera_info.camera_make = Some(entry.value_more_readable.to_string());
-                }
-                rexif::ExifTag::Model => {
-                    camera_info.camera_model = Some(entry.value_more_readable.to_string());
-                }
-                rexif::ExifTag::LensModel => {
-                    camera_info.lens_model = Some(entry.value_more_readable.to_string());
-                }
-                rexif::ExifTag::ISOSpeedRatings => {
-                    camera_info.iso = Some(format!("ISO {}", entry.value_more_readable));
-                }
-                rexif::ExifTag::FNumber => {
-                    camera_info.aperture = Some(format!("f/{}", entry.value_more_readable));
-                }
-                rexif::ExifTag::ExposureTime => {
-                    camera_info.shutter_speed = Some(format!("{}s", entry.value_more_readable));
-                }
-                rexif::ExifTag::FocalLength => {
-                    camera_info.focal_length = Some(format!("{}mm", entry.value_more_readable));
-                }
-                rexif::ExifTag::GPSLatitude => {
-                    if let Ok(lat) = Self::parse_gps_coordinate(&entry.value_more_readable) {
-                        latitude = Some(lat);
+                for entry in &exif_data.entries {
+                    match entry.tag {
+                        rexif::ExifTag::Make => {
+                            camera_info.camera_make = Some(entry.value_more_readable.to_string());
+                        }
+                        rexif::ExifTag::Model => {
+                            camera_info.camera_model = Some(entry.value_more_readable.to_string());
+                        }
+                        rexif::ExifTag::LensModel => {
+                            camera_info.lens_model = Some(entry.value_more_readable.to_string());
+                        }
+                        rexif::ExifTag::ISOSpeedRatings => {
+                            camera_info.iso = Some(format!("ISO {}", entry.value_more_readable));
+                        }
+                        rexif::ExifTag::FNumber => {
+                            camera_info.aperture = Some(format!("f/{}", entry.value_more_readable));
+                        }
+                        rexif::ExifTag::ExposureTime => {
+                            camera_info.shutter_speed =
+                                Some(format!("{}s", entry.value_more_readable));
+                        }
+                        rexif::ExifTag::FocalLength => {
+                            camera_info.focal_length =
+                                Some(format!("{}mm", entry.value_more_readable));
+                        }
+                        rexif::ExifTag::GPSLatitude => {
+                            if let Ok(lat) = Self::parse_gps_coordinate(&entry.value_more_readable)
+                            {
+                                latitude = Some(lat);
+                            }
+                        }
+                        rexif::ExifTag::GPSLongitude => {
+                            if let Ok(lon) = Self::parse_gps_coordinate(&entry.value_more_readable)
+                            {
+                                longitude = Some(lon);
+                            }
+                        }
+                        rexif::ExifTag::GPSLatitudeRef => {
+                            lat_ref = Some(entry.value_more_readable.to_string());
+                        }
+                        rexif::ExifTag::GPSLongitudeRef => {
+                            lon_ref = Some(entry.value_more_readable.to_string());
+                        }
+                        _ => {}
                     }
                 }
-                rexif::ExifTag::GPSLongitude => {
-                    if let Ok(lon) = Self::parse_gps_coordinate(&entry.value_more_readable) {
-                        longitude = Some(lon);
+
+                // Clean up camera info
+                if camera_info.camera_make.is_none()
+                    && camera_info.camera_model.is_none()
+                    && camera_info.lens_model.is_none()
+                    && camera_info.iso.is_none()
+                    && camera_info.aperture.is_none()
+                    && camera_info.shutter_speed.is_none()
+                    && camera_info.focal_length.is_none()
+                {
+                    camera_info = CameraInfo {
+                        camera_make: None,
+                        camera_model: None,
+                        lens_model: None,
+                        iso: None,
+                        aperture: None,
+                        shutter_speed: None,
+                        focal_length: None,
+                    };
+                }
+
+                // Process GPS coordinates
+                let location_info = if let (Some(mut lat), Some(mut lon)) = (latitude, longitude) {
+                    // Apply hemisphere references
+                    if let Some(ref lat_hemisphere) = lat_ref {
+                        if lat_hemisphere.to_uppercase().starts_with('S') {
+                            lat = -lat;
+                        }
                     }
-                }
-                rexif::ExifTag::GPSLatitudeRef => {
-                    lat_ref = Some(entry.value_more_readable.to_string());
-                }
-                rexif::ExifTag::GPSLongitudeRef => {
-                    lon_ref = Some(entry.value_more_readable.to_string());
-                }
-                _ => {}
-            }
-        }
 
-        // Clean up camera info
-        if camera_info.camera_make.is_none()
-            && camera_info.camera_model.is_none()
-            && camera_info.lens_model.is_none()
-            && camera_info.iso.is_none()
-            && camera_info.aperture.is_none()
-            && camera_info.shutter_speed.is_none()
-            && camera_info.focal_length.is_none()
-        {
-            camera_info = CameraInfo {
-                camera_make: None,
-                camera_model: None,
-                lens_model: None,
-                iso: None,
-                aperture: None,
-                shutter_speed: None,
-                focal_length: None,
-            };
-        }
+                    if let Some(ref lon_hemisphere) = lon_ref {
+                        if lon_hemisphere.to_uppercase().starts_with('W') {
+                            lon = -lon;
+                        }
+                    }
 
-        // Process GPS coordinates
-        let location_info = if let (Some(mut lat), Some(mut lon)) = (latitude, longitude) {
-            // Apply hemisphere references
-            if let Some(ref lat_hemisphere) = lat_ref {
-                if lat_hemisphere.to_uppercase().starts_with('S') {
-                    lat = -lat;
-                }
-            }
+                    Some(LocationInfo {
+                        latitude: lat,
+                        longitude: lon,
+                        google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
+                        apple_maps_url: format!("http://maps.apple.com/?ll={},{}", lat, lon),
+                    })
+                } else {
+                    None
+                };
 
-            if let Some(ref lon_hemisphere) = lon_ref {
-                if lon_hemisphere.to_uppercase().starts_with('W') {
-                    lon = -lon;
-                }
-            }
+                let final_camera_info = if camera_info.camera_make.is_some()
+                    || camera_info.camera_model.is_some()
+                    || camera_info.lens_model.is_some()
+                    || camera_info.iso.is_some()
+                    || camera_info.aperture.is_some()
+                    || camera_info.shutter_speed.is_some()
+                    || camera_info.focal_length.is_some()
+                {
+                    Some(camera_info)
+                } else {
+                    None
+                };
 
-            Some(LocationInfo {
-                latitude: lat,
-                longitude: lon,
-                google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
-                apple_maps_url: format!("http://maps.apple.com/?ll={},{}", lat, lon),
+                (final_camera_info, location_info)
             })
-        } else {
-            None
-        };
+            .await
+            .unwrap_or((None, None));
 
-        let final_camera_info = if camera_info.camera_make.is_some()
-            || camera_info.camera_model.is_some()
-            || camera_info.lens_model.is_some()
-            || camera_info.iso.is_some()
-            || camera_info.aperture.is_some()
-            || camera_info.shutter_speed.is_some()
-            || camera_info.focal_length.is_some()
-        {
-            Some(camera_info)
-        } else {
-            None
-        };
-
-        (final_camera_info, location_info)
-        }).await.unwrap_or((None, None));
-        
         result
     }
 
@@ -650,7 +661,9 @@ impl Gallery {
         self.config.cache_directory.join("metadata_cache.json")
     }
 
-    fn load_metadata_cache(config: &GalleryConfig) -> Result<HashMap<String, ImageMetadata>, GalleryError> {
+    fn load_metadata_cache(
+        config: &GalleryConfig,
+    ) -> Result<HashMap<String, ImageMetadata>, GalleryError> {
         let cache_path = config.cache_directory.join("metadata_cache.json");
         if !cache_path.exists() {
             return Ok(HashMap::new());
@@ -662,18 +675,21 @@ impl Gallery {
 
     async fn save_metadata_cache(&self) -> Result<(), GalleryError> {
         tokio::fs::create_dir_all(&self.config.cache_directory).await?;
-        
+
         let cache = self.metadata_cache.read().await;
-        let content = serde_json::to_string_pretty(&*cache)
-            .map_err(|_| GalleryError::InvalidPath)?;
-        
+        let content =
+            serde_json::to_string_pretty(&*cache).map_err(|_| GalleryError::InvalidPath)?;
+
         tokio::fs::write(self.metadata_cache_path(), content).await?;
         Ok(())
     }
 
-    async fn get_image_metadata_cached(&self, relative_path: &str) -> Result<ImageMetadata, GalleryError> {
+    async fn get_image_metadata_cached(
+        &self,
+        relative_path: &str,
+    ) -> Result<ImageMetadata, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
-        
+
         // Get current file stats
         let metadata = tokio::fs::metadata(&full_path).await?;
         let current_modified = metadata.modified()?;
@@ -691,10 +707,12 @@ impl Gallery {
         }
 
         // Cache miss or invalid - read image dimensions
-        let dimensions = self.get_image_dimensions_fast(&full_path).await
-            .ok_or(GalleryError::ImageError(image::ImageError::Unsupported(
-                image::error::UnsupportedError::from(image::error::ImageFormatHint::Unknown)
-            )))?;
+        let dimensions =
+            self.get_image_dimensions_fast(&full_path)
+                .await
+                .ok_or(GalleryError::ImageError(image::ImageError::Unsupported(
+                    image::error::UnsupportedError::from(image::error::ImageFormatHint::Unknown),
+                )))?;
 
         let new_metadata = ImageMetadata {
             dimensions,
@@ -723,15 +741,17 @@ impl Gallery {
 
         for (relative_path, cached_metadata) in cache.iter() {
             let full_path = self.config.source_directory.join(relative_path);
-            
+
             // Check if file still exists and hasn't been modified
             match tokio::fs::metadata(&full_path).await {
                 Ok(metadata) => {
                     let current_modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
                     let current_size = metadata.len();
-                    
+
                     // Remove if file was modified or size changed
-                    if current_modified > cached_metadata.modified || current_size != cached_metadata.file_size {
+                    if current_modified > cached_metadata.modified
+                        || current_size != cached_metadata.file_size
+                    {
                         keys_to_remove.push(relative_path.clone());
                     }
                 }
@@ -749,7 +769,7 @@ impl Gallery {
         // Save the cleaned cache
         drop(cache);
         self.save_metadata_cache().await?;
-        
+
         Ok(())
     }
 
@@ -757,64 +777,229 @@ impl Gallery {
         let _ = self.save_metadata_cache().await;
     }
 
+    pub async fn refresh_metadata_cache(&self) -> Result<(usize, usize), GalleryError> {
+        use std::collections::HashSet;
+        use tokio::fs;
+
+        tracing::info!("Starting metadata cache refresh...");
+
+        let source_dir = &self.config.source_directory;
+        let mut discovered_paths = HashSet::new();
+        let mut added_count = 0;
+        let mut removed_count = 0;
+
+        // Recursively scan the gallery directory in blocking thread
+        let source_dir_clone = source_dir.clone();
+        let discovered_files = tokio::task::spawn_blocking(move || {
+            walkdir::WalkDir::new(&source_dir_clone)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|entry| {
+                    entry.file_type().is_file()
+                        && entry
+                            .path()
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .map(|ext| {
+                                matches!(
+                                    ext.to_ascii_lowercase().as_str(),
+                                    "jpg" | "jpeg" | "png" | "gif" | "webp"
+                                )
+                            })
+                            .unwrap_or(false)
+                })
+                .filter_map(|entry| {
+                    entry
+                        .path()
+                        .strip_prefix(&source_dir_clone)
+                        .ok()
+                        .map(|p| p.to_string_lossy().to_string())
+                })
+                .collect::<Vec<String>>()
+        })
+        .await
+        .map_err(|e| GalleryError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+        for relative_path_str in discovered_files {
+            discovered_paths.insert(relative_path_str.clone());
+
+            // Check if this image is already in cache with valid metadata
+            let full_path = source_dir.join(&relative_path_str);
+            let needs_update = {
+                let cache = self.metadata_cache.read().await;
+                if let Some(cached) = cache.get(&relative_path_str) {
+                    // Check if file has been modified since cache entry
+                    if let Ok(metadata) = fs::metadata(&full_path).await {
+                        if let Ok(modified) = metadata.modified() {
+                            modified > cached.modified
+                        } else {
+                            true // If we can't get modified time, update it
+                        }
+                    } else {
+                        true // If we can't get metadata, update it
+                    }
+                } else {
+                    true // Not in cache, need to add
+                }
+            };
+
+            if needs_update {
+                // Update metadata for this image
+                match self.get_image_metadata_cached(&relative_path_str).await {
+                    Ok(_) => {
+                        added_count += 1;
+                        tracing::debug!("Updated metadata for: {}", relative_path_str);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to update metadata for {}: {}",
+                            relative_path_str,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        // Remove cache entries for files that no longer exist
+        let mut cache = self.metadata_cache.write().await;
+        let cached_paths: Vec<String> = cache.keys().cloned().collect();
+
+        for cached_path in cached_paths {
+            if !discovered_paths.contains(&cached_path) {
+                cache.remove(&cached_path);
+                removed_count += 1;
+                tracing::debug!("Removed from cache: {}", cached_path);
+            }
+        }
+
+        drop(cache);
+
+        // Save the updated cache
+        if added_count > 0 || removed_count > 0 {
+            if let Err(e) = self.save_metadata_cache().await {
+                tracing::error!("Failed to save metadata cache: {}", e);
+            } else {
+                tracing::info!(
+                    "Metadata cache refresh complete: {} added, {} removed",
+                    added_count,
+                    removed_count
+                );
+            }
+        } else {
+            tracing::info!("Metadata cache refresh complete: no changes needed");
+        }
+
+        Ok((added_count, removed_count))
+    }
+
+    pub fn start_background_cache_refresh(gallery: SharedGallery, interval_minutes: u64) {
+        tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            // Skip the first tick (immediate execution)
+            interval.tick().await;
+
+            loop {
+                interval.tick().await;
+
+                match gallery.refresh_metadata_cache().await {
+                    Ok((added, removed)) => {
+                        if added > 0 || removed > 0 {
+                            tracing::info!(
+                                "Background cache refresh: {} images added, {} images removed",
+                                added,
+                                removed
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Background cache refresh failed: {}", e);
+                    }
+                }
+            }
+        });
+    }
+
     async fn get_image_dimensions_fast(&self, path: &PathBuf) -> Option<(u32, u32)> {
         let path = path.clone();
         tokio::task::spawn_blocking(move || -> Option<(u32, u32)> {
             use std::fs::File;
             use std::io::BufReader;
-            
+
             let file = File::open(&path).ok()?;
             let reader = BufReader::new(file);
-            
+
             // Use ImageReader to get dimensions without decoding the full image
-            let reader = image::ImageReader::new(reader)
-                .with_guessed_format()
-                .ok()?;
-                
+            let reader = image::ImageReader::new(reader).with_guessed_format().ok()?;
+
             if let Ok(dimensions) = reader.into_dimensions() {
                 Some(dimensions)
             } else {
                 None
             }
-        }).await.ok().flatten()
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     async fn build_breadcrumbs(&self, current_path: &str) -> Vec<liquid::model::Object> {
         let mut breadcrumbs = Vec::new();
-        
+
         // Add root breadcrumb
         let mut root_crumb = liquid::model::Object::new();
         root_crumb.insert("name".into(), liquid::model::Value::scalar("Gallery"));
-        root_crumb.insert("display_name".into(), liquid::model::Value::scalar("Gallery"));
+        root_crumb.insert(
+            "display_name".into(),
+            liquid::model::Value::scalar("Gallery"),
+        );
         root_crumb.insert("path".into(), liquid::model::Value::scalar(""));
-        root_crumb.insert("is_current".into(), liquid::model::Value::scalar(current_path.is_empty()));
+        root_crumb.insert(
+            "is_current".into(),
+            liquid::model::Value::scalar(current_path.is_empty()),
+        );
         breadcrumbs.push(root_crumb);
-        
+
         if !current_path.is_empty() {
             let path_parts: Vec<&str> = current_path.split('/').collect();
             let mut accumulated_path = String::new();
-            
+
             for (index, part) in path_parts.iter().enumerate() {
                 if !accumulated_path.is_empty() {
                     accumulated_path.push('/');
                 }
                 accumulated_path.push_str(part);
-                
+
                 let is_current = index == path_parts.len() - 1;
-                
+
                 // Get display name for this folder
                 let (display_name, _) = self.read_folder_metadata(&accumulated_path).await;
                 let display_name = display_name.unwrap_or_else(|| part.to_string());
-                
+
                 let mut crumb = liquid::model::Object::new();
-                crumb.insert("name".into(), liquid::model::Value::scalar(part.to_string()));
-                crumb.insert("display_name".into(), liquid::model::Value::scalar(display_name));
-                crumb.insert("path".into(), liquid::model::Value::scalar(accumulated_path.clone()));
-                crumb.insert("is_current".into(), liquid::model::Value::scalar(is_current));
+                crumb.insert(
+                    "name".into(),
+                    liquid::model::Value::scalar(part.to_string()),
+                );
+                crumb.insert(
+                    "display_name".into(),
+                    liquid::model::Value::scalar(display_name),
+                );
+                crumb.insert(
+                    "path".into(),
+                    liquid::model::Value::scalar(accumulated_path.clone()),
+                );
+                crumb.insert(
+                    "is_current".into(),
+                    liquid::model::Value::scalar(is_current),
+                );
                 breadcrumbs.push(crumb);
             }
         }
-        
+
         breadcrumbs
     }
 
@@ -852,7 +1037,10 @@ impl Gallery {
     ) -> Result<PathBuf, GalleryError> {
         let (width, height) = match size {
             "thumbnail" => (self.config.thumbnail.width, self.config.thumbnail.height),
-            "gallery" => (self.config.gallery_size.width, self.config.gallery_size.height),
+            "gallery" => (
+                self.config.gallery_size.width,
+                self.config.gallery_size.height,
+            ),
             "medium" => (self.config.medium.width, self.config.medium.height),
             "large" => (self.config.large.width, self.config.large.height),
             _ => return Err(GalleryError::InvalidPath),
@@ -894,9 +1082,11 @@ impl Gallery {
             // For production use, consider using a library like turbojpeg-sys or mozjpeg
             // that supports ICC profile embedding during encoding
             resized.save_with_format(&cache_path_clone, ImageFormat::Jpeg)?;
-            
+
             Ok(())
-        }).await.map_err(|e| GalleryError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+        })
+        .await
+        .map_err(|e| GalleryError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
 
         let mut cache = self.cache.write().await;
         cache.insert(
@@ -917,7 +1107,10 @@ impl Gallery {
         format!("{:x}", hasher.finalize())
     }
 
-    pub async fn get_gallery_preview(&self, max_items: usize) -> Result<Vec<GalleryItem>, GalleryError> {
+    pub async fn get_gallery_preview(
+        &self,
+        max_items: usize,
+    ) -> Result<Vec<GalleryItem>, GalleryError> {
         let mut all_items = Vec::new();
 
         // Recursively collect all folders and a sample of images
@@ -944,7 +1137,8 @@ impl Gallery {
         relative_path: &'a str,
         items: &'a mut Vec<GalleryItem>,
         max_per_folder: usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>>
+    {
         Box::pin(async move {
             let full_path = self.config.source_directory.join(relative_path);
 
@@ -1054,7 +1248,13 @@ impl Gallery {
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, content_type)
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
-            .header(header::ETAG, format!("\"{}\"", self.generate_cache_key(path.to_str().unwrap_or(""), "etag")))
+            .header(
+                header::ETAG,
+                format!(
+                    "\"{}\"",
+                    self.generate_cache_key(path.to_str().unwrap_or(""), "etag")
+                ),
+            )
             .body(body)
             .unwrap()
     }
@@ -1095,7 +1295,7 @@ pub async fn gallery_handler(
 
     // Get folder metadata for current directory
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
-    
+
     // Build breadcrumb data with proper display names
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
 
@@ -1104,7 +1304,8 @@ pub async fn gallery_handler(
         (total_images + gallery.config.images_per_page - 1) / gallery.config.images_per_page;
 
     // Serialize images to JSON string for client-side use
-    let images_json = serde_json::to_string(&images_with_layout).unwrap_or_else(|_| "[]".to_string());
+    let images_json =
+        serde_json::to_string(&images_with_layout).unwrap_or_else(|_| "[]".to_string());
 
     let globals = liquid::object!({
         "gallery_path": path,

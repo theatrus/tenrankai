@@ -63,7 +63,6 @@ impl TemplateEngine {
         Ok(content)
     }
 
-
     pub async fn render_with_gallery(
         &self,
         path: &str,
@@ -76,8 +75,9 @@ impl TemplateEngine {
         };
 
         let gallery_preview = gallery.get_gallery_preview(6).await.unwrap_or_default();
-        let gallery_preview_json = serde_json::to_string(&gallery_preview).unwrap_or_else(|_| "[]".to_string());
-        
+        let gallery_preview_json =
+            serde_json::to_string(&gallery_preview).unwrap_or_else(|_| "[]".to_string());
+
         let globals = liquid::object!({
             "gallery_preview": gallery_preview,
             "gallery_preview_json": gallery_preview_json,
@@ -117,8 +117,10 @@ impl TemplateEngine {
         let current_year = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() / (365 * 24 * 3600) + 1970;
-        
+            .as_secs()
+            / (365 * 24 * 3600)
+            + 1970;
+
         let footer_globals = liquid::object!({
             "current_year": current_year.to_string(),
         });
@@ -149,7 +151,8 @@ impl TemplateEngine {
             .map_err(|e| format!("Failed to parse template: {}", e))?;
 
         // Render the gallery preview component if gallery_preview data exists
-        let gallery_preview_rendered = if let Some(gallery_preview) = globals.get("gallery_preview") {
+        let gallery_preview_rendered = if let Some(gallery_preview) = globals.get("gallery_preview")
+        {
             let gallery_preview_template = self
                 .load_template("_gallery_preview.html.liquid")
                 .await
@@ -172,12 +175,15 @@ impl TemplateEngine {
                     "show_explore_link": true,
                 });
                 preview_globals.insert("gallery_preview".into(), gallery_preview.clone());
-                
+
                 // Add gallery_preview_json if it exists in the main globals
                 if let Some(json_value) = globals.get("gallery_preview_json") {
                     preview_globals.insert("gallery_preview_json".into(), json_value.clone());
                 } else {
-                    preview_globals.insert("gallery_preview_json".into(), liquid::model::Value::Scalar("[]".into()));
+                    preview_globals.insert(
+                        "gallery_preview_json".into(),
+                        liquid::model::Value::Scalar("[]".into()),
+                    );
                 }
 
                 preview_template
@@ -215,13 +221,11 @@ impl TemplateEngine {
             );
         }
 
-
         template
             .render(&full_globals)
             .map_err(|e| format!("Failed to render template: {}", e))
     }
 }
-
 
 #[axum::debug_handler]
 pub async fn template_with_gallery_handler(
@@ -229,5 +233,8 @@ pub async fn template_with_gallery_handler(
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let path = path.map(|p| p.0).unwrap_or_default();
-    app_state.template_engine.render_with_gallery(&path, &app_state.gallery).await
+    app_state
+        .template_engine
+        .render_with_gallery(&path, &app_state.gallery)
+        .await
 }

@@ -46,7 +46,9 @@ impl StaticFileHandler {
         // Add cache headers for static files (especially images)
         let cache_control = if content_type.starts_with("image/") {
             "public, max-age=31536000, immutable"
-        } else if content_type.starts_with("text/css") || content_type.starts_with("application/javascript") {
+        } else if content_type.starts_with("text/css")
+            || content_type.starts_with("application/javascript")
+        {
             "public, max-age=86400"
         } else {
             "public, max-age=3600"

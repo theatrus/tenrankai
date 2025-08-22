@@ -1,8 +1,8 @@
 use axum::{
     Router,
-    routing::{get, post},
-    extract::{State, Query, Path},
+    extract::{Path, Query, State},
     response::IntoResponse,
+    routing::{get, post},
 };
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -12,15 +12,18 @@ use std::sync::Arc;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
+mod favicon;
 mod gallery;
 mod static_files;
 mod templating;
-mod favicon;
 
+use favicon::{
+    FaviconRenderer, favicon_ico_handler, favicon_png_16_handler, favicon_png_32_handler,
+    favicon_png_48_handler,
+};
 use gallery::{Gallery, SharedGallery, gallery_handler, image_detail_handler, image_handler};
 use static_files::StaticFileHandler;
 use templating::{TemplateEngine, template_with_gallery_handler};
-use favicon::{FaviconRenderer, favicon_ico_handler, favicon_png_16_handler, favicon_png_32_handler, favicon_png_48_handler};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -88,6 +91,7 @@ pub struct GalleryConfig {
     medium: ImageSizeConfig,
     large: ImageSizeConfig,
     preview: PreviewConfig,
+    cache_refresh_interval_minutes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -125,15 +129,28 @@ impl Default for Config {
                 source_directory: PathBuf::from("photos"),
                 cache_directory: PathBuf::from("cache/photos"),
                 images_per_page: 20,
-                thumbnail: ImageSizeConfig { width: 300, height: 300 },
-                gallery_size: ImageSizeConfig { width: 800, height: 800 },
-                medium: ImageSizeConfig { width: 1200, height: 1200 },
-                large: ImageSizeConfig { width: 1600, height: 1600 },
-                preview: PreviewConfig { 
-                    max_images: 4, 
-                    max_depth: 3, 
-                    max_per_folder: 3 
+                thumbnail: ImageSizeConfig {
+                    width: 300,
+                    height: 300,
                 },
+                gallery_size: ImageSizeConfig {
+                    width: 800,
+                    height: 800,
+                },
+                medium: ImageSizeConfig {
+                    width: 1200,
+                    height: 1200,
+                },
+                large: ImageSizeConfig {
+                    width: 1600,
+                    height: 1600,
+                },
+                preview: PreviewConfig {
+                    max_images: 4,
+                    max_depth: 3,
+                    max_per_folder: 3,
+                },
+                cache_refresh_interval_minutes: Some(60), // Default to 1 hour
             },
         }
     }
@@ -189,6 +206,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let favicon_renderer = FaviconRenderer::new(config.static_files.directory);
     let gallery: SharedGallery = Arc::new(Gallery::new(config.gallery.clone()));
 
+    // Start background cache refresh if configured
+    if let Some(interval_minutes) = config.gallery.cache_refresh_interval_minutes {
+        if interval_minutes > 0 {
+            info!(
+                "Starting background metadata cache refresh every {} minutes",
+                interval_minutes
+            );
+            Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+        }
+    }
+
     // Clone gallery for shutdown handler before moving it into router state
     let gallery_for_shutdown = gallery.clone();
 
@@ -221,7 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    
+
     // Set up graceful shutdown
     let shutdown_signal = async move {
         let ctrl_c = async {
@@ -247,7 +275,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         info!("Received shutdown signal, saving cache...");
-        
+
         // Save metadata cache before shutting down
         gallery_for_shutdown.save_cache_on_shutdown().await;
         info!("Cache saved successfully");
@@ -276,10 +304,9 @@ async fn static_file_handler(
     app_state.static_handler.serve(&path).await
 }
 
-
 async fn robots_txt_handler() -> impl IntoResponse {
     use axum::http::header;
-    
+
     let robots_content = r#"User-agent: *
 Allow: /
 
@@ -300,7 +327,7 @@ Allow: /static/
             (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
             (header::CACHE_CONTROL, "public, max-age=86400"), // Cache for 24 hours
         ],
-        robots_content
+        robots_content,
     )
 }
 
@@ -308,10 +335,5 @@ async fn gallery_root_handler(
     State(app_state): State<AppState>,
     Query(query): Query<gallery::GalleryQuery>,
 ) -> impl IntoResponse {
-    gallery_handler(
-        State(app_state),
-        Path("".to_string()),
-        Query(query),
-    )
-    .await
+    gallery_handler(State(app_state), Path("".to_string()), Query(query)).await
 }
