@@ -66,6 +66,7 @@ pub struct GalleryItem {
     pub preview_images: Option<Vec<String>>,
     pub item_count: Option<usize>,
     pub dimensions: Option<(u32, u32)>,
+    pub capture_date: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -81,6 +82,7 @@ pub struct ImageInfo {
     pub location_info: Option<LocationInfo>,
     pub file_size: u64,
     pub dimensions: (u32, u32),
+    pub capture_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,6 +133,7 @@ struct ImageMetadata {
     dimensions: (u32, u32),
     file_size: u64,
     modified: SystemTime,
+    capture_date: Option<SystemTime>,
 }
 
 impl Gallery {
@@ -189,6 +192,7 @@ impl Gallery {
                     preview_images: Some(preview_images),
                     item_count: Some(item_count),
                     dimensions: None,
+                    capture_date: None,
                 });
             } else if self.is_image(&file_name) {
                 let thumbnail_url = format!(
@@ -196,6 +200,12 @@ impl Gallery {
                     self.config.path_prefix,
                     urlencoding::encode(&item_path)
                 );
+
+                // Get capture date from metadata cache if available
+                let capture_date = {
+                    let cache = self.metadata_cache.read().await;
+                    cache.get(&item_path).and_then(|m| m.capture_date)
+                };
 
                 items.push(GalleryItem {
                     name: file_name,
@@ -208,6 +218,7 @@ impl Gallery {
                     preview_images: None,
                     item_count: None,
                     dimensions: None, // Could add dimensions here too if needed
+                    capture_date,
                 });
             }
         }
@@ -222,8 +233,13 @@ impl Gallery {
                     let b_sort_name = b.display_name.as_ref().unwrap_or(&b.name);
                     a_sort_name.cmp(b_sort_name)
                 } else {
-                    // For files, continue sorting by name
-                    a.name.cmp(&b.name)
+                    // For files, sort by capture date first, then by name
+                    match (&a.capture_date, &b.capture_date) {
+                        (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => a.name.cmp(&b.name),
+                    }
                 }
             }
         });
@@ -395,6 +411,17 @@ impl Gallery {
 
         let encoded_path = urlencoding::encode(relative_path);
 
+        // Format capture date if available
+        let capture_date = cached_metadata.capture_date.and_then(|date| {
+            match date.duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => {
+                    let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(duration.as_secs() as i64, 0)?;
+                    Some(datetime.format("%B %d, %Y at %H:%M:%S").to_string())
+                }
+                Err(_) => None
+            }
+        });
+
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
                 .file_name()
@@ -420,6 +447,7 @@ impl Gallery {
             location_info,
             file_size,
             dimensions,
+            capture_date,
         })
     }
 
@@ -493,6 +521,52 @@ impl Gallery {
             }
             Err(_) => None,
         }
+    }
+
+    async fn extract_capture_date(&self, path: &PathBuf) -> Option<SystemTime> {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || -> Option<SystemTime> {
+            let file_contents = match std::fs::read(&path) {
+                Ok(contents) => contents,
+                Err(_) => return None,
+            };
+
+            let exif_data = match rexif::parse_buffer(&file_contents) {
+                Ok(data) => data,
+                Err(_) => return None,
+            };
+
+            // Look for DateTimeOriginal first, then DateTimeDigitized, then DateTime
+            // DateTimeOriginal is the actual capture time
+            // DateTime is often the file modification time
+            let tags_priority = [
+                rexif::ExifTag::DateTimeOriginal,
+                rexif::ExifTag::DateTimeDigitized,
+                rexif::ExifTag::DateTime,
+            ];
+
+            for tag in &tags_priority {
+                for entry in &exif_data.entries {
+                    if entry.tag == *tag {
+                        let date_str = entry.value_more_readable.to_string();
+                        
+                        // EXIF date format is "YYYY:MM:DD HH:MM:SS"
+                        if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(&date_str, "%Y:%m:%d %H:%M:%S") {
+                            use std::time::{Duration, UNIX_EPOCH};
+                            let timestamp = parsed.and_utc().timestamp();
+                            if timestamp > 0 {
+                                return Some(UNIX_EPOCH + Duration::from_secs(timestamp as u64));
+                            }
+                        }
+                    }
+                }
+            }
+
+            None
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     async fn extract_structured_exif_data(
@@ -724,10 +798,14 @@ impl Gallery {
                     image::error::UnsupportedError::from(image::error::ImageFormatHint::Unknown),
                 )))?;
 
+        // Extract capture date from EXIF
+        let capture_date = self.extract_capture_date(&full_path).await;
+
         let new_metadata = ImageMetadata {
             dimensions,
             file_size: current_size,
             modified: current_modified,
+            capture_date,
         };
 
         // Update cache
@@ -1194,6 +1272,7 @@ impl Gallery {
                             preview_images: Some(preview_images),
                             item_count: Some(item_count),
                             dimensions: None,
+                            capture_date: None,
                         });
 
                         // Recursively collect from subdirectories (limited depth)
@@ -1210,10 +1289,10 @@ impl Gallery {
                         urlencoding::encode(&item_path)
                     );
 
-                    // Get image dimensions from cache
-                    let dimensions = match self.get_image_metadata_cached(&item_path).await {
-                        Ok(metadata) => Some(metadata.dimensions),
-                        Err(_) => None,
+                    // Get image dimensions and capture date from cache
+                    let (dimensions, capture_date) = match self.get_image_metadata_cached(&item_path).await {
+                        Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
+                        Err(_) => (None, None),
                     };
 
                     folder_images.push(GalleryItem {
@@ -1227,6 +1306,7 @@ impl Gallery {
                         preview_images: None,
                         item_count: None,
                         dimensions,
+                        capture_date,
                     });
                 }
             }
@@ -1384,4 +1464,116 @@ pub async fn image_handler(
     Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {
     app_state.gallery.serve_image(&path, query.size).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{GalleryConfig, ImageSizeConfig, PreviewConfig};
+    use chrono::{Datelike, Timelike};
+    use std::path::PathBuf;
+    use std::time::UNIX_EPOCH;
+
+    #[tokio::test]
+    async fn test_extract_capture_date_with_valid_exif() {
+        // Create a test gallery instance
+        let config = GalleryConfig {
+            path_prefix: "gallery".to_string(),
+            source_directory: PathBuf::from("photos"),
+            cache_directory: PathBuf::from("cache/test"),
+            images_per_page: 20,
+            thumbnail: ImageSizeConfig { width: 300, height: 300 },
+            gallery_size: ImageSizeConfig { width: 800, height: 800 },
+            medium: ImageSizeConfig { width: 1200, height: 1200 },
+            large: ImageSizeConfig { width: 1600, height: 1600 },
+            preview: PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+        };
+        let gallery = Gallery::new(config);
+
+        // Test with the provided test image
+        let test_image_path = PathBuf::from("photos/landscapes/CRW_1978.jpg");
+        let capture_date = gallery.extract_capture_date(&test_image_path).await;
+
+        assert!(capture_date.is_some(), "Should extract capture date from CRW_1978.jpg");
+        
+        if let Some(date) = capture_date {
+            // Convert to timestamp for easier comparison
+            let timestamp = date.duration_since(UNIX_EPOCH).unwrap().as_secs();
+            
+            // The EXIF date from the image is 2005:07:30 07:22:46
+            // We expect this to be parsed as-is without timezone adjustment
+            let expected_datetime = chrono::NaiveDateTime::parse_from_str(
+                "2005-07-30 07:22:46", 
+                "%Y-%m-%d %H:%M:%S"
+            ).unwrap();
+            let expected_timestamp = expected_datetime.and_utc().timestamp() as u64;
+            
+            // Should match exactly
+            assert_eq!(
+                timestamp, expected_timestamp,
+                "Capture date should be 2005-07-30 07:22:46"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_extract_capture_date_with_no_exif() {
+        let config = GalleryConfig {
+            path_prefix: "gallery".to_string(),
+            source_directory: PathBuf::from("."),
+            cache_directory: PathBuf::from("cache/test"),
+            images_per_page: 20,
+            thumbnail: ImageSizeConfig { width: 300, height: 300 },
+            gallery_size: ImageSizeConfig { width: 800, height: 800 },
+            medium: ImageSizeConfig { width: 1200, height: 1200 },
+            large: ImageSizeConfig { width: 1600, height: 1600 },
+            preview: PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+        };
+        let gallery = Gallery::new(config);
+
+        // Test with a non-existent file
+        let test_image_path = PathBuf::from("non_existent_image.jpg");
+        let capture_date = gallery.extract_capture_date(&test_image_path).await;
+
+        assert!(capture_date.is_none(), "Should return None for non-existent file");
+    }
+
+    #[tokio::test]
+    async fn test_extract_capture_date_formats() {
+        // This test validates that the EXIF date format parsing works correctly
+        let date_str = "2005:07:30 07:22:46";
+        let parsed = chrono::NaiveDateTime::parse_from_str(date_str, "%Y:%m:%d %H:%M:%S");
+        
+        assert!(parsed.is_ok(), "Should parse EXIF date format");
+        
+        if let Ok(datetime) = parsed {
+            assert_eq!(datetime.year(), 2005);
+            assert_eq!(datetime.month(), 7);
+            assert_eq!(datetime.day(), 30);
+            assert_eq!(datetime.hour(), 7);
+            assert_eq!(datetime.minute(), 22);
+            assert_eq!(datetime.second(), 46);
+        }
+    }
+
+    #[test]
+    fn test_capture_date_formatting() {
+        // Test the formatting used in get_image_info
+        let timestamp = 1122719766u64; // Approximately 2005-07-30 10:36:06 UTC
+        let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0).unwrap();
+        let formatted = datetime.format("%B %d, %Y at %H:%M:%S").to_string();
+        
+        // The timestamp corresponds to this exact time
+        assert_eq!(formatted, "July 30, 2005 at 10:36:06");
+    }
 }

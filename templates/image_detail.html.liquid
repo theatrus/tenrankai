@@ -102,6 +102,11 @@
             <div class="image-metadata">
                 <h3>Image Information</h3>
                 <dl>
+                    {% if image.capture_date %}
+                        <dt>Capture Date</dt>
+                        <dd>{{ image.capture_date }}</dd>
+                    {% endif %}
+                    
                     <dt>Dimensions</dt>
                     <dd>{{ image.dimensions[0] }} × {{ image.dimensions[1] }} pixels</dd>
                     
