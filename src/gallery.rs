@@ -6,6 +6,7 @@ use axum::{
 };
 use image::{ImageFormat, imageops::FilterType};
 use pulldown_cmark::{Parser, html};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -193,27 +194,28 @@ impl Gallery {
     async fn get_directory_preview_images(&self, relative_path: &str) -> Vec<String> {
         let full_path = self.config.source_directory.join(relative_path);
         let mut preview_images = Vec::new();
-        
+
         // Get up to 4 images for preview
         const MAX_PREVIEW_IMAGES: usize = 4;
-        
+
         for entry in WalkDir::new(&full_path).min_depth(1).max_depth(3) {
             if preview_images.len() >= MAX_PREVIEW_IMAGES {
                 break;
             }
-            
+
             if let Ok(entry) = entry {
                 if entry.file_type().is_file() {
                     if let Some(name) = entry.file_name().to_str() {
                         if self.is_image(name) && !name.starts_with('.') {
                             // Calculate relative path from gallery source directory
-                            if let Ok(relative_to_source) = entry.path().strip_prefix(&self.config.source_directory) {
+                            if let Ok(relative_to_source) =
+                                entry.path().strip_prefix(&self.config.source_directory)
+                            {
                                 let path_string = relative_to_source.to_string_lossy().to_string();
                                 let encoded_path = urlencoding::encode(&path_string);
                                 let thumbnail_url = format!(
                                     "/{}/image/{}?size=thumbnail",
-                                    self.config.path_prefix,
-                                    encoded_path
+                                    self.config.path_prefix, encoded_path
                                 );
                                 preview_images.push(thumbnail_url);
                             }
@@ -222,7 +224,7 @@ impl Gallery {
                 }
             }
         }
-        
+
         preview_images
     }
 
@@ -260,25 +262,29 @@ impl Gallery {
         Ok(image_infos)
     }
 
-    pub async fn get_image_info_with_navigation(&self, relative_path: &str) -> Result<(ImageInfo, Option<NavigationImage>, Option<NavigationImage>), String> {
+    pub async fn get_image_info_with_navigation(
+        &self,
+        relative_path: &str,
+    ) -> Result<(ImageInfo, Option<NavigationImage>, Option<NavigationImage>), String> {
         let image_info = self.get_image_info(relative_path).await?;
-        
+
         // Get the directory containing this image
         let path = StdPath::new(relative_path);
-        let parent_dir = path.parent()
+        let parent_dir = path
+            .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
-        
+
         // Get all images in the same directory
         let items = self.scan_directory(&parent_dir).await?;
-        let images: Vec<_> = items.into_iter()
+        let images: Vec<_> = items
+            .into_iter()
             .filter(|item| !item.is_directory)
             .collect();
-        
+
         // Find current image index
-        let current_index = images.iter()
-            .position(|item| item.path == relative_path);
-        
+        let current_index = images.iter().position(|item| item.path == relative_path);
+
         let (prev_image, next_image) = if let Some(index) = current_index {
             let prev = if index > 0 {
                 let prev_item = &images[index - 1];
@@ -290,7 +296,7 @@ impl Gallery {
             } else {
                 None
             };
-            
+
             let next = if index + 1 < images.len() {
                 let next_item = &images[index + 1];
                 Some(NavigationImage {
@@ -301,12 +307,12 @@ impl Gallery {
             } else {
                 None
             };
-            
+
             (prev, next)
         } else {
             (None, None)
         };
-        
+
         Ok((image_info, prev_image, next_image))
     }
 
@@ -361,29 +367,33 @@ impl Gallery {
     }
 
     async fn read_folder_metadata(&self, folder_path: &str) -> (Option<String>, Option<String>) {
-        let folder_md_path = self.config.source_directory.join(folder_path).join("_folder.md");
-        
+        let folder_md_path = self
+            .config
+            .source_directory
+            .join(folder_path)
+            .join("_folder.md");
+
         match tokio::fs::read_to_string(&folder_md_path).await {
             Ok(content) => {
                 let mut title: Option<String> = None;
                 let mut description_content = String::new();
                 let mut found_title = false;
-                
+
                 for line in content.lines() {
                     let trimmed = line.trim();
-                    
+
                     // Look for the first title (# heading)
                     if !found_title && trimmed.starts_with("# ") {
                         title = Some(trimmed.trim_start_matches("# ").to_string());
                         found_title = true;
                         continue;
                     }
-                    
+
                     // Skip empty lines immediately after title
                     if found_title && trimmed.is_empty() && description_content.is_empty() {
                         continue;
                     }
-                    
+
                     // Collect description content (everything after the title)
                     if found_title {
                         if !description_content.is_empty() {
@@ -392,7 +402,7 @@ impl Gallery {
                         description_content.push_str(line);
                     }
                 }
-                
+
                 // Convert description markdown to HTML if there's content
                 let description = if description_content.trim().is_empty() {
                     None
@@ -402,9 +412,9 @@ impl Gallery {
                     html::push_html(&mut html_output, parser);
                     Some(html_output)
                 };
-                
+
                 (title, description)
-            },
+            }
             Err(_) => (None, None),
         }
     }
@@ -428,7 +438,10 @@ impl Gallery {
         }
     }
 
-    async fn extract_structured_exif_data(&self, path: &PathBuf) -> (Option<CameraInfo>, Option<LocationInfo>) {
+    async fn extract_structured_exif_data(
+        &self,
+        path: &PathBuf,
+    ) -> (Option<CameraInfo>, Option<LocationInfo>) {
         let file_contents = match std::fs::read(path) {
             Ok(contents) => contents,
             Err(_) => return (None, None),
@@ -498,10 +511,14 @@ impl Gallery {
         }
 
         // Clean up camera info
-        if camera_info.camera_make.is_none() && camera_info.camera_model.is_none() 
-            && camera_info.lens_model.is_none() && camera_info.iso.is_none() 
-            && camera_info.aperture.is_none() && camera_info.shutter_speed.is_none() 
-            && camera_info.focal_length.is_none() {
+        if camera_info.camera_make.is_none()
+            && camera_info.camera_model.is_none()
+            && camera_info.lens_model.is_none()
+            && camera_info.iso.is_none()
+            && camera_info.aperture.is_none()
+            && camera_info.shutter_speed.is_none()
+            && camera_info.focal_length.is_none()
+        {
             camera_info = CameraInfo {
                 camera_make: None,
                 camera_model: None,
@@ -521,7 +538,7 @@ impl Gallery {
                     lat = -lat;
                 }
             }
-            
+
             if let Some(ref lon_hemisphere) = lon_ref {
                 if lon_hemisphere.to_uppercase().starts_with('W') {
                     lon = -lon;
@@ -538,10 +555,14 @@ impl Gallery {
             None
         };
 
-        let final_camera_info = if camera_info.camera_make.is_some() || camera_info.camera_model.is_some() 
-            || camera_info.lens_model.is_some() || camera_info.iso.is_some() 
-            || camera_info.aperture.is_some() || camera_info.shutter_speed.is_some() 
-            || camera_info.focal_length.is_some() {
+        let final_camera_info = if camera_info.camera_make.is_some()
+            || camera_info.camera_model.is_some()
+            || camera_info.lens_model.is_some()
+            || camera_info.iso.is_some()
+            || camera_info.aperture.is_some()
+            || camera_info.shutter_speed.is_some()
+            || camera_info.focal_length.is_some()
+        {
             Some(camera_info)
         } else {
             None
@@ -554,14 +575,26 @@ impl Gallery {
         // Parse GPS coordinate in format like "40° 45' 30.00''"
         let parts: Vec<&str> = coord_str.split_whitespace().collect();
         if parts.len() >= 3 {
-            let degrees: f64 = parts[0].trim_end_matches('°').parse().map_err(|_| "Invalid degrees")?;
-            let minutes: f64 = parts[1].trim_end_matches('\'').parse().map_err(|_| "Invalid minutes")?;
-            let seconds: f64 = parts[2].trim_end_matches("''").trim_end_matches('\'').parse().map_err(|_| "Invalid seconds")?;
-            
+            let degrees: f64 = parts[0]
+                .trim_end_matches('°')
+                .parse()
+                .map_err(|_| "Invalid degrees")?;
+            let minutes: f64 = parts[1]
+                .trim_end_matches('\'')
+                .parse()
+                .map_err(|_| "Invalid minutes")?;
+            let seconds: f64 = parts[2]
+                .trim_end_matches("''")
+                .trim_end_matches('\'')
+                .parse()
+                .map_err(|_| "Invalid seconds")?;
+
             Ok(degrees + minutes / 60.0 + seconds / 3600.0)
         } else {
             // Try parsing as decimal
-            coord_str.parse::<f64>().map_err(|_| "Invalid coordinate format".to_string())
+            coord_str
+                .parse::<f64>()
+                .map_err(|_| "Invalid coordinate format".to_string())
         }
     }
 
@@ -667,6 +700,111 @@ impl Gallery {
         format!("{:x}", hasher.finalize())
     }
 
+    pub async fn get_gallery_preview(&self, max_items: usize) -> Result<Vec<GalleryItem>, String> {
+        let mut all_items = Vec::new();
+
+        // Recursively collect all folders and a sample of images
+        self.collect_items_recursive("", &mut all_items, max_items)
+            .await?;
+
+        // Shuffle and take a subset
+        let mut rng = rand::thread_rng();
+        all_items.shuffle(&mut rng);
+        all_items.truncate(max_items);
+
+        Ok(all_items)
+    }
+
+    fn collect_items_recursive<'a>(
+        &'a self,
+        relative_path: &'a str,
+        items: &'a mut Vec<GalleryItem>,
+        max_per_folder: usize,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + 'a>> {
+        Box::pin(async move {
+            let full_path = self.config.source_directory.join(relative_path);
+
+            if !full_path.starts_with(&self.config.source_directory) {
+                return Err("Invalid path".to_string());
+            }
+
+            let entries = tokio::fs::read_dir(&full_path)
+                .await
+                .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+            let mut entries = entries;
+            let mut folder_images = Vec::new();
+
+            while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+                let file_name = entry.file_name().to_string_lossy().to_string();
+
+                if file_name.starts_with('.') || file_name.ends_with(".md") {
+                    continue;
+                }
+
+                let metadata = entry.metadata().await.map_err(|e| e.to_string())?;
+                let is_directory = metadata.is_dir();
+
+                let item_path = if relative_path.is_empty() {
+                    file_name.clone()
+                } else {
+                    format!("{}/{}", relative_path, file_name)
+                };
+
+                if is_directory {
+                    let item_count = self.count_images_in_directory(&item_path).await;
+                    if item_count > 0 {
+                        let preview_images = self.get_directory_preview_images(&item_path).await;
+                        let (display_name, description) =
+                            self.read_folder_metadata(&item_path).await;
+                        items.push(GalleryItem {
+                            name: file_name,
+                            display_name,
+                            description,
+                            path: item_path.clone(),
+                            is_directory: true,
+                            thumbnail_url: preview_images.first().cloned(),
+                            preview_images: Some(preview_images),
+                            item_count: Some(item_count),
+                        });
+
+                        // Recursively collect from subdirectories (limited depth)
+                        if relative_path.split('/').count() < 2 {
+                            let _ = self
+                                .collect_items_recursive(&item_path, items, max_per_folder / 2)
+                                .await;
+                        }
+                    }
+                } else if self.is_image(&file_name) {
+                    let thumbnail_url = format!(
+                        "/{}/image/{}?size=gallery",
+                        self.config.path_prefix,
+                        urlencoding::encode(&item_path)
+                    );
+
+                    folder_images.push(GalleryItem {
+                        name: file_name,
+                        display_name: None,
+                        description: None,
+                        path: item_path,
+                        is_directory: false,
+                        thumbnail_url: Some(thumbnail_url),
+                        preview_images: None,
+                        item_count: None,
+                    });
+                }
+            }
+
+            // Add a random subset of images from this folder
+            let mut rng = rand::thread_rng();
+            folder_images.shuffle(&mut rng);
+            folder_images.truncate(max_per_folder.min(3)); // Max 3 images per folder
+            items.extend(folder_images);
+
+            Ok(())
+        })
+    }
+
     async fn serve_file(&self, path: &PathBuf) -> Response {
         let file = match tokio::fs::File::open(path).await {
             Ok(file) => file,
@@ -717,12 +855,17 @@ pub async fn gallery_handler(
         }
     };
 
+    // Get folder metadata for current directory
+    let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
+
     let total_images = items.iter().filter(|i| !i.is_directory).count();
     let total_pages =
         (total_images + gallery.config.images_per_page - 1) / gallery.config.images_per_page;
 
     let globals = liquid::object!({
         "gallery_path": path,
+        "folder_title": folder_title,
+        "folder_description": folder_description,
         "items": items,
         "images": images,
         "current_page": page,
@@ -753,13 +896,14 @@ pub async fn image_detail_handler(
     )>,
     Path(path): Path<String>,
 ) -> impl IntoResponse {
-    let (image_info, prev_image, next_image) = match gallery.get_image_info_with_navigation(&path).await {
-        Ok((info, prev, next)) => (info, prev, next),
-        Err(e) => {
-            error!("Failed to get image info: {}", e);
-            return (StatusCode::NOT_FOUND).into_response();
-        }
-    };
+    let (image_info, prev_image, next_image) =
+        match gallery.get_image_info_with_navigation(&path).await {
+            Ok((info, prev, next)) => (info, prev, next),
+            Err(e) => {
+                error!("Failed to get image info: {}", e);
+                return (StatusCode::NOT_FOUND).into_response();
+            }
+        };
 
     let globals = liquid::object!({
         "image": image_info,

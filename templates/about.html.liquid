@@ -1,25 +1,31 @@
 {{ header }}
 
 <div class="container">
-    <h2>About DynServer</h2>
-    <p>DynServer is a modern web server built with Rust, showcasing the power of server-side rendering with dynamic template reloading.</p>
+    <h2>About theatr.us</h2>
+    <p>A photography gallery showcasing professional work across multiple genres and subjects. Built with modern web technologies for optimal viewing and technical excellence.</p>
     
-    <h3>Key Technologies</h3>
+    <h3>Photography</h3>
+    <p>The gallery features carefully curated collections including:</p>
     <ul>
-        <li><strong>Rust</strong> - Systems programming language for safety and performance</li>
-        <li><strong>Axum</strong> - Ergonomic and modular web framework</li>
-        <li><strong>Liquid</strong> - Safe and flexible templating engine</li>
-        <li><strong>Tokio</strong> - Asynchronous runtime for Rust</li>
+        <li><strong>Portraits</strong> - Professional portrait sessions with natural and studio lighting</li>
+        <li><strong>Travel</strong> - Destinations and memorable moments from around the world</li>
+        <li><strong>Landscapes</strong> - Natural beauty captured with technical precision</li>
+        <li><strong>Urban</strong> - City life and architectural photography</li>
     </ul>
     
-    <h3>Architecture</h3>
-    <p>The server features a modular architecture with:</p>
+    <h3>Technical Excellence</h3>
+    <p>This gallery platform is built with:</p>
     <ul>
-        <li>Dynamic template loading with caching</li>
-        <li>Streaming static file serving</li>
-        <li>TOML-based configuration</li>
-        <li>Command-line argument parsing</li>
+        <li><strong>Rust & Axum</strong> - High-performance web server with safety guarantees</li>
+        <li><strong>Dynamic Image Processing</strong> - On-demand resizing with intelligent caching</li>
+        <li><strong>EXIF Preservation</strong> - Detailed technical information for each image</li>
+        <li><strong>Responsive Design</strong> - Optimized viewing across all devices</li>
     </ul>
+
+    <!-- Example of using the gallery preview component with custom parameters -->
+    <div style="margin-top: 3rem;">
+        {{ gallery_preview_component }}
+    </div>
 </div>
 
 {{ footer }}

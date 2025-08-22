@@ -1,0 +1,181 @@
+{% if gallery_preview.size > 0 %}
+    <section class="gallery-preview-component">
+        <h3>{{ preview_title | default: "Recent from the Gallery" }}</h3>
+        <div class="preview-grid">
+            {% for item in gallery_preview %}
+                {% if item.is_directory %}
+                    <a href="/gallery/{{ item.path }}" class="preview-item folder-preview-item">
+                        {% if item.thumbnail_url %}
+                            <div class="preview-image">
+                                <img src="{{ item.thumbnail_url }}" alt="{{ item.display_name | default: item.name }}" loading="lazy">
+                                <div class="folder-overlay">
+                                    <span class="folder-icon">📁</span>
+                                    <span class="image-count">{{ item.item_count }} images</span>
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="preview-image placeholder">
+                                <span class="folder-icon">📁</span>
+                                <span class="image-count">{{ item.item_count }} images</span>
+                            </div>
+                        {% endif %}
+                        <div class="preview-info">
+                            <h4>{{ item.display_name | default: item.name }}</h4>
+                            {% if item.description %}
+                                <p>{{ item.description | strip_html | truncate: 80 }}</p>
+                            {% endif %}
+                        </div>
+                    </a>
+                {% else %}
+                    <a href="/gallery/detail/{{ item.path }}" class="preview-item image-preview-item">
+                        <div class="preview-image">
+                            <img src="{{ item.thumbnail_url }}" alt="{{ item.name }}" loading="lazy">
+                        </div>
+                        <div class="preview-info">
+                            <h4>{{ item.name }}</h4>
+                        </div>
+                    </a>
+                {% endif %}
+            {% endfor %}
+        </div>
+        {% if show_explore_link != false %}
+            <div class="preview-footer">
+                <a href="/gallery" class="btn-explore">Explore Full Gallery →</a>
+            </div>
+        {% endif %}
+    </section>
+{% endif %}
+
+<style>
+.gallery-preview-component {
+    margin: 2rem 0;
+}
+
+.gallery-preview-component .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.gallery-preview-component .preview-item {
+    background: #404040;
+    border-radius: 8px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.3s, box-shadow 0.3s;
+    display: block;
+}
+
+.gallery-preview-component .preview-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.gallery-preview-component .preview-image {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+    background: #2a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gallery-preview-component .preview-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+}
+
+.gallery-preview-component .preview-item:hover .preview-image img {
+    transform: scale(1.05);
+}
+
+.gallery-preview-component .preview-image.placeholder {
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.gallery-preview-component .folder-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.8));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 1rem;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.gallery-preview-component .folder-preview-item:hover .folder-overlay {
+    opacity: 1;
+}
+
+.gallery-preview-component .folder-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.gallery-preview-component .image-count {
+    font-size: 0.875rem;
+    color: #ccc;
+}
+
+.gallery-preview-component .preview-info {
+    padding: 1rem;
+}
+
+.gallery-preview-component .preview-info h4 {
+    margin: 0 0 0.5rem 0;
+    color: #e0e0e0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.gallery-preview-component .preview-info p {
+    margin: 0;
+    color: #bbb;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.gallery-preview-component .preview-footer {
+    text-align: center;
+    margin-top: 2rem;
+}
+
+.gallery-preview-component .btn-explore {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: #555;
+    color: #e0e0e0;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: background 0.3s;
+}
+
+.gallery-preview-component .btn-explore:hover {
+    background: #666;
+}
+
+@media (max-width: 768px) {
+    .gallery-preview-component .preview-grid {
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+    
+    .gallery-preview-component .preview-image {
+        height: 180px;
+    }
+}
+</style>

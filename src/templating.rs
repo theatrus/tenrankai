@@ -1,4 +1,4 @@
-use crate::static_files::StaticFileHandler;
+use crate::{gallery::SharedGallery, static_files::StaticFileHandler};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -90,9 +90,19 @@ impl TemplateEngine {
             .parse(&template_content)
             .map_err(|e| format!("Failed to parse template: {}", e))?;
 
+        let gallery_preview_content = self
+            .load_template("_gallery_preview.html.liquid")
+            .await
+            .unwrap_or_else(|e| {
+                error!("Failed to load gallery preview: {}", e);
+                String::new()
+            });
+
         let globals = liquid::object!({
             "header": header_content,
             "footer": footer_content,
+            "gallery_preview_component": gallery_preview_content,
+            "gallery_preview": Vec::<liquid::model::Value>::new(),
         });
 
         template
@@ -108,6 +118,31 @@ impl TemplateEngine {
         };
 
         match self.render_with_includes(template_path).await {
+            Ok(html) => Ok(Html(html)),
+            Err(e) => {
+                error!("Template rendering error: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+
+    pub async fn render_with_gallery(
+        &self,
+        path: &str,
+        gallery: &SharedGallery,
+    ) -> Result<Html<String>, StatusCode> {
+        let template_path = if path.is_empty() || path == "/" {
+            "index.html.liquid"
+        } else {
+            &format!("{}.html.liquid", path.trim_start_matches('/'))
+        };
+
+        let gallery_preview = gallery.get_gallery_preview(6).await.unwrap_or_default();
+        let globals = liquid::object!({
+            "gallery_preview": gallery_preview,
+        });
+
+        match self.render_template(template_path, globals).await {
             Ok(html) => Ok(Html(html)),
             Err(e) => {
                 error!("Template rendering error: {}", e);
@@ -147,6 +182,14 @@ impl TemplateEngine {
             .parse(&template_content)
             .map_err(|e| format!("Failed to parse template: {}", e))?;
 
+        let gallery_preview_content = self
+            .load_template("_gallery_preview.html.liquid")
+            .await
+            .unwrap_or_else(|e| {
+                error!("Failed to load gallery preview: {}", e);
+                String::new()
+            });
+
         let mut full_globals = globals;
         full_globals.insert(
             "header".into(),
@@ -156,6 +199,18 @@ impl TemplateEngine {
             "footer".into(),
             liquid::model::Value::Scalar(footer_content.into()),
         );
+        full_globals.insert(
+            "gallery_preview_component".into(),
+            liquid::model::Value::Scalar(gallery_preview_content.into()),
+        );
+
+        // Ensure gallery_preview exists with default empty array if not provided
+        if !full_globals.contains_key("gallery_preview") {
+            full_globals.insert(
+                "gallery_preview".into(),
+                liquid::model::Value::Array(Vec::new()),
+            );
+        }
 
         template
             .render(&full_globals)

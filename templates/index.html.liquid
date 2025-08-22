@@ -1,33 +1,45 @@
 {{ header }}
 
-<div class="container">
-    <h2>Welcome to DynServer!</h2>
-    <p>This is a dynamic server built with Rust, featuring:</p>
-    <ul>
-        <li>Server-side templating with Liquid</li>
-        <li>Dynamic template reloading</li>
-        <li>Static file serving</li>
-        <li>Configuration via TOML files</li>
-        <li>Command-line argument parsing with Clap</li>
-    </ul>
+<div class="container home-container">
+    <h2>Welcome to theatr.us</h2>
+    <p>A curated photo gallery featuring portraits, landscapes, and travel photography.</p>
     
-    <section class="features">
-        <h3>Features</h3>
+    <!-- Gallery preview will be available when component data is loaded -->
+    {% if gallery_preview.size > 0 %}
+        {{ gallery_preview_component }}
+    {% endif %}
+    
+    <section class="about-section">
+        <h3>About</h3>
+        <p>This gallery showcases a collection of photography work spanning multiple years and subjects. Each image tells a story, captured with attention to composition, lighting, and technical excellence.</p>
+        
         <div class="feature-grid">
             <div class="feature">
-                <h4>Fast Performance</h4>
-                <p>Built with Rust and Axum for blazing fast performance.</p>
+                <h4>Professional Quality</h4>
+                <p>High-resolution images with detailed EXIF data and technical information.</p>
             </div>
             <div class="feature">
-                <h4>Flexible Templating</h4>
-                <p>Liquid templates with automatic reloading during development.</p>
+                <h4>Organized Collections</h4>
+                <p>Carefully curated folders with descriptions and context for each series.</p>
             </div>
             <div class="feature">
-                <h4>Easy Configuration</h4>
-                <p>Simple TOML configuration with command-line overrides.</p>
+                <h4>Technical Excellence</h4>
+                <p>Built with modern web technologies for fast loading and responsive design.</p>
             </div>
         </div>
     </section>
 </div>
+
+<style>
+.home-container {
+    max-width: 1200px;
+}
+
+.about-section {
+    margin-top: 4rem;
+    padding-top: 3rem;
+    border-top: 1px solid #404040;
+}
+</style>
 
 {{ footer }}
