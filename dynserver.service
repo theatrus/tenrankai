@@ -16,22 +16,6 @@ RestartSec=5
 TimeoutStopSec=20
 KillMode=mixed
 
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/dynserver /var/log/dynserver /tmp
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-RestrictRealtime=true
-RestrictNamespaces=true
-LockPersonality=true
-MemoryDenyWriteExecute=true
-RemoveIPC=true
-
 # Resource limits
 LimitNOFILE=65536
 LimitNPROC=4096

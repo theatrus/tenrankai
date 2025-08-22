@@ -36,16 +36,23 @@
     
     function calculatePreviewColumnWidth() {
         const viewportWidth = window.innerWidth;
-        const containerWidth = Math.min(viewportWidth, 1200);
+        const previewGrid = document.getElementById('gallery-preview-grid');
+        
+        // Get the actual container width from the DOM
+        const containerRect = previewGrid.getBoundingClientRect();
+        const containerWidth = containerRect.width || Math.min(viewportWidth, 1200);
         
         // iOS-specific viewport handling
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
         const gap = 24; // 1.5rem
         
         if (viewportWidth <= 768) {
-            // Mobile: single column with minimal padding
-            const mobilePadding = isIOS ? 16 : 20; // Much less padding for mobile
-            return containerWidth - mobilePadding;
+            // Mobile: single column centered with balanced width
+            // Use actual container width to account for any padding/margins
+            const horizontalPadding = 32; // 1rem on each side
+            const availableWidth = Math.min(viewportWidth - (horizontalPadding*1.45), containerWidth);
+            // Use 85% of available width for better balance
+            return Math.floor(availableWidth);
         } else {
             // Desktop: two columns
             const desktopPadding = isIOS ? 32 : 40;
