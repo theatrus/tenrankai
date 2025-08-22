@@ -1,0 +1,520 @@
+{{ header }}
+
+<div class="container image-detail-container">
+    <div class="breadcrumb">
+        <a href="/gallery">Gallery</a>
+        {% assign path_parts = image.path | split: "/" %}
+        {% assign current_path = "" %}
+        {% for part in path_parts %}
+            {% if forloop.last %}
+                <span class="separator">›</span>
+                <span class="current">{{ part }}</span>
+            {% else %}
+                {% if current_path == "" %}
+                    {% assign current_path = part %}
+                {% else %}
+                    {% assign current_path = current_path | append: "/" | append: part %}
+                {% endif %}
+                <span class="separator">›</span>
+                <a href="/gallery/{{ current_path }}">{{ part }}</a>
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    <div class="image-detail-content">
+        <div class="image-main">
+            <div class="image-container">
+                <img src="{{ image.medium_url }}" alt="{{ image.name }}" id="main-image">
+                
+                <!-- Navigation arrows -->
+                <div class="carousel-nav">
+                    {% if prev_image %}
+                        <a href="/gallery/detail/{{ prev_image.path }}" class="nav-arrow nav-prev" title="Previous: {{ prev_image.name }}">
+                            <div class="nav-arrow-content">
+                                <img src="{{ prev_image.thumbnail_url }}" alt="{{ prev_image.name }}" class="nav-preview">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon">
+                                    <polyline points="15,18 9,12 15,6"></polyline>
+                                </svg>
+                            </div>
+                        </a>
+                    {% endif %}
+                    
+                    {% if next_image %}
+                        <a href="/gallery/detail/{{ next_image.path }}" class="nav-arrow nav-next" title="Next: {{ next_image.name }}">
+                            <div class="nav-arrow-content">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon">
+                                    <polyline points="9,6 15,12 9,18"></polyline>
+                                </svg>
+                                <img src="{{ next_image.thumbnail_url }}" alt="{{ next_image.name }}" class="nav-preview">
+                            </div>
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="image-controls">
+                <div class="control-buttons">
+                    <a href="{{ image.url }}" target="_blank" class="btn">View Full Size</a>
+                    <a href="{{ image.url }}" download="{{ image.name }}" class="btn">Download</a>
+                </div>
+                {% if prev_image or next_image %}
+                    <div class="nav-info">
+                        {% if prev_image and next_image %}
+                            <span class="nav-hint">Use ← → keys or arrows to navigate</span>
+                        {% elsif prev_image %}
+                            <span class="nav-hint">Use ← key or arrow to go back</span>
+                        {% elsif next_image %}
+                            <span class="nav-hint">Use → key or arrow to go forward</span>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="image-info">
+            <h2>{{ image.name }}</h2>
+            
+            {% if image.description %}
+                <div class="image-description">
+                    <h3>Description</h3>
+                    {{ image.description }}
+                </div>
+            {% endif %}
+            
+            <div class="image-metadata">
+                <h3>Image Information</h3>
+                <dl>
+                    <dt>Dimensions</dt>
+                    <dd>{{ image.dimensions[0] }} × {{ image.dimensions[1] }} pixels</dd>
+                    
+                    <dt>File Size</dt>
+                    <dd>{{ image.file_size | divided_by: 1024 | divided_by: 1024 | round: 2 }} MB</dd>
+                </dl>
+            </div>
+            
+            {% if image.camera_info %}
+                <div class="camera-info">
+                    <h3>Camera Information</h3>
+                    <dl>
+                        {% if image.camera_info.camera_make or image.camera_info.camera_model %}
+                            <dt>Camera</dt>
+                            <dd>
+                                {% if image.camera_info.camera_make %}{{ image.camera_info.camera_make }}{% endif %}
+                                {% if image.camera_info.camera_make and image.camera_info.camera_model %} {% endif %}
+                                {% if image.camera_info.camera_model %}{{ image.camera_info.camera_model }}{% endif %}
+                            </dd>
+                        {% endif %}
+                        
+                        {% if image.camera_info.lens_model %}
+                            <dt>Lens</dt>
+                            <dd>{{ image.camera_info.lens_model }}</dd>
+                        {% endif %}
+                        
+                        {% if image.camera_info.focal_length %}
+                            <dt>Focal Length</dt>
+                            <dd>{{ image.camera_info.focal_length }}</dd>
+                        {% endif %}
+                        
+                        {% if image.camera_info.aperture %}
+                            <dt>Aperture</dt>
+                            <dd>{{ image.camera_info.aperture }}</dd>
+                        {% endif %}
+                        
+                        {% if image.camera_info.shutter_speed %}
+                            <dt>Shutter Speed</dt>
+                            <dd>{{ image.camera_info.shutter_speed }}</dd>
+                        {% endif %}
+                        
+                        {% if image.camera_info.iso %}
+                            <dt>ISO</dt>
+                            <dd>{{ image.camera_info.iso }}</dd>
+                        {% endif %}
+                    </dl>
+                </div>
+            {% endif %}
+            
+            {% if image.location_info %}
+                <div class="location-info">
+                    <h3>Location</h3>
+                    <div class="location-content">
+                        <div class="coordinates">
+                            <span class="coord-label">Coordinates:</span>
+                            <span class="coordinates-text">{{ image.location_info.latitude | round: 6 }}, {{ image.location_info.longitude | round: 6 }}</span>
+                        </div>
+                        
+                        <div class="map-links">
+                            <a href="{{ image.location_info.google_maps_url }}" target="_blank" class="map-link google-maps">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M21,3V5H19V3H21M19,7H21V9H19V7M19,11H21V13H19V11M19,15H21V17H19V15M19,19H21V21H19V19M17,21V19H15V21H17M13,21V19H11V21H13M9,21V19H7V21H9M5,21V19H3V21H5M3,17V15H5V17H3M3,13V11H5V13H3M3,9V7H5V9H3M3,5V3H5V5H3M7,5V3H9V5H7M11,5V3H13V5H11M15,5V3H17V5H15"/>
+                                </svg>
+                                Google Maps
+                            </a>
+                            <a href="{{ image.location_info.apple_maps_url }}" target="_blank" class="map-link apple-maps">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z"/>
+                                </svg>
+                                Apple Maps
+                            </a>
+                        </div>
+                        
+                        <div class="embedded-map">
+                            <iframe 
+                                src="https://www.openstreetmap.org/export/embed.html?bbox={{ image.location_info.longitude | minus: 0.01 }}%2C{{ image.location_info.latitude | minus: 0.01 }}%2C{{ image.location_info.longitude | plus: 0.01 }}%2C{{ image.location_info.latitude | plus: 0.01 }}&layer=mapnik&marker={{ image.location_info.latitude }}%2C{{ image.location_info.longitude }}"
+                                width="100%"
+                                height="200"
+                                frameborder="0"
+                                loading="lazy">
+                            </iframe>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+.image-detail-container {
+    max-width: 1400px;
+}
+
+.breadcrumb {
+    margin-bottom: 2rem;
+    font-size: 0.875rem;
+}
+
+.breadcrumb a {
+    color: #2c3e50;
+    text-decoration: none;
+}
+
+.breadcrumb a:hover {
+    text-decoration: underline;
+}
+
+.breadcrumb .separator {
+    margin: 0 0.5rem;
+    color: #999;
+}
+
+.breadcrumb .current {
+    color: #666;
+}
+
+.image-detail-content {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 3rem;
+    align-items: start;
+}
+
+@media (max-width: 1200px) {
+    .image-detail-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+.image-main {
+    text-align: center;
+}
+
+.image-container {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.image-container img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    display: block;
+}
+
+.carousel-nav {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1rem;
+    pointer-events: none;
+}
+
+.nav-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+    height: 80px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    opacity: 0;
+    pointer-events: auto;
+    backdrop-filter: blur(8px);
+    padding: 8px;
+}
+
+.image-container:hover .nav-arrow {
+    opacity: 1;
+}
+
+.nav-arrow:hover {
+    background: rgba(0, 0, 0, 0.95);
+    transform: scale(1.05);
+    color: white;
+}
+
+.nav-arrow-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-direction: row;
+}
+
+.nav-prev .nav-arrow-content {
+    flex-direction: row;
+}
+
+.nav-next .nav-arrow-content {
+    flex-direction: row-reverse;
+}
+
+.nav-preview {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.nav-icon {
+    flex-shrink: 0;
+}
+
+.nav-prev {
+    align-self: center;
+}
+
+.nav-next {
+    align-self: center;
+}
+
+.image-controls {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 1rem;
+}
+
+.nav-info {
+    margin-top: 0.5rem;
+}
+
+.nav-hint {
+    font-size: 0.875rem;
+    color: #666;
+    font-style: italic;
+}
+
+.btn {
+    padding: 0.5rem 1.5rem;
+    background: #2c3e50;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background 0.3s;
+}
+
+.btn:hover {
+    background: #34495e;
+}
+
+.image-info h2 {
+    margin-top: 0;
+    color: #2c3e50;
+}
+
+.image-description,
+.image-metadata,
+.camera-info,
+.location-info {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.image-description h3,
+.image-metadata h3,
+.camera-info h3,
+.location-info h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: #2c3e50;
+    font-size: 1.1rem;
+}
+
+dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 0.5rem 1rem;
+}
+
+dt {
+    font-weight: 600;
+    color: #666;
+    font-size: 0.875rem;
+}
+
+dd {
+    margin: 0;
+    color: #333;
+    word-break: break-word;
+}
+
+.location-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.coordinates {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 0.9rem;
+}
+
+.coord-label {
+    font-weight: 600;
+    color: #666;
+}
+
+.coordinates-text {
+    background: #e9ecef;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.map-links {
+    display: flex;
+    gap: 1rem;
+}
+
+.map-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    text-decoration: none;
+    color: #333;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.map-link:hover {
+    background: #f8f9fa;
+    border-color: #007bff;
+    color: #007bff;
+}
+
+.google-maps:hover {
+    border-color: #4285f4;
+    color: #4285f4;
+}
+
+.apple-maps:hover {
+    border-color: #007aff;
+    color: #007aff;
+}
+
+.embedded-map {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+}
+
+.embedded-map iframe {
+    display: block;
+    border: none;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const mainImage = document.getElementById('main-image');
+    
+    mainImage.addEventListener('click', function() {
+        window.open(this.src.replace('?size=medium', ''), '_blank');
+    });
+    
+    mainImage.style.cursor = 'pointer';
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        {% if prev_image %}
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            window.location.href = '/gallery/detail/{{ prev_image.path }}';
+        }
+        {% endif %}
+        
+        {% if next_image %}
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            window.location.href = '/gallery/detail/{{ next_image.path }}';
+        }
+        {% endif %}
+        
+        // ESC to go back to gallery
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            {% assign path_parts = image.path | split: "/" %}
+            {% assign gallery_path = "" %}
+            {% for part in path_parts %}
+                {% unless forloop.last %}
+                    {% if gallery_path == "" %}
+                        {% assign gallery_path = part %}
+                    {% else %}
+                        {% assign gallery_path = gallery_path | append: "/" | append: part %}
+                    {% endif %}
+                {% endunless %}
+            {% endfor %}
+            window.location.href = '/gallery/{{ gallery_path }}';
+        }
+    });
+    
+    // Preload adjacent images for faster navigation
+    {% if prev_image %}
+    const prevImg = new Image();
+    prevImg.src = '/gallery/image/{{ prev_image.path }}?size=medium';
+    {% endif %}
+    
+    {% if next_image %}
+    const nextImg = new Image();
+    nextImg.src = '/gallery/image/{{ next_image.path }}?size=medium';
+    {% endif %}
+});
+</script>
+
+{{ footer }}

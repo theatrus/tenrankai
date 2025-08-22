@@ -27,6 +27,7 @@ pub struct GalleryItem {
     pub path: String,
     pub is_directory: bool,
     pub thumbnail_url: Option<String>,
+    pub preview_images: Option<Vec<String>>,
     pub item_count: Option<usize>,
 }
 
@@ -38,9 +39,36 @@ pub struct ImageInfo {
     pub thumbnail_url: String,
     pub medium_url: String,
     pub description: Option<String>,
-    pub exif_data: Option<HashMap<String, String>>,
+    pub camera_info: Option<CameraInfo>,
+    pub location_info: Option<LocationInfo>,
     pub file_size: u64,
     pub dimensions: (u32, u32),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CameraInfo {
+    pub camera_make: Option<String>,
+    pub camera_model: Option<String>,
+    pub lens_model: Option<String>,
+    pub iso: Option<String>,
+    pub aperture: Option<String>,
+    pub shutter_speed: Option<String>,
+    pub focal_length: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocationInfo {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub google_maps_url: String,
+    pub apple_maps_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NavigationImage {
+    pub path: String,
+    pub name: String,
+    pub thumbnail_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,11 +127,13 @@ impl Gallery {
 
             if is_directory {
                 let item_count = self.count_images_in_directory(&item_path).await;
+                let preview_images = self.get_directory_preview_images(&item_path).await;
                 items.push(GalleryItem {
                     name: file_name,
                     path: item_path,
                     is_directory: true,
                     thumbnail_url: None,
+                    preview_images: Some(preview_images),
                     item_count: Some(item_count),
                 });
             } else if self.is_image(&file_name) {
@@ -118,6 +148,7 @@ impl Gallery {
                     path: item_path,
                     is_directory: false,
                     thumbnail_url: Some(thumbnail_url),
+                    preview_images: None,
                     item_count: None,
                 });
             }
@@ -149,6 +180,42 @@ impl Gallery {
         }
 
         count
+    }
+
+    async fn get_directory_preview_images(&self, relative_path: &str) -> Vec<String> {
+        let full_path = self.config.source_directory.join(relative_path);
+        let mut preview_images = Vec::new();
+        
+        // Get up to 4 images for preview
+        const MAX_PREVIEW_IMAGES: usize = 4;
+        
+        for entry in WalkDir::new(&full_path).min_depth(1).max_depth(3) {
+            if preview_images.len() >= MAX_PREVIEW_IMAGES {
+                break;
+            }
+            
+            if let Ok(entry) = entry {
+                if entry.file_type().is_file() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if self.is_image(name) && !name.starts_with('.') {
+                            // Calculate relative path from gallery source directory
+                            if let Ok(relative_to_source) = entry.path().strip_prefix(&self.config.source_directory) {
+                                let path_string = relative_to_source.to_string_lossy().to_string();
+                                let encoded_path = urlencoding::encode(&path_string);
+                                let thumbnail_url = format!(
+                                    "/{}/image/{}?size=thumbnail",
+                                    self.config.path_prefix,
+                                    encoded_path
+                                );
+                                preview_images.push(thumbnail_url);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        preview_images
     }
 
     fn is_image(&self, filename: &str) -> bool {
@@ -185,6 +252,56 @@ impl Gallery {
         Ok(image_infos)
     }
 
+    pub async fn get_image_info_with_navigation(&self, relative_path: &str) -> Result<(ImageInfo, Option<NavigationImage>, Option<NavigationImage>), String> {
+        let image_info = self.get_image_info(relative_path).await?;
+        
+        // Get the directory containing this image
+        let path = StdPath::new(relative_path);
+        let parent_dir = path.parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        
+        // Get all images in the same directory
+        let items = self.scan_directory(&parent_dir).await?;
+        let images: Vec<_> = items.into_iter()
+            .filter(|item| !item.is_directory)
+            .collect();
+        
+        // Find current image index
+        let current_index = images.iter()
+            .position(|item| item.path == relative_path);
+        
+        let (prev_image, next_image) = if let Some(index) = current_index {
+            let prev = if index > 0 {
+                let prev_item = &images[index - 1];
+                Some(NavigationImage {
+                    path: prev_item.path.clone(),
+                    name: prev_item.name.clone(),
+                    thumbnail_url: prev_item.thumbnail_url.clone().unwrap_or_default(),
+                })
+            } else {
+                None
+            };
+            
+            let next = if index + 1 < images.len() {
+                let next_item = &images[index + 1];
+                Some(NavigationImage {
+                    path: next_item.path.clone(),
+                    name: next_item.name.clone(),
+                    thumbnail_url: next_item.thumbnail_url.clone().unwrap_or_default(),
+                })
+            } else {
+                None
+            };
+            
+            (prev, next)
+        } else {
+            (None, None)
+        };
+        
+        Ok((image_info, prev_image, next_image))
+    }
+
     pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, String> {
         let full_path = self.config.source_directory.join(relative_path);
 
@@ -203,7 +320,7 @@ impl Gallery {
         let dimensions = (img.width(), img.height());
 
         let description = self.read_sidecar_markdown(relative_path).await;
-        let exif_data = self.extract_exif_data(&full_path).await;
+        let (camera_info, location_info) = self.extract_structured_exif_data(&full_path).await;
 
         let encoded_path = urlencoding::encode(relative_path);
 
@@ -224,7 +341,8 @@ impl Gallery {
                 self.config.path_prefix, encoded_path
             ),
             description,
-            exif_data,
+            camera_info,
+            location_info,
             file_size,
             dimensions,
         })
@@ -249,22 +367,140 @@ impl Gallery {
         }
     }
 
-    async fn extract_exif_data(&self, path: &PathBuf) -> Option<HashMap<String, String>> {
-        let file_contents = std::fs::read(path).ok()?;
+    async fn extract_structured_exif_data(&self, path: &PathBuf) -> (Option<CameraInfo>, Option<LocationInfo>) {
+        let file_contents = match std::fs::read(path) {
+            Ok(contents) => contents,
+            Err(_) => return (None, None),
+        };
 
-        match rexif::parse_buffer(&file_contents) {
-            Ok(exif_data) => {
-                let mut data = HashMap::new();
+        let exif_data = match rexif::parse_buffer(&file_contents) {
+            Ok(data) => data,
+            Err(_) => return (None, None),
+        };
 
-                for entry in &exif_data.entries {
-                    let name = format!("{:?}", entry.tag);
-                    let value = format!("{}", entry.value_more_readable);
-                    data.insert(name, value);
+        let mut camera_info = CameraInfo {
+            camera_make: None,
+            camera_model: None,
+            lens_model: None,
+            iso: None,
+            aperture: None,
+            shutter_speed: None,
+            focal_length: None,
+        };
+
+        let mut latitude: Option<f64> = None;
+        let mut longitude: Option<f64> = None;
+        let mut lat_ref: Option<String> = None;
+        let mut lon_ref: Option<String> = None;
+
+        for entry in &exif_data.entries {
+            match entry.tag {
+                rexif::ExifTag::Make => {
+                    camera_info.camera_make = Some(entry.value_more_readable.to_string());
                 }
-
-                Some(data)
+                rexif::ExifTag::Model => {
+                    camera_info.camera_model = Some(entry.value_more_readable.to_string());
+                }
+                rexif::ExifTag::LensModel => {
+                    camera_info.lens_model = Some(entry.value_more_readable.to_string());
+                }
+                rexif::ExifTag::ISOSpeedRatings => {
+                    camera_info.iso = Some(format!("ISO {}", entry.value_more_readable));
+                }
+                rexif::ExifTag::FNumber => {
+                    camera_info.aperture = Some(format!("f/{}", entry.value_more_readable));
+                }
+                rexif::ExifTag::ExposureTime => {
+                    camera_info.shutter_speed = Some(format!("{}s", entry.value_more_readable));
+                }
+                rexif::ExifTag::FocalLength => {
+                    camera_info.focal_length = Some(format!("{}mm", entry.value_more_readable));
+                }
+                rexif::ExifTag::GPSLatitude => {
+                    if let Ok(lat) = self.parse_gps_coordinate(&entry.value_more_readable) {
+                        latitude = Some(lat);
+                    }
+                }
+                rexif::ExifTag::GPSLongitude => {
+                    if let Ok(lon) = self.parse_gps_coordinate(&entry.value_more_readable) {
+                        longitude = Some(lon);
+                    }
+                }
+                rexif::ExifTag::GPSLatitudeRef => {
+                    lat_ref = Some(entry.value_more_readable.to_string());
+                }
+                rexif::ExifTag::GPSLongitudeRef => {
+                    lon_ref = Some(entry.value_more_readable.to_string());
+                }
+                _ => {}
             }
-            Err(_) => None,
+        }
+
+        // Clean up camera info
+        if camera_info.camera_make.is_none() && camera_info.camera_model.is_none() 
+            && camera_info.lens_model.is_none() && camera_info.iso.is_none() 
+            && camera_info.aperture.is_none() && camera_info.shutter_speed.is_none() 
+            && camera_info.focal_length.is_none() {
+            camera_info = CameraInfo {
+                camera_make: None,
+                camera_model: None,
+                lens_model: None,
+                iso: None,
+                aperture: None,
+                shutter_speed: None,
+                focal_length: None,
+            };
+        }
+
+        // Process GPS coordinates
+        let location_info = if let (Some(mut lat), Some(mut lon)) = (latitude, longitude) {
+            // Apply hemisphere references
+            if let Some(ref lat_hemisphere) = lat_ref {
+                if lat_hemisphere.to_uppercase().starts_with('S') {
+                    lat = -lat;
+                }
+            }
+            
+            if let Some(ref lon_hemisphere) = lon_ref {
+                if lon_hemisphere.to_uppercase().starts_with('W') {
+                    lon = -lon;
+                }
+            }
+
+            Some(LocationInfo {
+                latitude: lat,
+                longitude: lon,
+                google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
+                apple_maps_url: format!("http://maps.apple.com/?ll={},{}", lat, lon),
+            })
+        } else {
+            None
+        };
+
+        let final_camera_info = if camera_info.camera_make.is_some() || camera_info.camera_model.is_some() 
+            || camera_info.lens_model.is_some() || camera_info.iso.is_some() 
+            || camera_info.aperture.is_some() || camera_info.shutter_speed.is_some() 
+            || camera_info.focal_length.is_some() {
+            Some(camera_info)
+        } else {
+            None
+        };
+
+        (final_camera_info, location_info)
+    }
+
+    fn parse_gps_coordinate(&self, coord_str: &str) -> Result<f64, String> {
+        // Parse GPS coordinate in format like "40° 45' 30.00''"
+        let parts: Vec<&str> = coord_str.split_whitespace().collect();
+        if parts.len() >= 3 {
+            let degrees: f64 = parts[0].trim_end_matches('°').parse().map_err(|_| "Invalid degrees")?;
+            let minutes: f64 = parts[1].trim_end_matches('\'').parse().map_err(|_| "Invalid minutes")?;
+            let seconds: f64 = parts[2].trim_end_matches("''").trim_end_matches('\'').parse().map_err(|_| "Invalid seconds")?;
+            
+            Ok(degrees + minutes / 60.0 + seconds / 3600.0)
+        } else {
+            // Try parsing as decimal
+            coord_str.parse::<f64>().map_err(|_| "Invalid coordinate format".to_string())
         }
     }
 
@@ -455,8 +691,8 @@ pub async fn image_detail_handler(
     )>,
     Path(path): Path<String>,
 ) -> impl IntoResponse {
-    let image_info = match gallery.get_image_info(&path).await {
-        Ok(info) => info,
+    let (image_info, prev_image, next_image) = match gallery.get_image_info_with_navigation(&path).await {
+        Ok((info, prev, next)) => (info, prev, next),
         Err(e) => {
             error!("Failed to get image info: {}", e);
             return (StatusCode::NOT_FOUND).into_response();
@@ -465,6 +701,8 @@ pub async fn image_detail_handler(
 
     let globals = liquid::object!({
         "image": image_info,
+        "prev_image": prev_image,
+        "next_image": next_image,
     });
 
     match template_engine

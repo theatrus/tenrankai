@@ -14,6 +14,6 @@ directory = "static"
 
 [gallery]
 path_prefix = "gallery"
-source_directory = "photos"
+source_directory = "/Users/atrus/Dropbox/Artwork/synced-images"
 cache_directory = "cache/photos"
 images_per_page = 20
