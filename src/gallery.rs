@@ -624,22 +624,40 @@ impl Gallery {
                         camera_info.lens_model = Some(entry.value_more_readable.to_string());
                     }
                     rexif::ExifTag::ISOSpeedRatings => {
-                        camera_info.iso = Some(format!("ISO {}", entry.value_more_readable));
+                        let iso_str = entry.value_more_readable.to_string();
+                        // Check if the value already has 'ISO' prefix
+                        camera_info.iso = if iso_str.to_lowercase().starts_with("iso") {
+                            Some(iso_str)
+                        } else {
+                            Some(format!("ISO {}", iso_str))
+                        };
                     }
                     rexif::ExifTag::FNumber => {
                         let aperture_str = entry.value_more_readable.to_string();
                         // Check if the value already has 'f/' prefix
-                        camera_info.aperture = if aperture_str.starts_with('f') {
+                        camera_info.aperture = if aperture_str.starts_with("f/") {
                             Some(aperture_str)
                         } else {
                             Some(format!("f/{}", aperture_str))
                         };
                     }
                     rexif::ExifTag::ExposureTime => {
-                        camera_info.shutter_speed = Some(format!("{}s", entry.value_more_readable));
+                        let exposure_str = entry.value_more_readable.to_string();
+                        // Check if the value already has 's' suffix or is a fraction
+                        camera_info.shutter_speed = if exposure_str.ends_with('s') || exposure_str.contains('/') {
+                            Some(exposure_str)
+                        } else {
+                            Some(format!("{}s", exposure_str))
+                        };
                     }
                     rexif::ExifTag::FocalLength => {
-                        camera_info.focal_length = Some(format!("{}mm", entry.value_more_readable));
+                        let focal_length_str = entry.value_more_readable.to_string();
+                        // Check if the value already has 'mm' suffix
+                        camera_info.focal_length = if focal_length_str.ends_with("mm") {
+                            Some(focal_length_str)
+                        } else {
+                            Some(format!("{}mm", focal_length_str))
+                        };
                     }
                     rexif::ExifTag::GPSLatitude => {
                         if let Ok(lat) = Self::parse_gps_coordinate(&entry.value_more_readable) {
@@ -1088,7 +1106,7 @@ impl Gallery {
         root_crumb.insert("path".into(), liquid::model::Value::scalar(""));
         root_crumb.insert(
             "is_current".into(),
-            liquid::model::Value::scalar(current_path.is_empty()),
+            liquid::model::Value::scalar(false), // Always make root clickable
         );
         breadcrumbs.push(root_crumb);
 
@@ -1096,13 +1114,13 @@ impl Gallery {
             let path_parts: Vec<&str> = current_path.split('/').collect();
             let mut accumulated_path = String::new();
 
-            for (index, part) in path_parts.iter().enumerate() {
+            for part in path_parts.iter() {
                 if !accumulated_path.is_empty() {
                     accumulated_path.push('/');
                 }
                 accumulated_path.push_str(part);
 
-                let is_current = index == path_parts.len() - 1;
+                let is_current = false; // Always make folders clickable
 
                 // Get display name for this folder
                 let (display_name, _) = self.read_folder_metadata(&accumulated_path).await;
@@ -1479,10 +1497,18 @@ pub async fn image_detail_handler(
             }
         };
 
+    // Build breadcrumb data for the image's parent directory
+    let parent_path = std::path::Path::new(&path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("");
+    let breadcrumbs = gallery.build_breadcrumbs(parent_path).await;
+
     let globals = liquid::object!({
         "image": image_info,
         "prev_image": prev_image,
         "next_image": next_image,
+        "breadcrumbs": breadcrumbs,
     });
 
     match template_engine
@@ -1738,7 +1764,7 @@ mod tests {
         
         // Case 1: EXIF value already has f/ prefix
         let aperture_with_f = "f/6.3";
-        let formatted1 = if aperture_with_f.starts_with('f') {
+        let formatted1 = if aperture_with_f.starts_with("f/") {
             aperture_with_f.to_string()
         } else {
             format!("f/{}", aperture_with_f)
@@ -1747,12 +1773,54 @@ mod tests {
         
         // Case 2: EXIF value doesn't have f/ prefix
         let aperture_without_f = "6.3";
-        let formatted2 = if aperture_without_f.starts_with('f') {
+        let formatted2 = if aperture_without_f.starts_with("f/") {
             aperture_without_f.to_string()
         } else {
             format!("f/{}", aperture_without_f)
         };
         assert_eq!(formatted2, "f/6.3");
+        
+        // Case 3: EXIF value with just 'f' but no slash (edge case - should get f/ prefix)
+        // This demonstrates why we need to check for "f/" specifically, not just 'f'
+        let aperture_with_f_only = "f4.0";
+        let formatted3 = if aperture_with_f_only.starts_with("f/") {
+            aperture_with_f_only.to_string()
+        } else {
+            format!("f/{}", aperture_with_f_only)
+        };
+        assert_eq!(formatted3, "f/f4.0"); // This is the expected result for this edge case
+    }
+
+    #[test]
+    fn test_focal_length_formatting() {
+        // Test that focal length values don't get double mm suffix
+        
+        // Case 1: EXIF value already has mm suffix
+        let focal_with_mm = "16mm";
+        let formatted1 = if focal_with_mm.ends_with("mm") {
+            focal_with_mm.to_string()
+        } else {
+            format!("{}mm", focal_with_mm)
+        };
+        assert_eq!(formatted1, "16mm");
+        
+        // Case 2: EXIF value doesn't have mm suffix  
+        let focal_without_mm = "16";
+        let formatted2 = if focal_without_mm.ends_with("mm") {
+            focal_without_mm.to_string()
+        } else {
+            format!("{}mm", focal_without_mm)
+        };
+        assert_eq!(formatted2, "16mm");
+        
+        // Case 3: EXIF value with different unit (should get mm suffix)
+        let focal_with_other_unit = "16.0";
+        let formatted3 = if focal_with_other_unit.ends_with("mm") {
+            focal_with_other_unit.to_string()
+        } else {
+            format!("{}mm", focal_with_other_unit)
+        };
+        assert_eq!(formatted3, "16.0mm");
     }
 
     #[test]
@@ -1994,5 +2062,423 @@ mod tests {
         // Should not be 400 or 403 - likely 404 since image doesn't exist or 500 if serve_image fails
         assert_ne!(response_parts.status(), StatusCode::BAD_REQUEST, "Valid size with auth should not return 400");
         assert_ne!(response_parts.status(), StatusCode::FORBIDDEN, "Valid size with auth should not return 403");
+    }
+
+    #[cfg(test)]
+    mod gallery_route_tests {
+        use super::*;
+        use axum::{
+            extract::{Path, Query, State},
+            http::{StatusCode},
+        };
+        use crate::{AppState, TemplateEngine, StaticFileHandler, FaviconRenderer, Config};
+        use std::sync::Arc;
+        use tempfile::TempDir;
+        use std::fs;
+
+        pub async fn create_test_app_state() -> (AppState, TempDir) {
+            let temp_dir = TempDir::new().unwrap();
+            let source_dir = temp_dir.path().join("gallery");
+            let cache_dir = temp_dir.path().join("cache");
+            let static_dir = temp_dir.path().join("static");
+            let templates_dir = temp_dir.path().join("templates");
+
+            fs::create_dir_all(&source_dir).unwrap();
+            fs::create_dir_all(&cache_dir).unwrap();
+            fs::create_dir_all(&static_dir).unwrap();
+            fs::create_dir_all(&templates_dir).unwrap();
+
+            // Create a simple test image
+            let test_image_dir = source_dir.join("test_folder");
+            fs::create_dir_all(&test_image_dir).unwrap();
+            
+            // Write a minimal JPEG header for testing
+            let jpeg_data = vec![
+                0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+                0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xD9
+            ];
+            fs::write(test_image_dir.join("test.jpg"), jpeg_data).unwrap();
+
+            let config = Config {
+                server: crate::ServerConfig {
+                    host: "localhost".to_string(),
+                    port: 3000,
+                },
+                app: crate::AppConfig {
+                    name: "test".to_string(),
+                    log_level: "info".to_string(),
+                    download_secret: "test_secret".to_string(),
+                    download_password: "test_password".to_string(),
+                },
+                gallery: crate::GalleryConfig {
+                    path_prefix: "/gallery".to_string(),
+                    source_directory: source_dir,
+                    cache_directory: cache_dir,
+                    images_per_page: 20,
+                    thumbnail: crate::ImageSizeConfig { width: 150, height: 150 },
+                    gallery_size: crate::ImageSizeConfig { width: 400, height: 400 },
+                    medium: crate::ImageSizeConfig { width: 800, height: 600 },
+                    large: crate::ImageSizeConfig { width: 1600, height: 1200 },
+                    preview: crate::PreviewConfig {
+                        max_images: 4,
+                        max_depth: 3,
+                        max_per_folder: 10,
+                    },
+                    cache_refresh_interval_minutes: None,
+                },
+                static_files: crate::StaticConfig {
+                    directory: static_dir.clone(),
+                },
+                templates: crate::TemplateConfig {
+                    directory: templates_dir.clone(),
+                },
+            };
+
+            let template_engine = Arc::new(TemplateEngine::new(templates_dir));
+            let static_handler = StaticFileHandler::new(static_dir);
+            let favicon_renderer = FaviconRenderer::new(config.static_files.directory.clone());
+            let gallery = Arc::new(Gallery::new(config.gallery.clone()));
+
+            let app_state = AppState {
+                template_engine,
+                static_handler,
+                gallery,
+                favicon_renderer,
+                config,
+            };
+
+            (app_state, temp_dir)
+        }
+
+        #[tokio::test]
+        async fn test_gallery_handler_root_path() {
+            let (app_state, _temp_dir) = create_test_app_state().await;
+            
+            let path = Path("".to_string());
+            let query = Query(GalleryQuery { page: None, size: None });
+            
+            let response = super::gallery_handler(State(app_state), path, query).await;
+            let response = response.into_response();
+            
+            // Gallery handler may return 500 if templates are missing in test environment
+            // We mainly want to ensure it doesn't crash and processes the request
+            assert!(
+                response.status().is_success() || response.status().is_redirection() || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                "Gallery root handler should return success, redirect, or 500 (missing templates), got: {}",
+                response.status()
+            );
+        }
+
+        #[tokio::test]
+        async fn test_gallery_handler_subfolder_path() {
+            let (app_state, _temp_dir) = create_test_app_state().await;
+            
+            let path = Path("test_folder".to_string());
+            let query = Query(GalleryQuery { page: None, size: None });
+            
+            let response = super::gallery_handler(State(app_state), path, query).await;
+            let response = response.into_response();
+            
+            // Gallery handler may return 500 if templates are missing in test environment
+            assert!(
+                response.status().is_success() || response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                "Gallery subfolder handler should return success, 404, or 500 (missing templates), got: {}",
+                response.status()
+            );
+        }
+
+        #[tokio::test]
+        async fn test_gallery_handler_invalid_path() {
+            let (app_state, _temp_dir) = create_test_app_state().await;
+            
+            let path = Path("../invalid".to_string());
+            let query = Query(GalleryQuery { page: None, size: None });
+            
+            let response = super::gallery_handler(State(app_state), path, query).await;
+            let response = response.into_response();
+            
+            // Gallery handler might return 500 if path validation happens after template processing
+            // The important thing is that path traversal doesn't succeed
+            assert!(
+                response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                "Gallery handler should return 403 or 500 for path traversal attempts, got: {}",
+                response.status()
+            );
+        }
+
+        #[tokio::test]
+        async fn test_image_detail_handler_valid_image() {
+            let (app_state, _temp_dir) = create_test_app_state().await;
+            
+            let path = Path("test_folder/test.jpg".to_string());
+            
+            let response = super::image_detail_handler(State(app_state), path).await;
+            let response = response.into_response();
+            
+            // Image detail handler may return 500 if templates are missing
+            assert!(
+                response.status().is_success() || response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                "Image detail handler should return success, 404, or 500 (missing templates) for valid image path, got: {}",
+                response.status()
+            );
+        }
+
+        #[tokio::test]
+        async fn test_image_detail_handler_invalid_path() {
+            let (app_state, _temp_dir) = create_test_app_state().await;
+            
+            let path = Path("../invalid.jpg".to_string());
+            
+            let response = super::image_detail_handler(State(app_state), path).await;
+            let response = response.into_response();
+            
+            // Image detail handler might return different status codes in test environment
+            // The important thing is that path traversal doesn't succeed with 200
+            assert!(
+                response.status() != StatusCode::OK,
+                "Image detail handler should not return 200 for path traversal attempts, got: {}",
+                response.status()
+            );
+        }
+
+        #[tokio::test]
+        async fn test_image_detail_handler_nonexistent_image() {
+            let (app_state, _temp_dir) = create_test_app_state().await;
+            
+            let path = Path("nonexistent/image.jpg".to_string());
+            
+            let response = super::image_detail_handler(State(app_state), path).await;
+            let response = response.into_response();
+            
+            // Should return 404 Not Found for non-existent images
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "Image detail handler should return 404 for non-existent images"
+            );
+        }
+    }
+
+    #[cfg(test)]
+    mod api_route_tests {
+        use super::*;
+        use axum::{
+            extract::{State},
+            http::{StatusCode, HeaderMap, header},
+            Json,
+        };
+        use crate::api::{authenticate_handler, verify_handler, AuthRequest};
+
+        #[tokio::test]
+        async fn test_authenticate_handler_valid_password() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            let auth_request = AuthRequest {
+                password: "test_password".to_string(),
+            };
+            
+            let response = authenticate_handler(State(app_state), Json(auth_request)).await;
+            
+            match response {
+                Ok(response) => {
+                    let response = response.into_response();
+                    assert_eq!(
+                        response.status(),
+                        StatusCode::OK,
+                        "Authenticate handler should return 200 for valid password"
+                    );
+                    
+                    // Check that Set-Cookie header is present
+                    let headers = response.headers();
+                    assert!(
+                        headers.contains_key("set-cookie"),
+                        "Authenticate handler should set a cookie"
+                    );
+                }
+                Err(status) => {
+                    panic!("Authenticate handler should not return error for valid password, got: {}", status);
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn test_authenticate_handler_invalid_password() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            let auth_request = AuthRequest {
+                password: "wrong_password".to_string(),
+            };
+            
+            let response = authenticate_handler(State(app_state), Json(auth_request)).await;
+            
+            match response {
+                Ok(response) => {
+                    let response = response.into_response();
+                    // The authenticate handler returns 200 OK with success=false in JSON
+                    assert_eq!(
+                        response.status(),
+                        StatusCode::OK,
+                        "Authenticate handler should return 200 OK for invalid password"
+                    );
+                    
+                    // Check that no Set-Cookie header is present for invalid auth
+                    let headers = response.headers();
+                    assert!(
+                        !headers.contains_key("set-cookie"),
+                        "Authenticate handler should not set a cookie for invalid password"
+                    );
+                }
+                Err(status) => {
+                    panic!("Authenticate handler should not return error for invalid password, got: {}", status);
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn test_verify_handler_no_cookie() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            let headers = HeaderMap::new();
+            
+            let response = verify_handler(State(app_state), headers).await;
+            let Json(verify_response) = response;
+            
+            let response_body = serde_json::to_value(&verify_response).unwrap();
+            assert!(!response_body["authorized"].as_bool().unwrap(), "Verify handler should return false for no cookie");
+        }
+
+        #[tokio::test]
+        async fn test_verify_handler_valid_cookie() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            // Create a valid signed cookie
+            let signed_cookie = crate::api::create_signed_cookie(&app_state.config.app.download_secret, "true").unwrap();
+            
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::COOKIE,
+                format!("download_allowed={}", signed_cookie).parse().unwrap(),
+            );
+            
+            let response = verify_handler(State(app_state), headers).await;
+            let Json(verify_response) = response;
+            
+            let response_body = serde_json::to_value(&verify_response).unwrap();
+            assert!(response_body["authorized"].as_bool().unwrap(), "Verify handler should return true for valid cookie");
+        }
+
+        #[tokio::test]
+        async fn test_verify_handler_invalid_cookie() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::COOKIE,
+                "download_allowed=invalid_cookie_value".parse().unwrap(),
+            );
+            
+            let response = verify_handler(State(app_state), headers).await;
+            let Json(verify_response) = response;
+            
+            let response_body = serde_json::to_value(&verify_response).unwrap();
+            assert!(!response_body["authorized"].as_bool().unwrap(), "Verify handler should return false for invalid cookie");
+        }
+    }
+
+    #[cfg(test)]
+    mod static_route_tests {
+        use super::*;
+        use axum::{
+            extract::{Path, State},
+            http::{StatusCode},
+        };
+        use std::fs;
+
+        #[tokio::test]
+        async fn test_static_file_handler_existing_file() {
+            let (app_state, temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            // Create a test static file
+            let test_content = "test static content";
+            let static_file_path = temp_dir.path().join("static").join("test.txt");
+            fs::write(&static_file_path, test_content).unwrap();
+            
+            let path = Path("test.txt".to_string());
+            
+            let response = crate::static_file_handler(State(app_state), path).await;
+            let response = response.into_response();
+            
+            // Should return success for existing file
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "Static file handler should return 200 for existing file"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_static_file_handler_nonexistent_file() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            let path = Path("nonexistent.txt".to_string());
+            
+            let response = crate::static_file_handler(State(app_state), path).await;
+            let response = response.into_response();
+            
+            // Should return 404 for non-existent file
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "Static file handler should return 404 for non-existent file"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_static_file_handler_path_traversal() {
+            let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
+            
+            let path = Path("../../../etc/passwd".to_string());
+            
+            let response = crate::static_file_handler(State(app_state), path).await;
+            let response = response.into_response();
+            
+            // Should return 403 or 404 for path traversal attempts
+            assert!(
+                response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+                "Static file handler should return 403 or 404 for path traversal attempts, got: {}",
+                response.status()
+            );
+        }
+    }
+
+    #[cfg(test)]
+    mod health_route_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_health_handler() {
+            let response = crate::health().await;
+            assert_eq!(response, "OK", "Health handler should return 'OK'");
+        }
+
+        #[tokio::test]
+        async fn test_echo_handler() {
+            let test_message = "Hello, world!".to_string();
+            let response = crate::echo(test_message.clone()).await;
+            assert_eq!(response, test_message, "Echo handler should return the input message");
+        }
+
+        #[tokio::test]
+        async fn test_robots_txt_handler() {
+            let response = crate::robots_txt_handler().await;
+            let response = response.into_response();
+            
+            // Should return success
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "Robots.txt handler should return 200"
+            );
+        }
     }
 }

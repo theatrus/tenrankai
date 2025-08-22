@@ -12,7 +12,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Deserialize)]
 pub struct AuthRequest {
-    password: String,
+    pub password: String,
 }
 
 #[derive(Serialize)]

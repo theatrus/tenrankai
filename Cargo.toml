@@ -30,3 +30,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 urlencoding = "2.1"
 walkdir = "2.5"
+
+[dev-dependencies]
+tempfile = "3.8"
