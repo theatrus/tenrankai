@@ -206,6 +206,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let favicon_renderer = FaviconRenderer::new(config.static_files.directory);
     let gallery: SharedGallery = Arc::new(Gallery::new(config.gallery.clone()));
 
+    // Initialize gallery and check for version changes
+    if let Err(e) = gallery.initialize_and_check_version().await {
+        tracing::warn!("Failed to initialize gallery metadata cache: {}", e);
+    }
+
     // Start background cache refresh if configured
     if let Some(interval_minutes) = config.gallery.cache_refresh_interval_minutes {
         if interval_minutes > 0 {

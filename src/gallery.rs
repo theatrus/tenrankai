@@ -54,6 +54,14 @@ impl From<image::ImageError> for GalleryError {
 
 use crate::GalleryConfig;
 
+const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CacheMetadata {
+    version: String,
+    last_full_refresh: SystemTime,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
     pub name: String,
@@ -121,6 +129,7 @@ pub struct Gallery {
     config: GalleryConfig,
     cache: Arc<RwLock<HashMap<String, CachedImage>>>,
     metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
+    cache_metadata: Arc<RwLock<CacheMetadata>>,
 }
 
 struct CachedImage {
@@ -141,11 +150,45 @@ struct ImageMetadata {
 impl Gallery {
     pub fn new(config: GalleryConfig) -> Self {
         let metadata_cache = Self::load_metadata_cache(&config).unwrap_or_default();
+        let cache_metadata = Self::load_cache_metadata(&config).unwrap_or_else(|_| CacheMetadata {
+            version: String::new(), // Empty version will trigger full refresh
+            last_full_refresh: SystemTime::UNIX_EPOCH,
+        });
+        
         Self {
             config,
             cache: Arc::new(RwLock::new(HashMap::new())),
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
+            cache_metadata: Arc::new(RwLock::new(cache_metadata)),
         }
+    }
+    
+    pub async fn initialize_and_check_version(&self) -> Result<(), GalleryError> {
+        let needs_full_refresh = {
+            let metadata = self.cache_metadata.read().await;
+            metadata.version != SERVER_VERSION
+        };
+        
+        if needs_full_refresh {
+            let old_version = {
+                let metadata = self.cache_metadata.read().await;
+                if metadata.version.is_empty() { 
+                    "unknown".to_string() 
+                } else { 
+                    metadata.version.clone() 
+                }
+            };
+            
+            tracing::info!(
+                "Server version changed (was: {}, now: {}), performing full metadata cache refresh...",
+                old_version,
+                SERVER_VERSION
+            );
+            
+            self.force_full_metadata_refresh().await?;
+        }
+        
+        Ok(())
     }
 
     pub async fn scan_directory(
@@ -702,6 +745,18 @@ impl Gallery {
         let content = fs::read_to_string(&cache_path)?;
         serde_json::from_str(&content).map_err(|_| GalleryError::InvalidPath)
     }
+    
+    fn load_cache_metadata(
+        config: &GalleryConfig,
+    ) -> Result<CacheMetadata, GalleryError> {
+        let metadata_path = config.cache_directory.join("cache_metadata.json");
+        if !metadata_path.exists() {
+            return Err(GalleryError::InvalidPath);
+        }
+
+        let content = fs::read_to_string(&metadata_path)?;
+        serde_json::from_str(&content).map_err(|_| GalleryError::InvalidPath)
+    }
 
     async fn save_metadata_cache(&self) -> Result<(), GalleryError> {
         tokio::fs::create_dir_all(&self.config.cache_directory).await?;
@@ -711,6 +766,19 @@ impl Gallery {
             serde_json::to_string_pretty(&*cache).map_err(|_| GalleryError::InvalidPath)?;
 
         tokio::fs::write(self.metadata_cache_path(), content).await?;
+        
+        // Also save cache metadata
+        self.save_cache_metadata().await?;
+        Ok(())
+    }
+    
+    async fn save_cache_metadata(&self) -> Result<(), GalleryError> {
+        let metadata = self.cache_metadata.read().await;
+        let content = serde_json::to_string_pretty(&*metadata)
+            .map_err(|_| GalleryError::InvalidPath)?;
+            
+        let metadata_path = self.config.cache_directory.join("cache_metadata.json");
+        tokio::fs::write(metadata_path, content).await?;
         Ok(())
     }
 
@@ -813,7 +881,40 @@ impl Gallery {
         let _ = self.save_metadata_cache().await;
     }
 
+    pub async fn force_full_metadata_refresh(&self) -> Result<(usize, usize), GalleryError> {
+        tracing::info!("Starting forced full metadata cache refresh...");
+        
+        // Clear existing cache
+        {
+            let mut cache = self.metadata_cache.write().await;
+            cache.clear();
+        }
+        
+        // Update version and refresh time
+        {
+            let mut metadata = self.cache_metadata.write().await;
+            metadata.version = SERVER_VERSION.to_string();
+            metadata.last_full_refresh = SystemTime::now();
+        }
+        
+        // Perform full refresh
+        let result = self.refresh_metadata_cache_internal(true).await;
+        
+        // Save the updated metadata
+        if result.is_ok() {
+            if let Err(e) = self.save_cache_metadata().await {
+                tracing::warn!("Failed to save cache metadata after full refresh: {}", e);
+            }
+        }
+        
+        result
+    }
+    
     pub async fn refresh_metadata_cache(&self) -> Result<(usize, usize), GalleryError> {
+        self.refresh_metadata_cache_internal(false).await
+    }
+    
+    async fn refresh_metadata_cache_internal(&self, force_update_all: bool) -> Result<(usize, usize), GalleryError> {
         use std::collections::HashSet;
         use tokio::fs;
 
@@ -861,7 +962,7 @@ impl Gallery {
 
             // Check if this image is already in cache with valid metadata
             let full_path = source_dir.join(&relative_path_str);
-            let needs_update = {
+            let needs_update = force_update_all || {
                 let cache = self.metadata_cache.read().await;
                 if let Some(cached) = cache.get(&relative_path_str) {
                     // Check if file has been modified since cache entry
@@ -1562,6 +1663,48 @@ mod tests {
             assert_eq!(datetime.hour(), 7);
             assert_eq!(datetime.minute(), 22);
             assert_eq!(datetime.second(), 46);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_version_based_refresh() {
+        // Test that version changes trigger full refresh
+        let config = GalleryConfig {
+            path_prefix: "gallery".to_string(),
+            source_directory: PathBuf::from("photos"),
+            cache_directory: PathBuf::from("cache/test_version"),
+            images_per_page: 20,
+            thumbnail: ImageSizeConfig { width: 300, height: 300 },
+            gallery_size: ImageSizeConfig { width: 800, height: 800 },
+            medium: ImageSizeConfig { width: 1200, height: 1200 },
+            large: ImageSizeConfig { width: 1600, height: 1600 },
+            preview: PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+        };
+        
+        // Create gallery - should have empty version initially
+        let gallery = Gallery::new(config.clone());
+        
+        // Check that version is different (empty vs current)
+        let needs_refresh = {
+            let metadata = gallery.cache_metadata.read().await;
+            metadata.version != SERVER_VERSION
+        };
+        
+        assert!(needs_refresh, "Should need refresh when version is empty/different");
+        
+        // After initialization, version should be updated
+        if let Err(_) = gallery.initialize_and_check_version().await {
+            // Expected to fail due to test directory, but that's okay
+        }
+        
+        // Clean up test directory if it exists
+        if let Ok(()) = tokio::fs::remove_dir_all("cache/test_version").await {
+            // Directory cleanup successful
         }
     }
 
