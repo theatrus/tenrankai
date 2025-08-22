@@ -24,6 +24,8 @@ use crate::{GalleryConfig, static_files::StaticFileHandler, templating::Template
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
     pub name: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
     pub path: String,
     pub is_directory: bool,
     pub thumbnail_url: Option<String>,
@@ -37,6 +39,7 @@ pub struct ImageInfo {
     pub path: String,
     pub url: String,
     pub thumbnail_url: String,
+    pub gallery_url: String,
     pub medium_url: String,
     pub description: Option<String>,
     pub camera_info: Option<CameraInfo>,
@@ -128,8 +131,11 @@ impl Gallery {
             if is_directory {
                 let item_count = self.count_images_in_directory(&item_path).await;
                 let preview_images = self.get_directory_preview_images(&item_path).await;
+                let (display_name, description) = self.read_folder_metadata(&item_path).await;
                 items.push(GalleryItem {
                     name: file_name,
+                    display_name,
+                    description,
                     path: item_path,
                     is_directory: true,
                     thumbnail_url: None,
@@ -138,13 +144,15 @@ impl Gallery {
                 });
             } else if self.is_image(&file_name) {
                 let thumbnail_url = format!(
-                    "/{}/image/{}?size=thumbnail",
+                    "/{}/image/{}?size=gallery",
                     self.config.path_prefix,
                     urlencoding::encode(&item_path)
                 );
 
                 items.push(GalleryItem {
                     name: file_name,
+                    display_name: None,
+                    description: None,
                     path: item_path,
                     is_directory: false,
                     thumbnail_url: Some(thumbnail_url),
@@ -336,6 +344,10 @@ impl Gallery {
                 "/{}/image/{}?size=thumbnail",
                 self.config.path_prefix, encoded_path
             ),
+            gallery_url: format!(
+                "/{}/image/{}?size=gallery",
+                self.config.path_prefix, encoded_path
+            ),
             medium_url: format!(
                 "/{}/image/{}?size=medium",
                 self.config.path_prefix, encoded_path
@@ -346,6 +358,55 @@ impl Gallery {
             file_size,
             dimensions,
         })
+    }
+
+    async fn read_folder_metadata(&self, folder_path: &str) -> (Option<String>, Option<String>) {
+        let folder_md_path = self.config.source_directory.join(folder_path).join("_folder.md");
+        
+        match tokio::fs::read_to_string(&folder_md_path).await {
+            Ok(content) => {
+                let mut title: Option<String> = None;
+                let mut description_content = String::new();
+                let mut found_title = false;
+                
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    
+                    // Look for the first title (# heading)
+                    if !found_title && trimmed.starts_with("# ") {
+                        title = Some(trimmed.trim_start_matches("# ").to_string());
+                        found_title = true;
+                        continue;
+                    }
+                    
+                    // Skip empty lines immediately after title
+                    if found_title && trimmed.is_empty() && description_content.is_empty() {
+                        continue;
+                    }
+                    
+                    // Collect description content (everything after the title)
+                    if found_title {
+                        if !description_content.is_empty() {
+                            description_content.push('\n');
+                        }
+                        description_content.push_str(line);
+                    }
+                }
+                
+                // Convert description markdown to HTML if there's content
+                let description = if description_content.trim().is_empty() {
+                    None
+                } else {
+                    let parser = Parser::new(&description_content);
+                    let mut html_output = String::new();
+                    html::push_html(&mut html_output, parser);
+                    Some(html_output)
+                };
+                
+                (title, description)
+            },
+            Err(_) => (None, None),
+        }
     }
 
     async fn read_sidecar_markdown(&self, image_path: &str) -> Option<String> {
@@ -538,7 +599,8 @@ impl Gallery {
     ) -> Result<PathBuf, String> {
         let (width, height) = match size {
             "thumbnail" => (300, 300),
-            "medium" => (800, 800),
+            "gallery" => (800, 800),
+            "medium" => (1200, 1200),
             "large" => (1600, 1600),
             _ => return Err("Invalid size".to_string()),
         };

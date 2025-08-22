@@ -41,19 +41,8 @@
                     {% for image in images %}
                         <div class="image-item" data-path="{{ image.path }}">
                             <a href="/gallery/detail/{{ image.path }}" class="image-link">
-                                <img src="{{ image.thumbnail_url }}" alt="{{ image.name }}" loading="lazy">
-                                <div class="image-overlay">
-                                    <div class="image-name">{{ image.name }}</div>
-                                </div>
+                                <img src="{{ image.gallery_url }}" alt="{{ image.name }}" loading="lazy">
                             </a>
-                            <div class="image-hover-info" style="display: none;">
-                                <h4>{{ image.name }}</h4>
-                                <p>Dimensions: {{ image.dimensions[0] }}x{{ image.dimensions[1] }}</p>
-                                <p>Size: {{ image.file_size | divided_by: 1024 | divided_by: 1024 | round: 2 }} MB</p>
-                                {% if image.description %}
-                                    <div class="image-description">{{ image.description }}</div>
-                                {% endif %}
-                            </div>
                         </div>
                     {% endfor %}
                 </div>
@@ -80,8 +69,14 @@
 </div>
 
 <style>
+body {
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+}
+
 .gallery-container {
     max-width: 1400px;
+    background-color: #1a1a1a;
 }
 
 .folder-grid {
@@ -94,17 +89,17 @@
 .folder-item {
     display: flex;
     flex-direction: column;
-    background: #f8f9fa;
+    background: #404040;
     border-radius: 8px;
     text-decoration: none;
-    color: #333;
+    color: #e0e0e0;
     transition: transform 0.2s, box-shadow 0.2s;
     overflow: hidden;
 }
 
 .folder-item:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 .folder-preview {
@@ -112,7 +107,7 @@
     height: 160px;
     position: relative;
     overflow: hidden;
-    background: #e9ecef;
+    background: #2a2a2a;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -120,7 +115,7 @@
 
 .folder-icon {
     font-size: 3rem;
-    color: #6c757d;
+    color: #888;
 }
 
 .preview-images {
@@ -182,22 +177,31 @@
 
 .folder-count {
     font-size: 0.8rem;
-    color: #666;
+    color: #999;
 }
 
 .image-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
+    column-count: 2;
+    column-gap: 1.5rem;
     margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+    .image-grid {
+        column-count: 1;
+    }
 }
 
 .image-item {
     position: relative;
-    background: #f8f9fa;
-    border-radius: 8px;
+    background: #404040;
+    border-radius: 0;
     overflow: hidden;
     transition: transform 0.2s;
+    break-inside: avoid;
+    margin-bottom: 1.5rem;
+    display: inline-block;
+    width: 100%;
 }
 
 .image-item:hover {
@@ -211,30 +215,10 @@
 
 .image-item img {
     width: 100%;
-    height: 250px;
-    object-fit: cover;
+    height: auto;
+    display: block;
 }
 
-.image-overlay {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.7));
-    color: white;
-    padding: 1rem;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
-.image-item:hover .image-overlay {
-    opacity: 1;
-}
-
-.image-name {
-    font-size: 0.875rem;
-    font-weight: 500;
-}
 
 .gallery-pagination {
     display: flex;
@@ -247,15 +231,15 @@
 
 .page-link {
     padding: 0.5rem 1rem;
-    background: #2c3e50;
-    color: white;
+    background: #404040;
+    color: #e0e0e0;
     text-decoration: none;
     border-radius: 4px;
     transition: background 0.3s;
 }
 
 .page-link:hover {
-    background: #34495e;
+    background: #555;
 }
 
 .page-info {
@@ -265,60 +249,13 @@
 .empty-gallery {
     text-align: center;
     padding: 4rem 0;
-    color: #666;
+    color: #999;
 }
 
-/* Hover tooltip styles */
-.image-hover-info {
-    position: absolute;
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 1000;
-    max-width: 300px;
-}
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const imageItems = document.querySelectorAll('.image-item');
-    
-    imageItems.forEach(item => {
-        const hoverInfo = item.querySelector('.image-hover-info');
-        let hoverTimeout;
-        
-        item.addEventListener('mouseenter', function(e) {
-            hoverTimeout = setTimeout(() => {
-                hoverInfo.style.display = 'block';
-                
-                const rect = item.getBoundingClientRect();
-                const infoRect = hoverInfo.getBoundingClientRect();
-                
-                let left = e.clientX + 10;
-                let top = e.clientY + 10;
-                
-                if (left + infoRect.width > window.innerWidth) {
-                    left = e.clientX - infoRect.width - 10;
-                }
-                
-                if (top + infoRect.height > window.innerHeight) {
-                    top = e.clientY - infoRect.height - 10;
-                }
-                
-                hoverInfo.style.position = 'fixed';
-                hoverInfo.style.left = left + 'px';
-                hoverInfo.style.top = top + 'px';
-            }, 500);
-        });
-        
-        item.addEventListener('mouseleave', function() {
-            clearTimeout(hoverTimeout);
-            hoverInfo.style.display = 'none';
-        });
-    });
-});
+// Gallery interactions can be added here if needed
 </script>
 
 {{ footer }}
