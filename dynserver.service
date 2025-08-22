@@ -1,0 +1,44 @@
+[Unit]
+Description=Dynamic Gallery Server
+Documentation=https://github.com/your-org/dynserver
+After=network.target network-online.target
+Requires=network-online.target
+
+[Service]
+Type=exec
+User=dynserver
+Group=dynserver
+WorkingDirectory=/usr/share/dynserver
+ExecStart=/usr/bin/dynserver --config /etc/dynserver/config.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dynserver /var/log/dynserver /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Environment
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+
+[Install]
+WantedBy=multi-user.target

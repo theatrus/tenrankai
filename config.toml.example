@@ -1,42 +1,75 @@
+# DynServer Configuration Example
+# Copy this file to /etc/dynserver/config.toml and customize for your setup
+
 [server]
+# Host and port to bind to
 host = "127.0.0.1"
-port = 8080
+port = 3000
 
 [app]
-name = "DynServer"
+# Application name (displayed in templates)
+name = "Dynamic Gallery"
+
+# Logging level: error, warn, info, debug, trace
 log_level = "info"
 
+# Secret key for signing download cookies (change this!)
+# Generate with: openssl rand -hex 32
+download_secret = "your-secret-key-here-change-this-to-random-value"
+
+# Password required for download access
+download_password = "your-download-password-here"
+
 [templates]
-directory = "templates"
+# Directory containing Liquid template files
+directory = "/usr/share/dynserver/templates"
 
 [static_files]
-directory = "static"
+# Directory containing static assets (CSS, JS, images)
+directory = "/usr/share/dynserver/static"
 
 [gallery]
-path_prefix = "gallery"
-source_directory = "/Users/atrus/Dropbox/Artwork/synced-images"
-cache_directory = "cache/photos"
-images_per_page = 2000
+# URL path prefix for gallery routes
+path_prefix = "/gallery"
 
-# Image resize configurations
+# Directory containing source images
+source_directory = "/var/lib/dynserver/gallery"
+
+# Directory for cached/resized images
+cache_directory = "/var/lib/dynserver/cache"
+
+# Number of images to display per page
+images_per_page = 20
+
+# Cache refresh interval in minutes (optional)
+# Set to 0 or omit to disable background refresh
+cache_refresh_interval_minutes = 60
+
+# Thumbnail size configuration
 [gallery.thumbnail]
 width = 300
 height = 300
 
+# Gallery preview size (for folder previews)
 [gallery.gallery_size]
-width = 800
-height = 800
+width = 400
+height = 400
 
+# Medium size (default view)
 [gallery.medium]
-width = 1200
-height = 1200
+width = 800
+height = 600
 
+# Large size (requires authentication)
 [gallery.large]
 width = 1600
-height = 1600
+height = 1200
 
-# Preview settings
+# Gallery preview settings
 [gallery.preview]
-max_images = 4
+# Maximum number of images in gallery preview
+max_images = 6
+# Maximum directory depth to scan
 max_depth = 3
-max_per_folder = 3
+# Maximum images per folder for preview
+max_per_folder = 10
