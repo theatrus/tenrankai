@@ -1,0 +1,13 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[app]
+name = "DynServer"
+log_level = "info"
+
+[templates]
+directory = "templates"
+
+[static_files]
+directory = "static"
