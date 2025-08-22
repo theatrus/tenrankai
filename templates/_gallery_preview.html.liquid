@@ -37,15 +37,19 @@
     function calculatePreviewColumnWidth() {
         const viewportWidth = window.innerWidth;
         const containerWidth = Math.min(viewportWidth, 1200);
-        const containerPadding = 40;
+        
+        // iOS-specific viewport handling
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
         const gap = 24; // 1.5rem
         
         if (viewportWidth <= 768) {
-            // Mobile: single column
-            return containerWidth - containerPadding;
+            // Mobile: single column with minimal padding
+            const mobilePadding = isIOS ? 16 : 20; // Much less padding for mobile
+            return containerWidth - mobilePadding;
         } else {
             // Desktop: two columns
-            return (containerWidth - containerPadding - gap) / 2;
+            const desktopPadding = isIOS ? 32 : 40;
+            return (containerWidth - desktopPadding - gap) / 2;
         }
     }
     
@@ -147,9 +151,22 @@
     
     // Handle window resize with debouncing
     let resizeTimeout;
-    window.addEventListener('resize', function() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    
+    function handlePreviewResize() {
         clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(layoutPreviewMasonry, 150);
-    });
+        // Use longer timeout for iOS due to viewport changes during scroll
+        const timeout = isIOS ? 300 : 150;
+        resizeTimeout = setTimeout(layoutPreviewMasonry, timeout);
+    }
+    
+    window.addEventListener('resize', handlePreviewResize);
+    
+    // iOS-specific: Handle orientation changes
+    if (isIOS) {
+        window.addEventListener('orientationchange', function() {
+            setTimeout(layoutPreviewMasonry, 500); // Delay for iOS orientation animation
+        });
+    }
 })();
 </script>

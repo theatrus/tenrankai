@@ -20,7 +20,7 @@ header {
 nav {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 0 2rem;
+    padding: 0 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -68,11 +68,13 @@ main {
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 0 2rem;
+    padding: 1.5rem 1rem;
     background-color: #2a2a2a;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-    padding: 2rem;
+    /* iOS-specific fixes */
+    width: calc(100% - 2rem);
+    box-sizing: border-box;
 }
 
 .feature-grid {
@@ -98,7 +100,7 @@ footer {
     background-color: #1a1a1a;
     color: #999;
     text-align: left;
-    padding: 1rem 2rem;
+    padding: 1rem;
     margin-top: auto;
 }
 
@@ -111,6 +113,20 @@ footer p {
 .gallery-container {
     max-width: 1400px;
     background-color: #1a1a1a;
+    /* iOS-specific fixes for centering */
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Gallery headings alignment */
+.gallery-container h2,
+.gallery-container h3 {
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 1rem;
+    box-sizing: border-box;
 }
 
 .gallery-nav {
@@ -293,6 +309,17 @@ footer p {
     max-width: 1200px;
     margin-left: auto;
     margin-right: auto;
+    /* iOS-specific fixes */
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 1rem;
+}
+
+/* Desktop-specific padding override */
+@media (min-width: 769px) {
+    .image-grid {
+        padding: 0 1rem;
+    }
 }
 
 .masonry-column {
@@ -367,6 +394,12 @@ footer p {
 .gallery-preview-component .preview-masonry {
     display: flex;
     gap: 1.5rem;
+    /* iOS-specific fixes */
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 1rem;
 }
 
 .gallery-preview-component .masonry-column {
@@ -429,21 +462,108 @@ footer p {
 
 /* Mobile Styles */
 @media (max-width: 768px) {
+    nav {
+        padding: 0 0.5rem;
+    }
+    
+    main {
+        padding: 1rem 0;
+    }
+    
+    .container {
+        width: calc(100% - 1rem);
+        padding: 1rem 0.5rem;
+        margin: 0 auto;
+    }
+    
+    footer {
+        padding: 1rem 0.5rem;
+    }
+    
+    .gallery-container {
+        padding: 0;
+        margin: 0 auto;
+        width: 100%;
+    }
+    
+    .gallery-container h2,
+    .gallery-container h3 {
+        padding: 0 0.5rem;
+    }
+    
     .image-grid {
         flex-direction: column;
         gap: 1rem;
+        padding: 0;
+        width: 100%;
+        margin: 0 auto;
     }
     
     .masonry-column[data-column="1"] {
         display: none;
     }
     
+    .masonry-column {
+        padding: 0 0.5rem;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
     .gallery-preview-component .preview-masonry {
         flex-direction: column;
         gap: 1rem;
+        padding: 0;
+        width: 100%;
+        margin: 0 auto;
+    }
+    
+    .gallery-preview-component .masonry-column {
+        padding: 0 0.5rem;
+        width: 100%;
+        box-sizing: border-box;
     }
     
     .gallery-preview-component .masonry-column[data-column="1"] {
         display: none;
+    }
+}
+
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+    .container, .gallery-container, .image-grid, .gallery-preview-component .preview-masonry {
+        -webkit-overflow-scrolling: touch;
+        transform: translate3d(0, 0, 0); /* Hardware acceleration */
+    }
+    
+    /* Safe area support for iOS devices with notches - but not for gallery containers */
+    body {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+    
+    main {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+    
+    /* Override safe area for gallery on mobile to prevent excessive padding */
+    @media (max-width: 768px) {
+        .gallery-container, .image-grid, .gallery-preview-component .preview-masonry {
+            margin-left: calc(-1 * env(safe-area-inset-left));
+            margin-right: calc(-1 * env(safe-area-inset-right));
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+        
+        .gallery-container .container {
+            margin-left: 0;
+            margin-right: 0;
+            width: 100%;
+        }
+        
+        main {
+            padding-left: 0;
+            padding-right: 0;
+        }
     }
 }
