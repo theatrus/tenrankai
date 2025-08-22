@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use std::path::PathBuf;
@@ -20,7 +20,7 @@ impl StaticFileHandler {
 
     pub async fn serve(&self, path: &str) -> Response {
         let file_path = self.static_dir.join(path.trim_start_matches('/'));
-        
+
         debug!("Attempting to serve static file: {:?}", file_path);
 
         if !file_path.starts_with(&self.static_dir) {
@@ -50,4 +50,3 @@ impl StaticFileHandler {
             .unwrap()
     }
 }
-

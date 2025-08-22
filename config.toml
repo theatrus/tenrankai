@@ -11,3 +11,9 @@ directory = "templates"
 
 [static_files]
 directory = "static"
+
+[gallery]
+path_prefix = "gallery"
+source_directory = "photos"
+cache_directory = "cache/photos"
+images_per_page = 20
