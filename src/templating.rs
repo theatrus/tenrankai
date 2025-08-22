@@ -225,7 +225,7 @@ impl TemplateEngine {
 
 #[axum::debug_handler]
 pub async fn template_with_gallery_handler(
-    State((engine, _, gallery)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery)>,
+    State((engine, _, gallery, _)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery, crate::favicon::FaviconRenderer)>,
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let path = path.map(|p| p.0).unwrap_or_default();

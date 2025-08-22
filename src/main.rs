@@ -1,6 +1,8 @@
 use axum::{
     Router,
     routing::{get, post},
+    extract::{State, Query, Path},
+    response::IntoResponse,
 };
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -13,10 +15,12 @@ use tracing_subscriber::FmtSubscriber;
 mod gallery;
 mod static_files;
 mod templating;
+mod favicon;
 
 use gallery::{Gallery, SharedGallery, gallery_handler, image_detail_handler, image_handler};
 use static_files::StaticFileHandler;
 use templating::{TemplateEngine, template_with_gallery_handler};
+use favicon::{FaviconRenderer, favicon_ico_handler, favicon_png_16_handler, favicon_png_32_handler, favicon_png_48_handler};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -172,8 +176,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.gallery.cache_directory
     );
 
-    let template_engine = Arc::new(TemplateEngine::new(config.templates.directory));
-    let static_handler = StaticFileHandler::new(config.static_files.directory);
+    let template_engine = Arc::new(TemplateEngine::new(config.templates.directory.clone()));
+    let static_handler = StaticFileHandler::new(config.static_files.directory.clone());
+    let favicon_renderer = FaviconRenderer::new(config.static_files.directory);
     let gallery: SharedGallery = Arc::new(Gallery::new(config.gallery.clone()));
 
     // Clone gallery for shutdown handler before moving it into router state
@@ -183,6 +188,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health))
         .route("/echo", post(echo))
         .route("/static/{*path}", get(static_file_handler))
+        .route("/favicon.ico", get(favicon_ico_handler))
+        .route("/favicon-16.png", get(favicon_png_16_handler))
+        .route("/favicon-32.png", get(favicon_png_32_handler))
+        .route("/favicon-48.png", get(favicon_png_48_handler))
         .route("/gallery", get(gallery_root_handler))
         .route("/gallery/", get(gallery_root_handler))
         .route("/gallery/detail/{*path}", get(image_detail_handler))
@@ -190,7 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/gallery/{*path}", get(gallery_handler))
         .route("/", get(template_with_gallery_handler))
         .route("/{*path}", get(template_with_gallery_handler))
-        .with_state((template_engine, static_handler, gallery));
+        .with_state((template_engine, static_handler, gallery, favicon_renderer));
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Server listening on {}", addr);
@@ -245,10 +254,11 @@ async fn echo(body: String) -> String {
 }
 
 async fn static_file_handler(
-    axum::extract::State((_, static_handler, _)): axum::extract::State<(
+    axum::extract::State((_, static_handler, _, _)): axum::extract::State<(
         Arc<TemplateEngine>,
         StaticFileHandler,
         SharedGallery,
+        FaviconRenderer,
     )>,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> impl axum::response::IntoResponse {
@@ -257,17 +267,18 @@ async fn static_file_handler(
 
 
 async fn gallery_root_handler(
-    axum::extract::State((template_engine, static_handler, gallery)): axum::extract::State<(
+    State((template_engine, static_handler, gallery, favicon_renderer)): State<(
         Arc<TemplateEngine>,
         StaticFileHandler,
         SharedGallery,
+        FaviconRenderer,
     )>,
-    axum::extract::Query(query): axum::extract::Query<gallery::GalleryQuery>,
-) -> impl axum::response::IntoResponse {
+    Query(query): Query<gallery::GalleryQuery>,
+) -> impl IntoResponse {
     gallery_handler(
-        axum::extract::State((template_engine, static_handler, gallery)),
-        axum::extract::Path("".to_string()),
-        axum::extract::Query(query),
+        State((template_engine, static_handler, gallery, favicon_renderer)),
+        Path("".to_string()),
+        Query(query),
     )
     .await
 }

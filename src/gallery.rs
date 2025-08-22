@@ -1048,10 +1048,11 @@ impl Gallery {
 pub type SharedGallery = Arc<Gallery>;
 
 pub async fn gallery_handler(
-    State((template_engine, _, gallery)): State<(
+    State((template_engine, _, gallery, _)): State<(
         Arc<TemplateEngine>,
         StaticFileHandler,
         SharedGallery,
+        crate::favicon::FaviconRenderer,
     )>,
     Path(path): Path<String>,
     Query(query): Query<GalleryQuery>,
@@ -1122,10 +1123,11 @@ pub async fn gallery_handler(
 }
 
 pub async fn image_detail_handler(
-    State((template_engine, _, gallery)): State<(
+    State((template_engine, _, gallery, _)): State<(
         Arc<TemplateEngine>,
         StaticFileHandler,
         SharedGallery,
+        crate::favicon::FaviconRenderer,
     )>,
     Path(path): Path<String>,
 ) -> impl IntoResponse {
@@ -1157,7 +1159,7 @@ pub async fn image_detail_handler(
 }
 
 pub async fn image_handler(
-    State((_, _, gallery)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery)>,
+    State((_, _, gallery, _)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery, crate::favicon::FaviconRenderer)>,
     Path(path): Path<String>,
     Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {

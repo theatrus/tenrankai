@@ -8,6 +8,9 @@ axum = { version = "0.8", features = ["macros"] }
 clap = { version = "4.5", features = ["derive"] }
 rexif = "0.7"
 image = "0.25"
+resvg = "0.43"
+usvg = "0.43"
+ico = "0.3"
 liquid = "0.26"
 mime_guess = "2.0"
 pulldown-cmark = "0.12"
