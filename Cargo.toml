@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+hmac = "0.12"
 chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 rexif = "0.7"

@@ -71,9 +71,8 @@
             {% endif %}
             
             <div class="image-controls">
-                <div class="control-buttons">
-                    <a href="{{ image.url }}" target="_blank" class="btn">View Full Size</a>
-                    <a href="{{ image.url }}" download="{{ image.name }}" class="btn">Download</a>
+                <div class="control-buttons" id="control-buttons">
+                    <!-- Buttons will be populated by JavaScript based on cookie -->
                 </div>
                 {% if prev_image or next_image %}
                     <div class="nav-hint-container">
@@ -518,11 +517,75 @@ dd {
 document.addEventListener('DOMContentLoaded', function() {
     const mainImage = document.getElementById('main-image');
     
-    mainImage.addEventListener('click', function() {
-        window.open(this.src.replace('?size=medium', ''), '_blank');
-    });
+    // Check download permission via API and populate buttons
+    async function checkDownloadPermission() {
+        try {
+            const response = await fetch('/api/verify');
+            const data = await response.json();
+            return data.authorized;
+        } catch (error) {
+            console.error('Error checking download permission:', error);
+            return false;
+        }
+    }
     
-    mainImage.style.cursor = 'pointer';
+    async function setupControls() {
+        const hasDownloadPermission = await checkDownloadPermission();
+        const controlButtons = document.getElementById('control-buttons');
+        
+        if (hasDownloadPermission) {
+            controlButtons.innerHTML = `
+                <a href="{{ image.url }}" target="_blank" class="btn">View Full Size</a>
+                <a href="{{ image.url }}" download="{{ image.name }}" class="btn">Download</a>
+            `;
+            
+            mainImage.addEventListener('click', function() {
+                window.open(this.src.replace('?size=medium', ''), '_blank');
+            });
+            mainImage.style.cursor = 'pointer';
+        } else {
+            controlButtons.innerHTML = `
+                <a href="{{ image.medium_url }}" target="_blank" class="btn">View Medium Size</a>
+                <button class="btn" onclick="requestDownloadAccess()">Request Download Access</button>
+            `;
+            
+            mainImage.addEventListener('click', function() {
+                window.open('{{ image.medium_url }}', '_blank');
+            });
+            mainImage.style.cursor = 'pointer';
+        }
+    }
+    
+    // Function to request download access via API
+    window.requestDownloadAccess = async function() {
+        const password = prompt('Enter download password:');
+        if (password === null) return; // User cancelled
+        
+        try {
+            const response = await fetch('/api/auth', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ password: password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                alert('Access granted! Reloading page...');
+                location.reload();
+            } else {
+                alert(data.message || 'Authentication failed');
+            }
+        } catch (error) {
+            console.error('Error during authentication:', error);
+            alert('Authentication request failed');
+        }
+    };
+    
+    // Initialize controls
+    setupControls();
     
     // Keyboard navigation
     document.addEventListener('keydown', function(e) {

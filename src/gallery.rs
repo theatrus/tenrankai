@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{StatusCode, header},
+    http::{StatusCode, header, HeaderMap},
     response::{Html, IntoResponse, Response},
 };
 use image::{ImageFormat, imageops::FilterType};
@@ -636,7 +636,13 @@ impl Gallery {
                         camera_info.iso = Some(format!("ISO {}", entry.value_more_readable));
                     }
                     rexif::ExifTag::FNumber => {
-                        camera_info.aperture = Some(format!("f/{}", entry.value_more_readable));
+                        let aperture_str = entry.value_more_readable.to_string();
+                        // Check if the value already has 'f/' prefix
+                        camera_info.aperture = if aperture_str.starts_with('f') {
+                            Some(aperture_str)
+                        } else {
+                            Some(format!("f/{}", aperture_str))
+                        };
                     }
                     rexif::ExifTag::ExposureTime => {
                         camera_info.shutter_speed = Some(format!("{}s", entry.value_more_readable));
@@ -1507,11 +1513,42 @@ pub async fn image_detail_handler(
     }
 }
 
+fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
+    crate::api::get_cookie_value(headers, "download_allowed")
+        .map(|signed_value| crate::api::verify_signed_cookie(secret, &signed_value))
+        .unwrap_or(false)
+}
+
 pub async fn image_handler(
     State(app_state): State<crate::AppState>,
     Path(path): Path<String>,
     Query(query): Query<GalleryQuery>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
+    // Validate size parameter if provided
+    if let Some(ref size) = query.size {
+        match size.as_str() {
+            "thumbnail" | "gallery" | "medium" => {
+                // These sizes are allowed without authentication
+            }
+            "large" => {
+                // Large size requires authentication
+                if !has_download_permission(&headers, &app_state.config.app.download_secret) {
+                    return (StatusCode::FORBIDDEN, "Download permission required").into_response();
+                }
+            }
+            _ => {
+                // Invalid size parameter
+                return (StatusCode::BAD_REQUEST, "Invalid size parameter. Valid sizes: thumbnail, gallery, medium, large").into_response();
+            }
+        }
+    } else {
+        // No size parameter means full-size original image - requires authentication
+        if !has_download_permission(&headers, &app_state.config.app.download_secret) {
+            return (StatusCode::FORBIDDEN, "Download permission required").into_response();
+        }
+    }
+    
     app_state.gallery.serve_image(&path, query.size).await
 }
 
@@ -1706,6 +1743,29 @@ mod tests {
         if let Ok(()) = tokio::fs::remove_dir_all("cache/test_version").await {
             // Directory cleanup successful
         }
+    }
+
+    #[test]
+    fn test_aperture_formatting() {
+        // Test that aperture values don't get double f/ prefix
+        
+        // Case 1: EXIF value already has f/ prefix
+        let aperture_with_f = "f/6.3";
+        let formatted1 = if aperture_with_f.starts_with('f') {
+            aperture_with_f.to_string()
+        } else {
+            format!("f/{}", aperture_with_f)
+        };
+        assert_eq!(formatted1, "f/6.3");
+        
+        // Case 2: EXIF value doesn't have f/ prefix
+        let aperture_without_f = "6.3";
+        let formatted2 = if aperture_without_f.starts_with('f') {
+            aperture_without_f.to_string()
+        } else {
+            format!("f/{}", aperture_without_f)
+        };
+        assert_eq!(formatted2, "f/6.3");
     }
 
     #[test]

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
+mod api;
 mod favicon;
 mod gallery;
 mod static_files;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub static_handler: StaticFileHandler,
     pub gallery: SharedGallery,
     pub favicon_renderer: FaviconRenderer,
+    pub config: Config,
 }
 
 #[derive(Parser, Debug)]
@@ -49,7 +51,7 @@ struct Args {
     log_level: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct Config {
     server: ServerConfig,
     app: AppConfig,
@@ -58,24 +60,26 @@ struct Config {
     gallery: GalleryConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ServerConfig {
     host: String,
     port: u16,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct AppConfig {
     name: String,
     log_level: String,
+    download_secret: String,
+    download_password: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct TemplateConfig {
     directory: PathBuf,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct StaticConfig {
     directory: PathBuf,
 }
@@ -117,6 +121,8 @@ impl Default for Config {
             app: AppConfig {
                 name: "DynServer".to_string(),
                 log_level: "info".to_string(),
+                download_secret: "your-secret-key-change-this".to_string(),
+                download_password: "gallery2024".to_string(),
             },
             templates: TemplateConfig {
                 directory: PathBuf::from("templates"),
@@ -168,9 +174,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Config::default()
     };
 
-    let host = args.host.unwrap_or(config.server.host);
+    let host = args.host.unwrap_or(config.server.host.clone());
     let port = args.port.unwrap_or(config.server.port);
     let log_level = args.log_level;
+    let config_clone = config.clone();
 
     let level = match log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
@@ -201,10 +208,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.gallery.cache_directory
     );
 
-    let template_engine = Arc::new(TemplateEngine::new(config.templates.directory.clone()));
-    let static_handler = StaticFileHandler::new(config.static_files.directory.clone());
-    let favicon_renderer = FaviconRenderer::new(config.static_files.directory);
-    let gallery: SharedGallery = Arc::new(Gallery::new(config.gallery.clone()));
+    let template_engine = Arc::new(TemplateEngine::new(config_clone.templates.directory.clone()));
+    let static_handler = StaticFileHandler::new(config_clone.static_files.directory.clone());
+    let favicon_renderer = FaviconRenderer::new(config_clone.static_files.directory.clone());
+    let gallery: SharedGallery = Arc::new(Gallery::new(config_clone.gallery.clone()));
 
     // Initialize gallery and check for version changes
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -212,7 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start background cache refresh if configured
-    if let Some(interval_minutes) = config.gallery.cache_refresh_interval_minutes {
+    if let Some(interval_minutes) = config_clone.gallery.cache_refresh_interval_minutes {
         if interval_minutes > 0 {
             info!(
                 "Starting background metadata cache refresh every {} minutes",
@@ -230,11 +237,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         static_handler,
         gallery,
         favicon_renderer,
+        config: config_clone,
     };
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/echo", post(echo))
+        .route("/api/auth", post(api::authenticate_handler))
+        .route("/api/verify", get(api::verify_handler))
         .route("/static/{*path}", get(static_file_handler))
         .route("/favicon.ico", get(favicon_ico_handler))
         .route("/favicon-16.png", get(favicon_png_16_handler))

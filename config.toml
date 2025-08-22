@@ -5,6 +5,8 @@ port = 8080
 [app]
 name = "DynServer"
 log_level = "info"
+download_secret = "your-secret-key-change-this-in-production"
+download_password = "gallery2024"
 
 [templates]
 directory = "templates"
