@@ -16,7 +16,7 @@ mod templating;
 
 use gallery::{Gallery, SharedGallery, gallery_handler, image_detail_handler, image_handler};
 use static_files::StaticFileHandler;
-use templating::{TemplateEngine, template_handler};
+use templating::{TemplateEngine, template_with_gallery_handler};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -158,8 +158,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/gallery/detail/{*path}", get(image_detail_handler))
         .route("/gallery/image/{*path}", get(image_handler))
         .route("/gallery/{*path}", get(gallery_handler))
-        .route("/", get(template_handler))
-        .route("/{*path}", get(template_handler))
+        .route("/", get(template_with_gallery_handler))
+        .route("/{*path}", get(template_with_gallery_handler))
         .with_state((template_engine, static_handler, gallery));
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
@@ -189,6 +189,7 @@ async fn static_file_handler(
 ) -> impl axum::response::IntoResponse {
     static_handler.serve(&path).await
 }
+
 
 async fn gallery_root_handler(
     axum::extract::State((template_engine, static_handler, gallery)): axum::extract::State<(

@@ -1,4 +1,4 @@
-{% if gallery_preview.size > 0 %}
+{% if gallery_preview and gallery_preview.size > 0 %}
     <section class="gallery-preview-component">
         <h3>{{ preview_title | default: "Recent from the Gallery" }}</h3>
         <div class="preview-grid">

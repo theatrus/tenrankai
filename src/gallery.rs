@@ -720,7 +720,7 @@ impl Gallery {
         relative_path: &'a str,
         items: &'a mut Vec<GalleryItem>,
         max_per_folder: usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let full_path = self.config.source_directory.join(relative_path);
 

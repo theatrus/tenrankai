@@ -182,13 +182,43 @@ impl TemplateEngine {
             .parse(&template_content)
             .map_err(|e| format!("Failed to parse template: {}", e))?;
 
-        let gallery_preview_content = self
-            .load_template("_gallery_preview.html.liquid")
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to load gallery preview: {}", e);
+        // Render the gallery preview component if gallery_preview data exists
+        let gallery_preview_rendered = if let Some(gallery_preview) = globals.get("gallery_preview") {
+            let gallery_preview_template = self
+                .load_template("_gallery_preview.html.liquid")
+                .await
+                .unwrap_or_else(|e| {
+                    error!("Failed to load gallery preview: {}", e);
+                    String::new()
+                });
+
+            if !gallery_preview_template.is_empty() {
+                let preview_parser = liquid::ParserBuilder::with_stdlib()
+                    .build()
+                    .map_err(|e| format!("Failed to create preview parser: {}", e))?;
+
+                let preview_template = preview_parser
+                    .parse(&gallery_preview_template)
+                    .map_err(|e| format!("Failed to parse preview template: {}", e))?;
+
+                let mut preview_globals = liquid::object!({
+                    "preview_title": "Recent from the Gallery",
+                    "show_explore_link": true,
+                });
+                preview_globals.insert("gallery_preview".into(), gallery_preview.clone());
+
+                preview_template
+                    .render(&preview_globals)
+                    .unwrap_or_else(|e| {
+                        error!("Failed to render gallery preview component: {}", e);
+                        String::new()
+                    })
+            } else {
                 String::new()
-            });
+            }
+        } else {
+            String::new()
+        };
 
         let mut full_globals = globals;
         full_globals.insert(
@@ -201,7 +231,7 @@ impl TemplateEngine {
         );
         full_globals.insert(
             "gallery_preview_component".into(),
-            liquid::model::Value::Scalar(gallery_preview_content.into()),
+            liquid::model::Value::Scalar(gallery_preview_rendered.into()),
         );
 
         // Ensure gallery_preview exists with default empty array if not provided
@@ -227,4 +257,13 @@ where
 {
     let path = path.map(|p| p.0).unwrap_or_default();
     engine.render(&path).await
+}
+
+#[axum::debug_handler]
+pub async fn template_with_gallery_handler(
+    State((engine, _, gallery)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery)>,
+    path: Option<Path<String>>,
+) -> impl IntoResponse {
+    let path = path.map(|p| p.0).unwrap_or_default();
+    engine.render_with_gallery(&path, &gallery).await
 }
