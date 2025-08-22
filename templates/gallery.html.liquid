@@ -57,13 +57,28 @@
             <div class="gallery-images">
                 <h3>Images</h3>
                 <div class="image-grid">
-                    {% for image in images %}
-                        <div class="image-item" id="{{ image.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" data-path="{{ image.path }}">
-                            <a href="/gallery/detail/{{ image.path }}" class="image-link">
-                                <img src="{{ image.gallery_url }}" alt="{{ image.name }}" loading="lazy">
-                            </a>
-                        </div>
-                    {% endfor %}
+                    <div class="masonry-column" data-column="0">
+                        {% for image in images %}
+                            {% if image.masonry_column == 0 %}
+                                <div class="image-item" id="{{ image.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" data-path="{{ image.path }}" style="width: {{ image.gallery_display_width }}px; height: {{ image.gallery_display_height }}px;">
+                                    <a href="/gallery/detail/{{ image.path }}" class="image-link">
+                                        <img src="{{ image.gallery_url }}" alt="{{ image.name }}" width="{{ image.gallery_display_width }}" height="{{ image.gallery_display_height }}">
+                                    </a>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    <div class="masonry-column" data-column="1">
+                        {% for image in images %}
+                            {% if image.masonry_column == 1 %}
+                                <div class="image-item" id="{{ image.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" data-path="{{ image.path }}" style="width: {{ image.gallery_display_width }}px; height: {{ image.gallery_display_height }}px;">
+                                    <a href="/gallery/detail/{{ image.path }}" class="image-link">
+                                        <img src="{{ image.gallery_url }}" alt="{{ image.name }}" width="{{ image.gallery_display_width }}" height="{{ image.gallery_display_height }}">
+                                    </a>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
                 </div>
                 
                 <!-- Pagination -->
@@ -233,14 +248,30 @@ body {
 }
 
 .image-grid {
-    column-count: 2;
-    column-gap: 1.5rem;
+    display: flex;
+    gap: 1.5rem;
     margin-bottom: 2rem;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.masonry-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-width: 0; /* Allow flex items to shrink */
 }
 
 @media (max-width: 768px) {
     .image-grid {
-        column-count: 1;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .masonry-column[data-column="1"] {
+        display: none;
     }
 }
 
@@ -250,10 +281,7 @@ body {
     border-radius: 0;
     overflow: hidden;
     transition: transform 0.2s;
-    break-inside: avoid;
-    margin-bottom: 1.5rem;
-    display: inline-block;
-    width: 100%;
+    display: block;
 }
 
 .image-item:hover {
@@ -307,7 +335,38 @@ body {
 </style>
 
 <script>
-// Gallery interactions can be added here if needed
+// Detect viewport width and reload with appropriate layout
+(function() {
+    const currentUrl = new URL(window.location);
+    const viewportWidth = window.innerWidth;
+    const currentViewport = currentUrl.searchParams.get('viewport_width');
+    
+    // Only reload if viewport width differs significantly (50px threshold)
+    if (!currentViewport || Math.abs(parseInt(currentViewport) - viewportWidth) > 50) {
+        currentUrl.searchParams.set('viewport_width', viewportWidth);
+        
+        // Only reload if we're not already loading with the correct viewport
+        if (currentUrl.toString() !== window.location.toString()) {
+            window.location.replace(currentUrl.toString());
+        }
+    }
+    
+    // Handle window resize with debouncing
+    let resizeTimeout;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(function() {
+            const newViewportWidth = window.innerWidth;
+            const currentViewport = new URL(window.location).searchParams.get('viewport_width');
+            
+            if (!currentViewport || Math.abs(parseInt(currentViewport) - newViewportWidth) > 50) {
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.set('viewport_width', newViewportWidth);
+                window.location.replace(newUrl.toString());
+            }
+        }, 300);
+    });
+})();
 </script>
 
 {{ footer }}
