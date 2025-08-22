@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
 pub struct TemplateEngine {
-    template_dir: PathBuf,
+    pub template_dir: PathBuf,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
 }
 
@@ -88,6 +88,31 @@ impl TemplateEngine {
             Err(e) => {
                 error!("Template rendering error: {}", e);
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+
+    pub async fn render_404_page(
+        &self,
+        gallery: &SharedGallery,
+    ) -> Result<Html<String>, StatusCode> {
+        let gallery_preview = gallery.get_gallery_preview(6).await.unwrap_or_default();
+        let gallery_preview_json =
+            serde_json::to_string(&gallery_preview).unwrap_or_else(|_| "[]".to_string());
+
+        let globals = liquid::object!({
+            "gallery_preview": gallery_preview,
+            "gallery_preview_json": gallery_preview_json,
+        });
+
+        match self.render_template("404.html.liquid", globals).await {
+            Ok(html) => {
+                // Create custom response with 404 status
+                Ok(Html(html))
+            },
+            Err(e) => {
+                error!("Failed to render 404 template: {}", e);
+                Err(StatusCode::NOT_FOUND)
             }
         }
     }
@@ -233,8 +258,29 @@ pub async fn template_with_gallery_handler(
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let path = path.map(|p| p.0).unwrap_or_default();
-    app_state
+    
+    // Check if template exists first
+    let template_path = if path.is_empty() || path == "/" {
+        "index.html.liquid"
+    } else {
+        &format!("{}.html.liquid", path.trim_start_matches('/'))
+    };
+    
+    let template_file_path = app_state.template_engine.template_dir.join(template_path);
+    if !template_file_path.exists() {
+        debug!("Template not found: {}, returning 404", template_path);
+        return match app_state.template_engine.render_404_page(&app_state.gallery).await {
+            Ok(html) => (StatusCode::NOT_FOUND, html).into_response(),
+            Err(_) => StatusCode::NOT_FOUND.into_response(),
+        };
+    }
+    
+    match app_state
         .template_engine
         .render_with_gallery(&path, &app_state.gallery)
         .await
+    {
+        Ok(html) => html.into_response(),
+        Err(status) => status.into_response(),
+    }
 }
