@@ -17,10 +17,45 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
-use tracing::error;
+use tracing::{error, warn};
 use walkdir::WalkDir;
 
-use crate::{GalleryConfig, static_files::StaticFileHandler, templating::TemplateEngine};
+#[derive(Debug)]
+pub enum GalleryError {
+    IoError(std::io::Error),
+    ImageError(image::ImageError),
+    InvalidPath,
+    DirectoryNotFound,
+    ImageNotFound,
+}
+
+impl std::fmt::Display for GalleryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GalleryError::IoError(e) => write!(f, "IO error: {}", e),
+            GalleryError::ImageError(e) => write!(f, "Image error: {}", e),
+            GalleryError::InvalidPath => write!(f, "Invalid path"),
+            GalleryError::DirectoryNotFound => write!(f, "Directory not found"),
+            GalleryError::ImageNotFound => write!(f, "Image not found"),
+        }
+    }
+}
+
+impl std::error::Error for GalleryError {}
+
+impl From<std::io::Error> for GalleryError {
+    fn from(error: std::io::Error) -> Self {
+        GalleryError::IoError(error)
+    }
+}
+
+impl From<image::ImageError> for GalleryError {
+    fn from(error: image::ImageError) -> Self {
+        GalleryError::ImageError(error)
+    }
+}
+
+use crate::{GalleryConfig, ImageSizeConfig, PreviewConfig, static_files::StaticFileHandler, templating::TemplateEngine};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
@@ -101,28 +136,26 @@ impl Gallery {
         }
     }
 
-    pub async fn scan_directory(&self, relative_path: &str) -> Result<Vec<GalleryItem>, String> {
+    pub async fn scan_directory(&self, relative_path: &str) -> Result<Vec<GalleryItem>, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
 
         if !full_path.starts_with(&self.config.source_directory) {
-            return Err("Invalid path".to_string());
+            return Err(GalleryError::InvalidPath);
         }
 
         let mut items = Vec::new();
 
-        let entries = tokio::fs::read_dir(&full_path)
-            .await
-            .map_err(|e| format!("Failed to read directory: {}", e))?;
+        let entries = tokio::fs::read_dir(&full_path).await?;
 
         let mut entries = entries;
-        while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+        while let Some(entry) = entries.next_entry().await? {
             let file_name = entry.file_name().to_string_lossy().to_string();
 
             if file_name.starts_with('.') || file_name.ends_with(".md") {
                 continue;
             }
 
-            let metadata = entry.metadata().await.map_err(|e| e.to_string())?;
+            let metadata = entry.metadata().await?;
             let is_directory = metadata.is_dir();
 
             let item_path = if relative_path.is_empty() {
@@ -201,11 +234,11 @@ impl Gallery {
         let full_path = self.config.source_directory.join(relative_path);
         let mut preview_images = Vec::new();
 
-        // Get up to 4 images for preview
-        const MAX_PREVIEW_IMAGES: usize = 4;
+        // Get up to configured number of images for preview
+        let max_preview_images = self.config.preview.max_images;
 
-        for entry in WalkDir::new(&full_path).min_depth(1).max_depth(3) {
-            if preview_images.len() >= MAX_PREVIEW_IMAGES {
+        for entry in WalkDir::new(&full_path).min_depth(1).max_depth(self.config.preview.max_depth) {
+            if preview_images.len() >= max_preview_images {
                 break;
             }
 
@@ -248,7 +281,7 @@ impl Gallery {
         &self,
         relative_path: &str,
         page: usize,
-    ) -> Result<Vec<ImageInfo>, String> {
+    ) -> Result<Vec<ImageInfo>, GalleryError> {
         let items = self.scan_directory(relative_path).await?;
         let images: Vec<_> = items
             .into_iter()
@@ -697,10 +730,10 @@ impl Gallery {
         size: &str,
     ) -> Result<PathBuf, String> {
         let (width, height) = match size {
-            "thumbnail" => (300, 300),
-            "gallery" => (800, 800),
-            "medium" => (1200, 1200),
-            "large" => (1600, 1600),
+            "thumbnail" => (self.config.thumbnail.width, self.config.thumbnail.height),
+            "gallery" => (self.config.gallery_size.width, self.config.gallery_size.height),
+            "medium" => (self.config.medium.width, self.config.medium.height),
+            "large" => (self.config.large.width, self.config.large.height),
             _ => return Err("Invalid size".to_string()),
         };
 
@@ -844,7 +877,7 @@ impl Gallery {
                         });
 
                         // Recursively collect from subdirectories (limited depth)
-                        if relative_path.split('/').count() < 2 {
+                        if relative_path.split('/').count() < self.config.preview.max_depth - 1 {
                             let _ = self
                                 .collect_items_recursive(&item_path, items, max_per_folder / 2)
                                 .await;
@@ -879,7 +912,7 @@ impl Gallery {
             // Add a random subset of images from this folder
             let mut rng = rand::thread_rng();
             folder_images.shuffle(&mut rng);
-            folder_images.truncate(max_per_folder.min(3)); // Max 3 images per folder
+            folder_images.truncate(max_per_folder.min(self.config.preview.max_per_folder));
             items.extend(folder_images);
 
             Ok(())
@@ -922,9 +955,12 @@ pub async fn gallery_handler(
 
     let items = match gallery.scan_directory(&path).await {
         Ok(items) => items,
+        Err(GalleryError::DirectoryNotFound | GalleryError::InvalidPath) => {
+            return (StatusCode::NOT_FOUND, "Directory not found").into_response();
+        }
         Err(e) => {
             error!("Failed to scan gallery directory: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response();
         }
     };
 

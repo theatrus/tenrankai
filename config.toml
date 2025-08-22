@@ -17,3 +17,26 @@ path_prefix = "gallery"
 source_directory = "/Users/atrus/Dropbox/Artwork/synced-images"
 cache_directory = "cache/photos"
 images_per_page = 2000
+
+# Image resize configurations
+[gallery.thumbnail]
+width = 300
+height = 300
+
+[gallery.gallery_size]
+width = 800
+height = 800
+
+[gallery.medium]
+width = 1200
+height = 1200
+
+[gallery.large]
+width = 1600
+height = 1600
+
+# Preview settings
+[gallery.preview]
+max_images = 4
+max_depth = 3
+max_per_folder = 3

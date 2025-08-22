@@ -71,6 +71,24 @@ struct GalleryConfig {
     source_directory: PathBuf,
     cache_directory: PathBuf,
     images_per_page: usize,
+    thumbnail: ImageSizeConfig,
+    gallery_size: ImageSizeConfig,
+    medium: ImageSizeConfig,
+    large: ImageSizeConfig,
+    preview: PreviewConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ImageSizeConfig {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct PreviewConfig {
+    max_images: usize,
+    max_depth: usize,
+    max_per_folder: usize,
 }
 
 impl Default for Config {
@@ -95,6 +113,15 @@ impl Default for Config {
                 source_directory: PathBuf::from("photos"),
                 cache_directory: PathBuf::from("cache/photos"),
                 images_per_page: 20,
+                thumbnail: ImageSizeConfig { width: 300, height: 300 },
+                gallery_size: ImageSizeConfig { width: 800, height: 800 },
+                medium: ImageSizeConfig { width: 1200, height: 1200 },
+                large: ImageSizeConfig { width: 1600, height: 1600 },
+                preview: PreviewConfig { 
+                    max_images: 4, 
+                    max_depth: 3, 
+                    max_per_folder: 3 
+                },
             },
         }
     }
