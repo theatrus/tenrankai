@@ -8,6 +8,7 @@ use image::{ImageFormat, imageops::FilterType};
 use pulldown_cmark::{Parser, html};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -121,6 +122,7 @@ pub struct GalleryQuery {
 pub struct Gallery {
     config: GalleryConfig,
     cache: Arc<RwLock<HashMap<String, CachedImage>>>,
+    metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
 }
 
 struct CachedImage {
@@ -128,11 +130,20 @@ struct CachedImage {
     modified: SystemTime,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ImageMetadata {
+    dimensions: (u32, u32),
+    file_size: u64,
+    modified: SystemTime,
+}
+
 impl Gallery {
     pub fn new(config: GalleryConfig) -> Self {
+        let metadata_cache = Self::load_metadata_cache(&config).unwrap_or_default();
         Self {
             config,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            metadata_cache: Arc::new(RwLock::new(metadata_cache)),
         }
     }
 
@@ -362,13 +373,10 @@ impl Gallery {
             return Err(GalleryError::InvalidPath);
         }
 
-        let metadata = tokio::fs::metadata(&full_path).await?;
-
-        let file_size = metadata.len();
-
-        let img = image::open(&full_path)?;
-
-        let dimensions = (img.width(), img.height());
+        // Get cached metadata (includes dimensions and file size)
+        let cached_metadata = self.get_image_metadata_cached(relative_path).await?;
+        let file_size = cached_metadata.file_size;
+        let dimensions = cached_metadata.dimensions;
 
         let description = self.read_sidecar_markdown(relative_path).await;
         let (camera_info, location_info) = self.extract_structured_exif_data(&full_path).await;
@@ -637,6 +645,116 @@ impl Gallery {
         }
     }
 
+    fn metadata_cache_path(&self) -> PathBuf {
+        self.config.cache_directory.join("metadata_cache.json")
+    }
+
+    fn load_metadata_cache(config: &GalleryConfig) -> Result<HashMap<String, ImageMetadata>, GalleryError> {
+        let cache_path = config.cache_directory.join("metadata_cache.json");
+        if !cache_path.exists() {
+            return Ok(HashMap::new());
+        }
+
+        let content = fs::read_to_string(&cache_path)?;
+        serde_json::from_str(&content).map_err(|_| GalleryError::InvalidPath)
+    }
+
+    async fn save_metadata_cache(&self) -> Result<(), GalleryError> {
+        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        
+        let cache = self.metadata_cache.read().await;
+        let content = serde_json::to_string_pretty(&*cache)
+            .map_err(|_| GalleryError::InvalidPath)?;
+        
+        tokio::fs::write(self.metadata_cache_path(), content).await?;
+        Ok(())
+    }
+
+    async fn get_image_metadata_cached(&self, relative_path: &str) -> Result<ImageMetadata, GalleryError> {
+        let full_path = self.config.source_directory.join(relative_path);
+        
+        // Get current file stats
+        let metadata = tokio::fs::metadata(&full_path).await?;
+        let current_modified = metadata.modified()?;
+        let current_size = metadata.len();
+
+        // Check cache first
+        {
+            let cache = self.metadata_cache.read().await;
+            if let Some(cached) = cache.get(relative_path) {
+                // If cached data is still valid, return it
+                if cached.modified >= current_modified && cached.file_size == current_size {
+                    return Ok(cached.clone());
+                }
+            }
+        }
+
+        // Cache miss or invalid - read image dimensions
+        let dimensions = self.get_image_dimensions_fast(&full_path)
+            .ok_or(GalleryError::ImageError(image::ImageError::Unsupported(
+                image::error::UnsupportedError::from(image::error::ImageFormatHint::Unknown)
+            )))?;
+
+        let new_metadata = ImageMetadata {
+            dimensions,
+            file_size: current_size,
+            modified: current_modified,
+        };
+
+        // Update cache
+        {
+            let mut cache = self.metadata_cache.write().await;
+            cache.insert(relative_path.to_string(), new_metadata.clone());
+        }
+
+        // Save cache to disk periodically (every 10 new entries)
+        if self.metadata_cache.read().await.len() % 10 == 0 {
+            let _ = self.save_metadata_cache().await; // Don't fail if cache save fails
+        }
+
+        Ok(new_metadata)
+    }
+
+    pub async fn cleanup_metadata_cache(&self) -> Result<(), GalleryError> {
+        let mut cache = self.metadata_cache.write().await;
+        let mut keys_to_remove = Vec::new();
+
+        for (relative_path, cached_metadata) in cache.iter() {
+            let full_path = self.config.source_directory.join(relative_path);
+            
+            // Check if file still exists and hasn't been modified
+            match tokio::fs::metadata(&full_path).await {
+                Ok(metadata) => {
+                    let current_modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                    let current_size = metadata.len();
+                    
+                    // Remove if file was modified or size changed
+                    if current_modified > cached_metadata.modified || current_size != cached_metadata.file_size {
+                        keys_to_remove.push(relative_path.clone());
+                    }
+                }
+                Err(_) => {
+                    // File no longer exists, remove from cache
+                    keys_to_remove.push(relative_path.clone());
+                }
+            }
+        }
+
+        for key in keys_to_remove {
+            cache.remove(&key);
+        }
+
+        // Save the cleaned cache
+        drop(cache);
+        self.save_metadata_cache().await?;
+        
+        Ok(())
+    }
+
+    pub async fn save_cache_on_shutdown(&self) {
+        let _ = self.save_metadata_cache().await;
+    }
+
     fn get_image_dimensions_fast(&self, path: &PathBuf) -> Option<(u32, u32)> {
         use std::fs::File;
         use std::io::BufReader;
@@ -876,9 +994,11 @@ impl Gallery {
                         urlencoding::encode(&item_path)
                     );
 
-                    // Get image dimensions efficiently without loading full image
-                    let image_path = self.config.source_directory.join(&item_path);
-                    let dimensions = self.get_image_dimensions_fast(&image_path);
+                    // Get image dimensions from cache
+                    let dimensions = match self.get_image_metadata_cached(&item_path).await {
+                        Ok(metadata) => Some(metadata.dimensions),
+                        Err(_) => None,
+                    };
 
                     folder_images.push(GalleryItem {
                         name: file_name,

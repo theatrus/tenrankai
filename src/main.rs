@@ -171,10 +171,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Gallery cache directory: {:?}",
         config.gallery.cache_directory
     );
+    info!(
+        "Gallery thumbnail size: {}x{}",
+        config.gallery.thumbnail.width, config.gallery.thumbnail.height
+    );
+    info!(
+        "Gallery preview max images: {}",
+        config.gallery.preview.max_images
+    );
 
     let template_engine = Arc::new(TemplateEngine::new(config.templates.directory));
     let static_handler = StaticFileHandler::new(config.static_files.directory);
     let gallery: SharedGallery = Arc::new(Gallery::new(config.gallery.clone()));
+
+    // Clone gallery for shutdown handler before moving it into router state
+    let gallery_for_shutdown = gallery.clone();
 
     let app = Router::new()
         .route("/health", get(health))
@@ -193,7 +204,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    
+    // Set up graceful shutdown
+    let shutdown_signal = async move {
+        let ctrl_c = async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to install CTRL+C signal handler");
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+
+        info!("Received shutdown signal, saving cache...");
+        
+        // Save metadata cache before shutting down
+        gallery_for_shutdown.save_cache_on_shutdown().await;
+        info!("Cache saved successfully");
+    };
+
+    // Run server with graceful shutdown
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
 
     Ok(())
 }
