@@ -63,68 +63,6 @@ impl TemplateEngine {
         Ok(content)
     }
 
-    async fn render_with_includes(&self, template_path: &str) -> Result<String, String> {
-        let header_content = self
-            .load_template("_header.html.liquid")
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to load header: {}", e);
-                String::new()
-            });
-
-        let footer_content = self
-            .load_template("_footer.html.liquid")
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to load footer: {}", e);
-                String::new()
-            });
-
-        let template_content = self.load_template(template_path).await?;
-
-        let parser = liquid::ParserBuilder::with_stdlib()
-            .build()
-            .map_err(|e| format!("Failed to create parser: {}", e))?;
-
-        let template = parser
-            .parse(&template_content)
-            .map_err(|e| format!("Failed to parse template: {}", e))?;
-
-        let gallery_preview_content = self
-            .load_template("_gallery_preview.html.liquid")
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to load gallery preview: {}", e);
-                String::new()
-            });
-
-        let globals = liquid::object!({
-            "header": header_content,
-            "footer": footer_content,
-            "gallery_preview_component": gallery_preview_content,
-            "gallery_preview": Vec::<liquid::model::Value>::new(),
-        });
-
-        template
-            .render(&globals)
-            .map_err(|e| format!("Failed to render template: {}", e))
-    }
-
-    pub async fn render(&self, path: &str) -> Result<Html<String>, StatusCode> {
-        let template_path = if path.is_empty() || path == "/" {
-            "index.html.liquid"
-        } else {
-            &format!("{}.html.liquid", path.trim_start_matches('/'))
-        };
-
-        match self.render_with_includes(template_path).await {
-            Ok(html) => Ok(Html(html)),
-            Err(e) => {
-                error!("Template rendering error: {}", e);
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        }
-    }
 
     pub async fn render_with_gallery(
         &self,
@@ -167,12 +105,37 @@ impl TemplateEngine {
                 String::new()
             });
 
-        let footer_content = self
+        let footer_template = self
             .load_template("_footer.html.liquid")
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load footer: {}", e);
                 String::new()
+            });
+
+        // Render footer template with current year
+        let current_year = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() / (365 * 24 * 3600) + 1970;
+        
+        let footer_globals = liquid::object!({
+            "current_year": current_year.to_string(),
+        });
+
+        let footer_parser = liquid::ParserBuilder::with_stdlib()
+            .build()
+            .map_err(|e| format!("Failed to create footer parser: {}", e))?;
+
+        let footer_template_parsed = footer_parser
+            .parse(&footer_template)
+            .map_err(|e| format!("Failed to parse footer template: {}", e))?;
+
+        let footer_content = footer_template_parsed
+            .render(&footer_globals)
+            .unwrap_or_else(|e| {
+                error!("Failed to render footer template: {}", e);
+                footer_template
             });
 
         let template_content = self.load_template(template_name).await?;
@@ -252,22 +215,13 @@ impl TemplateEngine {
             );
         }
 
+
         template
             .render(&full_globals)
             .map_err(|e| format!("Failed to render template: {}", e))
     }
 }
 
-pub async fn template_handler<T>(
-    State((engine, _, _)): State<(Arc<TemplateEngine>, StaticFileHandler, T)>,
-    path: Option<Path<String>>,
-) -> impl IntoResponse
-where
-    T: Send + Sync,
-{
-    let path = path.map(|p| p.0).unwrap_or_default();
-    engine.render(&path).await
-}
 
 #[axum::debug_handler]
 pub async fn template_with_gallery_handler(

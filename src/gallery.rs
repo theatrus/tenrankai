@@ -26,8 +26,6 @@ pub enum GalleryError {
     IoError(std::io::Error),
     ImageError(image::ImageError),
     InvalidPath,
-    DirectoryNotFound,
-    ImageNotFound,
 }
 
 impl std::fmt::Display for GalleryError {
@@ -36,8 +34,6 @@ impl std::fmt::Display for GalleryError {
             GalleryError::IoError(e) => write!(f, "IO error: {}", e),
             GalleryError::ImageError(e) => write!(f, "Image error: {}", e),
             GalleryError::InvalidPath => write!(f, "Invalid path"),
-            GalleryError::DirectoryNotFound => write!(f, "Directory not found"),
-            GalleryError::ImageNotFound => write!(f, "Image not found"),
         }
     }
 }
@@ -715,6 +711,7 @@ impl Gallery {
         Ok(new_metadata)
     }
 
+    #[allow(dead_code)]
     pub async fn cleanup_metadata_cache(&self) -> Result<(), GalleryError> {
         let mut cache = self.metadata_cache.write().await;
         let mut keys_to_remove = Vec::new();
@@ -1041,6 +1038,8 @@ impl Gallery {
         Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, content_type)
+            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+            .header(header::ETAG, format!("\"{}\"", self.generate_cache_key(path.to_str().unwrap_or(""), "etag")))
             .body(body)
             .unwrap()
     }
@@ -1061,7 +1060,7 @@ pub async fn gallery_handler(
 
     let items = match gallery.scan_directory(&path).await {
         Ok(items) => items,
-        Err(GalleryError::DirectoryNotFound | GalleryError::InvalidPath) => {
+        Err(GalleryError::InvalidPath) => {
             return (StatusCode::NOT_FOUND, "Directory not found").into_response();
         }
         Err(e) => {

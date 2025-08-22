@@ -43,9 +43,19 @@ impl StaticFileHandler {
         let stream = ReaderStream::new(file);
         let body = Body::from_stream(stream);
 
+        // Add cache headers for static files (especially images)
+        let cache_control = if content_type.starts_with("image/") {
+            "public, max-age=31536000, immutable"
+        } else if content_type.starts_with("text/css") || content_type.starts_with("application/javascript") {
+            "public, max-age=86400"
+        } else {
+            "public, max-age=3600"
+        };
+
         Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, content_type)
+            .header(header::CACHE_CONTROL, cache_control)
             .body(body)
             .unwrap()
     }

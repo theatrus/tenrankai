@@ -171,14 +171,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Gallery cache directory: {:?}",
         config.gallery.cache_directory
     );
-    info!(
-        "Gallery thumbnail size: {}x{}",
-        config.gallery.thumbnail.width, config.gallery.thumbnail.height
-    );
-    info!(
-        "Gallery preview max images: {}",
-        config.gallery.preview.max_images
-    );
 
     let template_engine = Arc::new(TemplateEngine::new(config.templates.directory));
     let static_handler = StaticFileHandler::new(config.static_files.directory);
