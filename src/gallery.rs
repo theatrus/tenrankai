@@ -17,7 +17,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
-use tracing::{error, warn};
+use tracing::error;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
@@ -55,7 +55,7 @@ impl From<image::ImageError> for GalleryError {
     }
 }
 
-use crate::{GalleryConfig, ImageSizeConfig, PreviewConfig, static_files::StaticFileHandler, templating::TemplateEngine};
+use crate::{GalleryConfig, static_files::StaticFileHandler, templating::TemplateEngine};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
@@ -304,7 +304,7 @@ impl Gallery {
     pub async fn get_image_info_with_navigation(
         &self,
         relative_path: &str,
-    ) -> Result<(ImageInfo, Option<NavigationImage>, Option<NavigationImage>), String> {
+    ) -> Result<(ImageInfo, Option<NavigationImage>, Option<NavigationImage>), GalleryError> {
         let image_info = self.get_image_info(relative_path).await?;
 
         // Get the directory containing this image
@@ -355,20 +355,18 @@ impl Gallery {
         Ok((image_info, prev_image, next_image))
     }
 
-    pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, String> {
+    pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
 
         if !full_path.starts_with(&self.config.source_directory) {
-            return Err("Invalid path".to_string());
+            return Err(GalleryError::InvalidPath);
         }
 
-        let metadata = tokio::fs::metadata(&full_path)
-            .await
-            .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+        let metadata = tokio::fs::metadata(&full_path).await?;
 
         let file_size = metadata.len();
 
-        let img = image::open(&full_path).map_err(|e| format!("Failed to open image: {}", e))?;
+        let img = image::open(&full_path)?;
 
         let dimensions = (img.width(), img.height());
 
@@ -728,23 +726,21 @@ impl Gallery {
         original_path: &PathBuf,
         relative_path: &str,
         size: &str,
-    ) -> Result<PathBuf, String> {
+    ) -> Result<PathBuf, GalleryError> {
         let (width, height) = match size {
             "thumbnail" => (self.config.thumbnail.width, self.config.thumbnail.height),
             "gallery" => (self.config.gallery_size.width, self.config.gallery_size.height),
             "medium" => (self.config.medium.width, self.config.medium.height),
             "large" => (self.config.large.width, self.config.large.height),
-            _ => return Err("Invalid size".to_string()),
+            _ => return Err(GalleryError::InvalidPath),
         };
 
         let hash = self.generate_cache_key(relative_path, size);
         let cache_filename = format!("{}.jpg", hash);
         let cache_path = self.config.cache_directory.join(cache_filename);
 
-        let original_metadata = tokio::fs::metadata(original_path)
-            .await
-            .map_err(|e| e.to_string())?;
-        let original_modified = original_metadata.modified().map_err(|e| e.to_string())?;
+        let original_metadata = tokio::fs::metadata(original_path).await?;
+        let original_modified = original_metadata.modified()?;
 
         let cache = self.cache.read().await;
         if let Some(cached) = cache.get(&hash) {
@@ -754,21 +750,15 @@ impl Gallery {
         }
         drop(cache);
 
-        tokio::fs::create_dir_all(&self.config.cache_directory)
-            .await
-            .map_err(|e| e.to_string())?;
+        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
 
         // Open image with decoder to access ICC profile
-        let original_file = std::fs::File::open(original_path)
-            .map_err(|e| format!("Failed to open original image: {}", e))?;
+        let original_file = std::fs::File::open(original_path)?;
 
         let decoder = image::ImageReader::new(std::io::BufReader::new(original_file))
-            .with_guessed_format()
-            .map_err(|e| format!("Failed to create decoder: {}", e))?;
+            .with_guessed_format()?;
 
-        let img = decoder
-            .decode()
-            .map_err(|e| format!("Failed to decode image: {}", e))?;
+        let img = decoder.decode()?;
 
         let resized = img.resize(width, height, FilterType::Lanczos3);
 
@@ -776,9 +766,7 @@ impl Gallery {
         // Note: The standard image crate JPEG encoder doesn't support embedding ICC profiles
         // For production use, consider using a library like turbojpeg-sys or mozjpeg
         // that supports ICC profile embedding during encoding
-        resized
-            .save_with_format(&cache_path, ImageFormat::Jpeg)
-            .map_err(|e| format!("Failed to save resized image: {}", e))?;
+        resized.save_with_format(&cache_path, ImageFormat::Jpeg)?;
 
         let mut cache = self.cache.write().await;
         cache.insert(
@@ -799,7 +787,7 @@ impl Gallery {
         format!("{:x}", hasher.finalize())
     }
 
-    pub async fn get_gallery_preview(&self, max_items: usize) -> Result<Vec<GalleryItem>, String> {
+    pub async fn get_gallery_preview(&self, max_items: usize) -> Result<Vec<GalleryItem>, GalleryError> {
         let mut all_items = Vec::new();
 
         // Recursively collect all folders and a sample of images
@@ -826,29 +814,27 @@ impl Gallery {
         relative_path: &'a str,
         items: &'a mut Vec<GalleryItem>,
         max_per_folder: usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>> {
         Box::pin(async move {
             let full_path = self.config.source_directory.join(relative_path);
 
             if !full_path.starts_with(&self.config.source_directory) {
-                return Err("Invalid path".to_string());
+                return Err(GalleryError::InvalidPath);
             }
 
-            let entries = tokio::fs::read_dir(&full_path)
-                .await
-                .map_err(|e| format!("Failed to read directory: {}", e))?;
+            let entries = tokio::fs::read_dir(&full_path).await?;
 
             let mut entries = entries;
             let mut folder_images = Vec::new();
 
-            while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+            while let Some(entry) = entries.next_entry().await? {
                 let file_name = entry.file_name().to_string_lossy().to_string();
 
                 if file_name.starts_with('.') || file_name.ends_with(".md") {
                     continue;
                 }
 
-                let metadata = entry.metadata().await.map_err(|e| e.to_string())?;
+                let metadata = entry.metadata().await?;
                 let is_directory = metadata.is_dir();
 
                 let item_path = if relative_path.is_empty() {
