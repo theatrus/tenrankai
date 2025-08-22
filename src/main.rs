@@ -22,6 +22,14 @@ use static_files::StaticFileHandler;
 use templating::{TemplateEngine, template_with_gallery_handler};
 use favicon::{FaviconRenderer, favicon_ico_handler, favicon_png_16_handler, favicon_png_32_handler, favicon_png_48_handler};
 
+#[derive(Clone)]
+pub struct AppState {
+    pub template_engine: Arc<TemplateEngine>,
+    pub static_handler: StaticFileHandler,
+    pub gallery: SharedGallery,
+    pub favicon_renderer: FaviconRenderer,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -70,7 +78,7 @@ struct StaticConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct GalleryConfig {
+pub struct GalleryConfig {
     path_prefix: String,
     source_directory: PathBuf,
     cache_directory: PathBuf,
@@ -83,13 +91,13 @@ struct GalleryConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct ImageSizeConfig {
+pub struct ImageSizeConfig {
     width: u32,
     height: u32,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct PreviewConfig {
+pub struct PreviewConfig {
     max_images: usize,
     max_depth: usize,
     max_per_folder: usize,
@@ -184,6 +192,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Clone gallery for shutdown handler before moving it into router state
     let gallery_for_shutdown = gallery.clone();
 
+    let app_state = AppState {
+        template_engine,
+        static_handler,
+        gallery,
+        favicon_renderer,
+    };
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/echo", post(echo))
@@ -199,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/gallery/{*path}", get(gallery_handler))
         .route("/", get(template_with_gallery_handler))
         .route("/{*path}", get(template_with_gallery_handler))
-        .with_state((template_engine, static_handler, gallery, favicon_renderer));
+        .with_state(app_state);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Server listening on {}", addr);
@@ -254,29 +269,19 @@ async fn echo(body: String) -> String {
 }
 
 async fn static_file_handler(
-    axum::extract::State((_, static_handler, _, _)): axum::extract::State<(
-        Arc<TemplateEngine>,
-        StaticFileHandler,
-        SharedGallery,
-        FaviconRenderer,
-    )>,
+    State(app_state): State<AppState>,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> impl axum::response::IntoResponse {
-    static_handler.serve(&path).await
+    app_state.static_handler.serve(&path).await
 }
 
 
 async fn gallery_root_handler(
-    State((template_engine, static_handler, gallery, favicon_renderer)): State<(
-        Arc<TemplateEngine>,
-        StaticFileHandler,
-        SharedGallery,
-        FaviconRenderer,
-    )>,
+    State(app_state): State<AppState>,
     Query(query): Query<gallery::GalleryQuery>,
 ) -> impl IntoResponse {
     gallery_handler(
-        State((template_engine, static_handler, gallery, favicon_renderer)),
+        State(app_state),
         Path("".to_string()),
         Query(query),
     )

@@ -52,7 +52,7 @@ impl From<image::ImageError> for GalleryError {
     }
 }
 
-use crate::{GalleryConfig, static_files::StaticFileHandler, templating::TemplateEngine};
+use crate::GalleryConfig;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
@@ -1048,15 +1048,12 @@ impl Gallery {
 pub type SharedGallery = Arc<Gallery>;
 
 pub async fn gallery_handler(
-    State((template_engine, _, gallery, _)): State<(
-        Arc<TemplateEngine>,
-        StaticFileHandler,
-        SharedGallery,
-        crate::favicon::FaviconRenderer,
-    )>,
+    State(app_state): State<crate::AppState>,
     Path(path): Path<String>,
     Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {
+    let template_engine = &app_state.template_engine;
+    let gallery = &app_state.gallery;
     let page = query.page.unwrap_or(0);
 
     let items = match gallery.scan_directory(&path).await {
@@ -1123,14 +1120,11 @@ pub async fn gallery_handler(
 }
 
 pub async fn image_detail_handler(
-    State((template_engine, _, gallery, _)): State<(
-        Arc<TemplateEngine>,
-        StaticFileHandler,
-        SharedGallery,
-        crate::favicon::FaviconRenderer,
-    )>,
+    State(app_state): State<crate::AppState>,
     Path(path): Path<String>,
 ) -> impl IntoResponse {
+    let template_engine = &app_state.template_engine;
+    let gallery = &app_state.gallery;
     let (image_info, prev_image, next_image) =
         match gallery.get_image_info_with_navigation(&path).await {
             Ok((info, prev, next)) => (info, prev, next),
@@ -1159,9 +1153,9 @@ pub async fn image_detail_handler(
 }
 
 pub async fn image_handler(
-    State((_, _, gallery, _)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery, crate::favicon::FaviconRenderer)>,
+    State(app_state): State<crate::AppState>,
     Path(path): Path<String>,
     Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {
-    gallery.serve_image(&path, query.size).await
+    app_state.gallery.serve_image(&path, query.size).await
 }

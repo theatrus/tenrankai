@@ -1,4 +1,4 @@
-use crate::{gallery::SharedGallery, static_files::StaticFileHandler};
+use crate::gallery::SharedGallery;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -225,9 +225,9 @@ impl TemplateEngine {
 
 #[axum::debug_handler]
 pub async fn template_with_gallery_handler(
-    State((engine, _, gallery, _)): State<(Arc<TemplateEngine>, StaticFileHandler, SharedGallery, crate::favicon::FaviconRenderer)>,
+    State(app_state): State<crate::AppState>,
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let path = path.map(|p| p.0).unwrap_or_default();
-    engine.render_with_gallery(&path, &gallery).await
+    app_state.template_engine.render_with_gallery(&path, &app_state.gallery).await
 }
