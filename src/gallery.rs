@@ -48,9 +48,6 @@ pub struct ImageInfo {
     pub location_info: Option<LocationInfo>,
     pub file_size: u64,
     pub dimensions: (u32, u32),
-    pub gallery_display_width: u32,
-    pub gallery_display_height: u32,
-    pub masonry_column: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,7 +80,6 @@ pub struct NavigationImage {
 pub struct GalleryQuery {
     pub page: Option<usize>,
     pub size: Option<String>,
-    pub viewport_width: Option<u32>,
 }
 
 pub struct Gallery {
@@ -370,77 +366,10 @@ impl Gallery {
             location_info,
             file_size,
             dimensions,
-            gallery_display_width: 0, // Will be calculated later
-            gallery_display_height: 0, // Will be calculated later
-            masonry_column: 0, // Will be calculated later
         })
     }
 
-    fn calculate_display_dimensions(&self, original_width: u32, original_height: u32, max_width: u32) -> (u32, u32) {
-        if original_width <= max_width {
-            (original_width, original_height)
-        } else {
-            let ratio = max_width as f64 / original_width as f64;
-            let new_height = (original_height as f64 * ratio) as u32;
-            (max_width, new_height)
-        }
-    }
 
-    fn calculate_column_width(&self, viewport_width: Option<u32>) -> u32 {
-        let viewport = viewport_width.unwrap_or(1200); // Default to desktop width
-        
-        if viewport <= 768 {
-            // Mobile: single column, use most of the width
-            (viewport as f64 * 0.9) as u32
-        } else {
-            // Desktop: two columns with gap
-            let container_width = std::cmp::min(viewport, 1200); // Max container width
-            let container_padding = 40; // Container padding
-            let gap = 24; // 1.5rem gap between columns
-            let available_width = container_width - container_padding - gap;
-            available_width / 2
-        }
-    }
-
-    pub fn compute_masonry_layout(&self, mut images: Vec<ImageInfo>, column_width: u32) -> Vec<ImageInfo> {
-        const NUM_COLUMNS: usize = 2;
-        let mut column_heights = [0u32; NUM_COLUMNS];
-
-        for image in &mut images {
-            let (width, height) = self.calculate_display_dimensions(
-                image.dimensions.0,
-                image.dimensions.1,
-                column_width
-            );
-            
-            image.gallery_display_width = width;
-            image.gallery_display_height = height;
-
-            // Find the shortest column
-            let shortest_column = column_heights
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, height)| *height)
-                .map(|(index, _)| index)
-                .unwrap_or(0);
-
-            image.masonry_column = shortest_column;
-            column_heights[shortest_column] += height + 24; // Add 1.5rem gap (24px)
-        }
-
-        // Sort by column, then by order within column
-        images.sort_by(|a, b| {
-            match a.masonry_column.cmp(&b.masonry_column) {
-                std::cmp::Ordering::Equal => {
-                    // Keep original order within the same column
-                    std::cmp::Ordering::Equal
-                }
-                other => other,
-            }
-        });
-
-        images
-    }
 
     async fn read_folder_metadata(&self, folder_path: &str) -> (Option<String>, Option<String>) {
         let folder_md_path = self
@@ -940,11 +869,8 @@ pub async fn gallery_handler(
         }
     };
 
-    // Calculate column width based on viewport
-    let column_width = gallery.calculate_column_width(query.viewport_width);
-    
-    // Compute masonry layout with pre-calculated dimensions
-    let images_with_layout = gallery.compute_masonry_layout(images, column_width);
+    // Send images without pre-computed layout - client will handle this
+    let images_with_layout = images;
 
     // Get folder metadata for current directory
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
@@ -953,12 +879,16 @@ pub async fn gallery_handler(
     let total_pages =
         (total_images + gallery.config.images_per_page - 1) / gallery.config.images_per_page;
 
+    // Serialize images to JSON string for client-side use
+    let images_json = serde_json::to_string(&images_with_layout).unwrap_or_else(|_| "[]".to_string());
+
     let globals = liquid::object!({
         "gallery_path": path,
         "folder_title": folder_title,
         "folder_description": folder_description,
         "items": items,
         "images": images_with_layout,
+        "images_json": images_json,
         "current_page": page,
         "total_pages": total_pages,
         "has_prev": page > 0,

@@ -1,13 +1,8 @@
 {% if gallery_preview and gallery_preview.size > 0 %}
     <section class="gallery-preview-component">
-        <div class="preview-masonry">
-            {% for item in gallery_preview %}
-                <a href="/gallery/{{ item.parent_path }}#{{ item.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" class="preview-item image-preview-item">
-                    <div class="preview-image">
-                        <img src="{{ item.thumbnail_url }}" alt="{{ item.name }}" loading="lazy">
-                    </div>
-                </a>
-            {% endfor %}
+        <div class="preview-masonry" id="gallery-preview-grid">
+            <div class="masonry-column" data-column="0"></div>
+            <div class="masonry-column" data-column="1"></div>
         </div>
         {% if show_explore_link != false %}
             <div class="preview-footer">
@@ -15,6 +10,11 @@
             </div>
         {% endif %}
     </section>
+    
+    <!-- Hidden data for preview images -->
+    <script type="application/json" id="gallery-preview-images">
+{{ gallery_preview_json }}
+    </script>
 {% endif %}
 
 <style>

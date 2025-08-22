@@ -56,30 +56,15 @@
         {% if images.size > 0 %}
             <div class="gallery-images">
                 <h3>Images</h3>
-                <div class="image-grid">
-                    <div class="masonry-column" data-column="0">
-                        {% for image in images %}
-                            {% if image.masonry_column == 0 %}
-                                <div class="image-item" id="{{ image.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" data-path="{{ image.path }}" style="width: {{ image.gallery_display_width }}px; height: {{ image.gallery_display_height }}px;">
-                                    <a href="/gallery/detail/{{ image.path }}" class="image-link">
-                                        <img src="{{ image.gallery_url }}" alt="{{ image.name }}" width="{{ image.gallery_display_width }}" height="{{ image.gallery_display_height }}">
-                                    </a>
-                                </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                    <div class="masonry-column" data-column="1">
-                        {% for image in images %}
-                            {% if image.masonry_column == 1 %}
-                                <div class="image-item" id="{{ image.name | replace: '.', '' | replace: ' ', '' | replace: '-', '' | replace: '_', '' }}" data-path="{{ image.path }}" style="width: {{ image.gallery_display_width }}px; height: {{ image.gallery_display_height }}px;">
-                                    <a href="/gallery/detail/{{ image.path }}" class="image-link">
-                                        <img src="{{ image.gallery_url }}" alt="{{ image.name }}" width="{{ image.gallery_display_width }}" height="{{ image.gallery_display_height }}">
-                                    </a>
-                                </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
+                <div class="image-grid" id="gallery-grid">
+                    <div class="masonry-column" data-column="0"></div>
+                    <div class="masonry-column" data-column="1"></div>
                 </div>
+                
+                <!-- Hidden template for images -->
+                <script type="application/json" id="gallery-images">
+{{ images_json }}
+                </script>
                 
                 <!-- Pagination -->
                 {% if total_pages > 1 %}
@@ -335,37 +320,138 @@ body {
 </style>
 
 <script>
-// Detect viewport width and reload with appropriate layout
+// Client-side masonry layout
 (function() {
-    const currentUrl = new URL(window.location);
-    const viewportWidth = window.innerWidth;
-    const currentViewport = currentUrl.searchParams.get('viewport_width');
+    const galleryGrid = document.getElementById('gallery-grid');
+    const imagesDataElement = document.getElementById('gallery-images');
     
-    // Only reload if viewport width differs significantly (50px threshold)
-    if (!currentViewport || Math.abs(parseInt(currentViewport) - viewportWidth) > 50) {
-        currentUrl.searchParams.set('viewport_width', viewportWidth);
+    if (!galleryGrid || !imagesDataElement) return;
+    
+    let images;
+    try {
+        images = JSON.parse(imagesDataElement.textContent);
+    } catch (e) {
+        console.error('Failed to parse gallery images data:', e);
+        return;
+    }
+    
+    function calculateColumnWidth() {
+        const viewportWidth = window.innerWidth;
+        const containerWidth = Math.min(viewportWidth, 1200);
+        const containerPadding = 40;
+        const gap = 24; // 1.5rem
         
-        // Only reload if we're not already loading with the correct viewport
-        if (currentUrl.toString() !== window.location.toString()) {
-            window.location.replace(currentUrl.toString());
+        if (viewportWidth <= 768) {
+            // Mobile: single column
+            return containerWidth - containerPadding;
+        } else {
+            // Desktop: two columns
+            return (containerWidth - containerPadding - gap) / 2;
         }
     }
+    
+    function calculateDisplayDimensions(originalWidth, originalHeight, maxWidth) {
+        if (originalWidth <= maxWidth) {
+            return { width: originalWidth, height: originalHeight };
+        } else {
+            const ratio = maxWidth / originalWidth;
+            return { 
+                width: maxWidth, 
+                height: Math.round(originalHeight * ratio)
+            };
+        }
+    }
+    
+    function createImageElement(image, displayDimensions) {
+        const cleanName = image.name
+            .replace(/\./g, '')
+            .replace(/\s/g, '')
+            .replace(/-/g, '')
+            .replace(/_/g, '');
+        
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'image-item';
+        itemDiv.id = cleanName;
+        itemDiv.setAttribute('data-path', image.path);
+        itemDiv.style.width = displayDimensions.width + 'px';
+        itemDiv.style.height = displayDimensions.height + 'px';
+        
+        const link = document.createElement('a');
+        link.href = '/gallery/detail/' + image.path;
+        link.className = 'image-link';
+        
+        const img = document.createElement('img');
+        img.src = image.gallery_url;
+        img.alt = image.name;
+        img.width = displayDimensions.width;
+        img.height = displayDimensions.height;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        
+        link.appendChild(img);
+        itemDiv.appendChild(link);
+        
+        return itemDiv;
+    }
+    
+    function layoutMasonry() {
+        const columnWidth = calculateColumnWidth();
+        const viewportWidth = window.innerWidth;
+        const numColumns = viewportWidth <= 768 ? 1 : 2;
+        
+        // Clear existing content
+        const columns = galleryGrid.querySelectorAll('.masonry-column');
+        columns.forEach(col => col.innerHTML = '');
+        
+        // Hide/show columns based on viewport
+        columns[0].style.display = 'flex';
+        if (columns[1]) {
+            columns[1].style.display = numColumns > 1 ? 'flex' : 'none';
+        }
+        
+        // Track column heights
+        const columnHeights = new Array(numColumns).fill(0);
+        
+        // Process each image
+        images.forEach(image => {
+            const displayDimensions = calculateDisplayDimensions(
+                image.dimensions[0], 
+                image.dimensions[1], 
+                columnWidth
+            );
+            
+            // Find shortest column
+            const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights));
+            
+            // Create and append image element
+            const imageElement = createImageElement(image, displayDimensions);
+            columns[shortestColumnIndex].appendChild(imageElement);
+            
+            // Update column height
+            columnHeights[shortestColumnIndex] += displayDimensions.height + 24; // gap
+        });
+    }
+    
+    // Initial layout
+    layoutMasonry();
     
     // Handle window resize with debouncing
     let resizeTimeout;
     window.addEventListener('resize', function() {
         clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(function() {
-            const newViewportWidth = window.innerWidth;
-            const currentViewport = new URL(window.location).searchParams.get('viewport_width');
-            
-            if (!currentViewport || Math.abs(parseInt(currentViewport) - newViewportWidth) > 50) {
-                const newUrl = new URL(window.location);
-                newUrl.searchParams.set('viewport_width', newViewportWidth);
-                window.location.replace(newUrl.toString());
-            }
-        }, 300);
+        resizeTimeout = setTimeout(layoutMasonry, 150);
     });
+    
+    // Handle anchor links after layout is complete
+    if (window.location.hash) {
+        setTimeout(() => {
+            const targetElement = document.getElementById(window.location.hash.substring(1));
+            if (targetElement) {
+                targetElement.scrollIntoView({ behavior: 'smooth' });
+            }
+        }, 100);
+    }
 })();
 </script>
 
