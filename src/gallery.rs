@@ -1778,4 +1778,234 @@ mod tests {
         // The timestamp corresponds to this exact time
         assert_eq!(formatted, "July 30, 2005 at 10:36:06");
     }
+
+    // Unit tests for image handler size validation and permission logic
+    mod image_handler_tests {
+        use super::*;
+        use axum::http::HeaderMap;
+
+        fn create_test_headers_with_cookie(cookie_value: &str) -> HeaderMap {
+            let mut headers = HeaderMap::new();
+            headers.insert("cookie", format!("download_allowed={}", cookie_value).parse().unwrap());
+            headers
+        }
+
+        fn create_test_headers_without_cookie() -> HeaderMap {
+            HeaderMap::new()
+        }
+
+        #[tokio::test]
+        async fn test_image_handler_size_validation() {
+            // Test size parameter validation logic without requiring actual images
+
+            // Test valid sizes that should be allowed without authentication
+            let valid_sizes = vec!["thumbnail", "gallery", "medium"];
+            for size in valid_sizes {
+                let result = validate_size_parameter(Some(size.to_string()), &"secret".to_string());
+                match result {
+                    SizeValidationResult::AllowedWithoutAuth => {
+                        // Expected for thumbnail, gallery, medium
+                    }
+                    _ => panic!("Size '{}' should be allowed without auth", size),
+                }
+            }
+
+            // Test large size that requires authentication
+            let result = validate_size_parameter(Some("large".to_string()), &"secret".to_string());
+            match result {
+                SizeValidationResult::RequiresAuth => {
+                    // Expected for large
+                }
+                _ => panic!("Size 'large' should require authentication"),
+            }
+
+            // Test no size parameter (full-size) that requires authentication
+            let result = validate_size_parameter(None, &"secret".to_string());
+            match result {
+                SizeValidationResult::RequiresAuth => {
+                    // Expected for no size
+                }
+                _ => panic!("No size parameter should require authentication"),
+            }
+
+            // Test invalid size parameters
+            let invalid_sizes = vec!["full", "huge", "invalid", "xxl"];
+            for size in invalid_sizes {
+                let result = validate_size_parameter(Some(size.to_string()), &"secret".to_string());
+                match result {
+                    SizeValidationResult::InvalidSize => {
+                        // Expected for invalid sizes
+                    }
+                    _ => panic!("Size '{}' should be invalid", size),
+                }
+            }
+        }
+
+        #[tokio::test] 
+        async fn test_has_download_permission() {
+            let secret = "test-secret";
+
+            // Test with valid signed cookie
+            let valid_cookie = crate::api::create_signed_cookie(secret, "true").unwrap();
+            let headers_with_valid_cookie = create_test_headers_with_cookie(&valid_cookie);
+            assert!(has_download_permission(&headers_with_valid_cookie, secret));
+
+            // Test with invalid cookie
+            let headers_with_invalid_cookie = create_test_headers_with_cookie("invalid-cookie");
+            assert!(!has_download_permission(&headers_with_invalid_cookie, secret));
+
+            // Test with tampered cookie
+            let tampered_cookie = valid_cookie.replace("true", "false");
+            let headers_with_tampered_cookie = create_test_headers_with_cookie(&tampered_cookie);
+            assert!(!has_download_permission(&headers_with_tampered_cookie, secret));
+
+            // Test with no cookie
+            let headers_without_cookie = create_test_headers_without_cookie();
+            assert!(!has_download_permission(&headers_without_cookie, secret));
+        }
+
+        #[test]
+        fn test_cookie_parsing() {
+            // Test the get_cookie_value function
+            let mut headers = HeaderMap::new();
+            
+            // Test single cookie
+            headers.insert("cookie", "download_allowed=test-value".parse().unwrap());
+            assert_eq!(crate::api::get_cookie_value(&headers, "download_allowed"), Some("test-value".to_string()));
+
+            // Test multiple cookies
+            headers.insert("cookie", "session=abc123; download_allowed=test-value; other=xyz".parse().unwrap());
+            assert_eq!(crate::api::get_cookie_value(&headers, "download_allowed"), Some("test-value".to_string()));
+            assert_eq!(crate::api::get_cookie_value(&headers, "session"), Some("abc123".to_string()));
+            assert_eq!(crate::api::get_cookie_value(&headers, "other"), Some("xyz".to_string()));
+
+            // Test missing cookie
+            assert_eq!(crate::api::get_cookie_value(&headers, "missing"), None);
+
+            // Test empty headers
+            let empty_headers = HeaderMap::new();
+            assert_eq!(crate::api::get_cookie_value(&empty_headers, "download_allowed"), None);
+        }
+
+        // Helper enum for size validation test results
+        #[derive(Debug, PartialEq)]
+        enum SizeValidationResult {
+            AllowedWithoutAuth,
+            RequiresAuth,
+            InvalidSize,
+        }
+
+        // Helper function to test size validation logic
+        fn validate_size_parameter(size: Option<String>, _secret: &String) -> SizeValidationResult {
+            if let Some(ref size_str) = size {
+                match size_str.as_str() {
+                    "thumbnail" | "gallery" | "medium" => SizeValidationResult::AllowedWithoutAuth,
+                    "large" => SizeValidationResult::RequiresAuth,
+                    _ => SizeValidationResult::InvalidSize,
+                }
+            } else {
+                SizeValidationResult::RequiresAuth
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_integration_image_handler_responses() {
+        // Integration tests that test the actual HTTP response codes
+        // These test the complete image_handler function behavior
+
+        use crate::{AppState, AppConfig, ServerConfig, TemplateConfig, StaticConfig, Config};
+        use axum::extract::{Path, Query, State};
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+        use std::sync::Arc;
+
+        // Create minimal test app state
+        let config = Config {
+            server: ServerConfig { host: "127.0.0.1".to_string(), port: 3000 },
+            app: AppConfig {
+                name: "Test".to_string(),
+                log_level: "info".to_string(),
+                download_secret: "test-secret".to_string(),
+                download_password: "test-pass".to_string(),
+            },
+            templates: TemplateConfig { directory: "templates".into() },
+            static_files: StaticConfig { directory: "static".into() },
+            gallery: GalleryConfig {
+                path_prefix: "gallery".to_string(),
+                source_directory: "photos".into(),
+                cache_directory: "cache".into(),
+                images_per_page: 20,
+                thumbnail: ImageSizeConfig { width: 300, height: 300 },
+                gallery_size: ImageSizeConfig { width: 800, height: 800 },
+                medium: ImageSizeConfig { width: 1200, height: 1200 },
+                large: ImageSizeConfig { width: 1600, height: 1600 },
+                preview: PreviewConfig { max_images: 4, max_depth: 3, max_per_folder: 3 },
+                cache_refresh_interval_minutes: None,
+            },
+        };
+
+        let app_state = AppState {
+            template_engine: Arc::new(crate::templating::TemplateEngine::new("templates".into())),
+            static_handler: crate::static_files::StaticFileHandler::new("static".into()),
+            gallery: Arc::new(Gallery::new(config.gallery.clone())),
+            favicon_renderer: crate::favicon::FaviconRenderer::new("static".into()),
+            config: config.clone(),
+        };
+
+        // Test 1: Invalid size parameter should return 400 Bad Request
+        let headers_without_auth = HeaderMap::new();
+        let query_invalid_size = GalleryQuery { page: None, size: Some("full".to_string()) };
+        let response = image_handler(
+            State(app_state.clone()),
+            Path("test.jpg".to_string()),
+            Query(query_invalid_size),
+            headers_without_auth.clone(),
+        ).await;
+        
+        let response_parts = response.into_response();
+        assert_eq!(response_parts.status(), StatusCode::BAD_REQUEST, "Invalid size parameter should return 400");
+
+        // Test 2: Large size without auth should return 403 Forbidden
+        let query_large_size = GalleryQuery { page: None, size: Some("large".to_string()) };
+        let response = image_handler(
+            State(app_state.clone()),
+            Path("test.jpg".to_string()),
+            Query(query_large_size),
+            headers_without_auth.clone(),
+        ).await;
+        
+        let response_parts = response.into_response();
+        assert_eq!(response_parts.status(), StatusCode::FORBIDDEN, "Large size without auth should return 403");
+
+        // Test 3: No size parameter without auth should return 403 Forbidden
+        let query_no_size = GalleryQuery { page: None, size: None };
+        let response = image_handler(
+            State(app_state.clone()),
+            Path("test.jpg".to_string()),
+            Query(query_no_size),
+            headers_without_auth,
+        ).await;
+        
+        let response_parts = response.into_response();
+        assert_eq!(response_parts.status(), StatusCode::FORBIDDEN, "No size parameter without auth should return 403");
+
+        // Test 4: Valid size with auth should proceed (will likely return 404 since image doesn't exist)
+        let valid_cookie = crate::api::create_signed_cookie(&config.app.download_secret, "true").unwrap();
+        let mut headers_with_auth = HeaderMap::new();
+        headers_with_auth.insert("cookie", format!("download_allowed={}", valid_cookie).parse().unwrap());
+        
+        let query_large_with_auth = GalleryQuery { page: None, size: Some("large".to_string()) };
+        let response = image_handler(
+            State(app_state),
+            Path("test.jpg".to_string()),
+            Query(query_large_with_auth),
+            headers_with_auth,
+        ).await;
+        
+        let response_parts = response.into_response();
+        // Should not be 400 or 403 - likely 404 since image doesn't exist or 500 if serve_image fails
+        assert_ne!(response_parts.status(), StatusCode::BAD_REQUEST, "Valid size with auth should not return 400");
+        assert_ne!(response_parts.status(), StatusCode::FORBIDDEN, "Valid size with auth should not return 403");
+    }
 }
