@@ -1,7 +1,6 @@
 {% if gallery_preview and gallery_preview.size > 0 %}
     <section class="gallery-preview-component">
-        <h3>{{ preview_title | default: "Recent from the Gallery" }}</h3>
-        <div class="preview-grid">
+        <div class="preview-masonry">
             {% for item in gallery_preview %}
                 {% if item.is_directory %}
                     <a href="/gallery/{{ item.path }}" class="preview-item folder-preview-item">
@@ -27,12 +26,9 @@
                         </div>
                     </a>
                 {% else %}
-                    <a href="/gallery/detail/{{ item.path }}" class="preview-item image-preview-item">
+                    <a href="/gallery/{{ item.path | dirname }}#{{ item.name | remove: '.' | remove: ' ' | remove: '-' | remove: '_' }}" class="preview-item image-preview-item">
                         <div class="preview-image">
                             <img src="{{ item.thumbnail_url }}" alt="{{ item.name }}" loading="lazy">
-                        </div>
-                        <div class="preview-info">
-                            <h4>{{ item.name }}</h4>
                         </div>
                     </a>
                 {% endif %}
@@ -51,21 +47,20 @@
     margin: 2rem 0;
 }
 
-.gallery-preview-component .preview-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
+.gallery-preview-component .preview-masonry {
+    column-count: 2;
+    column-gap: 1.5rem;
 }
 
 .gallery-preview-component .preview-item {
     background: #404040;
-    border-radius: 8px;
     overflow: hidden;
     text-decoration: none;
     color: inherit;
     transition: transform 0.3s, box-shadow 0.3s;
     display: block;
+    break-inside: avoid;
+    margin-bottom: 1.5rem;
 }
 
 .gallery-preview-component .preview-item:hover {
@@ -76,7 +71,6 @@
 .gallery-preview-component .preview-image {
     position: relative;
     width: 100%;
-    height: 200px;
     overflow: hidden;
     background: #2a2a2a;
     display: flex;
@@ -86,9 +80,10 @@
 
 .gallery-preview-component .preview-image img {
     width: 100%;
-    height: 100%;
+    height: auto;
     object-fit: cover;
     transition: transform 0.3s;
+    display: block;
 }
 
 .gallery-preview-component .preview-item:hover .preview-image img {
@@ -98,6 +93,7 @@
 .gallery-preview-component .preview-image.placeholder {
     flex-direction: column;
     gap: 0.5rem;
+    height: 200px;
 }
 
 .gallery-preview-component .folder-overlay {
@@ -159,7 +155,6 @@
     background: #555;
     color: #e0e0e0;
     text-decoration: none;
-    border-radius: 6px;
     font-weight: 500;
     transition: background 0.3s;
 }
@@ -169,13 +164,13 @@
 }
 
 @media (max-width: 768px) {
-    .gallery-preview-component .preview-grid {
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-        gap: 1rem;
+    .gallery-preview-component .preview-masonry {
+        column-count: 1;
+        column-gap: 1rem;
     }
     
-    .gallery-preview-component .preview-image {
-        height: 180px;
+    .gallery-preview-component .preview-item {
+        margin-bottom: 1rem;
     }
 }
 </style>
