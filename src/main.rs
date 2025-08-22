@@ -207,6 +207,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/favicon-16.png", get(favicon_png_16_handler))
         .route("/favicon-32.png", get(favicon_png_32_handler))
         .route("/favicon-48.png", get(favicon_png_48_handler))
+        .route("/robots.txt", get(robots_txt_handler))
         .route("/gallery", get(gallery_root_handler))
         .route("/gallery/", get(gallery_root_handler))
         .route("/gallery/detail/{*path}", get(image_detail_handler))
@@ -275,6 +276,33 @@ async fn static_file_handler(
     app_state.static_handler.serve(&path).await
 }
 
+
+async fn robots_txt_handler() -> impl IntoResponse {
+    use axum::http::header;
+    
+    let robots_content = r#"User-agent: *
+Allow: /
+
+# Allow crawling of the gallery
+Allow: /gallery
+
+# Allow common files
+Allow: /favicon.ico
+Allow: /robots.txt
+Allow: /static/
+
+# Generated sitemap (if you add one later)
+# Sitemap: https://your-domain.com/sitemap.xml
+"#;
+
+    (
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=86400"), // Cache for 24 hours
+        ],
+        robots_content
+    )
+}
 
 async fn gallery_root_handler(
     State(app_state): State<AppState>,
