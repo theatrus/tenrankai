@@ -23,8 +23,16 @@
 }
 
 .gallery-preview-component .preview-masonry {
-    column-count: 2;
-    column-gap: 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+}
+
+.gallery-preview-component .masonry-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-width: 0;
 }
 
 .gallery-preview-component .preview-item {
@@ -34,8 +42,6 @@
     color: inherit;
     transition: transform 0.3s, box-shadow 0.3s;
     display: block;
-    break-inside: avoid;
-    margin-bottom: 1.5rem;
 }
 
 .gallery-preview-component .preview-item:hover {
@@ -87,12 +93,133 @@
 
 @media (max-width: 768px) {
     .gallery-preview-component .preview-masonry {
-        column-count: 1;
-        column-gap: 1rem;
+        flex-direction: column;
+        gap: 1rem;
     }
     
-    .gallery-preview-component .preview-item {
-        margin-bottom: 1rem;
+    .gallery-preview-component .masonry-column[data-column="1"] {
+        display: none;
     }
 }
 </style>
+
+<script>
+// Client-side gallery preview masonry layout
+(function() {
+    const previewGrid = document.getElementById('gallery-preview-grid');
+    const previewDataElement = document.getElementById('gallery-preview-images');
+    
+    if (!previewGrid || !previewDataElement) return;
+    
+    let previewImages;
+    try {
+        previewImages = JSON.parse(previewDataElement.textContent);
+    } catch (e) {
+        console.error('Failed to parse gallery preview images data:', e);
+        return;
+    }
+    
+    function calculatePreviewColumnWidth() {
+        const viewportWidth = window.innerWidth;
+        const containerWidth = Math.min(viewportWidth, 1200);
+        const containerPadding = 40;
+        const gap = 24; // 1.5rem
+        
+        if (viewportWidth <= 768) {
+            // Mobile: single column
+            return containerWidth - containerPadding;
+        } else {
+            // Desktop: two columns
+            return (containerWidth - containerPadding - gap) / 2;
+        }
+    }
+    
+    function calculatePreviewDisplayDimensions(originalWidth, originalHeight, maxWidth) {
+        if (originalWidth <= maxWidth) {
+            return { width: originalWidth, height: originalHeight };
+        } else {
+            const ratio = maxWidth / originalWidth;
+            return { 
+                width: maxWidth, 
+                height: Math.round(originalHeight * ratio)
+            };
+        }
+    }
+    
+    function createPreviewImageElement(image, displayDimensions) {
+        const cleanName = image.name
+            .replace(/\./g, '')
+            .replace(/\s/g, '')
+            .replace(/-/g, '')
+            .replace(/_/g, '');
+        
+        const link = document.createElement('a');
+        link.href = '/gallery/' + image.parent_path + '#' + cleanName;
+        link.className = 'preview-item image-preview-item';
+        
+        const imageDiv = document.createElement('div');
+        imageDiv.className = 'preview-image';
+        imageDiv.style.width = displayDimensions.width + 'px';
+        imageDiv.style.height = displayDimensions.height + 'px';
+        
+        const img = document.createElement('img');
+        img.src = image.thumbnail_url;
+        img.alt = image.name;
+        img.width = displayDimensions.width;
+        img.height = displayDimensions.height;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        
+        imageDiv.appendChild(img);
+        link.appendChild(imageDiv);
+        
+        return link;
+    }
+    
+    function layoutPreviewMasonry() {
+        const columnWidth = calculatePreviewColumnWidth();
+        const viewportWidth = window.innerWidth;
+        const numColumns = viewportWidth <= 768 ? 1 : 2;
+        
+        // Clear existing content
+        const columns = previewGrid.querySelectorAll('.masonry-column');
+        columns.forEach(col => col.innerHTML = '');
+        
+        // Hide/show columns based on viewport
+        columns[0].style.display = 'flex';
+        if (columns[1]) {
+            columns[1].style.display = numColumns > 1 ? 'flex' : 'none';
+        }
+        
+        // Track column heights
+        const columnHeights = new Array(numColumns).fill(0);
+        
+        // Process each image (note: preview images don't have dimensions, so we'll estimate)
+        previewImages.forEach(image => {
+            // Estimate dimensions for preview images (assume roughly square for gallery thumbnails)
+            const estimatedDimensions = { width: columnWidth, height: columnWidth };
+            
+            // Find shortest column
+            const shortestColumnIndex = columnHeights.indexOf(Math.min(...columnHeights));
+            
+            // Create and append image element
+            const imageElement = createPreviewImageElement(image, estimatedDimensions);
+            columns[shortestColumnIndex].appendChild(imageElement);
+            
+            // Update column height (estimate)
+            columnHeights[shortestColumnIndex] += estimatedDimensions.height + 24; // gap
+        });
+    }
+    
+    // Initial layout
+    layoutPreviewMasonry();
+    
+    // Handle window resize with debouncing
+    let resizeTimeout;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(layoutPreviewMasonry, 150);
+    });
+})();
+</script>

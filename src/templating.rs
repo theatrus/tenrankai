@@ -138,8 +138,11 @@ impl TemplateEngine {
         };
 
         let gallery_preview = gallery.get_gallery_preview(6).await.unwrap_or_default();
+        let gallery_preview_json = serde_json::to_string(&gallery_preview).unwrap_or_else(|_| "[]".to_string());
+        
         let globals = liquid::object!({
             "gallery_preview": gallery_preview,
+            "gallery_preview_json": gallery_preview_json,
         });
 
         match self.render_template(template_path, globals).await {
@@ -206,6 +209,13 @@ impl TemplateEngine {
                     "show_explore_link": true,
                 });
                 preview_globals.insert("gallery_preview".into(), gallery_preview.clone());
+                
+                // Add gallery_preview_json if it exists in the main globals
+                if let Some(json_value) = globals.get("gallery_preview_json") {
+                    preview_globals.insert("gallery_preview_json".into(), json_value.clone());
+                } else {
+                    preview_globals.insert("gallery_preview_json".into(), liquid::model::Value::Scalar("[]".into()));
+                }
 
                 preview_template
                     .render(&preview_globals)
