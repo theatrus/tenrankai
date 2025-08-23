@@ -194,12 +194,20 @@ pub async fn template_with_gallery_handler(
         );
 
         // Check if there's a matching static file
-        let static_file_path = app_state.static_handler.static_dir.join(&path);
+        // If the path starts with "static/", strip it before checking
+        let check_path = if path.starts_with("static/") {
+            path.trim_start_matches("static/")
+        } else {
+            &path
+        };
+        
+        let static_file_path = app_state.static_handler.static_dir.join(check_path);
         if static_file_path.exists()
             && static_file_path.starts_with(&app_state.static_handler.static_dir)
         {
             debug!("Found static file for path: {}, serving it", path);
-            return app_state.static_handler.serve(&path).await;
+            // Pass the path without the "static/" prefix to the serve method
+            return app_state.static_handler.serve(check_path).await;
         }
 
         debug!(

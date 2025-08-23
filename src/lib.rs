@@ -129,7 +129,7 @@ impl Default for Config {
     }
 }
 
-use axum::Router;
+use axum::{Router, extract::{Path, State}, response::IntoResponse};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -139,6 +139,13 @@ pub struct AppState {
     pub gallery: gallery::SharedGallery,
     pub favicon_renderer: favicon::FaviconRenderer,
     pub config: Config,
+}
+
+async fn static_file_handler(
+    State(app_state): State<AppState>,
+    Path(path): Path<String>,
+) -> impl IntoResponse {
+    app_state.static_handler.serve(&path).await
 }
 
 pub async fn create_app(config: Config) -> Router {
@@ -206,6 +213,10 @@ pub async fn create_app(config: Config) -> Router {
         .route(
             "/favicon-48x48.png",
             axum::routing::get(favicon::favicon_png_48_handler),
+        )
+        .route(
+            "/static/{*path}",
+            axum::routing::get(static_file_handler),
         )
         .route(
             "/{*path}",

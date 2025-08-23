@@ -53,8 +53,8 @@ pub async fn gallery_handler(
     // Read folder metadata
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
-    // Build breadcrumb data
-    let breadcrumbs = gallery.build_breadcrumbs(&path).await;
+    // Build breadcrumb data - all items should be clickable in gallery view
+    let breadcrumbs = gallery.build_breadcrumbs_with_mode(&path, true).await;
 
     let globals = liquid::object!({
         "items": items,

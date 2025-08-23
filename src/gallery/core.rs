@@ -538,11 +538,15 @@ impl Gallery {
     }
 
     pub async fn build_breadcrumbs(&self, path: &str) -> Vec<BreadcrumbItem> {
+        self.build_breadcrumbs_with_mode(path, false).await
+    }
+
+    pub async fn build_breadcrumbs_with_mode(&self, path: &str, all_clickable: bool) -> Vec<BreadcrumbItem> {
         let mut breadcrumbs = vec![BreadcrumbItem {
             name: "Gallery".to_string(),
             display_name: "Gallery".to_string(),
             path: "".to_string(),
-            is_current: path.is_empty(),
+            is_current: path.is_empty() && !all_clickable,
         }];
 
         if !path.is_empty() {
@@ -563,7 +567,7 @@ impl Gallery {
                     name: part.to_string(),
                     display_name,
                     path: current_path.clone(),
-                    is_current: i == parts.len() - 1,
+                    is_current: i == parts.len() - 1 && !all_clickable,
                 });
             }
         }

@@ -226,3 +226,79 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
     // Cache has unsaved changes
 }
 ```
+
+## Recent Major Changes (August 2025)
+
+### Library/Binary Architecture Refactoring
+- **Created lib.rs**: Separated library components from binary
+- **Moved Types**: All config types (Config, ServerConfig, etc.) now in lib.rs
+- **Public API**: Exposed modules and types for external use
+- **Cleaner main.rs**: Binary now just handles CLI and server startup
+- **Benefits**: Better code organization, reusable components, testability
+
+### Gallery Preview API & Dynamic Updates
+1. **New API Endpoint**: `/api/gallery/preview`
+   - Accepts `count` parameter (default 6, max 20)
+   - Returns JSON with gallery preview images
+   - Example: `/api/gallery/preview?count=12`
+
+2. **Client-Side Gallery Preview**:
+   - Removed server-side rendering of gallery preview data
+   - Gallery preview now fetches data via API
+   - Added dynamic image replacement every 10-15 seconds
+   - Smooth fade transitions when swapping images
+
+3. **Random Image Selection Fix**:
+   - Fixed issue where images were shuffled but then sorted by date
+   - Now truly random selection on each API call
+   - Multiple shuffle passes for better randomness
+
+4. **DOM Replacement Improvements**:
+   - Added `data-image-path` attributes for reliable element identification
+   - Robust fallback logic for finding elements to replace
+   - Proper error handling during DOM manipulation
+   - Force reflow for smooth animations
+
+### Template System Updates
+1. **Gallery Preview as Partial**:
+   - Converted gallery preview to a Liquid partial like header/footer
+   - Removed dependency on server-side variables
+   - Simplified template rendering logic
+
+2. **Fixed Route Mismatches**:
+   - Changed `/gallery/info/` to `/gallery/detail/` to match templates
+   - Changed `/api/download/verify` to `/api/verify` to match client code
+
+3. **Wildcard Route Syntax**:
+   - Updated from `/*path` to `/{*path}` for Axum 0.8 compatibility
+
+### Code Quality Improvements
+- Fixed all compiler warnings (unused variables, imports)
+- Updated test dependencies (axum-test v17)
+- Cleaned up debug logging (can be enabled with `?debug_replacement`)
+- Improved error messages and handling
+
+## Debugging Tips
+
+### Gallery Preview Issues
+1. **Images not replacing**: Check browser console for errors
+2. **Debug mode**: Add `?debug_replacement` to URL for detailed logs
+3. **API testing**: Visit `/api/gallery/preview` directly to see JSON response
+4. **DOM inspection**: Check for `data-image-path` attributes on preview links
+
+### Template Rendering Issues
+1. **Missing includes**: Ensure partial exists in templates directory
+2. **Variable errors**: Check template doesn't reference removed variables
+3. **Test rendering**: Use integration tests to verify templates work
+
+### Performance Monitoring
+- Gallery preview API calls happen every 10-15 seconds
+- 30% chance of fetching fresh images on each cycle
+- Images pool can grow up to 20 for variety
+- Smooth 0.5s fade out → replace → 0.5s fade in
+
+## Future Improvements
+1. Consider adding image preloading for smoother transitions
+2. Add configuration for replacement interval
+3. Consider WebSocket for real-time updates
+4. Add analytics for popular images
