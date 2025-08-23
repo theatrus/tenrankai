@@ -1182,7 +1182,14 @@ impl Gallery {
         relative_path: &str,
         size: &str,
     ) -> Result<PathBuf, GalleryError> {
-        let (width, height) = match size {
+        // Check if it's a @2x variant
+        let (base_size, multiplier) = if size.ends_with("@2x") {
+            (size.trim_end_matches("@2x"), 2)
+        } else {
+            (size, 1)
+        };
+        
+        let (base_width, base_height) = match base_size {
             "thumbnail" => (self.config.thumbnail.width, self.config.thumbnail.height),
             "gallery" => (
                 self.config.gallery_size.width,
@@ -1192,6 +1199,10 @@ impl Gallery {
             "large" => (self.config.large.width, self.config.large.height),
             _ => return Err(GalleryError::InvalidPath),
         };
+        
+        // Apply multiplier for @2x variants
+        let width = base_width * multiplier as u32;
+        let height = base_height * multiplier as u32;
 
         let hash = self.generate_cache_key(relative_path, size);
         let cache_filename = format!("{}.jpg", hash);
@@ -1220,8 +1231,20 @@ impl Gallery {
                 .with_guessed_format()?;
 
             let img = decoder.decode()?;
-
-            let resized = img.resize(width, height, FilterType::Lanczos3);
+            
+            // Get original dimensions
+            let (orig_width, orig_height) = (img.width(), img.height());
+            
+            // Don't upscale - if requested dimensions are larger than original, use original
+            let final_width = width.min(orig_width);
+            let final_height = height.min(orig_height);
+            
+            // Only resize if dimensions are different
+            let resized = if final_width != orig_width || final_height != orig_height {
+                img.resize(final_width, final_height, FilterType::Lanczos3)
+            } else {
+                img
+            };
 
             // Save resized image
             // Note: The standard image crate JPEG encoder doesn't support embedding ICC profiles
@@ -1537,7 +1560,14 @@ pub async fn image_handler(
 ) -> impl IntoResponse {
     // Validate size parameter if provided
     if let Some(ref size) = query.size {
-        match size.as_str() {
+        // Check if it's a @2x variant
+        let (base_size, _is_2x) = if size.ends_with("@2x") {
+            (size.trim_end_matches("@2x"), true)
+        } else {
+            (size.as_str(), false)
+        };
+        
+        match base_size {
             "thumbnail" | "gallery" | "medium" => {
                 // These sizes are allowed without authentication
             }
@@ -1551,7 +1581,7 @@ pub async fn image_handler(
             _ => {
                 // Invalid size parameter
                 tracing::warn!(path = %path, size = %size, "Invalid size parameter requested");
-                return (StatusCode::BAD_REQUEST, "Invalid size parameter. Valid sizes: thumbnail, gallery, medium, large").into_response();
+                return (StatusCode::BAD_REQUEST, "Invalid size parameter. Valid sizes: thumbnail, gallery, medium, large (with optional @2x suffix)").into_response();
             }
         }
     } else {
@@ -1838,6 +1868,37 @@ mod tests {
     mod image_handler_tests {
         use super::*;
         use axum::http::HeaderMap;
+        
+        #[tokio::test]
+        async fn test_2x_size_validation() {
+            // Test that @2x variants are accepted
+            let valid_2x_sizes = vec!["thumbnail@2x", "gallery@2x", "medium@2x", "large@2x"];
+            
+            for size in valid_2x_sizes {
+                // Parse the size like the handler does
+                let (base_size, is_2x) = if size.ends_with("@2x") {
+                    (size.trim_end_matches("@2x"), true)
+                } else {
+                    (size, false)
+                };
+                
+                assert!(is_2x, "{} should be detected as @2x", size);
+                assert!(
+                    matches!(base_size, "thumbnail" | "gallery" | "medium" | "large"),
+                    "{} should have valid base size", size
+                );
+            }
+            
+            // Test invalid @2x variants
+            let invalid_size = "invalid@2x";
+            let (base_size, _) = if invalid_size.ends_with("@2x") {
+                (invalid_size.trim_end_matches("@2x"), true)
+            } else {
+                (invalid_size, false)
+            };
+            
+            assert!(!matches!(base_size, "thumbnail" | "gallery" | "medium" | "large"));
+        }
 
         fn create_test_headers_with_cookie(cookie_value: &str) -> HeaderMap {
             let mut headers = HeaderMap::new();
