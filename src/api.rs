@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::{IntoResponse, Json},
 };
@@ -123,6 +123,11 @@ pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
         })
 }
 
+#[derive(Deserialize)]
+pub struct GalleryPreviewQuery {
+    count: Option<usize>,
+}
+
 #[derive(Serialize)]
 pub struct GalleryPreviewResponse {
     images: Vec<crate::gallery::GalleryItem>,
@@ -130,8 +135,10 @@ pub struct GalleryPreviewResponse {
 
 pub async fn gallery_preview_handler(
     State(app_state): State<crate::AppState>,
+    Query(query): Query<GalleryPreviewQuery>,
 ) -> Result<Json<GalleryPreviewResponse>, StatusCode> {
-    match app_state.gallery.get_gallery_preview(6).await {
+    let count = query.count.unwrap_or(6).min(20); // Cap at 20 for performance
+    match app_state.gallery.get_gallery_preview(count).await {
         Ok(images) => Ok(Json(GalleryPreviewResponse { images })),
         Err(e) => {
             tracing::error!("Failed to get gallery preview: {}", e);

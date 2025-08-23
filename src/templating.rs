@@ -115,21 +115,30 @@ impl TemplateEngine {
             .as_secs()
             / (365 * 24 * 3600)
             + 1970;
-        
-        globals.insert("current_year".into(), liquid::model::Value::scalar(current_year as i64));
+
+        globals.insert(
+            "current_year".into(),
+            liquid::model::Value::scalar(current_year as i64),
+        );
 
         // Load common partials first (before loading main template)
-        let header_content = self.load_template("_header.html.liquid").await
+        let header_content = self
+            .load_template("_header.html.liquid")
+            .await
             .unwrap_or_else(|e| {
                 error!("Failed to load header partial: {}", e);
                 String::new()
             });
-        let footer_content = self.load_template("_footer.html.liquid").await
+        let footer_content = self
+            .load_template("_footer.html.liquid")
+            .await
             .unwrap_or_else(|e| {
                 error!("Failed to load footer partial: {}", e);
                 String::new()
             });
-        let gallery_preview_content = self.load_template("_gallery_preview.html.liquid").await
+        let gallery_preview_content = self
+            .load_template("_gallery_preview.html.liquid")
+            .await
             .unwrap_or_else(|e| {
                 error!("Failed to load gallery preview partial: {}", e);
                 String::new()
@@ -141,8 +150,11 @@ impl TemplateEngine {
         let mut partials_source = liquid::partials::InMemorySource::new();
         partials_source.add("_header.html.liquid", header_content.clone());
         partials_source.add("_footer.html.liquid", footer_content.clone());
-        partials_source.add("_gallery_preview.html.liquid", gallery_preview_content.clone());
-        
+        partials_source.add(
+            "_gallery_preview.html.liquid",
+            gallery_preview_content.clone(),
+        );
+
         let partials = liquid::partials::EagerCompiler::new(partials_source);
 
         let parser = liquid::ParserBuilder::with_stdlib()
@@ -153,8 +165,6 @@ impl TemplateEngine {
         let template = parser
             .parse(&template_content)
             .map_err(|e| format!("Failed to parse template: {}", e))?;
-
-
 
         template
             .render(&globals)

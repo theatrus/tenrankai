@@ -33,7 +33,8 @@ impl Gallery {
 
         for field in &date_fields {
             if let Some(entry) = exif.entries.iter().find(|e| e.tag == *field)
-                && let Some(date) = self.parse_exif_datetime(&entry.value_more_readable) {
+                && let Some(date) = self.parse_exif_datetime(&entry.value_more_readable)
+            {
                 debug!("Found capture date in {:?}: {:?}", field, date);
                 return Some(date);
             }
@@ -266,7 +267,8 @@ impl Gallery {
             let path = entry.path();
             if path.is_file()
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
-                && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
+                && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory)
+            {
                 let relative_str = relative_path.to_string_lossy().to_string();
 
                 if let Ok(metadata) = self.extract_image_metadata(path).await {
@@ -302,7 +304,8 @@ impl Gallery {
             let path = entry.path();
             if path.is_file()
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
-                && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
+                && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory)
+            {
                 let relative_str = relative_path.to_string_lossy().to_string();
 
                 // Extract metadata for this image

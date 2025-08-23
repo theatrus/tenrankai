@@ -70,10 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = create_app(config.clone()).await;
 
     // Get the gallery from the app state to set up background tasks
-    let gallery = std::sync::Arc::new(Gallery::new(
-        config.gallery.clone(),
-        config.app.clone(),
-    ));
+    let gallery = std::sync::Arc::new(Gallery::new(config.gallery.clone(), config.app.clone()));
 
     // Initialize gallery and check for version changes
     if let Err(e) = gallery.initialize_and_check_version().await {

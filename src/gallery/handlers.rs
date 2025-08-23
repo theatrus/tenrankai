@@ -108,7 +108,9 @@ pub async fn image_detail_handler(
         .unwrap_or("");
 
     // Get all images in the parent directory for navigation
-    let (_, images, _) = gallery.list_directory(parent_path, 0).await
+    let (_, images, _) = gallery
+        .list_directory(parent_path, 0)
+        .await
         .unwrap_or_default();
 
     // Find current image index and get prev/next
@@ -150,9 +152,13 @@ pub async fn image_detail_handler(
     let breadcrumbs = gallery.build_breadcrumbs(parent_path).await;
 
     // Get base URL from config or use default
-    let base_url = app_state.config.app.base_url.as_deref()
+    let base_url = app_state
+        .config
+        .app
+        .base_url
+        .as_deref()
         .unwrap_or("http://localhost:8080");
-    
+
     let globals = liquid::object!({
         "image": image_info,
         "prev_image": prev_image,

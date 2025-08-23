@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::templating::TemplateEngine;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     async fn setup_test_templates() -> (TempDir, TemplateEngine) {
         let temp_dir = TempDir::new().unwrap();
@@ -80,22 +80,30 @@ mod tests {
         <p>No items to preview</p>
     {% endif %}
 </div>"#;
-        fs::write(template_path.join("_gallery_preview.html.liquid"), preview_content).unwrap();
+        fs::write(
+            template_path.join("_gallery_preview.html.liquid"),
+            preview_content,
+        )
+        .unwrap();
 
         let template_engine = TemplateEngine::new(template_path.to_path_buf());
-        
+
         (temp_dir, template_engine)
     }
 
     #[tokio::test]
     async fn test_render_index_template() {
         let (_temp_dir, engine) = setup_test_templates().await;
-        
+
         let globals = liquid::object!({});
-        
+
         let result = engine.render_template("index.html.liquid", globals).await;
-        assert!(result.is_ok(), "Failed to render index template: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to render index template: {:?}",
+            result.err()
+        );
+
         let html = result.unwrap();
         assert!(html.contains("<title>Home - Test Site</title>"));
         assert!(html.contains("Test home page"));
@@ -106,27 +114,31 @@ mod tests {
     #[tokio::test]
     async fn test_render_gallery_template() {
         let (_temp_dir, engine) = setup_test_templates().await;
-        
+
         let test_items = vec![
             liquid::object!({
                 "name": "Item 1",
                 "is_directory": false,
             }),
             liquid::object!({
-                "name": "Item 2", 
+                "name": "Item 2",
                 "is_directory": true,
             }),
         ];
-        
+
         let globals = liquid::object!({
             "folder_title": "Test Gallery",
             "folder_description": "This is a test gallery",
             "items": test_items,
         });
-        
+
         let result = engine.render_template("gallery.html.liquid", globals).await;
-        assert!(result.is_ok(), "Failed to render gallery template: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to render gallery template: {:?}",
+            result.err()
+        );
+
         let html = result.unwrap();
         assert!(html.contains("<title>Test Gallery - Test Site</title>"));
         assert!(html.contains("This is a test gallery"));
@@ -137,18 +149,24 @@ mod tests {
     #[tokio::test]
     async fn test_render_with_gallery_preview() {
         let (_temp_dir, engine) = setup_test_templates().await;
-        
-        
+
         let globals = liquid::object!({});
-        
+
         let result = engine.render_template("index.html.liquid", globals).await;
-        assert!(result.is_ok(), "Failed to render with gallery preview: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to render with gallery preview: {:?}",
+            result.err()
+        );
+
         let html = result.unwrap();
         // The gallery preview component should be included in the template output
         // Since we passed gallery_preview data, the component should be rendered
-        assert!(html.contains("Welcome to the test site"), "Missing main content");
-        
+        assert!(
+            html.contains("Welcome to the test site"),
+            "Missing main content"
+        );
+
         // Note: The gallery preview component is only rendered if it's referenced
         // in the template. Our test index template doesn't include it.
     }
@@ -157,14 +175,14 @@ mod tests {
     async fn test_missing_partial_error() {
         let temp_dir = TempDir::new().unwrap();
         let template_path = temp_dir.path();
-        
+
         // Create a template that includes a missing partial
         let bad_content = r#"{% include "_missing.html.liquid" %}"#;
         fs::write(template_path.join("bad.html.liquid"), bad_content).unwrap();
-        
+
         let engine = TemplateEngine::new(template_path.to_path_buf());
         let globals = liquid::object!({});
-        
+
         let result = engine.render_template("bad.html.liquid", globals).await;
         assert!(result.is_err(), "Should fail with missing partial");
     }
@@ -172,25 +190,25 @@ mod tests {
     #[tokio::test]
     async fn test_template_caching() {
         let (_temp_dir, engine) = setup_test_templates().await;
-        
+
         // First render
         let globals1 = liquid::object!({});
         let result1 = engine.render_template("index.html.liquid", globals1).await;
         assert!(result1.is_ok());
-        
+
         // Second render should use cache
         let globals2 = liquid::object!({});
         let result2 = engine.render_template("index.html.liquid", globals2).await;
         assert!(result2.is_ok());
-        
+
         // Results should be similar (minus dynamic content like year)
         assert_eq!(result1.unwrap().len(), result2.unwrap().len());
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_meta_tags_rendering() {
         let (_temp_dir, engine) = setup_test_templates().await;
-        
+
         // Create image detail template
         let image_detail_content = r#"{% assign page_title = image.name %}
 {% assign meta_description = image.description | default: "View this image" | strip_html | truncate: 160 %}
@@ -207,10 +225,14 @@ mod tests {
 <img src="{{ image.gallery_url }}" alt="{{ image.name }}">
 
 {% include "_footer.html.liquid" %}"#;
-        
+
         let temp_path = _temp_dir.path();
-        fs::write(temp_path.join("image_detail.html.liquid"), image_detail_content).unwrap();
-        
+        fs::write(
+            temp_path.join("image_detail.html.liquid"),
+            image_detail_content,
+        )
+        .unwrap();
+
         // Update header to include OG tags
         let header_with_og = r#"<!DOCTYPE html>
 <html>
@@ -232,7 +254,7 @@ mod tests {
     </header>
     <main>"#;
         fs::write(temp_path.join("_header.html.liquid"), header_with_og).unwrap();
-        
+
         let globals = liquid::object!({
             "image": {
                 "name": "Test Image",
@@ -242,10 +264,16 @@ mod tests {
             },
             "base_url": "https://example.com",
         });
-        
-        let result = engine.render_template("image_detail.html.liquid", globals).await;
-        assert!(result.is_ok(), "Failed to render image detail: {:?}", result.err());
-        
+
+        let result = engine
+            .render_template("image_detail.html.liquid", globals)
+            .await;
+        assert!(
+            result.is_ok(),
+            "Failed to render image detail: {:?}",
+            result.err()
+        );
+
         let html = result.unwrap();
         assert!(html.contains("<title>Test Image - Test Site</title>"));
         assert!(html.contains(r#"<meta name="description" content="A beautiful test image">"#));

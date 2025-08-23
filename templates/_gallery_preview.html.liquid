@@ -190,5 +190,136 @@
             setTimeout(layoutPreviewMasonry, 500); // Delay for iOS orientation animation
         });
     }
+    
+    // Dynamic image replacement functionality
+    let allAvailableImages = [...previewImages]; // Copy initial images
+    let imageReplacementInterval;
+    
+    async function fetchMoreImages() {
+        try {
+            const response = await fetch('/api/gallery/preview?count=20');
+            if (!response.ok) {
+                console.error('Failed to fetch more gallery images:', response.status);
+                return [];
+            }
+            const data = await response.json();
+            return data.images || [];
+        } catch (e) {
+            console.error('Error fetching more gallery images:', e);
+            return [];
+        }
+    }
+    
+    function replaceRandomImage(newImage) {
+        if (previewImages.length === 0) return;
+        
+        // Find a random image to replace (avoid replacing with the same image)
+        const availableIndices = previewImages
+            .map((img, index) => ({ img, index }))
+            .filter(item => item.img.path !== newImage.path)
+            .map(item => item.index);
+            
+        if (availableIndices.length === 0) return;
+        
+        const randomIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+        const oldImage = previewImages[randomIndex];
+        
+        // Find the DOM element to replace
+        const columns = previewGrid.querySelectorAll('.masonry-column');
+        let elementToReplace = null;
+        
+        for (const column of columns) {
+            const links = column.querySelectorAll('a');
+            for (const link of links) {
+                if (link.href.includes(oldImage.path)) {
+                    elementToReplace = link;
+                    break;
+                }
+            }
+            if (elementToReplace) break;
+        }
+        
+        if (elementToReplace) {
+            // Calculate display dimensions for new image
+            const columnWidth = calculatePreviewColumnWidth();
+            let displayDimensions;
+            
+            if (newImage.dimensions && newImage.dimensions.length === 2) {
+                displayDimensions = calculatePreviewDisplayDimensions(
+                    newImage.dimensions[0], 
+                    newImage.dimensions[1], 
+                    columnWidth
+                );
+            } else {
+                displayDimensions = { width: columnWidth, height: columnWidth };
+            }
+            
+            // Create new image element
+            const newImageElement = createPreviewImageElement(newImage, displayDimensions);
+            
+            // Add fade transition
+            elementToReplace.style.opacity = '0';
+            elementToReplace.style.transition = 'opacity 0.5s ease-in-out';
+            
+            setTimeout(() => {
+                // Replace the element
+                elementToReplace.parentNode.replaceChild(newImageElement, elementToReplace);
+                
+                // Fade in new image
+                newImageElement.style.opacity = '0';
+                newImageElement.style.transition = 'opacity 0.5s ease-in-out';
+                setTimeout(() => {
+                    newImageElement.style.opacity = '1';
+                }, 50);
+                
+                // Update the previewImages array
+                previewImages[randomIndex] = newImage;
+            }, 500);
+        }
+    }
+    
+    async function startDynamicReplacement() {
+        // Fetch more images to have a pool to choose from
+        const moreImages = await fetchMoreImages();
+        
+        if (moreImages.length > previewImages.length) {
+            // Add new images to our pool (excluding ones we already have)
+            const currentPaths = new Set(previewImages.map(img => img.path));
+            const newImages = moreImages.filter(img => !currentPaths.has(img.path));
+            allAvailableImages = [...allAvailableImages, ...newImages];
+        }
+        
+        // Set up periodic replacement
+        imageReplacementInterval = setInterval(async () => {
+            // Get fresh images periodically
+            if (Math.random() < 0.3) { // 30% chance to fetch fresh images
+                const freshImages = await fetchMoreImages();
+                const currentPaths = new Set(allAvailableImages.map(img => img.path));
+                const newFreshImages = freshImages.filter(img => !currentPaths.has(img.path));
+                if (newFreshImages.length > 0) {
+                    allAvailableImages = [...allAvailableImages, ...newFreshImages];
+                }
+            }
+            
+            // Select a random image from our pool (excluding currently displayed ones)
+            const currentlyDisplayed = new Set(previewImages.map(img => img.path));
+            const availableForReplacement = allAvailableImages.filter(img => !currentlyDisplayed.has(img.path));
+            
+            if (availableForReplacement.length > 0) {
+                const randomNewImage = availableForReplacement[Math.floor(Math.random() * availableForReplacement.length)];
+                replaceRandomImage(randomNewImage);
+            }
+        }, 10000 + Math.random() * 5000); // 10-15 seconds
+    }
+    
+    // Start the dynamic replacement after initial layout
+    setTimeout(startDynamicReplacement, 2000); // Wait 2 seconds after initial load
+    
+    // Clean up interval when page is unloaded
+    window.addEventListener('beforeunload', () => {
+        if (imageReplacementInterval) {
+            clearInterval(imageReplacementInterval);
+        }
+    });
 })();
 </script>

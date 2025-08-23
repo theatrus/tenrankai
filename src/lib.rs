@@ -145,20 +145,17 @@ pub async fn create_app(config: Config) -> Router {
     let template_engine = Arc::new(templating::TemplateEngine::new(
         config.templates.directory.clone(),
     ));
-    
-    let static_handler = static_files::StaticFileHandler::new(
-        config.static_files.directory.clone(),
-    );
-    
-    let favicon_renderer = favicon::FaviconRenderer::new(
-        config.static_files.directory.clone(),
-    );
-    
+
+    let static_handler =
+        static_files::StaticFileHandler::new(config.static_files.directory.clone());
+
+    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
+
     let gallery = Arc::new(gallery::Gallery::new(
         config.gallery.clone(),
         config.app.clone(),
     ));
-    
+
     let app_state = AppState {
         template_engine,
         static_handler,
@@ -166,20 +163,53 @@ pub async fn create_app(config: Config) -> Router {
         favicon_renderer,
         config: config.clone(),
     };
-    
+
     Router::new()
-        .route("/", axum::routing::get(templating::template_with_gallery_handler))
-        .route("/gallery", axum::routing::get(gallery::gallery_root_handler))
-        .route("/gallery/{*path}", axum::routing::get(gallery::gallery_handler))
-        .route("/gallery/image/{*path}", axum::routing::get(gallery::image_handler))
-        .route("/gallery/detail/{*path}", axum::routing::get(gallery::image_detail_handler))
+        .route(
+            "/",
+            axum::routing::get(templating::template_with_gallery_handler),
+        )
+        .route(
+            "/gallery",
+            axum::routing::get(gallery::gallery_root_handler),
+        )
+        .route(
+            "/gallery/{*path}",
+            axum::routing::get(gallery::gallery_handler),
+        )
+        .route(
+            "/gallery/image/{*path}",
+            axum::routing::get(gallery::image_handler),
+        )
+        .route(
+            "/gallery/detail/{*path}",
+            axum::routing::get(gallery::image_detail_handler),
+        )
         .route("/api/auth", axum::routing::post(api::authenticate_handler))
         .route("/api/verify", axum::routing::get(api::verify_handler))
-        .route("/api/gallery/preview", axum::routing::get(api::gallery_preview_handler))
-        .route("/favicon.ico", axum::routing::get(favicon::favicon_ico_handler))
-        .route("/favicon-16x16.png", axum::routing::get(favicon::favicon_png_16_handler))
-        .route("/favicon-32x32.png", axum::routing::get(favicon::favicon_png_32_handler))
-        .route("/favicon-48x48.png", axum::routing::get(favicon::favicon_png_48_handler))
-        .route("/{*path}", axum::routing::get(templating::template_with_gallery_handler))
+        .route(
+            "/api/gallery/preview",
+            axum::routing::get(api::gallery_preview_handler),
+        )
+        .route(
+            "/favicon.ico",
+            axum::routing::get(favicon::favicon_ico_handler),
+        )
+        .route(
+            "/favicon-16x16.png",
+            axum::routing::get(favicon::favicon_png_16_handler),
+        )
+        .route(
+            "/favicon-32x32.png",
+            axum::routing::get(favicon::favicon_png_32_handler),
+        )
+        .route(
+            "/favicon-48x48.png",
+            axum::routing::get(favicon::favicon_png_48_handler),
+        )
+        .route(
+            "/{*path}",
+            axum::routing::get(templating::template_with_gallery_handler),
+        )
         .with_state(app_state)
 }

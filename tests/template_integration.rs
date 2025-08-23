@@ -1,8 +1,8 @@
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use dynserver::{create_app, Config};
-use tempfile::TempDir;
+use dynserver::{Config, create_app};
 use std::fs;
+use tempfile::TempDir;
 
 async fn setup_test_server() -> (TempDir, TestServer) {
     // Create temporary directories
@@ -11,12 +11,12 @@ async fn setup_test_server() -> (TempDir, TestServer) {
     let static_dir = temp_dir.path().join("static");
     let gallery_dir = temp_dir.path().join("gallery");
     let cache_dir = temp_dir.path().join("cache");
-    
+
     fs::create_dir_all(&templates_dir).unwrap();
     fs::create_dir_all(&static_dir).unwrap();
     fs::create_dir_all(&gallery_dir).unwrap();
     fs::create_dir_all(&cache_dir).unwrap();
-    
+
     // Create test templates
     let header_content = r#"<!DOCTYPE html>
 <html>
@@ -27,27 +27,27 @@ async fn setup_test_server() -> (TempDir, TestServer) {
     <header><h1>Test Site</h1></header>
     <main>"#;
     fs::write(templates_dir.join("_header.html.liquid"), header_content).unwrap();
-    
+
     let footer_content = r#"    </main>
     <footer><p>&copy; {{ current_year }} Test</p></footer>
 </body>
 </html>"#;
     fs::write(templates_dir.join("_footer.html.liquid"), footer_content).unwrap();
-    
+
     let index_content = r#"{% assign page_title = "Home" %}
 {% include "_header.html.liquid" %}
 <h2>Welcome</h2>
 <p>Test home page</p>
 {% include "_footer.html.liquid" %}"#;
     fs::write(templates_dir.join("index.html.liquid"), index_content).unwrap();
-    
+
     let gallery_content = r#"{% assign page_title = "Gallery" %}
 {% include "_header.html.liquid" %}
 <h2>Gallery</h2>
 <div class="gallery">Test gallery</div>
 {% include "_footer.html.liquid" %}"#;
     fs::write(templates_dir.join("gallery.html.liquid"), gallery_content).unwrap();
-    
+
     // Create test config
     let config = Config {
         server: dynserver::ServerConfig {
@@ -99,19 +99,19 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             webp_quality: Some(85.0),
         },
     };
-    
+
     let app = create_app(config).await;
     let server = TestServer::new(app.into_make_service()).unwrap();
-    
+
     (temp_dir, server)
 }
 
 #[tokio::test]
 async fn test_index_page_renders() {
     let (_temp_dir, server) = setup_test_server().await;
-    
+
     let response = server.get("/").await;
-    
+
     assert_eq!(response.status_code(), StatusCode::OK);
     let html = response.text();
     assert!(html.contains("<title>Home - Test Site</title>"));
@@ -122,9 +122,9 @@ async fn test_index_page_renders() {
 #[tokio::test]
 async fn test_gallery_page_renders() {
     let (_temp_dir, server) = setup_test_server().await;
-    
+
     let response = server.get("/gallery").await;
-    
+
     assert_eq!(response.status_code(), StatusCode::OK);
     let html = response.text();
     assert!(html.contains("<title>Gallery - Test Site</title>"));
@@ -134,7 +134,7 @@ async fn test_gallery_page_renders() {
 #[tokio::test]
 async fn test_404_page_renders() {
     let (_temp_dir, server) = setup_test_server().await;
-    
+
     // Create 404 template
     let templates_dir = _temp_dir.path().join("templates");
     let not_found_content = r#"{% assign page_title = "Not Found" %}
@@ -142,9 +142,9 @@ async fn test_404_page_renders() {
 <h1>404 - Page Not Found</h1>
 {% include "_footer.html.liquid" %}"#;
     fs::write(templates_dir.join("404.html.liquid"), not_found_content).unwrap();
-    
+
     let response = server.get("/nonexistent").await;
-    
+
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
     let html = response.text();
     assert!(html.contains("404"));
@@ -153,14 +153,14 @@ async fn test_404_page_renders() {
 #[tokio::test]
 async fn test_template_with_missing_include_fails_gracefully() {
     let (_temp_dir, server) = setup_test_server().await;
-    
+
     // Create a template with a bad include
     let templates_dir = _temp_dir.path().join("templates");
     let bad_content = r#"{% include "_nonexistent.html.liquid" %}"#;
     fs::write(templates_dir.join("bad.html.liquid"), bad_content).unwrap();
-    
+
     let response = server.get("/bad").await;
-    
+
     // Should return 500 since template fails to render with a missing include
     assert_eq!(response.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
 }
