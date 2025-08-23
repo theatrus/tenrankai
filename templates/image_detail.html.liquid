@@ -102,7 +102,12 @@
                     {% endif %}
                     
                     <dt>Dimensions</dt>
-                    <dd>{{ image.dimensions[0] }} × {{ image.dimensions[1] }} pixels</dd>
+                    <dd>
+                        {{ image.dimensions[0] }} × {{ image.dimensions[1] }} pixels
+                        {% assign total_pixels = image.dimensions[0] | times: image.dimensions[1] %}
+                        {% assign megapixels = total_pixels | divided_by: 1000000.0 | round %}
+                        ({{ megapixels }} MP)
+                    </dd>
                     
                     <dt>File Size</dt>
                     <dd>{{ image.file_size | divided_by: 1024 | divided_by: 1024 | round: 2 }} MB</dd>
