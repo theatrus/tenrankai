@@ -131,6 +131,7 @@ impl Default for Config {
 
 use axum::{Router, extract::{Path, State}, response::IntoResponse};
 use std::sync::Arc;
+use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -221,6 +222,63 @@ pub async fn create_app(config: Config) -> Router {
         .route(
             "/{*path}",
             axum::routing::get(templating::template_with_gallery_handler),
+        )
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    let method = request.method();
+                    let uri = request.uri();
+                    let matched_path = request
+                        .extensions()
+                        .get::<axum::extract::MatchedPath>()
+                        .map(|matched_path| matched_path.as_str());
+
+                    tracing::info_span!(
+                        "http_request",
+                        method = %method,
+                        uri = %uri,
+                        matched_path,
+                    )
+                })
+                .on_request(|request: &axum::http::Request<_>, _span: &tracing::Span| {
+                    let method = request.method();
+                    let uri = request.uri();
+                    let headers = request.headers();
+                    let user_agent = headers
+                        .get("user-agent")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or("-");
+                    let referer = headers
+                        .get("referer")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or("-");
+                    
+                    tracing::info!(
+                        target: "access_log",
+                        method = %method,
+                        path = %uri.path(),
+                        query = ?uri.query(),
+                        user_agent = %user_agent,
+                        referer = %referer,
+                        "request"
+                    );
+                })
+                .on_response(|response: &axum::http::Response<_>, latency: std::time::Duration, _span: &tracing::Span| {
+                    let status = response.status();
+                    let size = response
+                        .headers()
+                        .get("content-length")
+                        .and_then(|h| h.to_str().ok())
+                        .unwrap_or("-");
+                    
+                    tracing::info!(
+                        target: "access_log",
+                        status = %status,
+                        size = %size,
+                        latency_ms = %latency.as_millis(),
+                        "response"
+                    );
+                }),
         )
         .with_state(app_state)
 }
