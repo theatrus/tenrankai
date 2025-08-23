@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::State,
     response::IntoResponse,
     routing::{get, post},
 };
@@ -23,7 +23,7 @@ use favicon::{
     FaviconRenderer, favicon_ico_handler, favicon_png_16_handler, favicon_png_32_handler,
     favicon_png_48_handler,
 };
-use gallery::{Gallery, SharedGallery, gallery_handler, image_detail_handler, image_handler};
+use gallery::{Gallery, SharedGallery, gallery_handler, gallery_root_handler, image_detail_handler, image_handler};
 use static_files::StaticFileHandler;
 use templating::{TemplateEngine, template_with_gallery_handler};
 
@@ -316,7 +316,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Received shutdown signal, saving cache...");
 
         // Save metadata cache before shutting down
-        gallery_for_shutdown.save_cache_on_shutdown().await;
+        let _ = gallery_for_shutdown.save_caches().await;
         info!("Cache saved successfully");
     };
 
@@ -370,9 +370,3 @@ Allow: /static/
     )
 }
 
-async fn gallery_root_handler(
-    State(app_state): State<AppState>,
-    Query(query): Query<gallery::GalleryQuery>,
-) -> impl IntoResponse {
-    gallery_handler(State(app_state), Path("".to_string()), Query(query)).await
-}
