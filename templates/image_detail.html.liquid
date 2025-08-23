@@ -1,4 +1,24 @@
-{{ header }}
+{% assign page_title = image.name %}
+{% assign meta_description = image.description | default: "View this image on theatr.us gallery" | strip_html | truncate: 160 %}
+
+{% comment %} Open Graph tags for image {% endcomment %}
+{% assign og_title = image.name %}
+{% assign og_description = meta_description %}
+{% assign og_image = base_url | append: image.gallery_url %}
+{% if image.dimensions %}
+    {% assign og_image_width = image.dimensions[0] %}
+    {% assign og_image_height = image.dimensions[1] %}
+{% endif %}
+{% assign og_type = "article" %}
+{% assign og_url = base_url | append: "/gallery/detail/" | append: image.path %}
+
+{% comment %} Twitter Card tags {% endcomment %}
+{% assign twitter_card_type = "summary_large_image" %}
+{% assign twitter_title = image.name %}
+{% assign twitter_description = meta_description %}
+{% assign twitter_image = og_image %}
+
+{% include "_header.html.liquid" %}
 
 <div class="container image-detail-container">
     <nav class="gallery-nav">
@@ -611,4 +631,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-{{ footer }}
+{% include "_footer.html.liquid" %}

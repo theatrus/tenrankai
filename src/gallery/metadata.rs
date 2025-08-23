@@ -32,11 +32,10 @@ impl Gallery {
         ];
 
         for field in &date_fields {
-            if let Some(entry) = exif.entries.iter().find(|e| e.tag == *field) {
-                if let Some(date) = self.parse_exif_datetime(&entry.value_more_readable) {
-                    debug!("Found capture date in {:?}: {:?}", field, date);
-                    return Some(date);
-                }
+            if let Some(entry) = exif.entries.iter().find(|e| e.tag == *field)
+                && let Some(date) = self.parse_exif_datetime(&entry.value_more_readable) {
+                debug!("Found capture date in {:?}: {:?}", field, date);
+                return Some(date);
             }
         }
 
@@ -267,15 +266,13 @@ impl Gallery {
             let path = entry.path();
             if path.is_file()
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
-            {
-                if let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
-                    let relative_str = relative_path.to_string_lossy().to_string();
+                && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
+                let relative_str = relative_path.to_string_lossy().to_string();
 
-                    if let Ok(metadata) = self.extract_image_metadata(path).await {
-                        self.insert_metadata_with_tracking(relative_str, metadata)
-                            .await;
-                        count += 1;
-                    }
+                if let Ok(metadata) = self.extract_image_metadata(path).await {
+                    self.insert_metadata_with_tracking(relative_str, metadata)
+                        .await;
+                    count += 1;
                 }
             }
         }
@@ -305,19 +302,17 @@ impl Gallery {
             let path = entry.path();
             if path.is_file()
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
-            {
-                if let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
-                    let relative_str = relative_path.to_string_lossy().to_string();
+                && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
+                let relative_str = relative_path.to_string_lossy().to_string();
 
-                    // Extract metadata for this image
-                    if let Ok(metadata) = self.extract_image_metadata(path).await {
-                        self.insert_metadata_with_tracking(relative_str, metadata)
-                            .await;
-                        count += 1;
+                // Extract metadata for this image
+                if let Ok(metadata) = self.extract_image_metadata(path).await {
+                    self.insert_metadata_with_tracking(relative_str, metadata)
+                        .await;
+                    count += 1;
 
-                        if count % 100 == 0 {
-                            debug!("Processed {} images...", count);
-                        }
+                    if count % 100 == 0 {
+                        debug!("Processed {} images...", count);
                     }
                 }
             }

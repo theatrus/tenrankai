@@ -1,4 +1,10 @@
-{{ header }}
+{% if folder_title %}
+    {% assign page_title = folder_title %}
+{% else %}
+    {% assign page_title = "Gallery" %}
+{% endif %}
+{% assign meta_description = folder_description | default: "Browse the photo gallery on theatr.us" | strip_html | truncate: 160 %}
+{% include "_header.html.liquid" %}
 
 <div class="container gallery-container">
     <!-- Navigation Breadcrumb -->
@@ -260,4 +266,4 @@
 })();
 </script>
 
-{{ footer }}
+{% include "_footer.html.liquid" %}

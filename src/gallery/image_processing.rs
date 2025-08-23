@@ -227,7 +227,7 @@ impl Gallery {
             }
         };
 
-        let content_type = mime_guess::from_path(&path)
+        let content_type = mime_guess::from_path(path)
             .first_or_octet_stream()
             .to_string();
 

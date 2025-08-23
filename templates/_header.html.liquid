@@ -6,7 +6,45 @@
     <meta name="format-detection" content="telephone=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>theatr.us</title>
+    <title>{% if page_title %}{{ page_title }} - {% endif %}theatr.us</title>
+    
+    {% if meta_description %}
+    <meta name="description" content="{{ meta_description }}">
+    {% endif %}
+    
+    {% comment %} Open Graph meta tags {% endcomment %}
+    {% if og_title %}
+    <meta property="og:title" content="{{ og_title }}">
+    {% endif %}
+    {% if og_description %}
+    <meta property="og:description" content="{{ og_description }}">
+    {% endif %}
+    {% if og_image %}
+    <meta property="og:image" content="{{ og_image }}">
+    {% endif %}
+    {% if og_image_width %}
+    <meta property="og:image:width" content="{{ og_image_width }}">
+    {% endif %}
+    {% if og_image_height %}
+    <meta property="og:image:height" content="{{ og_image_height }}">
+    {% endif %}
+    <meta property="og:type" content="{% if og_type %}{{ og_type }}{% else %}website{% endif %}">
+    {% if og_url %}
+    <meta property="og:url" content="{{ og_url }}">
+    {% endif %}
+    <meta property="og:site_name" content="theatr.us">
+    
+    {% comment %} Twitter Card meta tags {% endcomment %}
+    <meta name="twitter:card" content="{% if twitter_card_type %}{{ twitter_card_type }}{% else %}summary_large_image{% endif %}">
+    {% if twitter_title %}
+    <meta name="twitter:title" content="{{ twitter_title }}">
+    {% endif %}
+    {% if twitter_description %}
+    <meta name="twitter:description" content="{{ twitter_description }}">
+    {% endif %}
+    {% if twitter_image %}
+    <meta name="twitter:image" content="{{ twitter_image }}">
+    {% endif %}
     
     <!-- Favicons -->
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">

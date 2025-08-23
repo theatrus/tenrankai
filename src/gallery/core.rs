@@ -152,8 +152,7 @@ impl Gallery {
 
         // Calculate pagination for images
         let total_images = images.len();
-        let total_pages =
-            (total_images + self.config.images_per_page - 1) / self.config.images_per_page;
+        let total_pages = total_images.div_ceil(self.config.images_per_page);
         let total_pages = total_pages.max(1); // At least 1 page
 
         let start = page * self.config.images_per_page;

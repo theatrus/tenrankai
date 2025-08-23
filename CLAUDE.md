@@ -114,6 +114,13 @@ webp_quality = 85.0      # WebP quality (0.0-100.0)
 
 ## Recent Changes and Fixes
 
+### Social Media Embeds
+- **Template Refactoring**: Inverted header/footer usage - now included within templates with parameters
+- **Open Graph Support**: Added meta tags for rich previews on Facebook, Discord, etc.
+- **Twitter Cards**: Added Twitter Card meta tags for image previews
+- **Dynamic Meta Tags**: Each page can specify custom title, description, and image
+- **Base URL Configuration**: Added `base_url` to app config for absolute URLs in meta tags
+
 ### Gallery Module Refactoring
 - Split 3000-line gallery.rs into logical submodules
 - Fixed "no images in directory" issue after refactoring
@@ -171,6 +178,20 @@ cargo run -- --host 0.0.0.0 --port 8080
 - Use proper Rust idioms (match, if let, etc.)
 
 ## Useful Patterns
+
+### Template Meta Tags
+To add social media meta tags to a template:
+```liquid
+{% assign page_title = "Your Page Title" %}
+{% assign meta_description = "Page description for SEO" %}
+{% assign og_title = "Open Graph Title" %}
+{% assign og_description = "Open Graph description" %}
+{% assign og_image = base_url | append: "/path/to/image.jpg" %}
+{% assign og_image_width = "1200" %}
+{% assign og_image_height = "630" %}
+{% assign twitter_card_type = "summary_large_image" %}
+{% include "_header.html.liquid" %}
+```
 
 ### Adding New Image Sizes
 1. Add size to the match statement in `get_resized_image`

@@ -120,54 +120,41 @@ impl TemplateEngine {
     pub async fn render_template(
         &self,
         template_name: &str,
-        globals: liquid::Object,
+        mut globals: liquid::Object,
     ) -> Result<String, String> {
-        let header_content = self
-            .load_template("_header.html.liquid")
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to load header: {}", e);
-                String::new()
-            });
-
-        let footer_template = self
-            .load_template("_footer.html.liquid")
-            .await
-            .unwrap_or_else(|e| {
-                error!("Failed to load footer: {}", e);
-                String::new()
-            });
-
-        // Render footer template with current year
+        // Add current year to globals for footer
         let current_year = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
             / (365 * 24 * 3600)
             + 1970;
+        
+        globals.insert("current_year".into(), liquid::model::Value::scalar(current_year as i64));
 
-        let footer_globals = liquid::object!({
-            "current_year": current_year.to_string(),
-        });
-
-        let footer_parser = liquid::ParserBuilder::with_stdlib()
-            .build()
-            .map_err(|e| format!("Failed to create footer parser: {}", e))?;
-
-        let footer_template_parsed = footer_parser
-            .parse(&footer_template)
-            .map_err(|e| format!("Failed to parse footer template: {}", e))?;
-
-        let footer_content = footer_template_parsed
-            .render(&footer_globals)
+        // Load common partials first (before loading main template)
+        let header_content = self.load_template("_header.html.liquid").await
             .unwrap_or_else(|e| {
-                error!("Failed to render footer template: {}", e);
-                footer_template
+                error!("Failed to load header partial: {}", e);
+                String::new()
+            });
+        let footer_content = self.load_template("_footer.html.liquid").await
+            .unwrap_or_else(|e| {
+                error!("Failed to load footer partial: {}", e);
+                String::new()
             });
 
         let template_content = self.load_template(template_name).await?;
 
+        // Create a partials source for includes
+        let mut partials_source = liquid::partials::InMemorySource::new();
+        partials_source.add("_header.html.liquid", header_content.clone());
+        partials_source.add("_footer.html.liquid", footer_content.clone());
+        
+        let partials = liquid::partials::EagerCompiler::new(partials_source);
+
         let parser = liquid::ParserBuilder::with_stdlib()
+            .partials(partials)
             .build()
             .map_err(|e| format!("Failed to create parser: {}", e))?;
 
@@ -187,7 +174,14 @@ impl TemplateEngine {
                 });
 
             if !gallery_preview_template.is_empty() {
+                // Create a new partials compiler for the preview template
+                let mut preview_partials_source = liquid::partials::InMemorySource::new();
+                preview_partials_source.add("_header.html.liquid", header_content.clone());
+                preview_partials_source.add("_footer.html.liquid", footer_content.clone());
+                let preview_partials = liquid::partials::EagerCompiler::new(preview_partials_source);
+                
                 let preview_parser = liquid::ParserBuilder::with_stdlib()
+                    .partials(preview_partials)
                     .build()
                     .map_err(|e| format!("Failed to create preview parser: {}", e))?;
 
@@ -224,30 +218,22 @@ impl TemplateEngine {
             String::new()
         };
 
-        let mut full_globals = globals;
-        full_globals.insert(
-            "header".into(),
-            liquid::model::Value::Scalar(header_content.into()),
-        );
-        full_globals.insert(
-            "footer".into(),
-            liquid::model::Value::Scalar(footer_content.into()),
-        );
-        full_globals.insert(
+        // Add gallery preview component to globals
+        globals.insert(
             "gallery_preview_component".into(),
             liquid::model::Value::Scalar(gallery_preview_rendered.into()),
         );
 
         // Ensure gallery_preview exists with default empty array if not provided
-        if !full_globals.contains_key("gallery_preview") {
-            full_globals.insert(
+        if !globals.contains_key("gallery_preview") {
+            globals.insert(
                 "gallery_preview".into(),
                 liquid::model::Value::Array(Vec::new()),
             );
         }
 
         template
-            .render(&full_globals)
+            .render(&globals)
             .map_err(|e| format!("Failed to render template: {}", e))
     }
 }
@@ -305,3 +291,7 @@ pub async fn template_with_gallery_handler(
         Err(status) => status.into_response(),
     }
 }
+
+#[cfg(test)]
+#[path = "templating_tests.rs"]
+mod templating_tests;
