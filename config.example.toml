@@ -1,0 +1,51 @@
+[server]
+host = "127.0.0.1"
+port = 3000
+
+[app]
+name = "Tenrankai"
+log_level = "info"
+download_secret = "change-me-in-production"
+download_password = "secure-password"
+copyright_holder = "Your Name"
+base_url = "https://your-domain.com"
+
+[templates]
+directory = "templates"
+
+[static_files]
+directory = "static"
+
+[gallery]
+path_prefix = "gallery"
+source_directory = "photos"
+cache_directory = "cache/photos"
+images_per_page = 50
+cache_refresh_interval_minutes = 60
+jpeg_quality = 85
+webp_quality = 85.0
+pregenerate_cache = false
+# Number of days to consider an image as "new" (based on file modification date)
+# Remove or comment out to disable the feature
+new_threshold_days = 7
+
+[gallery.thumbnail]
+width = 300
+height = 300
+
+[gallery.gallery_size]
+width = 800
+height = 800
+
+[gallery.medium]
+width = 1200
+height = 1200
+
+[gallery.large]
+width = 1600
+height = 1600
+
+[gallery.preview]
+max_images = 6
+max_depth = 3
+max_per_folder = 3
