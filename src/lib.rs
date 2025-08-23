@@ -141,6 +141,8 @@ impl Default for Config {
 use axum::{
     Router,
     extract::{Path, State},
+    http::{HeaderValue, Request},
+    middleware::{self, Next},
     response::IntoResponse,
 };
 use std::sync::Arc;
@@ -160,6 +162,22 @@ async fn static_file_handler(
     Path(path): Path<String>,
 ) -> impl IntoResponse {
     app_state.static_handler.serve(&path).await
+}
+
+async fn server_header_middleware(
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> impl IntoResponse {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+
+    // Add server header with version
+    let server_value = format!("Tenrankai/{}", env!("CARGO_PKG_VERSION"));
+    if let Ok(header_value) = HeaderValue::from_str(&server_value) {
+        headers.insert("Server", header_value);
+    }
+
+    response
 }
 
 pub async fn create_app(config: Config) -> Router {
@@ -241,6 +259,7 @@ pub async fn create_app(config: Config) -> Router {
             "/{*path}",
             axum::routing::get(templating::template_with_gallery_handler),
         )
+        .layer(middleware::from_fn(server_header_middleware))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
