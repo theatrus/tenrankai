@@ -24,7 +24,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.89.0 or later (automatically managed by rust-toolchain.toml)
 - DejaVuSans.ttf font file (required for watermarking)
 
 ### Building from Source
