@@ -402,6 +402,9 @@ impl Gallery {
         &self,
         max_items: usize,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
+        use rand::seq::SliceRandom;
+        use rand::thread_rng;
+        
         let mut all_items = Vec::new();
         
         // Recursively collect images up to max_depth
@@ -413,18 +416,22 @@ impl Gallery {
             self.config.preview.max_per_folder,
         ).await?;
         
-        // Sort by capture date (newest first), with fallback to modified time
-        all_items.sort_by(|a, b| {
-            match (&b.capture_date, &a.capture_date) {
-                (Some(b_date), Some(a_date)) => b_date.cmp(a_date),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => b.name.cmp(&a.name),
-            }
-        });
-        
-        // Take only the requested number of items
-        all_items.truncate(max_items);
+        // If we have more items than requested, randomly select a subset
+        if all_items.len() > max_items {
+            let mut rng = thread_rng();
+            all_items.shuffle(&mut rng);
+            all_items.truncate(max_items);
+            
+            // Sort the selected items by capture date for consistent display order
+            all_items.sort_by(|a, b| {
+                match (&b.capture_date, &a.capture_date) {
+                    (Some(b_date), Some(a_date)) => b_date.cmp(a_date),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => b.name.cmp(&a.name),
+                }
+            });
+        }
         
         Ok(all_items)
     }
