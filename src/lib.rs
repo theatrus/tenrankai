@@ -60,6 +60,8 @@ pub struct GalleryConfig {
     pub cache_refresh_interval_minutes: Option<u64>,
     pub jpeg_quality: Option<u8>,
     pub webp_quality: Option<f32>,
+    #[serde(default)]
+    pub pregenerate_cache: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -125,6 +127,7 @@ impl Default for Config {
                 cache_refresh_interval_minutes: Some(60),
                 jpeg_quality: Some(85),
                 webp_quality: Some(85.0),
+                pregenerate_cache: false,
             },
         }
     }

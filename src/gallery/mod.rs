@@ -21,6 +21,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
+use tracing::info;
 
 pub type SharedGallery = Arc<Gallery>;
 
@@ -66,5 +67,25 @@ impl Gallery {
 
     pub fn source_directory(&self) -> &std::path::Path {
         &self.config.source_directory
+    }
+    
+    pub async fn is_metadata_cache_empty(&self) -> bool {
+        self.metadata_cache.read().await.is_empty()
+    }
+    
+    pub async fn refresh_metadata_and_pregenerate_cache(
+        self: Arc<Self>,
+        pregenerate: bool,
+    ) -> Result<(), GalleryError> {
+        // First refresh metadata
+        self.clone().refresh_all_metadata().await?;
+        
+        // Then optionally pre-generate cache
+        if pregenerate {
+            info!("Starting cache pre-generation after metadata refresh");
+            self.pregenerate_all_images_cache().await?;
+        }
+        
+        Ok(())
     }
 }

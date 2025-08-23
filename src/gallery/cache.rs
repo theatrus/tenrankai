@@ -28,9 +28,6 @@ impl Gallery {
 
             // Save the updated cache metadata
             self.save_cache_metadata().await?;
-
-            // Trigger a full metadata refresh
-            self.refresh_all_metadata().await?;
         }
 
         Ok(())
@@ -46,7 +43,8 @@ impl Gallery {
                 interval.tick().await;
                 info!("Starting scheduled metadata cache refresh");
 
-                if let Err(e) = gallery.refresh_all_metadata().await {
+                let pregenerate = gallery.config.pregenerate_cache;
+                if let Err(e) = gallery.clone().refresh_metadata_and_pregenerate_cache(pregenerate).await {
                     error!("Failed to refresh metadata cache: {}", e);
                 }
             }
