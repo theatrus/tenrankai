@@ -13,6 +13,7 @@ use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 mod api;
+mod copyright;
 mod favicon;
 mod gallery;
 mod static_files;
@@ -72,6 +73,8 @@ pub struct AppConfig {
     log_level: String,
     download_secret: String,
     download_password: String,
+    #[serde(default)]
+    copyright_holder: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -123,6 +126,7 @@ impl Default for Config {
                 log_level: "info".to_string(),
                 download_secret: "your-secret-key-change-this".to_string(),
                 download_password: "gallery2024".to_string(),
+                copyright_holder: None,
             },
             templates: TemplateConfig {
                 directory: PathBuf::from("templates"),
@@ -208,10 +212,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.gallery.cache_directory
     );
 
-    let template_engine = Arc::new(TemplateEngine::new(config_clone.templates.directory.clone()));
+    let template_engine = Arc::new(TemplateEngine::new(
+        config_clone.templates.directory.clone(),
+    ));
     let static_handler = StaticFileHandler::new(config_clone.static_files.directory.clone());
     let favicon_renderer = FaviconRenderer::new(config_clone.static_files.directory.clone());
-    let gallery: SharedGallery = Arc::new(Gallery::new(config_clone.gallery.clone()));
+    let gallery: SharedGallery = Arc::new(Gallery::new(
+        config_clone.gallery.clone(),
+        config_clone.app.clone(),
+    ));
 
     // Initialize gallery and check for version changes
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -220,7 +229,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start background cache refresh if configured
     if let Some(interval_minutes) = config_clone.gallery.cache_refresh_interval_minutes
-        && interval_minutes > 0 {
+        && interval_minutes > 0
+    {
         info!(
             "Starting background metadata cache refresh every {} minutes",
             interval_minutes
@@ -259,14 +269,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/{*path}", get(template_with_gallery_handler))
         .layer(
             tower_http::trace::TraceLayer::new_for_http()
-                .make_span_with(tower_http::trace::DefaultMakeSpan::new()
-                    .level(tracing::Level::INFO)
-                    .include_headers(true))
-                .on_request(tower_http::trace::DefaultOnRequest::new()
-                    .level(tracing::Level::INFO))
-                .on_response(tower_http::trace::DefaultOnResponse::new()
-                    .level(tracing::Level::INFO)
-                    .latency_unit(tower_http::LatencyUnit::Micros))
+                .make_span_with(
+                    tower_http::trace::DefaultMakeSpan::new()
+                        .level(tracing::Level::INFO)
+                        .include_headers(true),
+                )
+                .on_request(tower_http::trace::DefaultOnRequest::new().level(tracing::Level::INFO))
+                .on_response(
+                    tower_http::trace::DefaultOnResponse::new()
+                        .level(tracing::Level::INFO)
+                        .latency_unit(tower_http::LatencyUnit::Micros),
+                ),
         )
         .with_state(app_state);
 

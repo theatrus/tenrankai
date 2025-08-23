@@ -11,6 +11,8 @@ chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
 rexif = "0.7"
 image = "0.25"
+imageproc = "0.25"
+ab_glyph = "0.2"
 resvg = "0.43"
 usvg = "0.43"
 ico = "0.3"

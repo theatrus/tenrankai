@@ -40,7 +40,8 @@ impl TemplateEngine {
         let mut cache = self.cache.write().await;
 
         if let Some(cached) = cache.get(path)
-            && cached.modified >= modified {
+            && cached.modified >= modified
+        {
             debug!("Using cached template for {}", path);
             return Ok(cached.content.clone());
         }
@@ -108,7 +109,7 @@ impl TemplateEngine {
             Ok(html) => {
                 // Create custom response with 404 status
                 Ok(Html(html))
-            },
+            }
             Err(e) => {
                 error!("Failed to render 404 template: {}", e);
                 Err(StatusCode::NOT_FOUND)
@@ -257,32 +258,44 @@ pub async fn template_with_gallery_handler(
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let path = path.map(|p| p.0).unwrap_or_default();
-    
+
     // Check if template exists first
     let template_path = if path.is_empty() || path == "/" {
         "index.html.liquid"
     } else {
         &format!("{}.html.liquid", path.trim_start_matches('/'))
     };
-    
+
     let template_file_path = app_state.template_engine.template_dir.join(template_path);
     if !template_file_path.exists() {
-        debug!("Template not found: {}, checking for static file", template_path);
-        
+        debug!(
+            "Template not found: {}, checking for static file",
+            template_path
+        );
+
         // Check if there's a matching static file
         let static_file_path = app_state.static_handler.static_dir.join(&path);
-        if static_file_path.exists() && static_file_path.starts_with(&app_state.static_handler.static_dir) {
+        if static_file_path.exists()
+            && static_file_path.starts_with(&app_state.static_handler.static_dir)
+        {
             debug!("Found static file for path: {}, serving it", path);
             return app_state.static_handler.serve(&path).await;
         }
-        
-        debug!("No template or static file found for: {}, returning 404", path);
-        return match app_state.template_engine.render_404_page(&app_state.gallery).await {
+
+        debug!(
+            "No template or static file found for: {}, returning 404",
+            path
+        );
+        return match app_state
+            .template_engine
+            .render_404_page(&app_state.gallery)
+            .await
+        {
             Ok(html) => (StatusCode::NOT_FOUND, html).into_response(),
             Err(_) => StatusCode::NOT_FOUND.into_response(),
         };
     }
-    
+
     match app_state
         .template_engine
         .render_with_gallery(&path, &app_state.gallery)

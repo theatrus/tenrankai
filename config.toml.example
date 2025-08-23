@@ -20,6 +20,10 @@ download_secret = "your-secret-key-here-change-this-to-random-value"
 # Password required for download access
 download_password = "your-download-password-here"
 
+# Copyright holder name (optional)
+# If set, enables copyright watermarking on images
+# copyright_holder = "John Doe Photography"
+
 [templates]
 # Directory containing Liquid template files
 directory = "/usr/share/dynserver/templates"

@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::{StatusCode, HeaderMap, header::SET_COOKIE},
+    http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::{IntoResponse, Json},
 };
 use base64::{Engine, engine::general_purpose};
@@ -27,8 +27,8 @@ pub struct VerifyResponse {
 }
 
 pub fn create_signed_cookie(secret: &str, value: &str) -> Result<String, String> {
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .map_err(|_| "Invalid secret key")?;
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| "Invalid secret key")?;
     mac.update(value.as_bytes());
     let signature = mac.finalize().into_bytes();
     let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature);
@@ -38,7 +38,8 @@ pub fn create_signed_cookie(secret: &str, value: &str) -> Result<String, String>
 pub fn verify_signed_cookie(secret: &str, signed_value: &str) -> bool {
     if let Some((value, signature_b64)) = signed_value.split_once(':')
         && let Ok(signature) = general_purpose::URL_SAFE_NO_PAD.decode(signature_b64)
-        && let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) {
+        && let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes())
+    {
         mac.update(value.as_bytes());
         return mac.verify_slice(&signature).is_ok();
     }
@@ -51,7 +52,7 @@ pub async fn authenticate_handler(
 ) -> Result<impl IntoResponse, StatusCode> {
     tracing::info!("Authentication attempt received");
     let config = &app_state.config;
-    
+
     if payload.password == config.app.download_password {
         tracing::info!("Authentication successful");
         match create_signed_cookie(&config.app.download_secret, "true") {
@@ -60,15 +61,15 @@ pub async fn authenticate_handler(
                     "download_allowed={}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax",
                     signed_value
                 );
-                
+
                 let mut headers = HeaderMap::new();
                 headers.insert(SET_COOKIE, cookie.parse().unwrap());
-                
+
                 let response = AuthResponse {
                     success: true,
                     message: "Authentication successful".to_string(),
                 };
-                
+
                 Ok((headers, Json(response)))
             }
             Err(_) => {
@@ -94,15 +95,19 @@ pub async fn verify_handler(
     headers: HeaderMap,
 ) -> Json<VerifyResponse> {
     let authorized = get_cookie_value(&headers, "download_allowed")
-        .map(|signed_value| verify_signed_cookie(&app_state.config.app.download_secret, &signed_value))
+        .map(|signed_value| {
+            verify_signed_cookie(&app_state.config.app.download_secret, &signed_value)
+        })
         .unwrap_or(false);
-        
+
     Json(VerifyResponse { authorized })
 }
 
 pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get("cookie")?
-        .to_str().ok()?
+    headers
+        .get("cookie")?
+        .to_str()
+        .ok()?
         .split(';')
         .find_map(|cookie| {
             let cookie = cookie.trim();

@@ -8,6 +8,8 @@ log_level = "info"
 download_secret = "your-secret-key-change-this-in-production"
 download_password = "gallery2024"
 
+copyright_holder = "Yann Ramin. All rights reserved. theatr.us"
+
 [templates]
 directory = "templates"
 

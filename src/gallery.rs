@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{StatusCode, header, HeaderMap},
+    http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
 use image::{ImageFormat, imageops::FilterType};
@@ -20,6 +20,8 @@ use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 use tracing::error;
 use walkdir::WalkDir;
+
+use crate::copyright::{CopyrightConfig, add_copyright_notice};
 
 #[derive(Debug)]
 pub enum GalleryError {
@@ -127,6 +129,7 @@ pub struct GalleryQuery {
 
 pub struct Gallery {
     config: GalleryConfig,
+    app_config: crate::AppConfig,
     cache: Arc<RwLock<HashMap<String, CachedImage>>>,
     metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
     cache_metadata: Arc<RwLock<CacheMetadata>>,
@@ -148,46 +151,47 @@ struct ImageMetadata {
 }
 
 impl Gallery {
-    pub fn new(config: GalleryConfig) -> Self {
+    pub fn new(config: GalleryConfig, app_config: crate::AppConfig) -> Self {
         let metadata_cache = Self::load_metadata_cache(&config).unwrap_or_default();
         let cache_metadata = Self::load_cache_metadata(&config).unwrap_or_else(|_| CacheMetadata {
             version: String::new(), // Empty version will trigger full refresh
             last_full_refresh: SystemTime::UNIX_EPOCH,
         });
-        
+
         Self {
             config,
+            app_config,
             cache: Arc::new(RwLock::new(HashMap::new())),
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
             cache_metadata: Arc::new(RwLock::new(cache_metadata)),
         }
     }
-    
+
     pub async fn initialize_and_check_version(&self) -> Result<(), GalleryError> {
         let needs_full_refresh = {
             let metadata = self.cache_metadata.read().await;
             metadata.version != SERVER_VERSION
         };
-        
+
         if needs_full_refresh {
             let old_version = {
                 let metadata = self.cache_metadata.read().await;
-                if metadata.version.is_empty() { 
-                    "unknown".to_string() 
-                } else { 
-                    metadata.version.clone() 
+                if metadata.version.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    metadata.version.clone()
                 }
             };
-            
+
             tracing::info!(
                 "Server version changed (was: {}, now: {}), performing full metadata cache refresh...",
                 old_version,
                 SERVER_VERSION
             );
-            
+
             self.force_full_metadata_refresh().await?;
         }
-        
+
         Ok(())
     }
 
@@ -299,7 +303,9 @@ impl Gallery {
         for entry in WalkDir::new(full_path).min_depth(1).into_iter().flatten() {
             if entry.file_type().is_file()
                 && let Some(name) = entry.file_name().to_str()
-                && self.is_image(name) && !name.starts_with('.') {
+                && self.is_image(name)
+                && !name.starts_with('.')
+            {
                 count += 1;
             }
         }
@@ -326,8 +332,10 @@ impl Gallery {
 
             if entry.file_type().is_file()
                 && let Some(name) = entry.file_name().to_str()
-                && self.is_image(name) && !name.starts_with('.')
-                && let Ok(relative_to_source) = entry.path().strip_prefix(&self.config.source_directory)
+                && self.is_image(name)
+                && !name.starts_with('.')
+                && let Ok(relative_to_source) =
+                    entry.path().strip_prefix(&self.config.source_directory)
             {
                 let path_string = relative_to_source.to_string_lossy().to_string();
                 let encoded_path = urlencoding::encode(&path_string);
@@ -450,10 +458,13 @@ impl Gallery {
         let capture_date = cached_metadata.capture_date.and_then(|date| {
             match date.duration_since(SystemTime::UNIX_EPOCH) {
                 Ok(duration) => {
-                    let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(duration.as_secs() as i64, 0)?;
+                    let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(
+                        duration.as_secs() as i64,
+                        0,
+                    )?;
                     Some(datetime.format("%B %d, %Y at %H:%M:%S").to_string())
                 }
-                Err(_) => None
+                Err(_) => None,
             }
         });
 
@@ -558,165 +569,184 @@ impl Gallery {
         }
     }
 
-    async fn extract_all_exif_data(&self, path: &std::path::Path) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
+    async fn extract_all_exif_data(
+        &self,
+        path: &std::path::Path,
+    ) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
         let path = path.to_path_buf();
-        tokio::task::spawn_blocking(move || -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
-            let file_contents = match std::fs::read(&path) {
-                Ok(contents) => contents,
-                Err(_) => return (None, None, None),
-            };
+        tokio::task::spawn_blocking(
+            move || -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
+                let file_contents = match std::fs::read(&path) {
+                    Ok(contents) => contents,
+                    Err(_) => return (None, None, None),
+                };
 
-            let exif_data = match rexif::parse_buffer(&file_contents) {
-                Ok(data) => data,
-                Err(_) => return (None, None, None),
-            };
+                let exif_data = match rexif::parse_buffer(&file_contents) {
+                    Ok(data) => data,
+                    Err(_) => return (None, None, None),
+                };
 
-            let mut capture_date: Option<SystemTime> = None;
-            let mut camera_info = CameraInfo {
-                camera_make: None,
-                camera_model: None,
-                lens_model: None,
-                iso: None,
-                aperture: None,
-                shutter_speed: None,
-                focal_length: None,
-            };
-            let mut latitude: Option<f64> = None;
-            let mut longitude: Option<f64> = None;
-            let mut lat_ref: Option<String> = None;
-            let mut lon_ref: Option<String> = None;
+                let mut capture_date: Option<SystemTime> = None;
+                let mut camera_info = CameraInfo {
+                    camera_make: None,
+                    camera_model: None,
+                    lens_model: None,
+                    iso: None,
+                    aperture: None,
+                    shutter_speed: None,
+                    focal_length: None,
+                };
+                let mut latitude: Option<f64> = None;
+                let mut longitude: Option<f64> = None;
+                let mut lat_ref: Option<String> = None;
+                let mut lon_ref: Option<String> = None;
 
-            // Extract capture date with priority
-            let date_tags_priority = [
-                rexif::ExifTag::DateTimeOriginal,
-                rexif::ExifTag::DateTimeDigitized,
-                rexif::ExifTag::DateTime,
-            ];
+                // Extract capture date with priority
+                let date_tags_priority = [
+                    rexif::ExifTag::DateTimeOriginal,
+                    rexif::ExifTag::DateTimeDigitized,
+                    rexif::ExifTag::DateTime,
+                ];
 
-            for tag in &date_tags_priority {
-                if capture_date.is_none() {
-                    for entry in &exif_data.entries {
-                        if entry.tag == *tag {
-                            let date_str = entry.value_more_readable.to_string();
-                            if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(&date_str, "%Y:%m:%d %H:%M:%S") {
-                                use std::time::{Duration, UNIX_EPOCH};
-                                let timestamp = parsed.and_utc().timestamp();
-                                if timestamp > 0 {
-                                    capture_date = Some(UNIX_EPOCH + Duration::from_secs(timestamp as u64));
-                                    break;
+                for tag in &date_tags_priority {
+                    if capture_date.is_none() {
+                        for entry in &exif_data.entries {
+                            if entry.tag == *tag {
+                                let date_str = entry.value_more_readable.to_string();
+                                if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(
+                                    &date_str,
+                                    "%Y:%m:%d %H:%M:%S",
+                                ) {
+                                    use std::time::{Duration, UNIX_EPOCH};
+                                    let timestamp = parsed.and_utc().timestamp();
+                                    if timestamp > 0 {
+                                        capture_date = Some(
+                                            UNIX_EPOCH + Duration::from_secs(timestamp as u64),
+                                        );
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Extract all other EXIF data in a single pass
-            for entry in &exif_data.entries {
-                match entry.tag {
-                    rexif::ExifTag::Make => {
-                        camera_info.camera_make = Some(entry.value_more_readable.to_string());
-                    }
-                    rexif::ExifTag::Model => {
-                        camera_info.camera_model = Some(entry.value_more_readable.to_string());
-                    }
-                    rexif::ExifTag::LensModel => {
-                        camera_info.lens_model = Some(entry.value_more_readable.to_string());
-                    }
-                    rexif::ExifTag::ISOSpeedRatings => {
-                        let iso_str = entry.value_more_readable.to_string();
-                        // Check if the value already has 'ISO' prefix
-                        camera_info.iso = if iso_str.to_lowercase().starts_with("iso") {
-                            Some(iso_str)
-                        } else {
-                            Some(format!("ISO {}", iso_str))
-                        };
-                    }
-                    rexif::ExifTag::FNumber => {
-                        let aperture_str = entry.value_more_readable.to_string();
-                        // Check if the value already has 'f/' prefix
-                        camera_info.aperture = if aperture_str.starts_with("f/") {
-                            Some(aperture_str)
-                        } else {
-                            Some(format!("f/{}", aperture_str))
-                        };
-                    }
-                    rexif::ExifTag::ExposureTime => {
-                        let exposure_str = entry.value_more_readable.to_string();
-                        // Check if the value already has 's' suffix or is a fraction
-                        camera_info.shutter_speed = if exposure_str.ends_with('s') || exposure_str.contains('/') {
-                            Some(exposure_str)
-                        } else {
-                            Some(format!("{}s", exposure_str))
-                        };
-                    }
-                    rexif::ExifTag::FocalLength => {
-                        let focal_length_str = entry.value_more_readable.to_string();
-                        // Check if the value already has 'mm' suffix
-                        camera_info.focal_length = if focal_length_str.ends_with("mm") {
-                            Some(focal_length_str)
-                        } else {
-                            Some(format!("{}mm", focal_length_str))
-                        };
-                    }
-                    rexif::ExifTag::GPSLatitude => {
-                        if let Ok(lat) = Self::parse_gps_coordinate(&entry.value_more_readable) {
-                            latitude = Some(lat);
+                // Extract all other EXIF data in a single pass
+                for entry in &exif_data.entries {
+                    match entry.tag {
+                        rexif::ExifTag::Make => {
+                            camera_info.camera_make = Some(entry.value_more_readable.to_string());
                         }
-                    }
-                    rexif::ExifTag::GPSLongitude => {
-                        if let Ok(lon) = Self::parse_gps_coordinate(&entry.value_more_readable) {
-                            longitude = Some(lon);
+                        rexif::ExifTag::Model => {
+                            camera_info.camera_model = Some(entry.value_more_readable.to_string());
                         }
+                        rexif::ExifTag::LensModel => {
+                            camera_info.lens_model = Some(entry.value_more_readable.to_string());
+                        }
+                        rexif::ExifTag::ISOSpeedRatings => {
+                            let iso_str = entry.value_more_readable.to_string();
+                            // Check if the value already has 'ISO' prefix
+                            camera_info.iso = if iso_str.to_lowercase().starts_with("iso") {
+                                Some(iso_str)
+                            } else {
+                                Some(format!("ISO {}", iso_str))
+                            };
+                        }
+                        rexif::ExifTag::FNumber => {
+                            let aperture_str = entry.value_more_readable.to_string();
+                            // Check if the value already has 'f/' prefix
+                            camera_info.aperture = if aperture_str.starts_with("f/") {
+                                Some(aperture_str)
+                            } else {
+                                Some(format!("f/{}", aperture_str))
+                            };
+                        }
+                        rexif::ExifTag::ExposureTime => {
+                            let exposure_str = entry.value_more_readable.to_string();
+                            // Check if the value already has 's' suffix or is a fraction
+                            camera_info.shutter_speed =
+                                if exposure_str.ends_with('s') || exposure_str.contains('/') {
+                                    Some(exposure_str)
+                                } else {
+                                    Some(format!("{}s", exposure_str))
+                                };
+                        }
+                        rexif::ExifTag::FocalLength => {
+                            let focal_length_str = entry.value_more_readable.to_string();
+                            // Check if the value already has 'mm' suffix
+                            camera_info.focal_length = if focal_length_str.ends_with("mm") {
+                                Some(focal_length_str)
+                            } else {
+                                Some(format!("{}mm", focal_length_str))
+                            };
+                        }
+                        rexif::ExifTag::GPSLatitude => {
+                            if let Ok(lat) = Self::parse_gps_coordinate(&entry.value_more_readable)
+                            {
+                                latitude = Some(lat);
+                            }
+                        }
+                        rexif::ExifTag::GPSLongitude => {
+                            if let Ok(lon) = Self::parse_gps_coordinate(&entry.value_more_readable)
+                            {
+                                longitude = Some(lon);
+                            }
+                        }
+                        rexif::ExifTag::GPSLatitudeRef => {
+                            lat_ref = Some(entry.value_more_readable.to_string());
+                        }
+                        rexif::ExifTag::GPSLongitudeRef => {
+                            lon_ref = Some(entry.value_more_readable.to_string());
+                        }
+                        _ => {}
                     }
-                    rexif::ExifTag::GPSLatitudeRef => {
-                        lat_ref = Some(entry.value_more_readable.to_string());
-                    }
-                    rexif::ExifTag::GPSLongitudeRef => {
-                        lon_ref = Some(entry.value_more_readable.to_string());
-                    }
-                    _ => {}
                 }
-            }
 
-            // Build location info if we have coordinates
-            let location_info = match (latitude, longitude, lat_ref, lon_ref) {
-                (Some(lat), Some(lon), Some(lat_r), Some(lon_r)) => {
-                    let final_lat = if lat_r == "S" { -lat } else { lat };
-                    let final_lon = if lon_r == "W" { -lon } else { lon };
+                // Build location info if we have coordinates
+                let location_info = match (latitude, longitude, lat_ref, lon_ref) {
+                    (Some(lat), Some(lon), Some(lat_r), Some(lon_r)) => {
+                        let final_lat = if lat_r == "S" { -lat } else { lat };
+                        let final_lon = if lon_r == "W" { -lon } else { lon };
 
-                    Some(LocationInfo {
-                        latitude: final_lat,
-                        longitude: final_lon,
-                        google_maps_url: format!(
-                            "https://www.google.com/maps/search/?api=1&query={},{}",
-                            final_lat, final_lon
-                        ),
-                        apple_maps_url: format!("http://maps.apple.com/?ll={},{}&q=Photo%20Location", final_lat, final_lon),
-                    })
-                }
-                _ => None,
-            };
+                        Some(LocationInfo {
+                            latitude: final_lat,
+                            longitude: final_lon,
+                            google_maps_url: format!(
+                                "https://www.google.com/maps/search/?api=1&query={},{}",
+                                final_lat, final_lon
+                            ),
+                            apple_maps_url: format!(
+                                "http://maps.apple.com/?ll={},{}&q=Photo%20Location",
+                                final_lat, final_lon
+                            ),
+                        })
+                    }
+                    _ => None,
+                };
 
-            // Only return camera info if at least one field is populated
-            let has_camera_info = camera_info.camera_make.is_some()
-                || camera_info.camera_model.is_some()
-                || camera_info.lens_model.is_some()
-                || camera_info.iso.is_some()
-                || camera_info.aperture.is_some()
-                || camera_info.shutter_speed.is_some()
-                || camera_info.focal_length.is_some();
+                // Only return camera info if at least one field is populated
+                let has_camera_info = camera_info.camera_make.is_some()
+                    || camera_info.camera_model.is_some()
+                    || camera_info.lens_model.is_some()
+                    || camera_info.iso.is_some()
+                    || camera_info.aperture.is_some()
+                    || camera_info.shutter_speed.is_some()
+                    || camera_info.focal_length.is_some();
 
-            (
-                capture_date,
-                if has_camera_info { Some(camera_info) } else { None },
-                location_info,
-            )
-        })
+                (
+                    capture_date,
+                    if has_camera_info {
+                        Some(camera_info)
+                    } else {
+                        None
+                    },
+                    location_info,
+                )
+            },
+        )
         .await
         .unwrap_or((None, None, None))
     }
-
 
     fn parse_gps_coordinate(coord_str: &str) -> Result<f64, String> {
         // Parse GPS coordinate in format like "40° 45' 30.00''"
@@ -760,10 +790,8 @@ impl Gallery {
         let content = fs::read_to_string(&cache_path)?;
         serde_json::from_str(&content).map_err(|_| GalleryError::InvalidPath)
     }
-    
-    fn load_cache_metadata(
-        config: &GalleryConfig,
-    ) -> Result<CacheMetadata, GalleryError> {
+
+    fn load_cache_metadata(config: &GalleryConfig) -> Result<CacheMetadata, GalleryError> {
         let metadata_path = config.cache_directory.join("cache_metadata.json");
         if !metadata_path.exists() {
             return Err(GalleryError::InvalidPath);
@@ -781,17 +809,17 @@ impl Gallery {
             serde_json::to_string_pretty(&*cache).map_err(|_| GalleryError::InvalidPath)?;
 
         tokio::fs::write(self.metadata_cache_path(), content).await?;
-        
+
         // Also save cache metadata
         self.save_cache_metadata().await?;
         Ok(())
     }
-    
+
     async fn save_cache_metadata(&self) -> Result<(), GalleryError> {
         let metadata = self.cache_metadata.read().await;
-        let content = serde_json::to_string_pretty(&*metadata)
-            .map_err(|_| GalleryError::InvalidPath)?;
-            
+        let content =
+            serde_json::to_string_pretty(&*metadata).map_err(|_| GalleryError::InvalidPath)?;
+
         let metadata_path = self.config.cache_directory.join("cache_metadata.json");
         tokio::fs::write(metadata_path, content).await?;
         Ok(())
@@ -828,7 +856,8 @@ impl Gallery {
                 )))?;
 
         // Extract all EXIF data in one pass
-        let (capture_date, camera_info, location_info) = self.extract_all_exif_data(&full_path).await;
+        let (capture_date, camera_info, location_info) =
+            self.extract_all_exif_data(&full_path).await;
 
         let new_metadata = ImageMetadata {
             dimensions,
@@ -898,37 +927,41 @@ impl Gallery {
 
     pub async fn force_full_metadata_refresh(&self) -> Result<(usize, usize), GalleryError> {
         tracing::info!("Starting forced full metadata cache refresh...");
-        
+
         // Clear existing cache
         {
             let mut cache = self.metadata_cache.write().await;
             cache.clear();
         }
-        
+
         // Update version and refresh time
         {
             let mut metadata = self.cache_metadata.write().await;
             metadata.version = SERVER_VERSION.to_string();
             metadata.last_full_refresh = SystemTime::now();
         }
-        
+
         // Perform full refresh
         let result = self.refresh_metadata_cache_internal(true).await;
-        
+
         // Save the updated metadata
         if result.is_ok()
-            && let Err(e) = self.save_cache_metadata().await {
+            && let Err(e) = self.save_cache_metadata().await
+        {
             tracing::warn!("Failed to save cache metadata after full refresh: {}", e);
         }
-        
+
         result
     }
-    
+
     pub async fn refresh_metadata_cache(&self) -> Result<(usize, usize), GalleryError> {
         self.refresh_metadata_cache_internal(false).await
     }
-    
-    async fn refresh_metadata_cache_internal(&self, force_update_all: bool) -> Result<(usize, usize), GalleryError> {
+
+    async fn refresh_metadata_cache_internal(
+        &self,
+        force_update_all: bool,
+    ) -> Result<(usize, usize), GalleryError> {
         use std::collections::HashSet;
         use tokio::fs;
 
@@ -1188,7 +1221,7 @@ impl Gallery {
         } else {
             (size, 1)
         };
-        
+
         let (base_width, base_height) = match base_size {
             "thumbnail" => (self.config.thumbnail.width, self.config.thumbnail.height),
             "gallery" => (
@@ -1199,7 +1232,7 @@ impl Gallery {
             "large" => (self.config.large.width, self.config.large.height),
             _ => return Err(GalleryError::InvalidPath),
         };
-        
+
         // Apply multiplier for @2x variants
         let width = base_width * multiplier as u32;
         let height = base_height * multiplier as u32;
@@ -1213,7 +1246,9 @@ impl Gallery {
 
         let cache = self.cache.read().await;
         if let Some(cached) = cache.get(&hash)
-            && cached.modified >= original_modified && cached.path.exists() {
+            && cached.modified >= original_modified
+            && cached.path.exists()
+        {
             return Ok(cached.path.clone());
         }
         drop(cache);
@@ -1223,6 +1258,10 @@ impl Gallery {
         // Move CPU-intensive and blocking I/O operations to blocking thread pool
         let original_path = original_path.clone();
         let cache_path_clone = cache_path.clone();
+        let is_medium = base_size == "medium";
+        let copyright_holder = self.app_config.copyright_holder.clone();
+        let static_dir = PathBuf::from("static"); // Assume static dir for font
+
         tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
             // Open image with decoder to access ICC profile
             let original_file = std::fs::File::open(&original_path)?;
@@ -1231,14 +1270,14 @@ impl Gallery {
                 .with_guessed_format()?;
 
             let img = decoder.decode()?;
-            
+
             // Get original dimensions
             let (orig_width, orig_height) = (img.width(), img.height());
-            
+
             // Don't upscale - if requested dimensions are larger than original, use original
             let final_width = width.min(orig_width);
             let final_height = height.min(orig_height);
-            
+
             // Only resize if dimensions are different
             let resized = if final_width != orig_width || final_height != orig_height {
                 img.resize(final_width, final_height, FilterType::Lanczos3)
@@ -1246,11 +1285,36 @@ impl Gallery {
                 img
             };
 
-            // Save resized image
+            // Apply copyright watermark if this is a medium image and copyright holder is configured
+            let final_image = if is_medium && copyright_holder.is_some() {
+                let font_path = static_dir.join("DejaVuSans.ttf");
+                if font_path.exists() {
+                    let copyright_config = CopyrightConfig {
+                        copyright_holder: copyright_holder.unwrap_or_default(),
+                        font_size: 20.0,
+                        padding: 10,
+                    };
+
+                    match add_copyright_notice(&resized, &copyright_config, &font_path) {
+                        Ok(watermarked) => watermarked,
+                        Err(e) => {
+                            eprintln!("Failed to add copyright watermark: {}", e);
+                            resized
+                        }
+                    }
+                } else {
+                    eprintln!("Font file not found at {:?}, skipping watermark", font_path);
+                    resized
+                }
+            } else {
+                resized
+            };
+
+            // Save final image
             // Note: The standard image crate JPEG encoder doesn't support embedding ICC profiles
             // For production use, consider using a library like turbojpeg-sys or mozjpeg
             // that supports ICC profile embedding during encoding
-            resized.save_with_format(&cache_path_clone, ImageFormat::Jpeg)?;
+            final_image.save_with_format(&cache_path_clone, ImageFormat::Jpeg)?;
 
             Ok(())
         })
@@ -1371,10 +1435,11 @@ impl Gallery {
                     );
 
                     // Get image dimensions and capture date from cache
-                    let (dimensions, capture_date) = match self.get_image_metadata_cached(&item_path).await {
-                        Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
-                        Err(_) => (None, None),
-                    };
+                    let (dimensions, capture_date) =
+                        match self.get_image_metadata_cached(&item_path).await {
+                            Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
+                            Err(_) => (None, None),
+                        };
 
                     folder_images.push(GalleryItem {
                         name: file_name,
@@ -1566,7 +1631,7 @@ pub async fn image_handler(
         } else {
             (size.as_str(), false)
         };
-        
+
         match base_size {
             "thumbnail" | "gallery" | "medium" => {
                 // These sizes are allowed without authentication
@@ -1591,17 +1656,27 @@ pub async fn image_handler(
             return (StatusCode::FORBIDDEN, "Download permission required").into_response();
         }
     }
-    
+
     app_state.gallery.serve_image(&path, query.size).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{GalleryConfig, ImageSizeConfig, PreviewConfig};
+    use crate::{AppConfig, GalleryConfig, ImageSizeConfig, PreviewConfig};
     use chrono::{Datelike, Timelike};
     use std::path::PathBuf;
     use std::time::UNIX_EPOCH;
+
+    fn test_app_config() -> AppConfig {
+        AppConfig {
+            name: "Test".to_string(),
+            log_level: "info".to_string(),
+            download_secret: "test-secret".to_string(),
+            download_password: "test-pass".to_string(),
+            copyright_holder: None,
+        }
+    }
 
     #[tokio::test]
     async fn test_extract_capture_date_with_valid_exif() {
@@ -1611,10 +1686,22 @@ mod tests {
             source_directory: PathBuf::from("photos"),
             cache_directory: PathBuf::from("cache/test"),
             images_per_page: 20,
-            thumbnail: ImageSizeConfig { width: 300, height: 300 },
-            gallery_size: ImageSizeConfig { width: 800, height: 800 },
-            medium: ImageSizeConfig { width: 1200, height: 1200 },
-            large: ImageSizeConfig { width: 1600, height: 1600 },
+            thumbnail: ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
             preview: PreviewConfig {
                 max_images: 4,
                 max_depth: 3,
@@ -1622,26 +1709,28 @@ mod tests {
             },
             cache_refresh_interval_minutes: None,
         };
-        let gallery = Gallery::new(config);
+        let gallery = Gallery::new(config, test_app_config());
 
         // Test with the provided test image
         let test_image_path = PathBuf::from("photos/landscapes/CRW_1978.jpg");
         let (capture_date, _, _) = gallery.extract_all_exif_data(&test_image_path).await;
 
-        assert!(capture_date.is_some(), "Should extract capture date from CRW_1978.jpg");
-        
+        assert!(
+            capture_date.is_some(),
+            "Should extract capture date from CRW_1978.jpg"
+        );
+
         if let Some(date) = capture_date {
             // Convert to timestamp for easier comparison
             let timestamp = date.duration_since(UNIX_EPOCH).unwrap().as_secs();
-            
+
             // The EXIF date from the image is 2005:07:30 07:22:46
             // We expect this to be parsed as-is without timezone adjustment
-            let expected_datetime = chrono::NaiveDateTime::parse_from_str(
-                "2005-07-30 07:22:46", 
-                "%Y-%m-%d %H:%M:%S"
-            ).unwrap();
+            let expected_datetime =
+                chrono::NaiveDateTime::parse_from_str("2005-07-30 07:22:46", "%Y-%m-%d %H:%M:%S")
+                    .unwrap();
             let expected_timestamp = expected_datetime.and_utc().timestamp() as u64;
-            
+
             // Should match exactly
             assert_eq!(
                 timestamp, expected_timestamp,
@@ -1657,10 +1746,22 @@ mod tests {
             source_directory: PathBuf::from("."),
             cache_directory: PathBuf::from("cache/test"),
             images_per_page: 20,
-            thumbnail: ImageSizeConfig { width: 300, height: 300 },
-            gallery_size: ImageSizeConfig { width: 800, height: 800 },
-            medium: ImageSizeConfig { width: 1200, height: 1200 },
-            large: ImageSizeConfig { width: 1600, height: 1600 },
+            thumbnail: ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
             preview: PreviewConfig {
                 max_images: 4,
                 max_depth: 3,
@@ -1668,13 +1769,16 @@ mod tests {
             },
             cache_refresh_interval_minutes: None,
         };
-        let gallery = Gallery::new(config);
+        let gallery = Gallery::new(config, test_app_config());
 
         // Test with a non-existent file
         let test_image_path = PathBuf::from("non_existent_image.jpg");
         let (capture_date, _, _) = gallery.extract_all_exif_data(&test_image_path).await;
 
-        assert!(capture_date.is_none(), "Should return None for non-existent file");
+        assert!(
+            capture_date.is_none(),
+            "Should return None for non-existent file"
+        );
     }
 
     #[tokio::test]
@@ -1685,10 +1789,22 @@ mod tests {
             source_directory: PathBuf::from("photos"),
             cache_directory: PathBuf::from("cache/test"),
             images_per_page: 20,
-            thumbnail: ImageSizeConfig { width: 300, height: 300 },
-            gallery_size: ImageSizeConfig { width: 800, height: 800 },
-            medium: ImageSizeConfig { width: 1200, height: 1200 },
-            large: ImageSizeConfig { width: 1600, height: 1600 },
+            thumbnail: ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
             preview: PreviewConfig {
                 max_images: 4,
                 max_depth: 3,
@@ -1696,35 +1812,44 @@ mod tests {
             },
             cache_refresh_interval_minutes: None,
         };
-        let gallery = Gallery::new(config);
+        let gallery = Gallery::new(config, test_app_config());
 
         // Test with the provided test image
         let test_image_path = PathBuf::from("photos/landscapes/CRW_1978.jpg");
-        let (capture_date, camera_info, location_info) = gallery.extract_all_exif_data(&test_image_path).await;
+        let (capture_date, camera_info, location_info) =
+            gallery.extract_all_exif_data(&test_image_path).await;
 
         // Should have capture date
         assert!(capture_date.is_some(), "Should extract capture date");
-        
+
         // May or may not have camera info depending on the specific image
         if let Some(camera) = camera_info {
             // If we have camera info, at least one field should be populated
             assert!(
-                camera.camera_make.is_some() || 
-                camera.camera_model.is_some() || 
-                camera.lens_model.is_some() ||
-                camera.iso.is_some() ||
-                camera.aperture.is_some() ||
-                camera.shutter_speed.is_some() ||
-                camera.focal_length.is_some(),
+                camera.camera_make.is_some()
+                    || camera.camera_model.is_some()
+                    || camera.lens_model.is_some()
+                    || camera.iso.is_some()
+                    || camera.aperture.is_some()
+                    || camera.shutter_speed.is_some()
+                    || camera.focal_length.is_some(),
                 "Camera info should have at least one field"
             );
         }
-        
+
         // Location info is optional
         if let Some(location) = location_info {
             assert!(location.latitude != 0.0 && location.longitude != 0.0);
-            assert!(location.google_maps_url.contains(&location.latitude.to_string()));
-            assert!(location.apple_maps_url.contains(&location.longitude.to_string()));
+            assert!(
+                location
+                    .google_maps_url
+                    .contains(&location.latitude.to_string())
+            );
+            assert!(
+                location
+                    .apple_maps_url
+                    .contains(&location.longitude.to_string())
+            );
         }
     }
 
@@ -1733,9 +1858,9 @@ mod tests {
         // This test validates that the EXIF date format parsing works correctly
         let date_str = "2005:07:30 07:22:46";
         let parsed = chrono::NaiveDateTime::parse_from_str(date_str, "%Y:%m:%d %H:%M:%S");
-        
+
         assert!(parsed.is_ok(), "Should parse EXIF date format");
-        
+
         if let Ok(datetime) = parsed {
             assert_eq!(datetime.year(), 2005);
             assert_eq!(datetime.month(), 7);
@@ -1754,10 +1879,22 @@ mod tests {
             source_directory: PathBuf::from("photos"),
             cache_directory: PathBuf::from("cache/test_version"),
             images_per_page: 20,
-            thumbnail: ImageSizeConfig { width: 300, height: 300 },
-            gallery_size: ImageSizeConfig { width: 800, height: 800 },
-            medium: ImageSizeConfig { width: 1200, height: 1200 },
-            large: ImageSizeConfig { width: 1600, height: 1600 },
+            thumbnail: ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
             preview: PreviewConfig {
                 max_images: 4,
                 max_depth: 3,
@@ -1765,23 +1902,26 @@ mod tests {
             },
             cache_refresh_interval_minutes: None,
         };
-        
+
         // Create gallery - should have empty version initially
-        let gallery = Gallery::new(config.clone());
-        
+        let gallery = Gallery::new(config.clone(), test_app_config());
+
         // Check that version is different (empty vs current)
         let needs_refresh = {
             let metadata = gallery.cache_metadata.read().await;
             metadata.version != SERVER_VERSION
         };
-        
-        assert!(needs_refresh, "Should need refresh when version is empty/different");
-        
+
+        assert!(
+            needs_refresh,
+            "Should need refresh when version is empty/different"
+        );
+
         // After initialization, version should be updated
         if gallery.initialize_and_check_version().await.is_err() {
             // Expected to fail due to test directory, but that's okay
         }
-        
+
         // Clean up test directory if it exists
         if let Ok(()) = tokio::fs::remove_dir_all("cache/test_version").await {
             // Directory cleanup successful
@@ -1791,7 +1931,7 @@ mod tests {
     #[test]
     fn test_aperture_formatting() {
         // Test that aperture values don't get double f/ prefix
-        
+
         // Case 1: EXIF value already has f/ prefix
         let aperture_with_f = "f/6.3";
         let formatted1 = if aperture_with_f.starts_with("f/") {
@@ -1800,7 +1940,7 @@ mod tests {
             format!("f/{}", aperture_with_f)
         };
         assert_eq!(formatted1, "f/6.3");
-        
+
         // Case 2: EXIF value doesn't have f/ prefix
         let aperture_without_f = "6.3";
         let formatted2 = if aperture_without_f.starts_with("f/") {
@@ -1809,7 +1949,7 @@ mod tests {
             format!("f/{}", aperture_without_f)
         };
         assert_eq!(formatted2, "f/6.3");
-        
+
         // Case 3: EXIF value with just 'f' but no slash (edge case - should get f/ prefix)
         // This demonstrates why we need to check for "f/" specifically, not just 'f'
         let aperture_with_f_only = "f4.0";
@@ -1824,7 +1964,7 @@ mod tests {
     #[test]
     fn test_focal_length_formatting() {
         // Test that focal length values don't get double mm suffix
-        
+
         // Case 1: EXIF value already has mm suffix
         let focal_with_mm = "16mm";
         let formatted1 = if focal_with_mm.ends_with("mm") {
@@ -1833,8 +1973,8 @@ mod tests {
             format!("{}mm", focal_with_mm)
         };
         assert_eq!(formatted1, "16mm");
-        
-        // Case 2: EXIF value doesn't have mm suffix  
+
+        // Case 2: EXIF value doesn't have mm suffix
         let focal_without_mm = "16";
         let formatted2 = if focal_without_mm.ends_with("mm") {
             focal_without_mm.to_string()
@@ -1842,7 +1982,7 @@ mod tests {
             format!("{}mm", focal_without_mm)
         };
         assert_eq!(formatted2, "16mm");
-        
+
         // Case 3: EXIF value with different unit (should get mm suffix)
         let focal_with_other_unit = "16.0";
         let formatted3 = if focal_with_other_unit.ends_with("mm") {
@@ -1857,9 +1997,10 @@ mod tests {
     fn test_capture_date_formatting() {
         // Test the formatting used in get_image_info
         let timestamp = 1122719766u64; // Approximately 2005-07-30 10:36:06 UTC
-        let datetime = chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0).unwrap();
+        let datetime =
+            chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp as i64, 0).unwrap();
         let formatted = datetime.format("%B %d, %Y at %H:%M:%S").to_string();
-        
+
         // The timestamp corresponds to this exact time
         assert_eq!(formatted, "July 30, 2005 at 10:36:06");
     }
@@ -1868,12 +2009,12 @@ mod tests {
     mod image_handler_tests {
         use super::*;
         use axum::http::HeaderMap;
-        
+
         #[tokio::test]
         async fn test_2x_size_validation() {
             // Test that @2x variants are accepted
             let valid_2x_sizes = vec!["thumbnail@2x", "gallery@2x", "medium@2x", "large@2x"];
-            
+
             for size in valid_2x_sizes {
                 // Parse the size like the handler does
                 let (base_size, is_2x) = if size.ends_with("@2x") {
@@ -1881,14 +2022,15 @@ mod tests {
                 } else {
                     (size, false)
                 };
-                
+
                 assert!(is_2x, "{} should be detected as @2x", size);
                 assert!(
                     matches!(base_size, "thumbnail" | "gallery" | "medium" | "large"),
-                    "{} should have valid base size", size
+                    "{} should have valid base size",
+                    size
                 );
             }
-            
+
             // Test invalid @2x variants
             let invalid_size = "invalid@2x";
             let (base_size, _) = if invalid_size.ends_with("@2x") {
@@ -1896,13 +2038,21 @@ mod tests {
             } else {
                 (invalid_size, false)
             };
-            
-            assert!(!matches!(base_size, "thumbnail" | "gallery" | "medium" | "large"));
+
+            assert!(!matches!(
+                base_size,
+                "thumbnail" | "gallery" | "medium" | "large"
+            ));
         }
 
         fn create_test_headers_with_cookie(cookie_value: &str) -> HeaderMap {
             let mut headers = HeaderMap::new();
-            headers.insert("cookie", format!("download_allowed={}", cookie_value).parse().unwrap());
+            headers.insert(
+                "cookie",
+                format!("download_allowed={}", cookie_value)
+                    .parse()
+                    .unwrap(),
+            );
             headers
         }
 
@@ -1957,7 +2107,7 @@ mod tests {
             }
         }
 
-        #[tokio::test] 
+        #[tokio::test]
         async fn test_has_download_permission() {
             let secret = "test-secret";
 
@@ -1968,12 +2118,18 @@ mod tests {
 
             // Test with invalid cookie
             let headers_with_invalid_cookie = create_test_headers_with_cookie("invalid-cookie");
-            assert!(!has_download_permission(&headers_with_invalid_cookie, secret));
+            assert!(!has_download_permission(
+                &headers_with_invalid_cookie,
+                secret
+            ));
 
             // Test with tampered cookie
             let tampered_cookie = valid_cookie.replace("true", "false");
             let headers_with_tampered_cookie = create_test_headers_with_cookie(&tampered_cookie);
-            assert!(!has_download_permission(&headers_with_tampered_cookie, secret));
+            assert!(!has_download_permission(
+                &headers_with_tampered_cookie,
+                secret
+            ));
 
             // Test with no cookie
             let headers_without_cookie = create_test_headers_without_cookie();
@@ -1984,23 +2140,43 @@ mod tests {
         fn test_cookie_parsing() {
             // Test the get_cookie_value function
             let mut headers = HeaderMap::new();
-            
+
             // Test single cookie
             headers.insert("cookie", "download_allowed=test-value".parse().unwrap());
-            assert_eq!(crate::api::get_cookie_value(&headers, "download_allowed"), Some("test-value".to_string()));
+            assert_eq!(
+                crate::api::get_cookie_value(&headers, "download_allowed"),
+                Some("test-value".to_string())
+            );
 
             // Test multiple cookies
-            headers.insert("cookie", "session=abc123; download_allowed=test-value; other=xyz".parse().unwrap());
-            assert_eq!(crate::api::get_cookie_value(&headers, "download_allowed"), Some("test-value".to_string()));
-            assert_eq!(crate::api::get_cookie_value(&headers, "session"), Some("abc123".to_string()));
-            assert_eq!(crate::api::get_cookie_value(&headers, "other"), Some("xyz".to_string()));
+            headers.insert(
+                "cookie",
+                "session=abc123; download_allowed=test-value; other=xyz"
+                    .parse()
+                    .unwrap(),
+            );
+            assert_eq!(
+                crate::api::get_cookie_value(&headers, "download_allowed"),
+                Some("test-value".to_string())
+            );
+            assert_eq!(
+                crate::api::get_cookie_value(&headers, "session"),
+                Some("abc123".to_string())
+            );
+            assert_eq!(
+                crate::api::get_cookie_value(&headers, "other"),
+                Some("xyz".to_string())
+            );
 
             // Test missing cookie
             assert_eq!(crate::api::get_cookie_value(&headers, "missing"), None);
 
             // Test empty headers
             let empty_headers = HeaderMap::new();
-            assert_eq!(crate::api::get_cookie_value(&empty_headers, "download_allowed"), None);
+            assert_eq!(
+                crate::api::get_cookie_value(&empty_headers, "download_allowed"),
+                None
+            );
         }
 
         // Helper enum for size validation test results
@@ -2030,7 +2206,7 @@ mod tests {
         // Integration tests that test the actual HTTP response codes
         // These test the complete image_handler function behavior
 
-        use crate::{AppState, AppConfig, ServerConfig, TemplateConfig, StaticConfig, Config};
+        use crate::{AppConfig, AppState, Config, ServerConfig, StaticConfig, TemplateConfig};
         use axum::extract::{Path, Query, State};
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
@@ -2038,25 +2214,49 @@ mod tests {
 
         // Create minimal test app state
         let config = Config {
-            server: ServerConfig { host: "127.0.0.1".to_string(), port: 3000 },
+            server: ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3000,
+            },
             app: AppConfig {
                 name: "Test".to_string(),
                 log_level: "info".to_string(),
                 download_secret: "test-secret".to_string(),
                 download_password: "test-pass".to_string(),
+                copyright_holder: None,
             },
-            templates: TemplateConfig { directory: "templates".into() },
-            static_files: StaticConfig { directory: "static".into() },
+            templates: TemplateConfig {
+                directory: "templates".into(),
+            },
+            static_files: StaticConfig {
+                directory: "static".into(),
+            },
             gallery: GalleryConfig {
                 path_prefix: "gallery".to_string(),
                 source_directory: "photos".into(),
                 cache_directory: "cache".into(),
                 images_per_page: 20,
-                thumbnail: ImageSizeConfig { width: 300, height: 300 },
-                gallery_size: ImageSizeConfig { width: 800, height: 800 },
-                medium: ImageSizeConfig { width: 1200, height: 1200 },
-                large: ImageSizeConfig { width: 1600, height: 1600 },
-                preview: PreviewConfig { max_images: 4, max_depth: 3, max_per_folder: 3 },
+                thumbnail: ImageSizeConfig {
+                    width: 300,
+                    height: 300,
+                },
+                gallery_size: ImageSizeConfig {
+                    width: 800,
+                    height: 800,
+                },
+                medium: ImageSizeConfig {
+                    width: 1200,
+                    height: 1200,
+                },
+                large: ImageSizeConfig {
+                    width: 1600,
+                    height: 1600,
+                },
+                preview: PreviewConfig {
+                    max_images: 4,
+                    max_depth: 3,
+                    max_per_folder: 3,
+                },
                 cache_refresh_interval_minutes: None,
             },
         };
@@ -2064,78 +2264,120 @@ mod tests {
         let app_state = AppState {
             template_engine: Arc::new(crate::templating::TemplateEngine::new("templates".into())),
             static_handler: crate::static_files::StaticFileHandler::new("static".into()),
-            gallery: Arc::new(Gallery::new(config.gallery.clone())),
+            gallery: Arc::new(Gallery::new(config.gallery.clone(), config.app.clone())),
             favicon_renderer: crate::favicon::FaviconRenderer::new("static".into()),
             config: config.clone(),
         };
 
         // Test 1: Invalid size parameter should return 400 Bad Request
         let headers_without_auth = HeaderMap::new();
-        let query_invalid_size = GalleryQuery { page: None, size: Some("full".to_string()) };
+        let query_invalid_size = GalleryQuery {
+            page: None,
+            size: Some("full".to_string()),
+        };
         let response = image_handler(
             State(app_state.clone()),
             Path("test.jpg".to_string()),
             Query(query_invalid_size),
             headers_without_auth.clone(),
-        ).await;
-        
+        )
+        .await;
+
         let response_parts = response.into_response();
-        assert_eq!(response_parts.status(), StatusCode::BAD_REQUEST, "Invalid size parameter should return 400");
+        assert_eq!(
+            response_parts.status(),
+            StatusCode::BAD_REQUEST,
+            "Invalid size parameter should return 400"
+        );
 
         // Test 2: Large size without auth should return 403 Forbidden
-        let query_large_size = GalleryQuery { page: None, size: Some("large".to_string()) };
+        let query_large_size = GalleryQuery {
+            page: None,
+            size: Some("large".to_string()),
+        };
         let response = image_handler(
             State(app_state.clone()),
             Path("test.jpg".to_string()),
             Query(query_large_size),
             headers_without_auth.clone(),
-        ).await;
-        
+        )
+        .await;
+
         let response_parts = response.into_response();
-        assert_eq!(response_parts.status(), StatusCode::FORBIDDEN, "Large size without auth should return 403");
+        assert_eq!(
+            response_parts.status(),
+            StatusCode::FORBIDDEN,
+            "Large size without auth should return 403"
+        );
 
         // Test 3: No size parameter without auth should return 403 Forbidden
-        let query_no_size = GalleryQuery { page: None, size: None };
+        let query_no_size = GalleryQuery {
+            page: None,
+            size: None,
+        };
         let response = image_handler(
             State(app_state.clone()),
             Path("test.jpg".to_string()),
             Query(query_no_size),
             headers_without_auth,
-        ).await;
-        
+        )
+        .await;
+
         let response_parts = response.into_response();
-        assert_eq!(response_parts.status(), StatusCode::FORBIDDEN, "No size parameter without auth should return 403");
+        assert_eq!(
+            response_parts.status(),
+            StatusCode::FORBIDDEN,
+            "No size parameter without auth should return 403"
+        );
 
         // Test 4: Valid size with auth should proceed (will likely return 404 since image doesn't exist)
-        let valid_cookie = crate::api::create_signed_cookie(&config.app.download_secret, "true").unwrap();
+        let valid_cookie =
+            crate::api::create_signed_cookie(&config.app.download_secret, "true").unwrap();
         let mut headers_with_auth = HeaderMap::new();
-        headers_with_auth.insert("cookie", format!("download_allowed={}", valid_cookie).parse().unwrap());
-        
-        let query_large_with_auth = GalleryQuery { page: None, size: Some("large".to_string()) };
+        headers_with_auth.insert(
+            "cookie",
+            format!("download_allowed={}", valid_cookie)
+                .parse()
+                .unwrap(),
+        );
+
+        let query_large_with_auth = GalleryQuery {
+            page: None,
+            size: Some("large".to_string()),
+        };
         let response = image_handler(
             State(app_state),
             Path("test.jpg".to_string()),
             Query(query_large_with_auth),
             headers_with_auth,
-        ).await;
-        
+        )
+        .await;
+
         let response_parts = response.into_response();
         // Should not be 400 or 403 - likely 404 since image doesn't exist or 500 if serve_image fails
-        assert_ne!(response_parts.status(), StatusCode::BAD_REQUEST, "Valid size with auth should not return 400");
-        assert_ne!(response_parts.status(), StatusCode::FORBIDDEN, "Valid size with auth should not return 403");
+        assert_ne!(
+            response_parts.status(),
+            StatusCode::BAD_REQUEST,
+            "Valid size with auth should not return 400"
+        );
+        assert_ne!(
+            response_parts.status(),
+            StatusCode::FORBIDDEN,
+            "Valid size with auth should not return 403"
+        );
     }
 
     #[cfg(test)]
     mod gallery_route_tests {
         use super::*;
+        use crate::{AppState, Config, FaviconRenderer, StaticFileHandler, TemplateEngine};
         use axum::{
             extract::{Path, Query, State},
-            http::{StatusCode},
+            http::StatusCode,
         };
-        use crate::{AppState, TemplateEngine, StaticFileHandler, FaviconRenderer, Config};
+        use std::fs;
         use std::sync::Arc;
         use tempfile::TempDir;
-        use std::fs;
 
         pub async fn create_test_app_state() -> (AppState, TempDir) {
             let temp_dir = TempDir::new().unwrap();
@@ -2152,11 +2394,11 @@ mod tests {
             // Create a simple test image
             let test_image_dir = source_dir.join("test_folder");
             fs::create_dir_all(&test_image_dir).unwrap();
-            
+
             // Write a minimal JPEG header for testing
             let jpeg_data = vec![
-                0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-                0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xD9
+                0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01,
+                0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xD9,
             ];
             fs::write(test_image_dir.join("test.jpg"), jpeg_data).unwrap();
 
@@ -2170,16 +2412,29 @@ mod tests {
                     log_level: "info".to_string(),
                     download_secret: "test_secret".to_string(),
                     download_password: "test_password".to_string(),
+                    copyright_holder: None,
                 },
                 gallery: crate::GalleryConfig {
                     path_prefix: "/gallery".to_string(),
                     source_directory: source_dir,
                     cache_directory: cache_dir,
                     images_per_page: 20,
-                    thumbnail: crate::ImageSizeConfig { width: 150, height: 150 },
-                    gallery_size: crate::ImageSizeConfig { width: 400, height: 400 },
-                    medium: crate::ImageSizeConfig { width: 800, height: 600 },
-                    large: crate::ImageSizeConfig { width: 1600, height: 1200 },
+                    thumbnail: crate::ImageSizeConfig {
+                        width: 150,
+                        height: 150,
+                    },
+                    gallery_size: crate::ImageSizeConfig {
+                        width: 400,
+                        height: 400,
+                    },
+                    medium: crate::ImageSizeConfig {
+                        width: 800,
+                        height: 600,
+                    },
+                    large: crate::ImageSizeConfig {
+                        width: 1600,
+                        height: 1200,
+                    },
                     preview: crate::PreviewConfig {
                         max_images: 4,
                         max_depth: 3,
@@ -2198,7 +2453,7 @@ mod tests {
             let template_engine = Arc::new(TemplateEngine::new(templates_dir));
             let static_handler = StaticFileHandler::new(static_dir);
             let favicon_renderer = FaviconRenderer::new(config.static_files.directory.clone());
-            let gallery = Arc::new(Gallery::new(config.gallery.clone()));
+            let gallery = Arc::new(Gallery::new(config.gallery.clone(), config.app.clone()));
 
             let app_state = AppState {
                 template_engine,
@@ -2214,17 +2469,22 @@ mod tests {
         #[tokio::test]
         async fn test_gallery_handler_root_path() {
             let (app_state, _temp_dir) = create_test_app_state().await;
-            
+
             let path = Path("".to_string());
-            let query = Query(GalleryQuery { page: None, size: None });
-            
+            let query = Query(GalleryQuery {
+                page: None,
+                size: None,
+            });
+
             let response = super::gallery_handler(State(app_state), path, query).await;
             let response = response.into_response();
-            
+
             // Gallery handler may return 500 if templates are missing in test environment
             // We mainly want to ensure it doesn't crash and processes the request
             assert!(
-                response.status().is_success() || response.status().is_redirection() || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                response.status().is_success()
+                    || response.status().is_redirection()
+                    || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
                 "Gallery root handler should return success, redirect, or 500 (missing templates), got: {}",
                 response.status()
             );
@@ -2233,16 +2493,21 @@ mod tests {
         #[tokio::test]
         async fn test_gallery_handler_subfolder_path() {
             let (app_state, _temp_dir) = create_test_app_state().await;
-            
+
             let path = Path("test_folder".to_string());
-            let query = Query(GalleryQuery { page: None, size: None });
-            
+            let query = Query(GalleryQuery {
+                page: None,
+                size: None,
+            });
+
             let response = super::gallery_handler(State(app_state), path, query).await;
             let response = response.into_response();
-            
+
             // Gallery handler may return 500 if templates are missing in test environment
             assert!(
-                response.status().is_success() || response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                response.status().is_success()
+                    || response.status() == StatusCode::NOT_FOUND
+                    || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
                 "Gallery subfolder handler should return success, 404, or 500 (missing templates), got: {}",
                 response.status()
             );
@@ -2251,17 +2516,21 @@ mod tests {
         #[tokio::test]
         async fn test_gallery_handler_invalid_path() {
             let (app_state, _temp_dir) = create_test_app_state().await;
-            
+
             let path = Path("../invalid".to_string());
-            let query = Query(GalleryQuery { page: None, size: None });
-            
+            let query = Query(GalleryQuery {
+                page: None,
+                size: None,
+            });
+
             let response = super::gallery_handler(State(app_state), path, query).await;
             let response = response.into_response();
-            
+
             // Gallery handler might return 500 if path validation happens after template processing
             // The important thing is that path traversal doesn't succeed
             assert!(
-                response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                response.status() == StatusCode::FORBIDDEN
+                    || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
                 "Gallery handler should return 403 or 500 for path traversal attempts, got: {}",
                 response.status()
             );
@@ -2270,15 +2539,17 @@ mod tests {
         #[tokio::test]
         async fn test_image_detail_handler_valid_image() {
             let (app_state, _temp_dir) = create_test_app_state().await;
-            
+
             let path = Path("test_folder/test.jpg".to_string());
-            
+
             let response = super::image_detail_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Image detail handler may return 500 if templates are missing
             assert!(
-                response.status().is_success() || response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                response.status().is_success()
+                    || response.status() == StatusCode::NOT_FOUND
+                    || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
                 "Image detail handler should return success, 404, or 500 (missing templates) for valid image path, got: {}",
                 response.status()
             );
@@ -2287,12 +2558,12 @@ mod tests {
         #[tokio::test]
         async fn test_image_detail_handler_invalid_path() {
             let (app_state, _temp_dir) = create_test_app_state().await;
-            
+
             let path = Path("../invalid.jpg".to_string());
-            
+
             let response = super::image_detail_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Image detail handler might return different status codes in test environment
             // The important thing is that path traversal doesn't succeed with 200
             assert!(
@@ -2305,12 +2576,12 @@ mod tests {
         #[tokio::test]
         async fn test_image_detail_handler_nonexistent_image() {
             let (app_state, _temp_dir) = create_test_app_state().await;
-            
+
             let path = Path("nonexistent/image.jpg".to_string());
-            
+
             let response = super::image_detail_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return 404 Not Found for non-existent images
             assert_eq!(
                 response.status(),
@@ -2323,23 +2594,23 @@ mod tests {
     #[cfg(test)]
     mod api_route_tests {
         use super::*;
+        use crate::api::{AuthRequest, authenticate_handler, verify_handler};
         use axum::{
-            extract::{State},
-            http::{StatusCode, HeaderMap, header},
             Json,
+            extract::State,
+            http::{HeaderMap, StatusCode, header},
         };
-        use crate::api::{authenticate_handler, verify_handler, AuthRequest};
 
         #[tokio::test]
         async fn test_authenticate_handler_valid_password() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             let auth_request = AuthRequest {
                 password: "test_password".to_string(),
             };
-            
+
             let response = authenticate_handler(State(app_state), Json(auth_request)).await;
-            
+
             match response {
                 Ok(response) => {
                     let response = response.into_response();
@@ -2348,7 +2619,7 @@ mod tests {
                         StatusCode::OK,
                         "Authenticate handler should return 200 for valid password"
                     );
-                    
+
                     // Check that Set-Cookie header is present
                     let headers = response.headers();
                     assert!(
@@ -2357,7 +2628,10 @@ mod tests {
                     );
                 }
                 Err(status) => {
-                    panic!("Authenticate handler should not return error for valid password, got: {}", status);
+                    panic!(
+                        "Authenticate handler should not return error for valid password, got: {}",
+                        status
+                    );
                 }
             }
         }
@@ -2365,13 +2639,13 @@ mod tests {
         #[tokio::test]
         async fn test_authenticate_handler_invalid_password() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             let auth_request = AuthRequest {
                 password: "wrong_password".to_string(),
             };
-            
+
             let response = authenticate_handler(State(app_state), Json(auth_request)).await;
-            
+
             match response {
                 Ok(response) => {
                     let response = response.into_response();
@@ -2381,7 +2655,7 @@ mod tests {
                         StatusCode::OK,
                         "Authenticate handler should return 200 OK for invalid password"
                     );
-                    
+
                     // Check that no Set-Cookie header is present for invalid auth
                     let headers = response.headers();
                     assert!(
@@ -2390,7 +2664,10 @@ mod tests {
                     );
                 }
                 Err(status) => {
-                    panic!("Authenticate handler should not return error for invalid password, got: {}", status);
+                    panic!(
+                        "Authenticate handler should not return error for invalid password, got: {}",
+                        status
+                    );
                 }
             }
         }
@@ -2398,51 +2675,64 @@ mod tests {
         #[tokio::test]
         async fn test_verify_handler_no_cookie() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             let headers = HeaderMap::new();
-            
+
             let response = verify_handler(State(app_state), headers).await;
             let Json(verify_response) = response;
-            
+
             let response_body = serde_json::to_value(&verify_response).unwrap();
-            assert!(!response_body["authorized"].as_bool().unwrap(), "Verify handler should return false for no cookie");
+            assert!(
+                !response_body["authorized"].as_bool().unwrap(),
+                "Verify handler should return false for no cookie"
+            );
         }
 
         #[tokio::test]
         async fn test_verify_handler_valid_cookie() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             // Create a valid signed cookie
-            let signed_cookie = crate::api::create_signed_cookie(&app_state.config.app.download_secret, "true").unwrap();
-            
+            let signed_cookie =
+                crate::api::create_signed_cookie(&app_state.config.app.download_secret, "true")
+                    .unwrap();
+
             let mut headers = HeaderMap::new();
             headers.insert(
                 header::COOKIE,
-                format!("download_allowed={}", signed_cookie).parse().unwrap(),
+                format!("download_allowed={}", signed_cookie)
+                    .parse()
+                    .unwrap(),
             );
-            
+
             let response = verify_handler(State(app_state), headers).await;
             let Json(verify_response) = response;
-            
+
             let response_body = serde_json::to_value(&verify_response).unwrap();
-            assert!(response_body["authorized"].as_bool().unwrap(), "Verify handler should return true for valid cookie");
+            assert!(
+                response_body["authorized"].as_bool().unwrap(),
+                "Verify handler should return true for valid cookie"
+            );
         }
 
         #[tokio::test]
         async fn test_verify_handler_invalid_cookie() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             let mut headers = HeaderMap::new();
             headers.insert(
                 header::COOKIE,
                 "download_allowed=invalid_cookie_value".parse().unwrap(),
             );
-            
+
             let response = verify_handler(State(app_state), headers).await;
             let Json(verify_response) = response;
-            
+
             let response_body = serde_json::to_value(&verify_response).unwrap();
-            assert!(!response_body["authorized"].as_bool().unwrap(), "Verify handler should return false for invalid cookie");
+            assert!(
+                !response_body["authorized"].as_bool().unwrap(),
+                "Verify handler should return false for invalid cookie"
+            );
         }
     }
 
@@ -2451,24 +2741,24 @@ mod tests {
         use super::*;
         use axum::{
             extract::{Path, State},
-            http::{StatusCode},
+            http::StatusCode,
         };
         use std::fs;
 
         #[tokio::test]
         async fn test_static_file_handler_existing_file() {
             let (app_state, temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             // Create a test static file
             let test_content = "test static content";
             let static_file_path = temp_dir.path().join("static").join("test.txt");
             fs::write(&static_file_path, test_content).unwrap();
-            
+
             let path = Path("test.txt".to_string());
-            
+
             let response = crate::static_file_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return success for existing file
             assert_eq!(
                 response.status(),
@@ -2480,12 +2770,12 @@ mod tests {
         #[tokio::test]
         async fn test_static_file_handler_nonexistent_file() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             let path = Path("nonexistent.txt".to_string());
-            
+
             let response = crate::static_file_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return 404 for non-existent file
             assert_eq!(
                 response.status(),
@@ -2497,15 +2787,16 @@ mod tests {
         #[tokio::test]
         async fn test_static_file_handler_path_traversal() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             let path = Path("../../../etc/passwd".to_string());
-            
+
             let response = crate::static_file_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return 403 or 404 for path traversal attempts
             assert!(
-                response.status() == StatusCode::FORBIDDEN || response.status() == StatusCode::NOT_FOUND,
+                response.status() == StatusCode::FORBIDDEN
+                    || response.status() == StatusCode::NOT_FOUND,
                 "Static file handler should return 403 or 404 for path traversal attempts, got: {}",
                 response.status()
             );
@@ -2526,14 +2817,17 @@ mod tests {
         async fn test_echo_handler() {
             let test_message = "Hello, world!".to_string();
             let response = crate::echo(test_message.clone()).await;
-            assert_eq!(response, test_message, "Echo handler should return the input message");
+            assert_eq!(
+                response, test_message,
+                "Echo handler should return the input message"
+            );
         }
 
         #[tokio::test]
         async fn test_robots_txt_handler() {
             let response = crate::robots_txt_handler().await;
             let response = response.into_response();
-            
+
             // Should return success
             assert_eq!(
                 response.status(),
@@ -2549,25 +2843,25 @@ mod tests {
         use crate::templating::template_with_gallery_handler;
         use axum::{
             extract::{Path, State},
-            http::{StatusCode},
+            http::StatusCode,
         };
         use std::fs;
 
         #[tokio::test]
         async fn test_template_fallback_to_static_file() {
             let (app_state, temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             // Create a static file that should be served when template doesn't exist
             let test_content = "This is a static file content";
             let static_file_path = temp_dir.path().join("static").join("test-page.html");
             fs::write(&static_file_path, test_content).unwrap();
-            
+
             // Try to access a path that doesn't have a template but has a static file
             let path = Some(Path("test-page.html".to_string()));
-            
+
             let response = template_with_gallery_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return success (serving the static file)
             assert_eq!(
                 response.status(),
@@ -2579,13 +2873,13 @@ mod tests {
         #[tokio::test]
         async fn test_template_fallback_no_static_file() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             // Try to access a path that has neither template nor static file
             let path = Some(Path("nonexistent-page".to_string()));
-            
+
             let response = template_with_gallery_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return 404 since neither template nor static file exists
             assert_eq!(
                 response.status(),
@@ -2597,26 +2891,30 @@ mod tests {
         #[tokio::test]
         async fn test_template_takes_precedence_over_static() {
             let (app_state, temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             // Create both a template and a static file with the same base name
             let template_content = "{{ header }}Template content{{ footer }}";
-            let template_file_path = temp_dir.path().join("templates").join("test-page.html.liquid");
+            let template_file_path = temp_dir
+                .path()
+                .join("templates")
+                .join("test-page.html.liquid");
             fs::write(&template_file_path, template_content).unwrap();
-            
+
             let static_content = "Static file content";
             let static_file_path = temp_dir.path().join("static").join("test-page.html");
             fs::write(&static_file_path, static_content).unwrap();
-            
+
             // Try to access the path - template should take precedence
             let path = Some(Path("test-page".to_string()));
-            
+
             let response = template_with_gallery_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return success or 500 (templates may fail due to missing header/footer in test)
             // The important thing is that it tried to process the template, not serve the static file
             assert!(
-                response.status().is_success() || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+                response.status().is_success()
+                    || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
                 "Template handler should process template when both template and static file exist, got: {}",
                 response.status()
             );
@@ -2625,13 +2923,13 @@ mod tests {
         #[tokio::test]
         async fn test_template_fallback_path_traversal_protection() {
             let (app_state, _temp_dir) = super::gallery_route_tests::create_test_app_state().await;
-            
+
             // Try to access a path with path traversal in the fallback
             let path = Some(Path("../../../etc/passwd".to_string()));
-            
+
             let response = template_with_gallery_handler(State(app_state), path).await;
             let response = response.into_response();
-            
+
             // Should return 404 (no template) and not serve any static file due to path traversal protection
             assert_eq!(
                 response.status(),
