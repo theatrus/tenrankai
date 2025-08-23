@@ -144,12 +144,12 @@ pub async fn image_detail_handler(
         (None, None)
     };
 
-    // Build breadcrumb data for the image's parent directory
+    // Build breadcrumb data for the image's parent directory - all items should be clickable
     let parent_path = std::path::Path::new(&path)
         .parent()
         .and_then(|p| p.to_str())
         .unwrap_or("");
-    let breadcrumbs = gallery.build_breadcrumbs(parent_path).await;
+    let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
 
     // Get base URL from config or use default
     let base_url = app_state
