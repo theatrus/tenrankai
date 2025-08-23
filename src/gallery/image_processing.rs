@@ -100,11 +100,11 @@ impl Gallery {
         let width = base_width * multiplier as u32;
         let height = base_height * multiplier as u32;
 
-        // Include format in cache key
-        let cache_key = format!("{}_{}", size, output_format.extension());
-        let hash = self.generate_cache_key(relative_path, &cache_key);
-        let cache_filename = format!("{}.{}", hash, output_format.extension());
-        let cache_path = self.config.cache_directory.join(cache_filename);
+        // Generate consistent cache keys
+        let hash = self.generate_image_cache_key(relative_path, size, output_format.extension());
+        let cache_filename =
+            self.generate_cache_filename(relative_path, size, output_format.extension());
+        let cache_path = self.config.cache_directory.join(&cache_filename);
 
         let original_metadata = tokio::fs::metadata(original_path).await?;
         let original_modified = original_metadata.modified()?;
@@ -258,10 +258,13 @@ impl Gallery {
     ) -> Result<axum::response::Response, GalleryError> {
         // For composites, always use JPEG
         let (hash, content_type) = if size == "composite" {
-            (format!("{}_composite_jpg", cache_key), "image/jpeg")
+            (
+                self.generate_composite_cache_key_with_format(cache_key, "jpg"),
+                "image/jpeg",
+            )
         } else {
             let output_format = self.determine_output_format(accept_header);
-            let hash = format!("{}_{}_{}", cache_key, size, output_format.extension());
+            let hash = self.generate_image_cache_key(cache_key, size, output_format.extension());
             let content_type = match output_format {
                 OutputFormat::Jpeg => "image/jpeg",
                 OutputFormat::WebP => "image/webp",
@@ -297,8 +300,10 @@ impl Gallery {
 
         // Always use JPEG for composites
         let output_format = OutputFormat::Jpeg;
-        let hash = format!("{}_composite_{}", cache_key, output_format.extension());
-        let cache_path = self.config.cache_directory.join(&hash);
+        let hash =
+            self.generate_composite_cache_key_with_format(cache_key, output_format.extension());
+        let cache_filename = format!("{}.{}", hash, output_format.extension());
+        let cache_path = self.config.cache_directory.join(&cache_filename);
 
         // Convert to RGB (JPEG doesn't support alpha)
         let rgb_image = image.to_rgb8();
@@ -342,39 +347,40 @@ impl Gallery {
             .body(Body::from(buffer))
             .unwrap())
     }
-    
+
     pub async fn pregenerate_image_cache(&self, relative_path: &str) -> Result<(), GalleryError> {
         use std::time::Instant;
-        
+
         debug!("Pre-generating cache for image: {}", relative_path);
         let start = Instant::now();
-        
+
         // Define all sizes to pre-generate
         let sizes = [
             ("thumbnail", false),
-            ("thumbnail", true),  // @2x
+            ("thumbnail", true), // @2x
             ("gallery", false),
-            ("gallery", true),    // @2x
+            ("gallery", true), // @2x
             ("medium", false),
-            ("medium", true),     // @2x
+            ("medium", true), // @2x
         ];
-        
+
         // Pre-generate for both JPEG and WebP formats
         let formats = [OutputFormat::Jpeg, OutputFormat::WebP];
-        
+
         let mut generated_count = 0;
-        
+
         for (size_name, is_2x) in &sizes {
             let size_str = if *is_2x {
                 format!("{}@2x", size_name)
             } else {
                 size_name.to_string()
             };
-            
+
             for format in &formats {
                 // Check if already cached
-                let hash = format!("{}_{}_{}", relative_path, size_str, format.extension());
-                
+                let hash =
+                    self.generate_image_cache_key(relative_path, &size_str, format.extension());
+
                 // Skip if already in cache
                 {
                     let cache = self.cache.read().await;
@@ -382,21 +388,35 @@ impl Gallery {
                         continue;
                     }
                 }
-                
+
                 // Generate the cached version
                 let full_path = self.config.source_directory.join(relative_path);
-                match self.get_resized_image(&full_path, relative_path, &size_str, *format).await {
+                match self
+                    .get_resized_image(&full_path, relative_path, &size_str, *format)
+                    .await
+                {
                     Ok(_) => {
                         generated_count += 1;
-                        debug!("Generated {} {} for {}", format.extension(), size_str, relative_path);
+                        debug!(
+                            "Generated {} {} for {}",
+                            format.extension(),
+                            size_str,
+                            relative_path
+                        );
                     }
                     Err(e) => {
-                        error!("Failed to generate {} {} for {}: {}", format.extension(), size_str, relative_path, e);
+                        error!(
+                            "Failed to generate {} {} for {}: {}",
+                            format.extension(),
+                            size_str,
+                            relative_path,
+                            e
+                        );
                     }
                 }
             }
         }
-        
+
         let elapsed = start.elapsed();
         if generated_count > 0 {
             debug!(
@@ -404,63 +424,66 @@ impl Gallery {
                 generated_count, relative_path, elapsed
             );
         }
-        
+
         Ok(())
     }
-    
+
     pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), GalleryError> {
+        use std::sync::Arc;
         use std::time::Instant;
         use tokio::sync::Semaphore;
-        use std::sync::Arc;
-        
+
         info!("Starting pre-generation of image cache for all images");
         let start = Instant::now();
-        
+
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
             let metadata_cache = self.metadata_cache.read().await;
             metadata_cache.keys().cloned().collect()
         };
-        
+
         let total_images = image_paths.len();
         info!("Found {} images to pre-generate cache for", total_images);
-        
+
         // Use a semaphore to limit concurrent processing
         let semaphore = Arc::new(Semaphore::new(4)); // Process 4 images concurrently
         let mut handles = Vec::new();
-        
+
         for (index, path) in image_paths.iter().enumerate() {
             let permit = semaphore.clone().acquire_owned().await.unwrap();
             let gallery_clone = self.clone();
             let path_clone = path.clone();
             let index = index + 1;
-            
+
             let handle = tokio::spawn(async move {
                 let _permit = permit; // Hold permit until done
-                
+
                 if index % 10 == 0 {
-                    info!("Pre-generating cache: {}/{} images processed", index, total_images);
+                    info!(
+                        "Pre-generating cache: {}/{} images processed",
+                        index, total_images
+                    );
                 }
-                
+
                 if let Err(e) = gallery_clone.pregenerate_image_cache(&path_clone).await {
                     error!("Failed to pre-generate cache for {}: {}", path_clone, e);
                 }
             });
-            
+
             handles.push(handle);
         }
-        
+
         // Wait for all tasks to complete
         for handle in handles {
             let _ = handle.await;
         }
-        
+
         let elapsed = start.elapsed();
         info!(
             "Completed pre-generation of image cache for {} images in {:?}",
             total_images, elapsed
         );
-        
+
         Ok(())
     }
 }

@@ -97,6 +97,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             cache_refresh_interval_minutes: None,
             jpeg_quality: Some(85),
             webp_quality: Some(85.0),
+            pregenerate_cache: false,
         },
     };
 

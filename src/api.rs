@@ -154,16 +154,8 @@ pub async fn gallery_composite_preview_handler(
     // Handle special case for root gallery
     let gallery_path = if path == "_root" { String::new() } else { path };
 
-    // Generate a cache key for the composite (use underscores to avoid subdirectories)
-    let safe_path = gallery_path.replace('/', "_");
-    let composite_cache_key = format!(
-        "composite_{}",
-        if gallery_path.is_empty() {
-            "root"
-        } else {
-            &safe_path
-        }
-    );
+    // Generate a cache key for the composite
+    let composite_cache_key = crate::gallery::Gallery::generate_composite_cache_key(&gallery_path);
 
     // Try to serve from cache first
     if let Ok(cached_response) = app_state

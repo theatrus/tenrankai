@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = gallery.initialize_and_check_version().await {
         tracing::warn!("Failed to initialize gallery metadata cache: {}", e);
     }
-    
+
     // Trigger refresh with pre-generation if configured
     if gallery.is_metadata_cache_empty().await {
         info!("Metadata cache is empty, triggering initial refresh");
@@ -84,7 +84,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if pregenerate {
             info!("Cache pre-generation is enabled");
         }
-        if let Err(e) = gallery.clone().refresh_metadata_and_pregenerate_cache(pregenerate).await {
+        if let Err(e) = gallery
+            .clone()
+            .refresh_metadata_and_pregenerate_cache(pregenerate)
+            .await
+        {
             tracing::error!("Failed to refresh metadata and pre-generate cache: {}", e);
         }
     }

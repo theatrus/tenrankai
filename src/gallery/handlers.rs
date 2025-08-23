@@ -122,8 +122,7 @@ pub async fn gallery_handler(
     // Create a better description including folder count info
     let og_description = if let Some(desc) = &folder_description {
         // Strip HTML tags from description for OpenGraph
-        desc
-            .replace("<p>", "")
+        desc.replace("<p>", "")
             .replace("</p>", " ")
             .replace("<br>", " ")
             .replace("<br/>", " ")
