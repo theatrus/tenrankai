@@ -138,21 +138,8 @@ mod tests {
     async fn test_render_with_gallery_preview() {
         let (_temp_dir, engine) = setup_test_templates().await;
         
-        let preview_items = vec![
-            liquid::object!({
-                "name": "Preview 1",
-                "path": "preview1.jpg",
-            }),
-            liquid::object!({
-                "name": "Preview 2",
-                "path": "preview2.jpg",
-            }),
-        ];
         
-        let globals = liquid::object!({
-            "gallery_preview": preview_items,
-            "gallery_preview_json": "[{\"name\":\"Preview 1\"},{\"name\":\"Preview 2\"}]",
-        });
+        let globals = liquid::object!({});
         
         let result = engine.render_template("index.html.liquid", globals).await;
         assert!(result.is_ok(), "Failed to render with gallery preview: {:?}", result.err());

@@ -1,36 +1,42 @@
-{% if gallery_preview and gallery_preview.size > 0 %}
-    <section class="gallery-preview-component">
-        <div class="preview-masonry" id="gallery-preview-grid">
-            <div class="masonry-column" data-column="0"></div>
-            <div class="masonry-column" data-column="1"></div>
-        </div>
-        {% if show_explore_link != false %}
-            <div class="preview-footer">
-                <a href="/gallery" class="btn-explore">Explore Full Gallery →</a>
-            </div>
-        {% endif %}
-    </section>
-    
-    <!-- Hidden data for preview images -->
-    <script type="application/json" id="gallery-preview-images">
-{{ gallery_preview_json }}
-    </script>
-{% endif %}
+<section class="gallery-preview-component" id="gallery-preview-component">
+    <div class="preview-masonry" id="gallery-preview-grid">
+        <div class="masonry-column" data-column="0"></div>
+        <div class="masonry-column" data-column="1"></div>
+    </div>
+    <div class="preview-footer">
+        <a href="/gallery" class="btn-explore">Explore Full Gallery →</a>
+    </div>
+</section>
 
 
 <script>
 // Client-side gallery preview masonry layout
-(function() {
+(async function() {
     const previewGrid = document.getElementById('gallery-preview-grid');
-    const previewDataElement = document.getElementById('gallery-preview-images');
+    const previewComponent = document.getElementById('gallery-preview-component');
     
-    if (!previewGrid || !previewDataElement) return;
+    if (!previewGrid || !previewComponent) return;
     
     let previewImages;
     try {
-        previewImages = JSON.parse(previewDataElement.textContent);
+        // Fetch gallery preview data from API
+        const response = await fetch('/api/gallery/preview');
+        if (!response.ok) {
+            console.error('Failed to fetch gallery preview:', response.status);
+            previewComponent.style.display = 'none';
+            return;
+        }
+        const data = await response.json();
+        previewImages = data.images;
+        
+        // Hide the component if no images
+        if (!previewImages || previewImages.length === 0) {
+            previewComponent.style.display = 'none';
+            return;
+        }
     } catch (e) {
-        console.error('Failed to parse gallery preview images data:', e);
+        console.error('Failed to fetch gallery preview data:', e);
+        previewComponent.style.display = 'none';
         return;
     }
     

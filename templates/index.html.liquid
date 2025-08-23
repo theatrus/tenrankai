@@ -9,9 +9,7 @@
     interest you with my profile. You can find those on the About page.</p>
     
     <!-- Gallery preview will be available when component data is loaded -->
-    {% if gallery_preview.size > 0 %}
-        {{ gallery_preview_component }}
-    {% endif %}
+    {% include "_gallery_preview.html.liquid" %}
     
     <!--
     <section class="about-section">

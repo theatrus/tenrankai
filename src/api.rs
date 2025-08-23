@@ -122,3 +122,20 @@ pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
             }
         })
 }
+
+#[derive(Serialize)]
+pub struct GalleryPreviewResponse {
+    images: Vec<crate::gallery::GalleryItem>,
+}
+
+pub async fn gallery_preview_handler(
+    State(app_state): State<crate::AppState>,
+) -> Result<Json<GalleryPreviewResponse>, StatusCode> {
+    match app_state.gallery.get_gallery_preview(6).await {
+        Ok(images) => Ok(Json(GalleryPreviewResponse { images })),
+        Err(e) => {
+            tracing::error!("Failed to get gallery preview: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}

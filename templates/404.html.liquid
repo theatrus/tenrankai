@@ -15,11 +15,9 @@
     </div>
 </div>
 
-{% if gallery_preview.size > 0 %}
-    <div style="margin-top: 4rem;">
-        <h3 style="text-align: center; color: #999; margin-bottom: 2rem;">You might be interested in these images:</h3>
-        {{ gallery_preview_component }}
-    </div>
-{% endif %}
+<div style="margin-top: 4rem;">
+    <h3 style="text-align: center; color: #999; margin-bottom: 2rem;">You might be interested in these images:</h3>
+    {% include "_gallery_preview.html.liquid" %}
+</div>
 
 {% include "_footer.html.liquid" %}

@@ -66,7 +66,7 @@ impl TemplateEngine {
     pub async fn render_with_gallery(
         &self,
         path: &str,
-        gallery: &SharedGallery,
+        _gallery: &SharedGallery,
     ) -> Result<Html<String>, StatusCode> {
         let template_path = if path.is_empty() || path == "/" {
             "index.html.liquid"
@@ -74,14 +74,7 @@ impl TemplateEngine {
             &format!("{}.html.liquid", path.trim_start_matches('/'))
         };
 
-        let gallery_preview = gallery.get_gallery_preview(6).await.unwrap_or_default();
-        let gallery_preview_json =
-            serde_json::to_string(&gallery_preview).unwrap_or_else(|_| "[]".to_string());
-
-        let globals = liquid::object!({
-            "gallery_preview": gallery_preview,
-            "gallery_preview_json": gallery_preview_json,
-        });
+        let globals = liquid::object!({});
 
         match self.render_template(template_path, globals).await {
             Ok(html) => Ok(Html(html)),
@@ -94,16 +87,9 @@ impl TemplateEngine {
 
     pub async fn render_404_page(
         &self,
-        gallery: &SharedGallery,
+        _gallery: &SharedGallery,
     ) -> Result<Html<String>, StatusCode> {
-        let gallery_preview = gallery.get_gallery_preview(6).await.unwrap_or_default();
-        let gallery_preview_json =
-            serde_json::to_string(&gallery_preview).unwrap_or_else(|_| "[]".to_string());
-
-        let globals = liquid::object!({
-            "gallery_preview": gallery_preview,
-            "gallery_preview_json": gallery_preview_json,
-        });
+        let globals = liquid::object!({});
 
         match self.render_template("404.html.liquid", globals).await {
             Ok(html) => {
@@ -143,6 +129,11 @@ impl TemplateEngine {
                 error!("Failed to load footer partial: {}", e);
                 String::new()
             });
+        let gallery_preview_content = self.load_template("_gallery_preview.html.liquid").await
+            .unwrap_or_else(|e| {
+                error!("Failed to load gallery preview partial: {}", e);
+                String::new()
+            });
 
         let template_content = self.load_template(template_name).await?;
 
@@ -150,6 +141,7 @@ impl TemplateEngine {
         let mut partials_source = liquid::partials::InMemorySource::new();
         partials_source.add("_header.html.liquid", header_content.clone());
         partials_source.add("_footer.html.liquid", footer_content.clone());
+        partials_source.add("_gallery_preview.html.liquid", gallery_preview_content.clone());
         
         let partials = liquid::partials::EagerCompiler::new(partials_source);
 
@@ -162,75 +154,7 @@ impl TemplateEngine {
             .parse(&template_content)
             .map_err(|e| format!("Failed to parse template: {}", e))?;
 
-        // Render the gallery preview component if gallery_preview data exists
-        let gallery_preview_rendered = if let Some(gallery_preview) = globals.get("gallery_preview")
-        {
-            let gallery_preview_template = self
-                .load_template("_gallery_preview.html.liquid")
-                .await
-                .unwrap_or_else(|e| {
-                    error!("Failed to load gallery preview: {}", e);
-                    String::new()
-                });
 
-            if !gallery_preview_template.is_empty() {
-                // Create a new partials compiler for the preview template
-                let mut preview_partials_source = liquid::partials::InMemorySource::new();
-                preview_partials_source.add("_header.html.liquid", header_content.clone());
-                preview_partials_source.add("_footer.html.liquid", footer_content.clone());
-                let preview_partials = liquid::partials::EagerCompiler::new(preview_partials_source);
-                
-                let preview_parser = liquid::ParserBuilder::with_stdlib()
-                    .partials(preview_partials)
-                    .build()
-                    .map_err(|e| format!("Failed to create preview parser: {}", e))?;
-
-                let preview_template = preview_parser
-                    .parse(&gallery_preview_template)
-                    .map_err(|e| format!("Failed to parse preview template: {}", e))?;
-
-                let mut preview_globals = liquid::object!({
-                    "preview_title": "Recent from the Gallery",
-                    "show_explore_link": true,
-                });
-                preview_globals.insert("gallery_preview".into(), gallery_preview.clone());
-
-                // Add gallery_preview_json if it exists in the main globals
-                if let Some(json_value) = globals.get("gallery_preview_json") {
-                    preview_globals.insert("gallery_preview_json".into(), json_value.clone());
-                } else {
-                    preview_globals.insert(
-                        "gallery_preview_json".into(),
-                        liquid::model::Value::Scalar("[]".into()),
-                    );
-                }
-
-                preview_template
-                    .render(&preview_globals)
-                    .unwrap_or_else(|e| {
-                        error!("Failed to render gallery preview component: {}", e);
-                        String::new()
-                    })
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
-        // Add gallery preview component to globals
-        globals.insert(
-            "gallery_preview_component".into(),
-            liquid::model::Value::Scalar(gallery_preview_rendered.into()),
-        );
-
-        // Ensure gallery_preview exists with default empty array if not provided
-        if !globals.contains_key("gallery_preview") {
-            globals.insert(
-                "gallery_preview".into(),
-                liquid::model::Value::Array(Vec::new()),
-            );
-        }
 
         template
             .render(&globals)
