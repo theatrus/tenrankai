@@ -575,8 +575,9 @@ mod tests {
         assert!(result.is_ok(), "Failed to store composite: {:?}", result);
 
         // Check that the file was created
-        let hash = format!("{}_composite_jpg", cache_key);
-        let cache_path = gallery.config.cache_directory.join(&hash);
+        let hash = gallery.generate_composite_cache_key_with_format(cache_key, "jpg");
+        let cache_filename = format!("{}.jpg", hash);
+        let cache_path = gallery.config.cache_directory.join(&cache_filename);
         assert!(
             tokio::fs::metadata(&cache_path).await.is_ok(),
             "Cache file not created"
@@ -630,8 +631,9 @@ mod tests {
         );
 
         // Verify it was stored
-        let hash = format!("{}_composite_jpg", cache_key);
-        let cache_path = gallery.config.cache_directory.join(&hash);
+        let hash = gallery.generate_composite_cache_key_with_format(cache_key, "jpg");
+        let cache_filename = format!("{}.jpg", hash);
+        let cache_path = gallery.config.cache_directory.join(&cache_filename);
         assert!(
             tokio::fs::metadata(&cache_path).await.is_ok(),
             "Cache file not created for complex key"
