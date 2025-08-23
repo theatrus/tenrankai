@@ -413,7 +413,7 @@ impl Gallery {
         max_items: usize,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         use rand::seq::SliceRandom;
-        use rand::{thread_rng, Rng};
+        use rand::{Rng, thread_rng};
 
         let mut all_items = Vec::new();
 
@@ -435,7 +435,7 @@ impl Gallery {
                 all_items.shuffle(&mut rng);
             }
             all_items.truncate(max_items);
-            
+
             // Keep the random order - don't sort by date to ensure different results each time
         }
 
