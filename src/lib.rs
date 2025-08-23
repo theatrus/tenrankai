@@ -174,7 +174,7 @@ pub async fn create_app(config: Config) -> Router {
         .route("/gallery/image/{*path}", axum::routing::get(gallery::image_handler))
         .route("/gallery/detail/{*path}", axum::routing::get(gallery::image_detail_handler))
         .route("/api/auth", axum::routing::post(api::authenticate_handler))
-        .route("/api/download/verify", axum::routing::get(api::verify_handler))
+        .route("/api/verify", axum::routing::get(api::verify_handler))
         .route("/favicon.ico", axum::routing::get(favicon::favicon_ico_handler))
         .route("/favicon-16x16.png", axum::routing::get(favicon::favicon_png_16_handler))
         .route("/favicon-32x32.png", axum::routing::get(favicon::favicon_png_32_handler))
