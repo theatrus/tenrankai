@@ -19,7 +19,7 @@
     <div class="image-detail-content">
         <div class="image-main">
             <div class="image-container">
-                <img src="{{ image.medium_url }}" alt="{{ image.name }}" id="main-image">
+                <img src="{{ image.medium_url }}" srcset="{{ image.medium_url }} 1x, {{ image.medium_url | replace: '?size=medium', '?size=medium@2x' }} 2x" alt="{{ image.name }}" id="main-image">
             </div>
             
             <!-- Image Navigation Bar -->
@@ -28,7 +28,7 @@
                     {% if prev_image %}
                         <a href="/gallery/detail/{{ prev_image.path }}" class="nav-item nav-prev" title="Previous: {{ prev_image.name }}">
                             <div class="nav-thumbnail">
-                                <img src="{{ prev_image.thumbnail_url }}" alt="{{ prev_image.name }}">
+                                <img src="{{ prev_image.thumbnail_url }}" srcset="{{ prev_image.thumbnail_url }} 1x, {{ prev_image.thumbnail_url | replace: '?size=thumbnail', '?size=thumbnail@2x' }} 2x" alt="{{ prev_image.name }}">
                             </div>
                             <div class="nav-info">
                                 <div class="nav-direction">
@@ -56,7 +56,7 @@
                                 <div class="nav-filename">{{ next_image.name }}</div>
                             </div>
                             <div class="nav-thumbnail">
-                                <img src="{{ next_image.thumbnail_url }}" alt="{{ next_image.name }}">
+                                <img src="{{ next_image.thumbnail_url }}" srcset="{{ next_image.thumbnail_url }} 1x, {{ next_image.thumbnail_url | replace: '?size=thumbnail', '?size=thumbnail@2x' }} 2x" alt="{{ next_image.name }}">
                             </div>
                         </a>
                     {% else %}

@@ -169,6 +169,7 @@
         
         const img = document.createElement('img');
         img.src = image.gallery_url;
+        img.srcset = `${image.gallery_url} 1x, ${image.gallery_url}@2x 2x`;
         img.alt = image.name;
         img.width = displayDimensions.width;
         img.height = displayDimensions.height;
