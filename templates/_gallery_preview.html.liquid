@@ -90,6 +90,8 @@
         link.className = 'preview-item image-preview-item';
         link.style.width = displayDimensions.width + 'px';
         link.style.display = 'inline-block';
+        // Add data attribute for reliable identification during replacement
+        link.dataset.imagePath = image.path;
         
         const imageDiv = document.createElement('div');
         imageDiv.className = 'preview-image';
@@ -203,6 +205,7 @@
                 return [];
             }
             const data = await response.json();
+            // Reduce logging noise in production
             return data.images || [];
         } catch (e) {
             console.error('Error fetching more gallery images:', e);
@@ -224,19 +227,36 @@
         const randomIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
         const oldImage = previewImages[randomIndex];
         
-        // Find the DOM element to replace
+        // Find the DOM element to replace - use data attribute for reliable identification
         const columns = previewGrid.querySelectorAll('.masonry-column');
         let elementToReplace = null;
         
+        // First try to find by data attribute if it exists
         for (const column of columns) {
-            const links = column.querySelectorAll('a');
+            const links = column.querySelectorAll('a[data-image-path]');
             for (const link of links) {
-                if (link.href.includes(oldImage.path)) {
+                if (link.dataset.imagePath === oldImage.path) {
                     elementToReplace = link;
                     break;
                 }
             }
             if (elementToReplace) break;
+        }
+        
+        // Fallback: find by URL comparison (more robust)
+        if (!elementToReplace) {
+            for (const column of columns) {
+                const links = column.querySelectorAll('a');
+                for (const link of links) {
+                    // Extract path from href more carefully
+                    const hrefPath = decodeURIComponent(link.href.split('/gallery/')[1]?.split('#')[0] || '');
+                    if (hrefPath === oldImage.path || link.href.includes(encodeURIComponent(oldImage.path))) {
+                        elementToReplace = link;
+                        break;
+                    }
+                }
+                if (elementToReplace) break;
+            }
         }
         
         if (elementToReplace) {
@@ -262,18 +282,27 @@
             elementToReplace.style.transition = 'opacity 0.5s ease-in-out';
             
             setTimeout(() => {
-                // Replace the element
-                elementToReplace.parentNode.replaceChild(newImageElement, elementToReplace);
-                
-                // Fade in new image
-                newImageElement.style.opacity = '0';
-                newImageElement.style.transition = 'opacity 0.5s ease-in-out';
-                setTimeout(() => {
-                    newImageElement.style.opacity = '1';
-                }, 50);
-                
-                // Update the previewImages array
-                previewImages[randomIndex] = newImage;
+                try {
+                    // Replace the element
+                    elementToReplace.parentNode.replaceChild(newImageElement, elementToReplace);
+                    
+                    // Fade in new image
+                    newImageElement.style.opacity = '0';
+                    newImageElement.style.transition = 'opacity 0.5s ease-in-out';
+                    
+                    // Force a reflow to ensure the opacity is set before animation
+                    newImageElement.offsetHeight;
+                    
+                    setTimeout(() => {
+                        newImageElement.style.opacity = '1';
+                    }, 50);
+                    
+                    // Update the previewImages array
+                    previewImages[randomIndex] = newImage;
+                    
+                } catch (error) {
+                    console.error('Error during image replacement:', error);
+                }
             }, 500);
         }
     }

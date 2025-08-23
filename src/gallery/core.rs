@@ -413,7 +413,7 @@ impl Gallery {
         max_items: usize,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         use rand::seq::SliceRandom;
-        use rand::thread_rng;
+        use rand::{thread_rng, Rng};
 
         let mut all_items = Vec::new();
 
@@ -430,16 +430,13 @@ impl Gallery {
         // If we have more items than requested, randomly select a subset
         if all_items.len() > max_items {
             let mut rng = thread_rng();
-            all_items.shuffle(&mut rng);
+            // Add some extra randomness by shuffling multiple times
+            for _ in 0..rng.gen_range(1..4) {
+                all_items.shuffle(&mut rng);
+            }
             all_items.truncate(max_items);
-
-            // Sort the selected items by capture date for consistent display order
-            all_items.sort_by(|a, b| match (&b.capture_date, &a.capture_date) {
-                (Some(b_date), Some(a_date)) => b_date.cmp(a_date),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => b.name.cmp(&a.name),
-            });
+            
+            // Keep the random order - don't sort by date to ensure different results each time
         }
 
         Ok(all_items)
