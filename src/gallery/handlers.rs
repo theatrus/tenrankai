@@ -1,11 +1,11 @@
-use super::{Gallery, GalleryQuery, NavigationImage};
+use super::{GalleryQuery, NavigationImage};
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse},
 };
-use tracing::{error, info};
+use tracing::error;
 
 #[axum::debug_handler]
 pub async fn gallery_root_handler(

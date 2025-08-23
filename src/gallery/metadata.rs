@@ -1,5 +1,5 @@
 use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
-use chrono::{DateTime, Datelike, Local, NaiveDateTime, Timelike, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use std::path::Path;
 use std::time::SystemTime;
 use tracing::{debug, info, trace};
@@ -289,18 +289,4 @@ impl Gallery {
             location_info,
         })
     }
-}
-
-pub(crate) fn format_capture_date(system_time: SystemTime) -> String {
-    let datetime = DateTime::<Local>::from(system_time);
-    
-    format!(
-        "{} {}, {} at {:02}:{:02}:{:02}",
-        datetime.format("%B"),
-        datetime.day(),
-        datetime.year(),
-        datetime.hour(),
-        datetime.minute(),
-        datetime.second()
-    )
 }

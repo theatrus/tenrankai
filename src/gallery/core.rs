@@ -2,7 +2,7 @@ use super::{Gallery, GalleryError, GalleryItem, ImageInfo};
 use pulldown_cmark::{html, Parser};
 use std::path::Path as StdPath;
 use std::time::SystemTime;
-use tracing::{debug, error, info};
+use tracing::debug;
 use walkdir::WalkDir;
 
 impl Gallery {
@@ -481,7 +481,12 @@ impl Gallery {
                     if let Some(metadata) = cache.get(&item_path) {
                         (Some(metadata.dimensions), metadata.capture_date)
                     } else {
-                        (None, None)
+                        // If not in cache, try to extract it now
+                        drop(cache);
+                        match self.get_image_metadata_cached(&item_path).await {
+                            Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
+                            Err(_) => (None, None)
+                        }
                     }
                 };
                 

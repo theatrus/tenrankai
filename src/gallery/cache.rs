@@ -1,7 +1,6 @@
 use super::{CacheMetadata, Gallery, ImageMetadata};
 use crate::GalleryConfig;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use tracing::{debug, error, info};
 
 impl Gallery {

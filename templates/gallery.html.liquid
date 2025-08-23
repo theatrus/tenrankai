@@ -203,9 +203,13 @@
         
         // Process each image
         images.forEach(image => {
+            // Use default dimensions if not available
+            const width = image.dimensions ? image.dimensions[0] : 800;
+            const height = image.dimensions ? image.dimensions[1] : 600;
+            
             const displayDimensions = calculateDisplayDimensions(
-                image.dimensions[0], 
-                image.dimensions[1], 
+                width, 
+                height, 
                 columnWidth
             );
             

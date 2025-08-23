@@ -92,7 +92,16 @@
         imageDiv.style.backgroundColor = 'transparent';
         
         const img = document.createElement('img');
-        img.src = image.thumbnail_url;
+        const baseUrl = image.gallery_url || image.thumbnail_url;
+        img.src = baseUrl;
+        
+        // Add srcset for high-DPI displays
+        if (baseUrl) {
+            const url2x = baseUrl.replace('?size=gallery', '?size=gallery@2x')
+                                 .replace('?size=thumbnail', '?size=thumbnail@2x');
+            img.srcset = `${baseUrl} 1x, ${url2x} 2x`;
+        }
+        
         img.alt = image.name;
         img.width = displayDimensions.width;
         img.height = displayDimensions.height;

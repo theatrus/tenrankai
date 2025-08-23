@@ -1,17 +1,15 @@
 use super::{CachedImage, Gallery, GalleryError};
 use crate::copyright::{add_copyright_notice, CopyrightConfig};
-use image::{imageops::FilterType, DynamicImage, ImageFormat};
+use image::{imageops::FilterType, ImageFormat};
 use std::path::PathBuf;
 use tracing::{debug, error};
 
 impl Gallery {
     pub async fn serve_image(&self, relative_path: &str, size: Option<String>) -> axum::response::Response {
         use axum::{
-            body::Body,
-            http::{header, StatusCode},
-            response::{IntoResponse, Response},
+            http::StatusCode,
+            response::IntoResponse,
         };
-        use tokio_util::io::ReaderStream;
 
         let full_path = self.config.source_directory.join(relative_path);
 
