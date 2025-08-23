@@ -1,0 +1,54 @@
+#!/bin/bash
+
+set -e
+
+# Source debconf library
+. /usr/share/debconf/confmodule
+
+case "$1" in
+    configure)
+        # Create dynserver system user and group
+        if ! getent group dynserver >/dev/null 2>&1; then
+            addgroup --system dynserver
+        fi
+        
+        if ! getent passwd dynserver >/dev/null 2>&1; then
+            adduser --system --group --home /var/lib/dynserver \
+                    --shell /bin/false --gecos "DynServer daemon" \
+                    --disabled-password dynserver
+        fi
+        
+        # Set ownership and permissions for directories
+        chown -R dynserver:dynserver /var/lib/dynserver
+        chown -R dynserver:dynserver /var/log/dynserver
+        chown -R root:dynserver /etc/dynserver
+        
+        # Set correct permissions
+        chmod 750 /etc/dynserver
+        chmod 750 /var/lib/dynserver
+        chmod 755 /var/log/dynserver
+        
+        # Create example config if no config exists
+        if [ ! -f /etc/dynserver/config.toml ]; then
+            echo "No configuration file found. Please copy and customize:"
+            echo "  sudo cp /etc/dynserver/config.toml.example /etc/dynserver/config.toml"
+            echo "  sudo chown root:dynserver /etc/dynserver/config.toml"
+            echo "  sudo chmod 640 /etc/dynserver/config.toml"
+            echo ""
+            echo "Then edit /etc/dynserver/config.toml to match your setup."
+        fi
+        
+        # Reload systemd and enable service
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload
+            # Don't auto-start until configured
+            echo "Service installed but not started. Configure first, then:"
+            echo "  sudo systemctl enable dynserver"
+            echo "  sudo systemctl start dynserver"
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

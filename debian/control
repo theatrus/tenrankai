@@ -1,0 +1,37 @@
+Source: dynserver
+Section: web
+Priority: optional
+Maintainer: DynServer Team <maintainer@example.com>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               rustc (>= 1.70),
+               pkg-config,
+               libssl-dev
+Standards-Version: 4.6.0
+Homepage: https://github.com/your-org/dynserver
+Vcs-Git: https://github.com/your-org/dynserver.git
+Vcs-Browser: https://github.com/your-org/dynserver
+Rules-Requires-Root: no
+
+Package: dynserver
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         adduser,
+         ca-certificates
+Recommends: nginx | apache2 | httpd
+Suggests: logrotate
+Description: Dynamic gallery server with image resizing and templating
+ DynServer is a high-performance web server designed for photo galleries
+ with dynamic image resizing, template-based rendering, and secure download
+ management. It features:
+ .
+  * Automatic image resizing and caching
+  * Liquid templating engine for customizable layouts
+  * EXIF data extraction and display
+  * Masonry-style gallery layouts
+  * Mobile-responsive design
+  * Secure download authentication with signed cookies
+  * Background cache management
+ .
+ This package includes the server binary, systemd service, example
+ configuration, and default templates and static assets.

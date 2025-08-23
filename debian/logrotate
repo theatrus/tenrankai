@@ -1,0 +1,14 @@
+/var/log/dynserver/*.log {
+    weekly
+    missingok
+    rotate 52
+    compress
+    delaycompress
+    notifempty
+    create 644 dynserver dynserver
+    postrotate
+        if systemctl is-active --quiet dynserver; then
+            systemctl reload dynserver || true
+        fi
+    endscript
+}

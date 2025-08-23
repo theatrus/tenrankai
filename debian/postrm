@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -e
+
+case "$1" in
+    purge)
+        # Remove user and group on purge
+        if getent passwd dynserver >/dev/null 2>&1; then
+            deluser --system dynserver || true
+        fi
+        
+        if getent group dynserver >/dev/null 2>&1; then
+            delgroup --system dynserver || true
+        fi
+        
+        # Remove data directories on purge (with confirmation)
+        if [ -d /var/lib/dynserver ]; then
+            echo "Removing /var/lib/dynserver (this will delete all cached data)"
+            rm -rf /var/lib/dynserver || true
+        fi
+        
+        if [ -d /var/log/dynserver ]; then
+            rm -rf /var/log/dynserver || true
+        fi
+        
+        # Note: /etc/dynserver is left for manual cleanup
+        if [ -d /etc/dynserver ]; then
+            echo "Configuration directory /etc/dynserver preserved."
+            echo "Remove manually if no longer needed: sudo rm -rf /etc/dynserver"
+        fi
+        ;;
+        
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Stop and disable service
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl stop dynserver || true
+            systemctl disable dynserver || true
+            systemctl daemon-reload || true
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

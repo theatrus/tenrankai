@@ -1,0 +1,13 @@
+dynserver (0.1.0-1) jammy; urgency=medium
+
+  * Initial release
+  * Dynamic gallery server with image resizing
+  * Template-based rendering with Liquid templates
+  * EXIF data extraction and display
+  * Masonry-style responsive gallery layouts
+  * Secure download authentication
+  * Comprehensive test suite
+  * Mobile-optimized layouts
+  * Background cache management
+
+ -- DynServer Team <maintainer@example.com>  Thu, 22 Aug 2024 12:00:00 +0000

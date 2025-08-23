@@ -1,0 +1,77 @@
+dynserver for Debian
+===================
+
+Installation and Configuration
+------------------------------
+
+After installing dynserver, you need to create a configuration file:
+
+1. Copy the example configuration:
+   sudo cp /etc/dynserver/config.toml.example /etc/dynserver/config.toml
+
+2. Edit the configuration file:
+   sudo nano /etc/dynserver/config.toml
+
+3. Important configuration items to change:
+   - download_secret: Generate a secure random key
+   - download_password: Set a secure password
+   - source_directory: Point to your image directory
+
+4. Set proper permissions:
+   sudo chown root:dynserver /etc/dynserver/config.toml
+   sudo chmod 640 /etc/dynserver/config.toml
+
+5. Create your gallery directory and populate with images:
+   sudo mkdir -p /var/lib/dynserver/gallery
+   sudo chown dynserver:dynserver /var/lib/dynserver/gallery
+   # Copy your images to this directory
+
+6. Enable and start the service:
+   sudo systemctl enable dynserver
+   sudo systemctl start dynserver
+
+7. Check the service status:
+   sudo systemctl status dynserver
+
+Usage with Web Server
+---------------------
+
+dynserver binds to localhost:3000 by default. For production use,
+configure a reverse proxy with nginx or apache2:
+
+Example nginx configuration:
+```
+server {
+    listen 80;
+    server_name your-domain.com;
+    
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Security Considerations
+----------------------
+
+- Change the default download_secret and download_password
+- Consider using HTTPS in production
+- Regularly update the package for security fixes
+- Monitor /var/log/dynserver/ for any issues
+
+File Locations
+--------------
+
+- Binary: /usr/bin/dynserver
+- Configuration: /etc/dynserver/config.toml
+- Templates: /usr/share/dynserver/templates/
+- Static files: /usr/share/dynserver/static/
+- Data directory: /var/lib/dynserver/
+- Logs: /var/log/dynserver/
+- Systemd service: /lib/systemd/system/dynserver.service
+
+ -- DynServer Team <maintainer@example.com>  Thu, 22 Aug 2024 12:00:00 +0000
