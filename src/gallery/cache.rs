@@ -204,7 +204,6 @@ pub(crate) fn load_cache_metadata(
 #[cfg(test)]
 mod tests {
     use super::super::Gallery;
-    use super::*;
 
     #[test]
     fn test_cache_key_consistency() {
