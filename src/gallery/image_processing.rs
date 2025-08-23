@@ -308,7 +308,7 @@ impl Gallery {
             let mut cursor = Cursor::new(&mut buffer);
             image::DynamicImage::ImageRgb8(rgb_image.clone())
                 .write_to(&mut cursor, image::ImageFormat::Jpeg)
-                .map_err(|e| GalleryError::ImageError(e))?;
+                .map_err(GalleryError::ImageError)?;
         }
 
         // Ensure cache directory exists

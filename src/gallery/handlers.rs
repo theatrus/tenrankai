@@ -103,10 +103,9 @@ pub async fn gallery_handler(
         } else {
             // Use the last part of the path as a display name
             path.split('/')
-                .last()
+                .next_back()
                 .unwrap_or(&path)
-                .replace('-', " ")
-                .replace('_', " ")
+                .replace(['-', '_'], " ")
                 .split_whitespace()
                 .map(|word| {
                     let mut chars = word.chars();
@@ -123,7 +122,7 @@ pub async fn gallery_handler(
     // Create a better description including folder count info
     let og_description = if let Some(desc) = &folder_description {
         // Strip HTML tags from description for OpenGraph
-        let stripped = desc
+        desc
             .replace("<p>", "")
             .replace("</p>", " ")
             .replace("<br>", " ")
@@ -134,8 +133,7 @@ pub async fn gallery_handler(
             .collect::<String>()
             .split_whitespace()
             .collect::<Vec<_>>()
-            .join(" ");
-        stripped
+            .join(" ")
     } else {
         let folder_count = directories.len();
         let image_count = images.len();
