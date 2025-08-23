@@ -6,11 +6,11 @@
 set -e
 
 INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="/etc/dynserver"
-DATA_DIR="/var/lib/dynserver"
-LOG_DIR="/var/log/dynserver"
-SHARE_DIR="/usr/local/share/dynserver"
-SERVICE_FILE="/etc/systemd/system/dynserver.service"
+CONFIG_DIR="/etc/tenrankai"
+DATA_DIR="/var/lib/tenrankai"
+LOG_DIR="/var/log/tenrankai"
+SHARE_DIR="/usr/local/share/tenrankai"
+SERVICE_FILE="/etc/systemd/system/tenrankai.service"
 
 echo "DynServer Installation Script"
 echo "============================="
@@ -35,13 +35,13 @@ create_dir() {
 }
 
 # Build the project
-echo "Building dynserver..."
+echo "Building tenrankai..."
 cargo build --release
 
 # Install binary
 echo "Installing binary to $INSTALL_DIR..."
-sudo cp target/release/dynserver "$INSTALL_DIR/"
-sudo chmod 755 "$INSTALL_DIR/dynserver"
+sudo cp target/release/tenrankai "$INSTALL_DIR/"
+sudo chmod 755 "$INSTALL_DIR/tenrankai"
 
 # Create directories
 echo "Creating directories..."
@@ -69,10 +69,10 @@ read -p "Install systemd service? (y/N): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Installing systemd service..."
-    sudo cp dynserver.service "$SERVICE_FILE"
+    sudo cp tenrankai.service "$SERVICE_FILE"
     sudo systemctl daemon-reload
-    echo "Service installed. Enable with: sudo systemctl enable dynserver"
-    echo "Start with: sudo systemctl start dynserver"
+    echo "Service installed. Enable with: sudo systemctl enable tenrankai"
+    echo "Start with: sudo systemctl start tenrankai"
 fi
 
 echo ""
@@ -86,8 +86,8 @@ echo ""
 echo "2. Add your images to $DATA_DIR/gallery/"
 echo ""
 echo "3. Start the server:"
-echo "   dynserver --config $CONFIG_DIR/config.toml"
+echo "   tenrankai --config $CONFIG_DIR/config.toml"
 echo ""
 echo "   Or if using systemd:"
-echo "   sudo systemctl enable dynserver"
-echo "   sudo systemctl start dynserver"
+echo "   sudo systemctl enable tenrankai"
+echo "   sudo systemctl start tenrankai"

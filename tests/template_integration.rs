@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use dynserver::{Config, create_app};
+use tenrankai::{Config, create_app};
 use std::fs;
 use tempfile::TempDir;
 
@@ -50,11 +50,11 @@ async fn setup_test_server() -> (TempDir, TestServer) {
 
     // Create test config
     let config = Config {
-        server: dynserver::ServerConfig {
+        server: tenrankai::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 0, // Let OS assign port
         },
-        app: dynserver::AppConfig {
+        app: tenrankai::AppConfig {
             name: "TestServer".to_string(),
             log_level: "error".to_string(),
             download_secret: "test-secret".to_string(),
@@ -62,34 +62,34 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             copyright_holder: None,
             base_url: Some("http://localhost:3000".to_string()),
         },
-        templates: dynserver::TemplateConfig {
+        templates: tenrankai::TemplateConfig {
             directory: templates_dir,
         },
-        static_files: dynserver::StaticConfig {
+        static_files: tenrankai::StaticConfig {
             directory: static_dir,
         },
-        gallery: dynserver::GalleryConfig {
+        gallery: tenrankai::GalleryConfig {
             path_prefix: "gallery".to_string(),
             source_directory: gallery_dir,
             cache_directory: cache_dir,
             images_per_page: 20,
-            thumbnail: dynserver::ImageSizeConfig {
+            thumbnail: tenrankai::ImageSizeConfig {
                 width: 300,
                 height: 300,
             },
-            gallery_size: dynserver::ImageSizeConfig {
+            gallery_size: tenrankai::ImageSizeConfig {
                 width: 800,
                 height: 800,
             },
-            medium: dynserver::ImageSizeConfig {
+            medium: tenrankai::ImageSizeConfig {
                 width: 1200,
                 height: 1200,
             },
-            large: dynserver::ImageSizeConfig {
+            large: tenrankai::ImageSizeConfig {
                 width: 1600,
                 height: 1600,
             },
-            preview: dynserver::PreviewConfig {
+            preview: tenrankai::PreviewConfig {
                 max_images: 4,
                 max_depth: 3,
                 max_per_folder: 3,

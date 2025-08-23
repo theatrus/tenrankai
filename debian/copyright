@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: dynserver
+Upstream-Name: tenrankai
 Upstream-Contact: DynServer Team <maintainer@example.com>
-Source: https://github.com/your-org/dynserver
+Source: https://github.com/your-org/tenrankai
 
 Files: *
 Copyright: 2024 DynServer Team

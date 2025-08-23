@@ -1,4 +1,4 @@
-Source: dynserver
+Source: tenrankai
 Section: web
 Priority: optional
 Maintainer: DynServer Team <maintainer@example.com>
@@ -8,12 +8,12 @@ Build-Depends: debhelper-compat (= 13),
                pkg-config,
                libssl-dev
 Standards-Version: 4.6.0
-Homepage: https://github.com/your-org/dynserver
-Vcs-Git: https://github.com/your-org/dynserver.git
-Vcs-Browser: https://github.com/your-org/dynserver
+Homepage: https://github.com/your-org/tenrankai
+Vcs-Git: https://github.com/your-org/tenrankai.git
+Vcs-Browser: https://github.com/your-org/tenrankai
 Rules-Requires-Root: no
 
-Package: dynserver
+Package: tenrankai
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
          adduser,

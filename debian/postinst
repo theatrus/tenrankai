@@ -7,35 +7,35 @@ set -e
 
 case "$1" in
     configure)
-        # Create dynserver system user and group
-        if ! getent group dynserver >/dev/null 2>&1; then
-            addgroup --system dynserver
+        # Create tenrankai system user and group
+        if ! getent group tenrankai >/dev/null 2>&1; then
+            addgroup --system tenrankai
         fi
         
-        if ! getent passwd dynserver >/dev/null 2>&1; then
-            adduser --system --group --home /var/lib/dynserver \
+        if ! getent passwd tenrankai >/dev/null 2>&1; then
+            adduser --system --group --home /var/lib/tenrankai \
                     --shell /bin/false --gecos "DynServer daemon" \
-                    --disabled-password dynserver
+                    --disabled-password tenrankai
         fi
         
         # Set ownership and permissions for directories
-        chown -R dynserver:dynserver /var/lib/dynserver
-        chown -R dynserver:dynserver /var/log/dynserver
-        chown -R root:dynserver /etc/dynserver
+        chown -R tenrankai:tenrankai /var/lib/tenrankai
+        chown -R tenrankai:tenrankai /var/log/tenrankai
+        chown -R root:tenrankai /etc/tenrankai
         
         # Set correct permissions
-        chmod 750 /etc/dynserver
-        chmod 750 /var/lib/dynserver
-        chmod 755 /var/log/dynserver
+        chmod 750 /etc/tenrankai
+        chmod 750 /var/lib/tenrankai
+        chmod 755 /var/log/tenrankai
         
         # Create example config if no config exists
-        if [ ! -f /etc/dynserver/config.toml ]; then
+        if [ ! -f /etc/tenrankai/config.toml ]; then
             echo "No configuration file found. Please copy and customize:"
-            echo "  sudo cp /etc/dynserver/config.toml.example /etc/dynserver/config.toml"
-            echo "  sudo chown root:dynserver /etc/dynserver/config.toml"
-            echo "  sudo chmod 640 /etc/dynserver/config.toml"
+            echo "  sudo cp /etc/tenrankai/config.toml.example /etc/tenrankai/config.toml"
+            echo "  sudo chown root:tenrankai /etc/tenrankai/config.toml"
+            echo "  sudo chmod 640 /etc/tenrankai/config.toml"
             echo ""
-            echo "Then edit /etc/dynserver/config.toml to match your setup."
+            echo "Then edit /etc/tenrankai/config.toml to match your setup."
         fi
         
         # Reload systemd and enable service
@@ -43,8 +43,8 @@ case "$1" in
             systemctl daemon-reload
             # Don't auto-start until configured
             echo "Service installed but not started. Configure first, then:"
-            echo "  sudo systemctl enable dynserver"
-            echo "  sudo systemctl start dynserver"
+            echo "  sudo systemctl enable tenrankai"
+            echo "  sudo systemctl start tenrankai"
         fi
         ;;
 esac

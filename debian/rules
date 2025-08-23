@@ -27,31 +27,31 @@ override_dh_auto_test:
 
 override_dh_auto_install:
 	# Install the binary
-	install -D -m 755 target/release/dynserver debian/dynserver/usr/bin/dynserver
+	install -D -m 755 target/release/tenrankai debian/tenrankai/usr/bin/tenrankai
 	
 	# Install systemd service file
-	install -D -m 644 dynserver.service debian/dynserver/lib/systemd/system/dynserver.service
+	install -D -m 644 tenrankai.service debian/tenrankai/lib/systemd/system/tenrankai.service
 	
 	# Install example configuration
-	install -D -m 644 config.toml.example debian/dynserver/etc/dynserver/config.toml.example
+	install -D -m 644 config.toml.example debian/tenrankai/etc/tenrankai/config.toml.example
 	
 	# Install logrotate configuration
-	install -D -m 644 debian/logrotate debian/dynserver/etc/logrotate.d/dynserver
+	install -D -m 644 debian/logrotate debian/tenrankai/etc/logrotate.d/tenrankai
 	
 	# Install templates
-	mkdir -p debian/dynserver/usr/share/dynserver/templates
-	cp -r templates/* debian/dynserver/usr/share/dynserver/templates/
+	mkdir -p debian/tenrankai/usr/share/tenrankai/templates
+	cp -r templates/* debian/tenrankai/usr/share/tenrankai/templates/
 	
 	# Install static files
-	mkdir -p debian/dynserver/usr/share/dynserver/static
-	cp -r static/* debian/dynserver/usr/share/dynserver/static/
+	mkdir -p debian/tenrankai/usr/share/tenrankai/static
+	cp -r static/* debian/tenrankai/usr/share/tenrankai/static/
 	
 	# Create directories for runtime data
-	mkdir -p debian/dynserver/var/lib/dynserver
-	mkdir -p debian/dynserver/var/log/dynserver
+	mkdir -p debian/tenrankai/var/lib/tenrankai
+	mkdir -p debian/tenrankai/var/log/tenrankai
 	
 	# Create config directory
-	mkdir -p debian/dynserver/etc/dynserver
+	mkdir -p debian/tenrankai/etc/tenrankai
 
 override_dh_auto_clean:
 	# Clean cargo build artifacts
@@ -61,6 +61,6 @@ override_dh_auto_clean:
 override_dh_fixperms:
 	dh_fixperms
 	# Ensure correct permissions for sensitive directories
-	chmod 750 debian/dynserver/etc/dynserver
-	chmod 750 debian/dynserver/var/lib/dynserver
-	chmod 755 debian/dynserver/var/log/dynserver
+	chmod 750 debian/tenrankai/etc/tenrankai
+	chmod 750 debian/tenrankai/var/lib/tenrankai
+	chmod 755 debian/tenrankai/var/log/tenrankai

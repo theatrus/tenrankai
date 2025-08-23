@@ -47,18 +47,18 @@ done
 # Check systemd service file
 echo ""
 echo "Checking systemd service file..."
-if [ -f "dynserver.service" ]; then
-    echo "✓ dynserver.service exists"
+if [ -f "tenrankai.service" ]; then
+    echo "✓ tenrankai.service exists"
     
     # Basic syntax check
-    if grep -q "\[Unit\]" dynserver.service && grep -q "\[Service\]" dynserver.service && grep -q "\[Install\]" dynserver.service; then
+    if grep -q "\[Unit\]" tenrankai.service && grep -q "\[Service\]" tenrankai.service && grep -q "\[Install\]" tenrankai.service; then
         echo "✓ systemd service file has required sections"
     else
         echo "✗ systemd service file missing required sections"
         exit 1
     fi
 else
-    echo "✗ dynserver.service missing"
+    echo "✗ tenrankai.service missing"
     exit 1
 fi
 

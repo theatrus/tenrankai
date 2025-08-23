@@ -1,5 +1,5 @@
 # DynServer Configuration Example
-# Copy this file to /etc/dynserver/config.toml and customize for your setup
+# Copy this file to /etc/tenrankai/config.toml and customize for your setup
 
 [server]
 # Host and port to bind to
@@ -26,21 +26,21 @@ download_password = "your-download-password-here"
 
 [templates]
 # Directory containing Liquid template files
-directory = "/usr/share/dynserver/templates"
+directory = "/usr/share/tenrankai/templates"
 
 [static_files]
 # Directory containing static assets (CSS, JS, images)
-directory = "/usr/share/dynserver/static"
+directory = "/usr/share/tenrankai/static"
 
 [gallery]
 # URL path prefix for gallery routes
 path_prefix = "/gallery"
 
 # Directory containing source images
-source_directory = "/var/lib/dynserver/gallery"
+source_directory = "/var/lib/tenrankai/gallery"
 
 # Directory for cached/resized images
-cache_directory = "/var/lib/dynserver/cache"
+cache_directory = "/var/lib/tenrankai/cache"
 
 # Number of images to display per page
 images_per_page = 20

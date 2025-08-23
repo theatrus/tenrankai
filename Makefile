@@ -13,7 +13,7 @@ test:
 # Clean build artifacts
 clean:
 	cargo clean
-	rm -rf debian/dynserver
+	rm -rf debian/tenrankai
 	rm -rf target/
 
 # Install dependencies for Debian packaging
@@ -35,21 +35,21 @@ deb-build: clean
 
 # Clean Debian build artifacts
 deb-clean:
-	rm -rf debian/dynserver
+	rm -rf debian/tenrankai
 	rm -rf debian/.debhelper
 	rm -rf debian/cargo
 	rm -f debian/files
 	rm -f debian/debhelper-build-stamp
-	rm -f debian/dynserver.debhelper.log
-	rm -f debian/dynserver.substvars
+	rm -f debian/tenrankai.debhelper.log
+	rm -f debian/tenrankai.substvars
 
 # Quick test of the systemd service file
 check-systemd:
-	systemd-analyze verify dynserver.service
+	systemd-analyze verify tenrankai.service
 
 # Lint the package
 package-lint:
-	lintian ../dynserver_*.deb
+	lintian ../tenrankai_*.deb
 
 # All build tasks
 all: build test

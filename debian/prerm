@@ -6,8 +6,8 @@ case "$1" in
     remove|upgrade|deconfigure)
         # Stop the service before removal
         if command -v systemctl >/dev/null 2>&1; then
-            if systemctl is-active --quiet dynserver; then
-                systemctl stop dynserver || true
+            if systemctl is-active --quiet tenrankai; then
+                systemctl stop tenrankai || true
             fi
         fi
         ;;

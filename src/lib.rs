@@ -86,7 +86,7 @@ impl Default for Config {
                 port: 3000,
             },
             app: AppConfig {
-                name: "DynServer".to_string(),
+                name: "Tenrankai".to_string(),
                 log_level: "info".to_string(),
                 download_secret: "change-me-in-production".to_string(),
                 download_password: "password".to_string(),

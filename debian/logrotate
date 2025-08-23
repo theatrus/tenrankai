@@ -1,14 +1,14 @@
-/var/log/dynserver/*.log {
+/var/log/tenrankai/*.log {
     weekly
     missingok
     rotate 52
     compress
     delaycompress
     notifempty
-    create 644 dynserver dynserver
+    create 644 tenrankai tenrankai
     postrotate
-        if systemctl is-active --quiet dynserver; then
-            systemctl reload dynserver || true
+        if systemctl is-active --quiet tenrankai; then
+            systemctl reload tenrankai || true
         fi
     endscript
 }

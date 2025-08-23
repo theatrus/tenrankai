@@ -1,7 +1,7 @@
-# DynServer Project Documentation
+# Tenrankai Project Documentation
 
 ## Project Overview
-DynServer is a web-based photo gallery server written in Rust using the Axum web framework. It provides a dynamic, responsive gallery interface with features like image resizing, metadata extraction, watermarking, and caching.
+Tenrankai is a web-based photo gallery server written in Rust using the Axum web framework. It provides a dynamic, responsive gallery interface with features like image resizing, metadata extraction, watermarking, and caching.
 
 ## Key Features
 - **Responsive Web Gallery**: Mobile-friendly masonry layout that adapts to different screen sizes

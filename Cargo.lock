@@ -630,42 +630,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dynserver"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "axum",
- "axum-test",
- "base64",
- "chrono",
- "clap",
- "hmac",
- "ico",
- "image",
- "imageproc",
- "liquid",
- "mime_guess",
- "pulldown-cmark",
- "rand 0.8.5",
- "resvg",
- "rexif",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tokio-util",
- "toml",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "urlencoding",
- "usvg",
- "walkdir",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2582,6 +2546,42 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "tenrankai"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "axum",
+ "axum-test",
+ "base64",
+ "chrono",
+ "clap",
+ "hmac",
+ "ico",
+ "image",
+ "imageproc",
+ "liquid",
+ "mime_guess",
+ "pulldown-cmark",
+ "rand 0.8.5",
+ "resvg",
+ "rexif",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "urlencoding",
+ "usvg",
+ "walkdir",
 ]
 
 [[package]]

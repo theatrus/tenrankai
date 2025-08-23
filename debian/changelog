@@ -1,4 +1,4 @@
-dynserver (0.1.0-1) jammy; urgency=medium
+tenrankai (0.1.0-1) jammy; urgency=medium
 
   * Initial release
   * Dynamic gallery server with image resizing

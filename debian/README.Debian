@@ -1,16 +1,16 @@
-dynserver for Debian
+tenrankai for Debian
 ===================
 
 Installation and Configuration
 ------------------------------
 
-After installing dynserver, you need to create a configuration file:
+After installing tenrankai, you need to create a configuration file:
 
 1. Copy the example configuration:
-   sudo cp /etc/dynserver/config.toml.example /etc/dynserver/config.toml
+   sudo cp /etc/tenrankai/config.toml.example /etc/tenrankai/config.toml
 
 2. Edit the configuration file:
-   sudo nano /etc/dynserver/config.toml
+   sudo nano /etc/tenrankai/config.toml
 
 3. Important configuration items to change:
    - download_secret: Generate a secure random key
@@ -18,25 +18,25 @@ After installing dynserver, you need to create a configuration file:
    - source_directory: Point to your image directory
 
 4. Set proper permissions:
-   sudo chown root:dynserver /etc/dynserver/config.toml
-   sudo chmod 640 /etc/dynserver/config.toml
+   sudo chown root:tenrankai /etc/tenrankai/config.toml
+   sudo chmod 640 /etc/tenrankai/config.toml
 
 5. Create your gallery directory and populate with images:
-   sudo mkdir -p /var/lib/dynserver/gallery
-   sudo chown dynserver:dynserver /var/lib/dynserver/gallery
+   sudo mkdir -p /var/lib/tenrankai/gallery
+   sudo chown tenrankai:tenrankai /var/lib/tenrankai/gallery
    # Copy your images to this directory
 
 6. Enable and start the service:
-   sudo systemctl enable dynserver
-   sudo systemctl start dynserver
+   sudo systemctl enable tenrankai
+   sudo systemctl start tenrankai
 
 7. Check the service status:
-   sudo systemctl status dynserver
+   sudo systemctl status tenrankai
 
 Usage with Web Server
 ---------------------
 
-dynserver binds to localhost:3000 by default. For production use,
+tenrankai binds to localhost:3000 by default. For production use,
 configure a reverse proxy with nginx or apache2:
 
 Example nginx configuration:
@@ -61,17 +61,17 @@ Security Considerations
 - Change the default download_secret and download_password
 - Consider using HTTPS in production
 - Regularly update the package for security fixes
-- Monitor /var/log/dynserver/ for any issues
+- Monitor /var/log/tenrankai/ for any issues
 
 File Locations
 --------------
 
-- Binary: /usr/bin/dynserver
-- Configuration: /etc/dynserver/config.toml
-- Templates: /usr/share/dynserver/templates/
-- Static files: /usr/share/dynserver/static/
-- Data directory: /var/lib/dynserver/
-- Logs: /var/log/dynserver/
-- Systemd service: /lib/systemd/system/dynserver.service
+- Binary: /usr/bin/tenrankai
+- Configuration: /etc/tenrankai/config.toml
+- Templates: /usr/share/tenrankai/templates/
+- Static files: /usr/share/tenrankai/static/
+- Data directory: /var/lib/tenrankai/
+- Logs: /var/log/tenrankai/
+- Systemd service: /lib/systemd/system/tenrankai.service
 
  -- DynServer Team <maintainer@example.com>  Thu, 22 Aug 2024 12:00:00 +0000

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use dynserver::{Config, create_app, gallery::Gallery};
+use tenrankai::{Config, create_app, gallery::Gallery};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

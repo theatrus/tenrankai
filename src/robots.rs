@@ -29,7 +29,7 @@ pub async fn robots_txt_handler(State(app_state): State<AppState>) -> Response {
     }
 
     // Return default permissive robots.txt
-    let default_robots = r#"# robots.txt for DynServer Gallery
+    let default_robots = r#"# robots.txt for Tenrankai Gallery
 # This file allows all web crawlers to access all content
 
 User-agent: *

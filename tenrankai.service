@@ -1,15 +1,15 @@
 [Unit]
 Description=Dynamic Gallery Server
-Documentation=https://github.com/your-org/dynserver
+Documentation=https://github.com/theatrus/tenrankai
 After=network.target network-online.target
 Requires=network-online.target
 
 [Service]
 Type=exec
-User=dynserver
-Group=dynserver
-WorkingDirectory=/usr/share/dynserver
-ExecStart=/usr/bin/dynserver --config /etc/dynserver/config.toml
+User=tenrankai
+Group=tenrankai
+WorkingDirectory=/usr/share/tenrankai
+ExecStart=/usr/bin/tenrankai --config /etc/tenrankai/config.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
