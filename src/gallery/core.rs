@@ -1,5 +1,5 @@
 use super::{Gallery, GalleryError, GalleryItem, ImageInfo};
-use pulldown_cmark::{html, Parser};
+use pulldown_cmark::{Parser, html};
 use std::path::Path as StdPath;
 use std::time::SystemTime;
 use tracing::debug;
@@ -11,7 +11,7 @@ impl Gallery {
         relative_path: &str,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
-        
+
         debug!("Scanning directory: {:?}", full_path);
 
         if !full_path.starts_with(&self.config.source_directory) {
@@ -62,13 +62,11 @@ impl Gallery {
                 let encoded_path = urlencoding::encode(&item_path);
                 let thumbnail_url = format!(
                     "/{}/image/{}?size=thumbnail",
-                    self.config.path_prefix,
-                    encoded_path
+                    self.config.path_prefix, encoded_path
                 );
                 let gallery_url = format!(
                     "/{}/image/{}?size=gallery",
-                    self.config.path_prefix,
-                    encoded_path
+                    self.config.path_prefix, encoded_path
                 );
 
                 // Get metadata from cache if available
@@ -81,7 +79,7 @@ impl Gallery {
                         drop(cache);
                         match self.get_image_metadata_cached(&item_path).await {
                             Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
-                            Err(_) => (None, None)
+                            Err(_) => (None, None),
                         }
                     }
                 };
@@ -123,8 +121,9 @@ impl Gallery {
                 }
             }
         });
-        
-        debug!("Found {} items total ({} directories, {} images)", 
+
+        debug!(
+            "Found {} items total ({} directories, {} images)",
             items.len(),
             items.iter().filter(|i| i.is_directory).count(),
             items.iter().filter(|i| !i.is_directory).count()
@@ -139,31 +138,42 @@ impl Gallery {
         page: usize,
     ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
         let items = self.scan_directory(path).await?;
-        
+
         // Separate directories and images
-        let (directories, images): (Vec<_>, Vec<_>) = items
-            .into_iter()
-            .partition(|item| item.is_directory);
-        
-        debug!("list_directory: {} directories, {} images for path '{}'", directories.len(), images.len(), path);
-        
+        let (directories, images): (Vec<_>, Vec<_>) =
+            items.into_iter().partition(|item| item.is_directory);
+
+        debug!(
+            "list_directory: {} directories, {} images for path '{}'",
+            directories.len(),
+            images.len(),
+            path
+        );
+
         // Calculate pagination for images
         let total_images = images.len();
-        let total_pages = (total_images + self.config.images_per_page - 1) / self.config.images_per_page;
+        let total_pages =
+            (total_images + self.config.images_per_page - 1) / self.config.images_per_page;
         let total_pages = total_pages.max(1); // At least 1 page
-        
+
         let start = page * self.config.images_per_page;
         let end = ((page + 1) * self.config.images_per_page).min(total_images);
-        
+
         let paginated_images = if start < total_images {
             images[start..end].to_vec()
         } else {
             Vec::new()
         };
-        
-        debug!("Pagination: page={}, start={}, end={}, total_images={}, returning {} paginated images", 
-            page, start, end, total_images, paginated_images.len());
-        
+
+        debug!(
+            "Pagination: page={}, start={}, end={}, total_images={}, returning {} paginated images",
+            page,
+            start,
+            end,
+            total_images,
+            paginated_images.len()
+        );
+
         // Return all directories and paginated images
         Ok((directories, paginated_images, total_pages))
     }
@@ -281,7 +291,10 @@ impl Gallery {
         })
     }
 
-    pub(crate) async fn read_folder_metadata(&self, folder_path: &str) -> (Option<String>, Option<String>) {
+    pub(crate) async fn read_folder_metadata(
+        &self,
+        folder_path: &str,
+    ) -> (Option<String>, Option<String>) {
         let folder_md_path = self
             .config
             .source_directory
@@ -364,7 +377,7 @@ impl Gallery {
                 // We have metadata, just need to add file size
                 let full_path = self.config.source_directory.join(relative_path);
                 let file_metadata = tokio::fs::metadata(&full_path).await?;
-                
+
                 return Ok(ImageMetadataWithSize {
                     dimensions: metadata.dimensions,
                     capture_date: metadata.capture_date,
@@ -374,18 +387,19 @@ impl Gallery {
                 });
             }
         }
-        
+
         // No cached metadata, extract it
         let full_path = self.config.source_directory.join(relative_path);
         let file_metadata = tokio::fs::metadata(&full_path).await?;
         let file_size = file_metadata.len();
-        
+
         // Extract metadata
         let metadata = self.extract_image_metadata(&full_path).await?;
-        
+
         // Cache it with tracking
-        self.insert_metadata_with_tracking(relative_path.to_string(), metadata.clone()).await;
-        
+        self.insert_metadata_with_tracking(relative_path.to_string(), metadata.clone())
+            .await;
+
         Ok(ImageMetadataWithSize {
             dimensions: metadata.dimensions,
             capture_date: metadata.capture_date,
@@ -401,35 +415,34 @@ impl Gallery {
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         use rand::seq::SliceRandom;
         use rand::thread_rng;
-        
+
         let mut all_items = Vec::new();
-        
+
         // Recursively collect images up to max_depth
         self.collect_preview_items(
-            "", 
-            &mut all_items, 
-            0, 
+            "",
+            &mut all_items,
+            0,
             self.config.preview.max_depth,
             self.config.preview.max_per_folder,
-        ).await?;
-        
+        )
+        .await?;
+
         // If we have more items than requested, randomly select a subset
         if all_items.len() > max_items {
             let mut rng = thread_rng();
             all_items.shuffle(&mut rng);
             all_items.truncate(max_items);
-            
+
             // Sort the selected items by capture date for consistent display order
-            all_items.sort_by(|a, b| {
-                match (&b.capture_date, &a.capture_date) {
-                    (Some(b_date), Some(a_date)) => b_date.cmp(a_date),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => b.name.cmp(&a.name),
-                }
+            all_items.sort_by(|a, b| match (&b.capture_date, &a.capture_date) {
+                (Some(b_date), Some(a_date)) => b_date.cmp(a_date),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => b.name.cmp(&a.name),
             });
         }
-        
+
         Ok(all_items)
     }
 
@@ -440,118 +453,116 @@ impl Gallery {
         current_depth: usize,
         max_depth: usize,
         max_per_folder: usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>>
+    {
         Box::pin(async move {
-        if current_depth > max_depth {
-            return Ok(());
-        }
-        
-        let full_path = if path.is_empty() {
-            self.config.source_directory.clone()
-        } else {
-            self.config.source_directory.join(path)
-        };
-        
-        let mut dir_entries = tokio::fs::read_dir(&full_path).await?;
-        let mut folder_items = Vec::new();
-        
-        while let Some(entry) = dir_entries.next_entry().await? {
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            
-            if file_name.starts_with('.') || file_name.ends_with(".md") {
-                continue;
+            if current_depth > max_depth {
+                return Ok(());
             }
-            
-            let metadata = entry.metadata().await?;
-            let item_path = if path.is_empty() {
-                file_name.clone()
+
+            let full_path = if path.is_empty() {
+                self.config.source_directory.clone()
             } else {
-                format!("{}/{}", path, file_name)
+                self.config.source_directory.join(path)
             };
-            
-            if metadata.is_dir() {
-                // Recursively collect from subdirectories
-                self.collect_preview_items(
-                    &item_path,
-                    items,
-                    current_depth + 1,
-                    max_depth,
-                    max_per_folder,
-                ).await?;
-            } else if self.is_image(&file_name) && folder_items.len() < max_per_folder {
-                // Get metadata from cache if available
-                let (dimensions, capture_date) = {
-                    let cache = self.metadata_cache.read().await;
-                    if let Some(metadata) = cache.get(&item_path) {
-                        (Some(metadata.dimensions), metadata.capture_date)
-                    } else {
-                        // If not in cache, try to extract it now
-                        drop(cache);
-                        match self.get_image_metadata_cached(&item_path).await {
-                            Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
-                            Err(_) => (None, None)
-                        }
-                    }
+
+            let mut dir_entries = tokio::fs::read_dir(&full_path).await?;
+            let mut folder_items = Vec::new();
+
+            while let Some(entry) = dir_entries.next_entry().await? {
+                let file_name = entry.file_name().to_string_lossy().to_string();
+
+                if file_name.starts_with('.') || file_name.ends_with(".md") {
+                    continue;
+                }
+
+                let metadata = entry.metadata().await?;
+                let item_path = if path.is_empty() {
+                    file_name.clone()
+                } else {
+                    format!("{}/{}", path, file_name)
                 };
-                
-                let encoded_path = urlencoding::encode(&item_path);
-                let thumbnail_url = format!(
-                    "/{}/image/{}?size=thumbnail",
-                    self.config.path_prefix,
-                    encoded_path
-                );
-                let gallery_url = format!(
-                    "/{}/image/{}?size=gallery",
-                    self.config.path_prefix,
-                    encoded_path
-                );
-                
-                folder_items.push(GalleryItem {
-                    name: file_name,
-                    display_name: None,
-                    description: None,
-                    path: item_path.clone(),
-                    parent_path: Some(path.to_string()),
-                    is_directory: false,
-                    thumbnail_url: Some(thumbnail_url),
-                    gallery_url: Some(gallery_url),
-                    preview_images: None,
-                    item_count: None,
-                    dimensions,
-                    capture_date,
-                });
+
+                if metadata.is_dir() {
+                    // Recursively collect from subdirectories
+                    self.collect_preview_items(
+                        &item_path,
+                        items,
+                        current_depth + 1,
+                        max_depth,
+                        max_per_folder,
+                    )
+                    .await?;
+                } else if self.is_image(&file_name) && folder_items.len() < max_per_folder {
+                    // Get metadata from cache if available
+                    let (dimensions, capture_date) = {
+                        let cache = self.metadata_cache.read().await;
+                        if let Some(metadata) = cache.get(&item_path) {
+                            (Some(metadata.dimensions), metadata.capture_date)
+                        } else {
+                            // If not in cache, try to extract it now
+                            drop(cache);
+                            match self.get_image_metadata_cached(&item_path).await {
+                                Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
+                                Err(_) => (None, None),
+                            }
+                        }
+                    };
+
+                    let encoded_path = urlencoding::encode(&item_path);
+                    let thumbnail_url = format!(
+                        "/{}/image/{}?size=thumbnail",
+                        self.config.path_prefix, encoded_path
+                    );
+                    let gallery_url = format!(
+                        "/{}/image/{}?size=gallery",
+                        self.config.path_prefix, encoded_path
+                    );
+
+                    folder_items.push(GalleryItem {
+                        name: file_name,
+                        display_name: None,
+                        description: None,
+                        path: item_path.clone(),
+                        parent_path: Some(path.to_string()),
+                        is_directory: false,
+                        thumbnail_url: Some(thumbnail_url),
+                        gallery_url: Some(gallery_url),
+                        preview_images: None,
+                        item_count: None,
+                        dimensions,
+                        capture_date,
+                    });
+                }
             }
-        }
-        
-        items.extend(folder_items);
-        Ok(())
+
+            items.extend(folder_items);
+            Ok(())
         })
     }
 
     pub async fn build_breadcrumbs(&self, path: &str) -> Vec<BreadcrumbItem> {
-        let mut breadcrumbs = vec![
-            BreadcrumbItem {
-                name: "Gallery".to_string(),
-                display_name: "Gallery".to_string(),
-                path: "".to_string(),
-                is_current: path.is_empty(),
-            }
-        ];
-        
+        let mut breadcrumbs = vec![BreadcrumbItem {
+            name: "Gallery".to_string(),
+            display_name: "Gallery".to_string(),
+            path: "".to_string(),
+            is_current: path.is_empty(),
+        }];
+
         if !path.is_empty() {
             let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
             let mut current_path = String::new();
-            
+
             for (i, part) in parts.iter().enumerate() {
                 if i > 0 {
                     current_path.push('/');
                 }
                 current_path.push_str(part);
-                
+
                 // Check if this folder has a custom display name
                 let (display_name, _) = self.read_folder_metadata(&current_path).await;
                 let display_name = display_name.unwrap_or_else(|| part.to_string());
-                
+
                 breadcrumbs.push(BreadcrumbItem {
                     name: part.to_string(),
                     display_name,
@@ -560,7 +571,7 @@ impl Gallery {
                 });
             }
         }
-        
+
         breadcrumbs
     }
 }

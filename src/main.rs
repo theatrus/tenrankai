@@ -23,7 +23,10 @@ use favicon::{
     FaviconRenderer, favicon_ico_handler, favicon_png_16_handler, favicon_png_32_handler,
     favicon_png_48_handler,
 };
-use gallery::{Gallery, SharedGallery, gallery_handler, gallery_root_handler, image_detail_handler, image_handler};
+use gallery::{
+    Gallery, SharedGallery, gallery_handler, gallery_root_handler, image_detail_handler,
+    image_handler,
+};
 use static_files::StaticFileHandler;
 use templating::{TemplateEngine, template_with_gallery_handler};
 
@@ -99,6 +102,8 @@ pub struct GalleryConfig {
     large: ImageSizeConfig,
     preview: PreviewConfig,
     cache_refresh_interval_minutes: Option<u64>,
+    jpeg_quality: Option<u8>,
+    webp_quality: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -161,6 +166,8 @@ impl Default for Config {
                     max_per_folder: 3,
                 },
                 cache_refresh_interval_minutes: Some(60), // Default to 1 hour
+                jpeg_quality: Some(85),
+                webp_quality: Some(85.0),
             },
         }
     }
@@ -237,7 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
     }
-    
+
     // Start periodic cache save (every 5 minutes)
     info!("Starting periodic metadata cache save every 5 minutes");
     Gallery::start_periodic_cache_save(gallery.clone(), 5);
@@ -373,4 +380,3 @@ Allow: /static/
         robots_content,
     )
 }
-

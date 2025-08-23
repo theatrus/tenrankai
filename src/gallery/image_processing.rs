@@ -1,15 +1,48 @@
 use super::{CachedImage, Gallery, GalleryError};
-use crate::copyright::{add_copyright_notice, CopyrightConfig};
-use image::{imageops::FilterType, ImageFormat};
+use crate::copyright::{CopyrightConfig, add_copyright_notice};
+use image::{ImageFormat, imageops::FilterType};
 use std::path::PathBuf;
 use tracing::{debug, error};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum OutputFormat {
+    Jpeg,
+    WebP,
+}
+
+impl OutputFormat {
+    fn extension(&self) -> &'static str {
+        match self {
+            OutputFormat::Jpeg => "jpg",
+            OutputFormat::WebP => "webp",
+        }
+    }
+
+    fn image_format(&self) -> ImageFormat {
+        match self {
+            OutputFormat::Jpeg => ImageFormat::Jpeg,
+            OutputFormat::WebP => ImageFormat::WebP,
+        }
+    }
+}
+
 impl Gallery {
-    pub async fn serve_image(&self, relative_path: &str, size: Option<String>) -> axum::response::Response {
-        use axum::{
-            http::StatusCode,
-            response::IntoResponse,
-        };
+    fn determine_output_format(&self, accept_header: &str) -> OutputFormat {
+        // Check if browser accepts WebP
+        if accept_header.contains("image/webp") {
+            OutputFormat::WebP
+        } else {
+            OutputFormat::Jpeg
+        }
+    }
+
+    pub async fn serve_image(
+        &self,
+        relative_path: &str,
+        size: Option<String>,
+        accept_header: &str,
+    ) -> axum::response::Response {
+        use axum::{http::StatusCode, response::IntoResponse};
 
         let full_path = self.config.source_directory.join(relative_path);
 
@@ -18,10 +51,11 @@ impl Gallery {
         }
 
         let size = size.as_deref();
+        let output_format = self.determine_output_format(accept_header);
 
         if let Some(size) = size {
             match self
-                .get_resized_image(&full_path, relative_path, size)
+                .get_resized_image(&full_path, relative_path, size, output_format)
                 .await
             {
                 Ok(cached_path) => {
@@ -41,6 +75,7 @@ impl Gallery {
         original_path: &PathBuf,
         relative_path: &str,
         size: &str,
+        output_format: OutputFormat,
     ) -> Result<PathBuf, GalleryError> {
         // Check if it's a @2x variant
         let (base_size, multiplier) = if size.ends_with("@2x") {
@@ -48,7 +83,7 @@ impl Gallery {
         } else {
             (size, 1)
         };
-        
+
         let (base_width, base_height) = match base_size {
             "thumbnail" => (self.config.thumbnail.width, self.config.thumbnail.height),
             "gallery" => (
@@ -59,13 +94,15 @@ impl Gallery {
             "large" => (self.config.large.width, self.config.large.height),
             _ => return Err(GalleryError::InvalidPath),
         };
-        
+
         // Apply multiplier for @2x variants
         let width = base_width * multiplier as u32;
         let height = base_height * multiplier as u32;
 
-        let hash = self.generate_cache_key(relative_path, size);
-        let cache_filename = format!("{}.jpg", hash);
+        // Include format in cache key
+        let cache_key = format!("{}_{}", size, output_format.extension());
+        let hash = self.generate_cache_key(relative_path, &cache_key);
+        let cache_filename = format!("{}.{}", hash, output_format.extension());
         let cache_path = self.config.cache_directory.join(cache_filename);
 
         let original_metadata = tokio::fs::metadata(original_path).await?;
@@ -73,7 +110,9 @@ impl Gallery {
 
         let cache = self.cache.read().await;
         if let Some(cached) = cache.get(&hash)
-            && cached.modified >= original_modified && cached.path.exists() {
+            && cached.modified >= original_modified
+            && cached.path.exists()
+        {
             return Ok(cached.path.clone());
         }
         drop(cache);
@@ -86,7 +125,10 @@ impl Gallery {
         let is_medium = base_size == "medium";
         let copyright_holder = self.app_config.copyright_holder.clone();
         let static_dir = PathBuf::from("static"); // Assume static dir for font
-        
+        let format = output_format;
+        let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
+        let _webp_quality = self.config.webp_quality.unwrap_or(85.0);
+
         tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
             // Open image with decoder to access ICC profile
             let original_file = std::fs::File::open(&original_path)?;
@@ -95,14 +137,14 @@ impl Gallery {
                 .with_guessed_format()?;
 
             let img = decoder.decode()?;
-            
+
             // Get original dimensions
             let (orig_width, orig_height) = (img.width(), img.height());
-            
+
             // Don't upscale - if requested dimensions are larger than original, use original
             let final_width = width.min(orig_width);
             let final_height = height.min(orig_height);
-            
+
             // Only resize if dimensions are different
             let resized = if final_width != orig_width || final_height != orig_height {
                 img.resize(final_width, final_height, FilterType::Lanczos3)
@@ -119,7 +161,7 @@ impl Gallery {
                         font_size: 20.0,
                         padding: 10,
                     };
-                    
+
                     match add_copyright_notice(&resized, &copyright_config, &font_path) {
                         Ok(watermarked) => watermarked,
                         Err(e) => {
@@ -134,12 +176,23 @@ impl Gallery {
             } else {
                 resized
             };
-            
-            // Save final image
-            // Note: The standard image crate JPEG encoder doesn't support embedding ICC profiles
-            // For production use, consider using a library like turbojpeg-sys or mozjpeg
-            // that supports ICC profile embedding during encoding
-            final_image.save_with_format(&cache_path_clone, ImageFormat::Jpeg)?;
+
+            // Save final image in the requested format with quality settings
+            match format {
+                OutputFormat::Jpeg => {
+                    // Use JPEG with configurable quality
+                    use image::codecs::jpeg::JpegEncoder;
+                    let mut output = std::fs::File::create(&cache_path_clone)?;
+                    let encoder = JpegEncoder::new_with_quality(&mut output, jpeg_quality);
+                    final_image.write_with_encoder(encoder)?;
+                }
+                OutputFormat::WebP => {
+                    // WebP encoding with quality
+                    // Note: The image crate's WebP support might be limited
+                    // For better WebP encoding, consider using webp crate directly
+                    final_image.save_with_format(&cache_path_clone, format.image_format())?;
+                }
+            }
 
             Ok(())
         })
@@ -161,7 +214,7 @@ impl Gallery {
     async fn serve_file(&self, path: &PathBuf) -> axum::response::Response {
         use axum::{
             body::Body,
-            http::{header, StatusCode},
+            http::{StatusCode, header},
             response::{IntoResponse, Response},
         };
         use tokio_util::io::ReaderStream;

@@ -15,8 +15,8 @@ pub use types::*;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
         Arc,
+        atomic::{AtomicBool, AtomicUsize},
     },
     time::SystemTime,
 };
@@ -37,11 +37,12 @@ pub struct Gallery {
 impl Gallery {
     pub fn new(config: crate::GalleryConfig, app_config: crate::AppConfig) -> Self {
         let metadata_cache = cache::load_metadata_cache(&config).unwrap_or_default();
-        let cache_metadata = cache::load_cache_metadata(&config).unwrap_or_else(|_| CacheMetadata {
-            version: String::new(), // Empty version will trigger full refresh
-            last_full_refresh: SystemTime::UNIX_EPOCH,
-        });
-        
+        let cache_metadata =
+            cache::load_cache_metadata(&config).unwrap_or_else(|_| CacheMetadata {
+                version: String::new(), // Empty version will trigger full refresh
+                last_full_refresh: SystemTime::UNIX_EPOCH,
+            });
+
         Self {
             config,
             app_config,
@@ -52,7 +53,7 @@ impl Gallery {
             metadata_updates_since_save: Arc::new(AtomicUsize::new(0)),
         }
     }
-    
+
     pub(crate) fn is_image(&self, file_name: &str) -> bool {
         let lower = file_name.to_lowercase();
         lower.ends_with(".jpg")

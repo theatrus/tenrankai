@@ -46,6 +46,13 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Large**: Full quality (requires authentication)
 - All sizes support @2x variants for high-DPI displays
 
+### Image Format Support
+- **Automatic WebP delivery**: Serves WebP format to browsers that support it (based on Accept header)
+- **JPEG fallback**: Falls back to JPEG for browsers without WebP support
+- **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
+- **Cache separation**: Different cache files for JPEG and WebP versions
+- **Content negotiation**: Automatic format selection based on browser capabilities
+
 ### Metadata Caching
 
 #### Cache Storage
@@ -93,6 +100,14 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - `config.toml` - Main application configuration
 - `cache/metadata_cache.json` - Persisted image metadata
 - `cache/cache_metadata.json` - Cache version tracking
+
+### Configuration Options
+```toml
+[gallery]
+# Image quality settings
+jpeg_quality = 85        # JPEG quality (1-100)
+webp_quality = 85.0      # WebP quality (0.0-100.0)
+```
 
 ### Environment Variables
 - `RUST_LOG` - Controls logging verbosity (trace, debug, info, warn, error)

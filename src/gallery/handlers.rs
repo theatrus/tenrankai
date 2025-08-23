@@ -23,33 +23,36 @@ pub async fn gallery_handler(
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
     let gallery = &app_state.gallery;
-    
+
     let page = query.page.unwrap_or(0);
     let (directories, images, total_pages) = match gallery.list_directory(&path, page).await {
         Ok(result) => {
-            tracing::debug!("Handler received: {} directories, {} images", result.0.len(), result.1.len());
+            tracing::debug!(
+                "Handler received: {} directories, {} images",
+                result.0.len(),
+                result.1.len()
+            );
             result
-        },
+        }
         Err(e) => {
             error!("Failed to list directory: {}", e);
             return (StatusCode::NOT_FOUND, "Directory not found").into_response();
         }
     };
-    
 
     // Convert images to JSON for client-side rendering
     let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
-    
+
     // Combine directories and images for the template's items array
     let mut items = directories.clone();
     items.extend(images.clone());
-    
+
     // Check if this is the root path
     let is_root = path.is_empty() || path == "/";
-    
+
     // Read folder metadata
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
-    
+
     // Build breadcrumb data
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
 
@@ -111,9 +114,7 @@ pub async fn image_detail_handler(
     };
 
     // Find current image index and get prev/next
-    let current_index = images
-        .iter()
-        .position(|img| img.path == path);
+    let current_index = images.iter().position(|img| img.path == path);
 
     let (prev_image, next_image) = if let Some(index) = current_index {
         let prev = if index > 0 {
@@ -189,7 +190,7 @@ pub async fn image_handler(
         } else {
             (size.as_str(), false)
         };
-        
+
         match base_size {
             "thumbnail" | "gallery" | "medium" => {
                 // These sizes are allowed without authentication
@@ -214,6 +215,15 @@ pub async fn image_handler(
             return (StatusCode::FORBIDDEN, "Download permission required").into_response();
         }
     }
-    
-    app_state.gallery.serve_image(&path, query.size).await
+
+    // Extract Accept header for format negotiation
+    let accept_header = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+
+    app_state
+        .gallery
+        .serve_image(&path, query.size, accept_header)
+        .await
 }
