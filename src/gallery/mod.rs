@@ -28,7 +28,6 @@ pub type SharedGallery = Arc<Gallery>;
 pub struct Gallery {
     pub(crate) config: crate::GalleryConfig,
     pub(crate) app_config: crate::AppConfig,
-    pub(crate) cache: Arc<RwLock<HashMap<String, CachedImage>>>,
     pub(crate) metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
     pub(crate) cache_metadata: Arc<RwLock<CacheMetadata>>,
     pub(crate) metadata_cache_dirty: Arc<AtomicBool>,
@@ -47,7 +46,6 @@ impl Gallery {
         Self {
             config,
             app_config,
-            cache: Arc::new(RwLock::new(HashMap::new())),
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
             cache_metadata: Arc::new(RwLock::new(cache_metadata)),
             metadata_cache_dirty: Arc::new(AtomicBool::new(false)),

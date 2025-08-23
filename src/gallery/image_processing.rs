@@ -1,4 +1,4 @@
-use super::{CachedImage, Gallery, GalleryError};
+use super::{Gallery, GalleryError};
 use crate::copyright::{CopyrightConfig, add_copyright_notice};
 use image::{ImageFormat, imageops::FilterType};
 use std::path::PathBuf;
@@ -55,12 +55,21 @@ impl Gallery {
         let output_format = self.determine_output_format(accept_header);
 
         if let Some(size) = size {
+            // Check if cached version exists first
+            let cache_filename =
+                self.generate_cache_filename(relative_path, size, output_format.extension());
+            let cache_path = self.config.cache_directory.join(&cache_filename);
+
+            let was_cached = cache_path.exists();
+
             match self
                 .get_resized_image(&full_path, relative_path, size, output_format)
                 .await
             {
                 Ok(cached_path) => {
-                    return self.serve_file(&cached_path).await;
+                    return self
+                        .serve_file_with_cache_header(&cached_path, was_cached)
+                        .await;
                 }
                 Err(e) => {
                     error!("Failed to resize image: {}", e);
@@ -68,7 +77,7 @@ impl Gallery {
             }
         }
 
-        self.serve_file(&full_path).await
+        self.serve_file_with_cache_header(&full_path, false).await
     }
 
     pub(crate) async fn get_resized_image(
@@ -101,22 +110,22 @@ impl Gallery {
         let height = base_height * multiplier as u32;
 
         // Generate consistent cache keys
-        let hash = self.generate_image_cache_key(relative_path, size, output_format.extension());
         let cache_filename =
             self.generate_cache_filename(relative_path, size, output_format.extension());
         let cache_path = self.config.cache_directory.join(&cache_filename);
 
-        let original_metadata = tokio::fs::metadata(original_path).await?;
-        let original_modified = original_metadata.modified()?;
+        // Check if cache file exists and is newer than original
+        if cache_path.exists() {
+            let cache_metadata = tokio::fs::metadata(&cache_path).await?;
+            let original_metadata = tokio::fs::metadata(original_path).await?;
 
-        let cache = self.cache.read().await;
-        if let Some(cached) = cache.get(&hash)
-            && cached.modified >= original_modified
-            && cached.path.exists()
-        {
-            return Ok(cached.path.clone());
+            if let (Ok(cache_modified), Ok(original_modified)) =
+                (cache_metadata.modified(), original_metadata.modified())
+                && cache_modified >= original_modified
+            {
+                return Ok(cache_path);
+            }
         }
-        drop(cache);
 
         tokio::fs::create_dir_all(&self.config.cache_directory).await?;
 
@@ -200,29 +209,26 @@ impl Gallery {
         .await
         .map_err(|e| GalleryError::IoError(std::io::Error::other(e)))??;
 
-        let mut cache = self.cache.write().await;
-        cache.insert(
-            hash,
-            CachedImage {
-                path: cache_path.clone(),
-                modified: original_modified,
-            },
-        );
-
         Ok(cache_path)
     }
 
-    async fn serve_file(&self, path: &PathBuf) -> axum::response::Response {
+    async fn serve_file_with_cache_header(
+        &self,
+        path: &PathBuf,
+        was_cached: bool,
+    ) -> axum::response::Response {
         let content_type = mime_guess::from_path(path)
             .first_or_octet_stream()
             .to_string();
-        self.serve_file_with_content_type(path, &content_type).await
+        self.serve_file_with_content_type_and_cache_header(path, &content_type, was_cached)
+            .await
     }
 
-    async fn serve_file_with_content_type(
+    async fn serve_file_with_content_type_and_cache_header(
         &self,
         path: &PathBuf,
         content_type: &str,
+        was_cached: bool,
     ) -> axum::response::Response {
         use axum::{
             body::Body,
@@ -242,12 +248,16 @@ impl Gallery {
         let stream = ReaderStream::new(file);
         let body = Body::from_stream(stream);
 
-        Response::builder()
+        let mut response = Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, content_type)
-            .header(header::CACHE_CONTROL, "public, max-age=3600")
-            .body(body)
-            .unwrap()
+            .header(header::CACHE_CONTROL, "public, max-age=3600");
+
+        if was_cached {
+            response = response.header("X-Already-Cached", "true");
+        }
+
+        response.body(body).unwrap()
     }
 
     pub async fn serve_cached_image(
@@ -272,15 +282,24 @@ impl Gallery {
             (hash, content_type)
         };
 
-        // Check if we have it in cache
-        {
-            let cache = self.cache.read().await;
-            if let Some(cached) = cache.get(&hash) {
-                debug!("Serving composite from cache: {}", hash);
-                return Ok(self
-                    .serve_file_with_content_type(&cached.path, content_type)
-                    .await);
+        // Check if we have it on disk
+        let cache_filename = format!(
+            "{}.{}",
+            hash,
+            if size == "composite" {
+                "jpg"
+            } else {
+                let output_format = self.determine_output_format(accept_header);
+                output_format.extension()
             }
+        );
+        let cache_path = self.config.cache_directory.join(&cache_filename);
+
+        if cache_path.exists() {
+            debug!("Serving from cache: {}", cache_filename);
+            return Ok(self
+                .serve_file_with_content_type_and_cache_header(&cache_path, content_type, true)
+                .await);
         }
 
         Err(GalleryError::NotFound)
@@ -325,19 +344,7 @@ impl Gallery {
         // Write to cache file
         tokio::fs::write(&cache_path, &buffer).await?;
 
-        // Update in-memory cache
-        {
-            let mut cache = self.cache.write().await;
-            cache.insert(
-                hash.clone(),
-                CachedImage {
-                    path: cache_path,
-                    modified: std::time::SystemTime::now(),
-                },
-            );
-        }
-
-        debug!("Stored composite in cache: {}", hash);
+        debug!("Stored composite in cache: {}", cache_filename);
 
         // Return the response
         Ok(Response::builder()
@@ -378,15 +385,13 @@ impl Gallery {
 
             for format in &formats {
                 // Check if already cached
-                let hash =
-                    self.generate_image_cache_key(relative_path, &size_str, format.extension());
+                let cache_filename =
+                    self.generate_cache_filename(relative_path, &size_str, format.extension());
+                let cache_path = self.config.cache_directory.join(&cache_filename);
 
-                // Skip if already in cache
-                {
-                    let cache = self.cache.read().await;
-                    if cache.contains_key(&hash) {
-                        continue;
-                    }
+                // Skip if already exists on disk
+                if cache_path.exists() {
+                    continue;
                 }
 
                 // Generate the cached version
@@ -545,7 +550,6 @@ mod tests {
         let gallery = Gallery {
             config,
             app_config,
-            cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
             metadata_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
             cache_metadata: Arc::new(RwLock::new(super::super::CacheMetadata {
                 version: String::new(),
@@ -583,11 +587,8 @@ mod tests {
             "Cache file not created"
         );
 
-        // Check that it's in the in-memory cache
-        {
-            let cache = gallery.cache.read().await;
-            assert!(cache.contains_key(&hash), "Composite not in memory cache");
-        }
+        // Verify the file exists on disk
+        assert!(cache_path.exists(), "Composite file should exist on disk");
 
         // Test serving from cache
         let cached_result = gallery.serve_cached_image(cache_key, "composite", "").await;

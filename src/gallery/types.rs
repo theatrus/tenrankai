@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, time::SystemTime};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
@@ -66,11 +66,6 @@ pub struct GalleryQuery {
 }
 
 // Internal types
-pub(crate) struct CachedImage {
-    pub path: PathBuf,
-    pub modified: SystemTime,
-}
-
 #[derive(Serialize, Deserialize)]
 pub(crate) struct CacheMetadata {
     pub version: String,
