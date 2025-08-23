@@ -344,6 +344,45 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
 - Images pool can grow up to 20 for variety
 - Smooth 0.5s fade out → replace → 0.5s fade in
 
+## Recent Major Changes (August 2025) - Continued
+
+### SEO and Web Crawler Support
+1. **Robots.txt Support**:
+   - Added `/robots.txt` handler for proper search engine crawler guidance
+   - Default permissive configuration allows all crawlers
+   - Includes crawl-delay of 1 second to be respectful of resources
+   - Custom robots.txt support: Place a `robots.txt` file in the static directory to override default
+   
+2. **Default robots.txt Content**:
+   ```
+   User-agent: *
+   Allow: /
+   Crawl-delay: 1
+   ```
+   
+3. **Custom Override**:
+   - Simply place a custom `robots.txt` file in your static directory
+   - The server will automatically serve your custom file instead of the default
+   - Useful for adding sitemap locations or specific crawler rules
+
+### Cache Pre-generation
+1. **New Configuration Option**: `pregenerate_cache = true`
+   - When enabled, automatically generates all image sizes after metadata refresh
+   - Generates thumbnail, gallery, medium sizes (plus @2x variants) for both JPEG and WebP
+   - Runs after initial metadata load and scheduled refreshes
+   
+2. **Pre-generation Features**:
+   - Concurrent processing with rate limiting (4 images at a time)
+   - Progress tracking logs every 10 images processed
+   - Generates up to 12 variations per image (6 sizes × 2 formats)
+   - Skips already cached images for efficiency
+   - Complete timing statistics on completion
+   
+3. **Performance Benefits**:
+   - First-time visitors get instant image loading
+   - No lag while images are processed on-demand
+   - Background processing doesn't block server operation
+
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions
 2. Add configuration for replacement interval

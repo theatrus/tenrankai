@@ -6,6 +6,7 @@ pub mod composite;
 pub mod copyright;
 pub mod favicon;
 pub mod gallery;
+pub mod robots;
 pub mod static_files;
 pub mod templating;
 
@@ -226,6 +227,10 @@ pub async fn create_app(config: Config) -> Router {
         .route(
             "/favicon-48x48.png",
             axum::routing::get(favicon::favicon_png_48_handler),
+        )
+        .route(
+            "/robots.txt",
+            axum::routing::get(robots::robots_txt_handler),
         )
         .route("/static/{*path}", axum::routing::get(static_file_handler))
         .route(

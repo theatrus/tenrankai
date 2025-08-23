@@ -1,0 +1,22 @@
+# Custom robots.txt for theatr.us
+# Allow all crawlers with specific rules
+
+User-agent: *
+Allow: /
+Crawl-delay: 2
+
+# Block specific paths
+Disallow: /api/
+Disallow: /private/
+
+# Sitemap
+Sitemap: https://theatr.us/sitemap.xml
+
+# Google Image Bot
+User-agent: Googlebot-Image
+Allow: /gallery/
+Crawl-delay: 1
+
+# Block bad bots
+User-agent: BadBot
+Disallow: /
