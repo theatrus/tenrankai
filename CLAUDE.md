@@ -3,6 +3,13 @@
 ## Project Overview
 Tenrankai is a web-based photo gallery server written in Rust using the Axum web framework. It provides a dynamic, responsive gallery interface with features like image resizing, metadata extraction, watermarking, and caching.
 
+## Testing Note for AI Development
+When implementing features, use the `--quit-after` flag to test the server without it running indefinitely:
+```bash
+cargo run -- --quit-after 5  # Server auto-shuts down after 5 seconds
+```
+This is especially useful for verifying startup behavior, testing API endpoints, and checking that new features don't break server initialization.
+
 ## Key Features
 - **Responsive Web Gallery**: Mobile-friendly masonry layout that adapts to different screen sizes
 - **Image Processing**: On-the-fly image resizing with caching for thumbnails, gallery, medium, and large sizes
@@ -154,9 +161,28 @@ cargo build
 cargo run -- --host 0.0.0.0 --port 8080
 ```
 
+### Testing with Auto-Shutdown
+The `--quit-after` flag allows the server to automatically shut down after a specified number of seconds, which is useful for testing startup behavior and running automated tests:
+
+```bash
+# Run server for 5 seconds then auto-shutdown
+cargo run -- --quit-after 5
+
+# Test startup checks with auto-shutdown
+cargo run -- --quit-after 3 --log-level debug
+
+# Verify server starts and serves requests
+cargo run -- --quit-after 10 &
+sleep 2
+curl http://localhost:3000/api/health
+```
+
+This feature is particularly helpful when implementing new features to verify the server starts correctly without needing to manually terminate the process.
+
 ### Common Commands
 - Check warnings: `cargo build 2>&1 | grep warning`
 - Run with debug logging: `RUST_LOG=debug cargo run`
+- Test startup and shutdown: `cargo run -- --quit-after 5`
 
 ### Testing URLs
 - Gallery root: `http://localhost:8080/gallery`
@@ -177,6 +203,9 @@ cargo run -- --host 0.0.0.0 --port 8080
 - Prefer editing existing files over creating new ones
 - Always handle errors appropriately
 - Use proper Rust idioms (match, if let, etc.)
+- **Always use `thiserror` crate for error types** - Define errors with `#[derive(Error)]` and `#[error("...")]` attributes
+- **Always run `cargo fmt` before finalizing code** - Ensure consistent formatting across the codebase
+- **Always run `cargo clippy` and fix warnings** - Ensure code follows Rust best practices and catches common mistakes
 
 ## Useful Patterns
 

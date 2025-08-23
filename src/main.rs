@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use tenrankai::{Config, create_app, gallery::Gallery};
+use tenrankai::{Config, create_app, gallery::Gallery, startup_checks};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -20,6 +20,10 @@ struct Args {
 
     #[arg(short, long, default_value = "info")]
     log_level: String,
+
+    /// Automatically quit after specified number of seconds (useful for testing)
+    #[arg(long)]
+    quit_after: Option<u64>,
 }
 
 #[tokio::main]
@@ -66,6 +70,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Gallery cache directory: {:?}",
         config.gallery.cache_directory
     );
+
+    // Perform startup checks
+    match startup_checks::perform_startup_checks(&config).await {
+        Ok(()) => info!("All startup checks passed"),
+        Err(errors) => {
+            for error in &errors {
+                tracing::error!("Startup check failed: {}", error);
+            }
+            // Decide whether to continue or exit based on severity
+            // For now, we'll continue with warnings for non-critical errors
+            let critical_error = errors.iter().any(|e| {
+                matches!(
+                    e,
+                    startup_checks::StartupCheckError::GallerySourceDirectoryMissing
+                        | startup_checks::StartupCheckError::CacheDirectoryCreationFailed(_)
+                )
+            });
+
+            if critical_error {
+                tracing::error!("Critical startup check failed, exiting");
+                return Err("Critical startup check failed".into());
+            } else {
+                tracing::warn!("Non-critical startup checks failed, continuing");
+            }
+        }
+    }
 
     let app = create_app(config.clone()).await;
 
@@ -118,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up graceful shutdown
     let server = axum::serve(listener, app);
-    let graceful = server.with_graceful_shutdown(shutdown_signal());
+    let graceful = server.with_graceful_shutdown(shutdown_signal(args.quit_after));
 
     // Start the server
     if let Err(e) = graceful.await {
@@ -136,8 +166,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(quit_after: Option<u64>) {
     use tokio::signal;
+    use tokio::time::{Duration, sleep};
 
     let ctrl_c = async {
         signal::ctrl_c()
@@ -156,10 +187,26 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
-    }
+    let quit_timer = async {
+        if let Some(seconds) = quit_after {
+            info!(
+                "Server will automatically shut down after {} seconds",
+                seconds
+            );
+            sleep(Duration::from_secs(seconds)).await;
+            info!("Quit timer expired, shutting down");
+        } else {
+            std::future::pending::<()>().await
+        }
+    };
 
-    info!("Shutdown signal received");
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Shutdown signal received (Ctrl+C)");
+        },
+        _ = terminate => {
+            info!("Shutdown signal received (SIGTERM)");
+        },
+        _ = quit_timer => {},
+    }
 }

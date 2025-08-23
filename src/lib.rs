@@ -7,6 +7,7 @@ pub mod copyright;
 pub mod favicon;
 pub mod gallery;
 pub mod robots;
+pub mod startup_checks;
 pub mod static_files;
 pub mod templating;
 
