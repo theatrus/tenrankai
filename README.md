@@ -1,5 +1,9 @@
 # Tenrankai
 
+[![CI](https://github.com/yourusername/tenrankai/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/tenrankai/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/yourusername/tenrankai/actions/workflows/security.yml/badge.svg)](https://github.com/yourusername/tenrankai/actions/workflows/security.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 A high-performance web-based photo gallery server written in Rust using the Axum web framework. Tenrankai provides a responsive gallery interface with automatic image resizing, metadata extraction, and intelligent caching.
 
 The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show", reflecting the project's purpose as a platform for displaying photographic collections.

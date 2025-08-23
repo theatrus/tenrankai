@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+  build-release:
+    name: Build Release
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          target: x86_64-unknown-linux-gnu
+          archive-name: tenrankai-linux-x86_64.tar.gz
+        - build: macos
+          os: macos-latest
+          rust: stable
+          target: x86_64-apple-darwin
+          archive-name: tenrankai-macos-x86_64.tar.gz
+        - build: macos-m1
+          os: macos-latest
+          rust: stable
+          target: aarch64-apple-darwin
+          archive-name: tenrankai-macos-aarch64.tar.gz
+        - build: windows
+          os: windows-latest
+          rust: stable
+          target: x86_64-pc-windows-msvc
+          archive-name: tenrankai-windows-x86_64.zip
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ matrix.rust }}
+        target: ${{ matrix.target }}
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Create archive (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        mkdir archive
+        cp target/${{ matrix.target }}/release/tenrankai archive/
+        cp README.md LICENSE archive/
+        tar -czf ${{ matrix.archive-name }} -C archive .
+      
+    - name: Create archive (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Force -Path archive
+        Copy-Item -Path "target\${{ matrix.target }}\release\tenrankai.exe" -Destination "archive\"
+        Copy-Item -Path "README.md", "LICENSE" -Destination "archive\"
+        Compress-Archive -Path "archive\*" -DestinationPath "${{ matrix.archive-name }}"
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./${{ matrix.archive-name }}
+        asset_name: ${{ matrix.archive-name }}
+        asset_content_type: application/octet-stream
