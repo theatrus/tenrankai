@@ -9,8 +9,6 @@ updates:
       day: "monday"
       time: "04:00"
     open-pull-requests-limit: 10
-    reviewers:
-      - "atrus" # Replace with your GitHub username
     labels:
       - "dependencies"
       - "rust"
@@ -27,11 +25,6 @@ updates:
           - "minor"
           - "patch"
     # But keep major updates separate
-    ignore:
-      # Add any dependencies you want to manually control
-      # - dependency-name: "example"
-      #   versions: ["1.x", "2.x"]
-
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -40,8 +33,6 @@ updates:
       day: "monday"
       time: "04:00"
     open-pull-requests-limit: 5
-    reviewers:
-      - "atrus" # Replace with your GitHub username
     labels:
       - "dependencies"
       - "github-actions"
