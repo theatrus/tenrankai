@@ -541,7 +541,11 @@ impl Gallery {
         self.build_breadcrumbs_with_mode(path, false).await
     }
 
-    pub async fn build_breadcrumbs_with_mode(&self, path: &str, all_clickable: bool) -> Vec<BreadcrumbItem> {
+    pub async fn build_breadcrumbs_with_mode(
+        &self,
+        path: &str,
+        all_clickable: bool,
+    ) -> Vec<BreadcrumbItem> {
         let mut breadcrumbs = vec![BreadcrumbItem {
             name: "Gallery".to_string(),
             display_name: "Gallery".to_string(),

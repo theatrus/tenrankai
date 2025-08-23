@@ -130,7 +130,11 @@ impl Default for Config {
     }
 }
 
-use axum::{Router, extract::{Path, State}, response::IntoResponse};
+use axum::{
+    Router,
+    extract::{Path, State},
+    response::IntoResponse,
+};
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
@@ -220,10 +224,7 @@ pub async fn create_app(config: Config) -> Router {
             "/favicon-48x48.png",
             axum::routing::get(favicon::favicon_png_48_handler),
         )
-        .route(
-            "/static/{*path}",
-            axum::routing::get(static_file_handler),
-        )
+        .route("/static/{*path}", axum::routing::get(static_file_handler))
         .route(
             "/{*path}",
             axum::routing::get(templating::template_with_gallery_handler),
@@ -257,7 +258,7 @@ pub async fn create_app(config: Config) -> Router {
                         .get("referer")
                         .and_then(|h| h.to_str().ok())
                         .unwrap_or("-");
-                    
+
                     tracing::info!(
                         target: "access_log",
                         method = %method,
@@ -268,22 +269,26 @@ pub async fn create_app(config: Config) -> Router {
                         "request"
                     );
                 })
-                .on_response(|response: &axum::http::Response<_>, latency: std::time::Duration, _span: &tracing::Span| {
-                    let status = response.status();
-                    let size = response
-                        .headers()
-                        .get("content-length")
-                        .and_then(|h| h.to_str().ok())
-                        .unwrap_or("-");
-                    
-                    tracing::info!(
-                        target: "access_log",
-                        status = %status,
-                        size = %size,
-                        latency_ms = %latency.as_millis(),
-                        "response"
-                    );
-                }),
+                .on_response(
+                    |response: &axum::http::Response<_>,
+                     latency: std::time::Duration,
+                     _span: &tracing::Span| {
+                        let status = response.status();
+                        let size = response
+                            .headers()
+                            .get("content-length")
+                            .and_then(|h| h.to_str().ok())
+                            .unwrap_or("-");
+
+                        tracing::info!(
+                            target: "access_log",
+                            status = %status,
+                            size = %size,
+                            latency_ms = %latency.as_millis(),
+                            "response"
+                        );
+                    },
+                ),
         )
         .with_state(app_state)
 }

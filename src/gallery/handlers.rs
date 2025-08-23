@@ -74,13 +74,16 @@ pub async fn gallery_handler(
         };
         (
             Some(format!("{}{}", base_url, composite_path)),
-            Some((1210, 1210)) // 2x2 grid of 600px images + padding
+            Some((1210, 1210)), // 2x2 grid of 600px images + padding
         )
     } else if let Some(first_img) = images.first() {
         // Use single image for single image galleries
         (
-            first_img.gallery_url.clone().map(|url| format!("{}{}", base_url, url)),
-            first_img.dimensions
+            first_img
+                .gallery_url
+                .clone()
+                .map(|url| format!("{}{}", base_url, url)),
+            first_img.dimensions,
         )
     } else {
         (None, None)
@@ -99,7 +102,9 @@ pub async fn gallery_handler(
             "Gallery".to_string()
         } else {
             // Use the last part of the path as a display name
-            path.split('/').last().unwrap_or(&path)
+            path.split('/')
+                .last()
+                .unwrap_or(&path)
                 .replace('-', " ")
                 .replace('_', " ")
                 .split_whitespace()
@@ -114,7 +119,7 @@ pub async fn gallery_handler(
                 .join(" ")
         }
     });
-    
+
     // Create a better description including folder count info
     let og_description = if let Some(desc) = &folder_description {
         // Strip HTML tags from description for OpenGraph
@@ -135,7 +140,10 @@ pub async fn gallery_handler(
         let folder_count = directories.len();
         let image_count = images.len();
         if folder_count > 0 && image_count > 0 {
-            format!("Browse {} folders and {} images in this gallery", folder_count, image_count)
+            format!(
+                "Browse {} folders and {} images in this gallery",
+                folder_count, image_count
+            )
         } else if folder_count > 0 {
             format!("Browse {} folders in this gallery", folder_count)
         } else if image_count > 0 {

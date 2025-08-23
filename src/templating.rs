@@ -200,7 +200,7 @@ pub async fn template_with_gallery_handler(
         } else {
             &path
         };
-        
+
         let static_file_path = app_state.static_handler.static_dir.join(check_path);
         if static_file_path.exists()
             && static_file_path.starts_with(&app_state.static_handler.static_dir)

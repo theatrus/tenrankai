@@ -243,6 +243,15 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Includes comprehensive unit tests with tempfile for testing
    - Handles missing images gracefully
 
+3. **Composite Caching**:
+   - Composite images are cached in the gallery cache system
+   - Cache key format: `composite_{path}_composite_jpg` (slashes replaced with underscores)
+   - Automatically creates cache directories if they don't exist
+   - Served from cache if available, generated on demand if not
+   - Stored as JPEG with configurable quality
+   - Integrated with the existing image cache infrastructure
+   - Includes comprehensive tests for cache storage and retrieval
+
 3. **Gallery OpenGraph Integration**:
    - Gallery pages now use composite preview when 2+ images available
    - Single image galleries use the single image as preview

@@ -6,6 +6,7 @@ pub enum GalleryError {
     ImageError(image::ImageError),
     SerdeError(serde_json::Error),
     InvalidPath,
+    NotFound,
 }
 
 impl fmt::Display for GalleryError {
@@ -15,6 +16,7 @@ impl fmt::Display for GalleryError {
             GalleryError::ImageError(e) => write!(f, "Image error: {}", e),
             GalleryError::SerdeError(e) => write!(f, "Serialization error: {}", e),
             GalleryError::InvalidPath => write!(f, "Invalid path"),
+            GalleryError::NotFound => write!(f, "Not found"),
         }
     }
 }

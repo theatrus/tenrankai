@@ -1,14 +1,12 @@
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode, header::{SET_COOKIE, CONTENT_TYPE}},
+    http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::{IntoResponse, Json, Response},
-    body::Body,
 };
 use base64::{Engine, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::io::Cursor;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -154,14 +152,32 @@ pub async fn gallery_composite_preview_handler(
     Path(path): Path<String>,
 ) -> Result<Response, StatusCode> {
     // Handle special case for root gallery
-    let gallery_path = if path == "_root" {
-        String::new()
-    } else {
-        path
-    };
-    
+    let gallery_path = if path == "_root" { String::new() } else { path };
+
+    // Generate a cache key for the composite (use underscores to avoid subdirectories)
+    let safe_path = gallery_path.replace('/', "_");
+    let composite_cache_key = format!(
+        "composite_{}",
+        if gallery_path.is_empty() {
+            "root"
+        } else {
+            &safe_path
+        }
+    );
+
+    // Try to serve from cache first
+    if let Ok(cached_response) = app_state
+        .gallery
+        .serve_cached_image(&composite_cache_key, "composite", "")
+        .await
+    {
+        return Ok(cached_response);
+    }
+
+    // Not in cache, need to generate it
     // List directory to get images
-    let (_, images, _) = app_state.gallery
+    let (_, images, _) = app_state
+        .gallery
         .list_directory(&gallery_path, 0)
         .await
         .map_err(|e| {
@@ -171,7 +187,7 @@ pub async fn gallery_composite_preview_handler(
 
     // Take up to 4 images for a 2x2 grid
     let preview_images: Vec<_> = images.into_iter().take(4).collect();
-    
+
     if preview_images.is_empty() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -180,36 +196,25 @@ pub async fn gallery_composite_preview_handler(
     let source_dir = app_state.gallery.source_directory().to_path_buf();
     let composite_result = tokio::task::spawn_blocking(move || {
         crate::composite::create_composite_preview(source_dir, preview_images)
-    }).await
-        .map_err(|e| {
-            tracing::error!("Failed to spawn blocking task: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to spawn blocking task: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let composite_image = composite_result.map_err(|e| {
         tracing::error!("Failed to create composite preview: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Convert to RGB (JPEG doesn't support alpha channel)
-    let rgb_image = composite_image.to_rgb8();
-
-    // Convert to JPEG
-    let mut buffer = Vec::new();
-    let mut cursor = Cursor::new(&mut buffer);
-    image::DynamicImage::ImageRgb8(rgb_image)
-        .write_to(&mut cursor, image::ImageFormat::Jpeg)
+    // Store in cache and serve
+    app_state
+        .gallery
+        .store_and_serve_composite(&composite_cache_key, composite_image)
+        .await
         .map_err(|e| {
-            tracing::error!("Failed to encode composite image: {}", e);
+            tracing::error!("Failed to store composite in cache: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    // Return the image
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(CONTENT_TYPE, "image/jpeg")
-        .header("Cache-Control", "public, max-age=3600")
-        .body(Body::from(buffer))
-        .unwrap())
+        })
 }
-
