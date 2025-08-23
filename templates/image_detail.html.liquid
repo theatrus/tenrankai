@@ -38,8 +38,16 @@
 
     <div class="image-detail-content">
         <div class="image-main">
-            <div class="image-container">
-                <img src="{{ image.medium_url }}" srcset="{{ image.medium_url }} 1x, {{ image.medium_url | replace: '?size=medium', '?size=medium@2x' }} 2x" alt="{{ image.name }}" id="main-image">
+            <div class="image-container" {% if image.dimensions %}style="aspect-ratio: {{ image.dimensions[0] }} / {{ image.dimensions[1] }};"{% endif %}>
+                <img src="{{ image.medium_url }}" 
+                     srcset="{{ image.medium_url }} 1x, {{ image.medium_url | replace: '?size=medium', '?size=medium@2x' }} 2x" 
+                     alt="{{ image.name }}" 
+                     id="main-image"
+                     {% if image.dimensions %}
+                     width="{{ image.dimensions[0] }}"
+                     height="{{ image.dimensions[1] }}"
+                     {% endif %}
+                     loading="eager">
             </div>
             
             <!-- Image Navigation Bar -->
@@ -245,15 +253,51 @@ body {
 
 .image-container {
     display: inline-block;
-    max-width: 100%;
+    width: 100%;
+    max-width: 1200px; /* Medium size max width */
+    position: relative;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 .image-container img {
-    max-width: 100%;
-    height: auto;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
     border-radius: 0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     display: block;
+    transition: opacity 0.3s ease;
+}
+
+/* Loading state */
+.image-container::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border: 3px solid #666;
+    border-top-color: #e0e0e0;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.image-container.loading::before {
+    opacity: 1;
+}
+
+.image-container.loading img {
+    opacity: 0;
+}
+
+@keyframes spin {
+    to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 .image-navigation {
@@ -513,6 +557,23 @@ dd {
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const mainImage = document.getElementById('main-image');
+    const imageContainer = mainImage.closest('.image-container');
+    
+    // Add loading class initially
+    imageContainer.classList.add('loading');
+    
+    // Remove loading class when image is loaded
+    if (mainImage.complete && mainImage.naturalHeight !== 0) {
+        imageContainer.classList.remove('loading');
+    } else {
+        mainImage.addEventListener('load', function() {
+            imageContainer.classList.remove('loading');
+        });
+        
+        mainImage.addEventListener('error', function() {
+            imageContainer.classList.remove('loading');
+        });
+    }
     
     // Check download permission via API and populate buttons
     async function checkDownloadPermission() {
