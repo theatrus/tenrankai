@@ -56,6 +56,7 @@ impl Gallery {
                     item_count: Some(item_count),
                     dimensions: None,
                     capture_date: None,
+                    is_new: false,
                 });
             } else if self.is_image(&file_name) {
                 // Found image
@@ -70,19 +71,29 @@ impl Gallery {
                 );
 
                 // Get metadata from cache if available
-                let (dimensions, capture_date) = {
+                let (dimensions, capture_date, modification_date) = {
                     let cache = self.metadata_cache.read().await;
                     if let Some(metadata) = cache.get(&item_path) {
-                        (Some(metadata.dimensions), metadata.capture_date)
+                        (
+                            Some(metadata.dimensions),
+                            metadata.capture_date,
+                            metadata.modification_date,
+                        )
                     } else {
                         // If not in cache, try to extract it now
                         drop(cache);
                         match self.get_image_metadata_cached(&item_path).await {
-                            Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
-                            Err(_) => (None, None),
+                            Ok(metadata) => (
+                                Some(metadata.dimensions),
+                                metadata.capture_date,
+                                metadata.modification_date,
+                            ),
+                            Err(_) => (None, None, None),
                         }
                     }
                 };
+
+                let is_new = self.is_new(modification_date);
 
                 items.push(GalleryItem {
                     name: file_name,
@@ -97,6 +108,7 @@ impl Gallery {
                     item_count: None,
                     dimensions,
                     capture_date,
+                    is_new,
                 });
             }
         }
@@ -261,6 +273,8 @@ impl Gallery {
             }
         });
 
+        let is_new = self.is_new(cached_metadata.modification_date);
+
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
                 .file_name()
@@ -287,6 +301,7 @@ impl Gallery {
             file_size,
             dimensions,
             capture_date,
+            is_new,
         })
     }
 
@@ -383,6 +398,7 @@ impl Gallery {
                     camera_info: metadata.camera_info.clone(),
                     location_info: metadata.location_info.clone(),
                     file_size: file_metadata.len(),
+                    modification_date: metadata.modification_date,
                 });
             }
         }
@@ -405,6 +421,7 @@ impl Gallery {
             camera_info: metadata.camera_info,
             location_info: metadata.location_info,
             file_size,
+            modification_date: metadata.modification_date,
         })
     }
 
@@ -491,19 +508,29 @@ impl Gallery {
                     .await?;
                 } else if self.is_image(&file_name) && folder_items.len() < max_per_folder {
                     // Get metadata from cache if available
-                    let (dimensions, capture_date) = {
+                    let (dimensions, capture_date, modification_date) = {
                         let cache = self.metadata_cache.read().await;
                         if let Some(metadata) = cache.get(&item_path) {
-                            (Some(metadata.dimensions), metadata.capture_date)
+                            (
+                                Some(metadata.dimensions),
+                                metadata.capture_date,
+                                metadata.modification_date,
+                            )
                         } else {
                             // If not in cache, try to extract it now
                             drop(cache);
                             match self.get_image_metadata_cached(&item_path).await {
-                                Ok(metadata) => (Some(metadata.dimensions), metadata.capture_date),
-                                Err(_) => (None, None),
+                                Ok(metadata) => (
+                                    Some(metadata.dimensions),
+                                    metadata.capture_date,
+                                    metadata.modification_date,
+                                ),
+                                Err(_) => (None, None, None),
                             }
                         }
                     };
+
+                    let is_new = self.is_new(modification_date);
 
                     let encoded_path = urlencoding::encode(&item_path);
                     let thumbnail_url = format!(
@@ -528,6 +555,7 @@ impl Gallery {
                         item_count: None,
                         dimensions,
                         capture_date,
+                        is_new,
                     });
                 }
             }
@@ -587,6 +615,7 @@ pub(crate) struct ImageMetadataWithSize {
     pub camera_info: Option<super::CameraInfo>,
     pub location_info: Option<super::LocationInfo>,
     pub file_size: u64,
+    pub modification_date: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -87,7 +87,7 @@
         
         const link = document.createElement('a');
         link.href = '/gallery/' + image.parent_path + '#' + cleanName;
-        link.className = 'preview-item image-preview-item';
+        link.className = 'preview-item image-preview-item' + (image.is_new ? ' is-new' : '');
         link.style.width = displayDimensions.width + 'px';
         link.style.display = 'inline-block';
         // Add data attribute for reliable identification during replacement

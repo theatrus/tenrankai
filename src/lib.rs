@@ -64,6 +64,8 @@ pub struct GalleryConfig {
     pub webp_quality: Option<f32>,
     #[serde(default)]
     pub pregenerate_cache: bool,
+    /// Number of days to consider an image as "new" (based on file modification date)
+    pub new_threshold_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -130,6 +132,7 @@ impl Default for Config {
                 jpeg_quality: Some(85),
                 webp_quality: Some(85.0),
                 pregenerate_cache: false,
+                new_threshold_days: None,
             },
         }
     }

@@ -163,7 +163,7 @@
             .replace(/_/g, '');
         
         const itemDiv = document.createElement('div');
-        itemDiv.className = 'image-item';
+        itemDiv.className = 'image-item' + (image.is_new ? ' is-new' : '');
         itemDiv.id = cleanName;
         itemDiv.setAttribute('data-path', image.path);
         itemDiv.style.width = displayDimensions.width + 'px';

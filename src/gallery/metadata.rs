@@ -202,9 +202,29 @@ impl Gallery {
     }
 
     fn parse_gps_coordinate(&self, coord_str: &str) -> Result<f64, String> {
-        // GPS coordinates in EXIF are typically in the format: "51 deg 30' 45.60\""
-        let parts: Vec<&str> = coord_str.split_whitespace().collect();
+        // GPS coordinates can be in various formats:
+        // Format 1: "51 deg 30' 45.60\""
+        // Format 2: "34°39.0643' N"
 
+        // Remove direction indicators (N, S, E, W) for parsing
+        let cleaned = coord_str.trim_end_matches(|c: char| c.is_alphabetic() || c.is_whitespace());
+
+        // Try format with degree symbol (°)
+        if cleaned.contains('°') {
+            let parts: Vec<&str> = cleaned.split('°').collect();
+            if parts.len() == 2 {
+                let degrees = parts[0]
+                    .trim()
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid degrees")?;
+                let minutes_str = parts[1].trim_end_matches('\'').trim();
+                let minutes = minutes_str.parse::<f64>().map_err(|_| "Invalid minutes")?;
+                return Ok(degrees + minutes / 60.0);
+            }
+        }
+
+        // Try original format with "deg"
+        let parts: Vec<&str> = coord_str.split_whitespace().collect();
         if parts.len() >= 6 {
             let degrees = parts[0].parse::<f64>().map_err(|_| "Invalid degrees")?;
             let minutes = parts[2]
@@ -218,7 +238,7 @@ impl Gallery {
 
             Ok(degrees + minutes / 60.0 + seconds / 3600.0)
         } else {
-            Err("Invalid GPS coordinate format".to_string())
+            Err(format!("Invalid GPS coordinate format: {}", coord_str))
         }
     }
 
@@ -347,11 +367,18 @@ impl Gallery {
         // Extract EXIF data
         let (capture_date, camera_info, location_info) = self.extract_all_exif_data(path).await;
 
+        // Get file modification date
+        let modification_date = tokio::fs::metadata(path)
+            .await
+            .ok()
+            .and_then(|m| m.modified().ok());
+
         Ok(ImageMetadata {
             dimensions,
             capture_date,
             camera_info,
             location_info,
+            modification_date,
         })
     }
 
@@ -389,6 +416,152 @@ impl Gallery {
                 self.metadata_updates_since_save.store(0, Ordering::Relaxed);
                 debug!("Saved metadata cache after {} updates", updates);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn test_location_extraction_a7c5795() {
+        // Create a test gallery instance
+        let gallery_config = crate::GalleryConfig {
+            path_prefix: "gallery".to_string(),
+            source_directory: PathBuf::from("photos"),
+            cache_directory: PathBuf::from("test_cache"),
+            images_per_page: 50,
+            thumbnail: crate::ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: crate::ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: crate::ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: crate::ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            preview: crate::PreviewConfig {
+                max_images: 6,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: Some(60),
+            jpeg_quality: Some(85),
+            webp_quality: Some(85.0),
+            pregenerate_cache: false,
+            new_threshold_days: None,
+        };
+
+        let app_config = crate::AppConfig {
+            name: "Test".to_string(),
+            log_level: "info".to_string(),
+            download_secret: "test".to_string(),
+            download_password: "test".to_string(),
+            copyright_holder: None,
+            base_url: None,
+        };
+
+        let gallery = Gallery::new(gallery_config, app_config);
+
+        // Test the specific image
+        let image_path = PathBuf::from("photos/landscapes/_A7C5795.jpg");
+
+        // First check if file exists
+        if !image_path.exists() {
+            println!("Working directory: {:?}", std::env::current_dir().unwrap());
+            println!("Looking for file at: {:?}", image_path);
+            panic!("Test image file not found");
+        }
+
+        // Extract EXIF data
+        println!("Extracting EXIF data from: {:?}", image_path);
+
+        // Try parsing with rexif directly to debug
+        match rexif::parse_file(&image_path) {
+            Ok(exif_data) => {
+                println!("Successfully parsed EXIF data");
+                println!("Number of EXIF entries: {}", exif_data.entries.len());
+
+                // Look for GPS tags
+                for entry in &exif_data.entries {
+                    if entry.tag.to_string().contains("GPS") {
+                        println!("GPS Tag: {:?} = {:?}", entry.tag, entry.value_more_readable);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Failed to parse EXIF data: {}", e);
+            }
+        }
+
+        let (_capture_date, camera_info, location_info) =
+            gallery.extract_all_exif_data(&image_path).await;
+
+        // Verify GPS coordinates were extracted
+        assert!(
+            location_info.is_some(),
+            "Location info should be extracted from _A7C5795.jpg"
+        );
+
+        if let Some(location) = location_info {
+            // Print the extracted coordinates for verification
+            println!("Extracted GPS coordinates:");
+            println!("  Latitude: {}", location.latitude);
+            println!("  Longitude: {}", location.longitude);
+            println!("  Google Maps URL: {}", location.google_maps_url);
+            println!("  Apple Maps URL: {}", location.apple_maps_url);
+
+            // Basic sanity checks for coordinates
+            assert!(
+                location.latitude >= -90.0 && location.latitude <= 90.0,
+                "Latitude should be between -90 and 90"
+            );
+            assert!(
+                location.longitude >= -180.0 && location.longitude <= 180.0,
+                "Longitude should be between -180 and 180"
+            );
+
+            // Check that map URLs are properly formatted
+            assert!(
+                location
+                    .google_maps_url
+                    .contains(&location.latitude.to_string())
+            );
+            assert!(
+                location
+                    .google_maps_url
+                    .contains(&location.longitude.to_string())
+            );
+            assert!(
+                location
+                    .apple_maps_url
+                    .contains(&location.latitude.to_string())
+            );
+            assert!(
+                location
+                    .apple_maps_url
+                    .contains(&location.longitude.to_string())
+            );
+        }
+
+        // Also check camera info was extracted
+        if let Some(camera) = camera_info {
+            println!("\nExtracted camera info:");
+            println!("  Make: {:?}", camera.camera_make);
+            println!("  Model: {:?}", camera.camera_model);
+            println!("  ISO: {:?}", camera.iso);
+            println!("  Aperture: {:?}", camera.aperture);
+            println!("  Shutter Speed: {:?}", camera.shutter_speed);
+            println!("  Focal Length: {:?}", camera.focal_length);
         }
     }
 }

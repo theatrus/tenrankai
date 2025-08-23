@@ -18,6 +18,7 @@ This is especially useful for verifying startup behavior, testing API endpoints,
 - **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection based on background
 - **Performance Optimization**: Metadata caching, image caching, and background refresh
 - **Markdown Support**: Folder descriptions and image captions via markdown files
+- **New Image Highlighting**: Automatic highlighting of recently modified images based on configurable threshold
 
 ## Project Structure
 
@@ -115,6 +116,10 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 # Image quality settings
 jpeg_quality = 85        # JPEG quality (1-100)
 webp_quality = 85.0      # WebP quality (0.0-100.0)
+
+# New image highlighting
+new_threshold_days = 7   # Images modified within 7 days are marked as "NEW"
+                        # Remove or comment out to disable the feature
 ```
 
 ### Environment Variables

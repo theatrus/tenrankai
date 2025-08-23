@@ -90,6 +90,7 @@ mod tests {
             item_count: None,
             dimensions: Some((800, 600)),
             capture_date: None,
+            is_new: false,
         }
     }
 

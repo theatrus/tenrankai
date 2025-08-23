@@ -71,6 +71,21 @@ impl Gallery {
         self.metadata_cache.read().await.is_empty()
     }
 
+    pub(crate) fn is_new(&self, modification_date: Option<SystemTime>) -> bool {
+        match (self.config.new_threshold_days, modification_date) {
+            (Some(days), Some(mod_date)) => {
+                if let Ok(elapsed) = SystemTime::now().duration_since(mod_date) {
+                    let seconds_in_day = 86400;
+                    let threshold_seconds = days as u64 * seconds_in_day;
+                    elapsed.as_secs() <= threshold_seconds
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
     pub async fn refresh_metadata_and_pregenerate_cache(
         self: Arc<Self>,
         pregenerate: bool,
