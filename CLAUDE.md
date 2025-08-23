@@ -19,6 +19,7 @@ DynServer is a web-based photo gallery server written in Rust using the Axum web
 - `src/api.rs` - API endpoints for health checks and authentication
 - `src/templating.rs` - Liquid template engine integration
 - `src/copyright.rs` - Watermarking functionality with intelligent text color selection
+- `src/composite.rs` - Composite image generation for OpenGraph previews
 
 ### Gallery Module (`src/gallery/`)
 The gallery functionality was recently refactored from a single 3000-line file into organized submodules:
@@ -226,6 +227,43 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
     // Cache has unsaved changes
 }
 ```
+
+## Recent Major Changes (August 2025)
+
+### OpenGraph Composite Image Preview
+1. **New API Endpoint**: `/api/gallery/composite/{path}`
+   - Generates a 2x2 grid composite image for OpenGraph previews
+   - Creates a 1210x1210px image with 4 gallery images
+   - Use `_root` as path for the root gallery
+   - Returns JPEG with 1-hour cache header
+
+2. **Composite Module** (`src/composite.rs`):
+   - `create_composite_preview()` - Creates 2x2 grid from gallery images
+   - `add_border()` - Adds colored border around images
+   - Includes comprehensive unit tests with tempfile for testing
+   - Handles missing images gracefully
+
+3. **Gallery OpenGraph Integration**:
+   - Gallery pages now use composite preview when 2+ images available
+   - Single image galleries use the single image as preview
+   - Proper dimensions included for optimal social media display
+   - Automatic fallback to single image or no image
+
+4. **Static File Serving Fix**:
+   - Added dedicated `/static/*` route
+   - Fixed path handling in template fallback
+   - Properly strips `/static/` prefix when checking files
+
+4. **Access Logging**:
+   - Re-added HTTP access logging using tower-http TraceLayer
+   - Logs method, path, query, user agent, referer
+   - Logs response status, size, and latency
+   - Uses `access_log` target for easy filtering
+
+5. **Breadcrumb Improvements**:
+   - All breadcrumb links now clickable on both gallery and image detail pages
+   - Added `build_breadcrumbs_with_mode` method with `all_clickable` parameter
+   - Consistent navigation experience across all pages
 
 ## Recent Major Changes (August 2025)
 

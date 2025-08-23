@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub mod api;
+pub mod composite;
 pub mod copyright;
 pub mod favicon;
 pub mod gallery;
@@ -198,6 +199,10 @@ pub async fn create_app(config: Config) -> Router {
         .route(
             "/api/gallery/preview",
             axum::routing::get(api::gallery_preview_handler),
+        )
+        .route(
+            "/api/gallery/composite/{*path}",
+            axum::routing::get(api::gallery_composite_preview_handler),
         )
         .route(
             "/favicon.ico",

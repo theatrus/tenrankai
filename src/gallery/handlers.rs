@@ -64,12 +64,27 @@ pub async fn gallery_handler(
         .as_deref()
         .unwrap_or("https://theatr.us");
 
-    // Prepare OpenGraph image - use first image if available
-    let og_image = images.first().and_then(|img| {
-        img.gallery_url.clone().map(|url| format!("{}{}", base_url, url))
-    });
-    
-    let og_image_dimensions = images.first().and_then(|img| img.dimensions);
+    // Prepare OpenGraph image - use composite if multiple images, otherwise use first image
+    let (og_image, og_image_dimensions) = if images.len() >= 2 {
+        // Use composite preview for multiple images
+        let composite_path = if path.is_empty() {
+            "/api/gallery/composite/_root"
+        } else {
+            &format!("/api/gallery/composite/{}", path)
+        };
+        (
+            Some(format!("{}{}", base_url, composite_path)),
+            Some((1210, 1210)) // 2x2 grid of 600px images + padding
+        )
+    } else if let Some(first_img) = images.first() {
+        // Use single image for single image galleries
+        (
+            first_img.gallery_url.clone().map(|url| format!("{}{}", base_url, url)),
+            first_img.dimensions
+        )
+    } else {
+        (None, None)
+    };
 
     // Build OpenGraph URL for this gallery page
     let og_url = if path.is_empty() {

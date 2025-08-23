@@ -63,4 +63,8 @@ impl Gallery {
             || lower.ends_with(".webp")
             || lower.ends_with(".bmp")
     }
+    
+    pub fn source_directory(&self) -> &std::path::Path {
+        &self.config.source_directory
+    }
 }
