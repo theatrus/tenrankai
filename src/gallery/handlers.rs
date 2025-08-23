@@ -56,6 +56,58 @@ pub async fn gallery_handler(
     // Build breadcrumb data - all items should be clickable in gallery view
     let breadcrumbs = gallery.build_breadcrumbs_with_mode(&path, true).await;
 
+    // Get base URL from config or use default
+    let base_url = app_state
+        .config
+        .app
+        .base_url
+        .as_deref()
+        .unwrap_or("https://theatr.us");
+
+    // Prepare OpenGraph image - use first image if available
+    let og_image = images.first().and_then(|img| {
+        img.gallery_url.clone().map(|url| format!("{}{}", base_url, url))
+    });
+    
+    let og_image_dimensions = images.first().and_then(|img| img.dimensions);
+
+    // Build OpenGraph URL for this gallery page
+    let og_url = if path.is_empty() {
+        format!("{}/gallery", base_url)
+    } else {
+        format!("{}/gallery/{}", base_url, path)
+    };
+
+    // Create a better description including folder count info
+    let og_description = if let Some(desc) = &folder_description {
+        // Strip HTML tags from description for OpenGraph
+        let stripped = desc
+            .replace("<p>", "")
+            .replace("</p>", " ")
+            .replace("<br>", " ")
+            .replace("<br/>", " ")
+            .replace("<br />", " ")
+            .chars()
+            .filter(|&c| c != '<' && c != '>')
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        stripped
+    } else {
+        let folder_count = directories.len();
+        let image_count = images.len();
+        if folder_count > 0 && image_count > 0 {
+            format!("Browse {} folders and {} images in this gallery", folder_count, image_count)
+        } else if folder_count > 0 {
+            format!("Browse {} folders in this gallery", folder_count)
+        } else if image_count > 0 {
+            format!("Browse {} images in this gallery", image_count)
+        } else {
+            "Browse the photo gallery".to_string()
+        }
+    };
+
     let globals = liquid::object!({
         "items": items,
         "images": images,
@@ -71,6 +123,19 @@ pub async fn gallery_handler(
         "folder_title": folder_title,
         "folder_description": folder_description,
         "breadcrumbs": breadcrumbs,
+        // OpenGraph meta tags
+        "og_title": folder_title.clone().unwrap_or_else(|| "Gallery".to_string()),
+        "og_description": og_description,
+        "og_image": og_image,
+        "og_image_width": og_image_dimensions.map(|(w, _)| w),
+        "og_image_height": og_image_dimensions.map(|(_, h)| h),
+        "og_url": og_url,
+        "og_type": "website",
+        // Twitter card
+        "twitter_card_type": "summary_large_image",
+        "twitter_title": folder_title.clone().unwrap_or_else(|| "Gallery".to_string()),
+        "twitter_description": og_description,
+        "twitter_image": og_image,
     });
 
     match template_engine
