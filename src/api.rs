@@ -191,10 +191,13 @@ pub async fn gallery_composite_preview_handler(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Convert to RGB (JPEG doesn't support alpha channel)
+    let rgb_image = composite_image.to_rgb8();
+
     // Convert to JPEG
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
-    composite_image
+    image::DynamicImage::ImageRgb8(rgb_image)
         .write_to(&mut cursor, image::ImageFormat::Jpeg)
         .map_err(|e| {
             tracing::error!("Failed to encode composite image: {}", e);

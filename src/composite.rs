@@ -44,7 +44,9 @@ pub fn create_composite_preview(
     // Add a subtle border
     let bordered = add_border(&composite, 2, Rgba([200u8, 200u8, 200u8, 255u8]));
     
-    Ok(DynamicImage::ImageRgba8(bordered))
+    // Convert to RGB for better compatibility (JPEG doesn't support alpha)
+    let rgb_image = DynamicImage::ImageRgba8(bordered).to_rgb8();
+    Ok(DynamicImage::ImageRgb8(rgb_image))
 }
 
 /// Adds a border around an image with the specified width and color
