@@ -2,7 +2,7 @@ use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::path::Path;
 use std::time::SystemTime;
-use tracing::{debug, info, trace};
+use tracing::{debug, error, info, trace};
 
 impl Gallery {
     pub(crate) async fn extract_all_exif_data(
@@ -228,6 +228,60 @@ impl Gallery {
         }
     }
 
+    pub async fn refresh_single_image_metadata(&self, relative_path: &str) -> Result<(), super::GalleryError> {
+        let full_path = self.config.source_directory.join(relative_path);
+        
+        if !full_path.exists() {
+            // If image doesn't exist, remove from cache
+            let mut cache = self.metadata_cache.write().await;
+            if cache.remove(relative_path).is_some() {
+                self.metadata_cache_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+                debug!("Removed deleted image from cache: {}", relative_path);
+            }
+            return Ok(());
+        }
+        
+        // Extract and cache metadata
+        if let Ok(metadata) = self.extract_image_metadata(&full_path).await {
+            self.insert_metadata_with_tracking(relative_path.to_string(), metadata).await;
+            debug!("Updated metadata for: {}", relative_path);
+        }
+        
+        Ok(())
+    }
+    
+    pub async fn refresh_directory_metadata(&self, directory_path: &str) -> Result<(), super::GalleryError> {
+        use walkdir::WalkDir;
+        
+        let full_path = self.config.source_directory.join(directory_path);
+        let mut count = 0;
+        
+        for entry in WalkDir::new(&full_path)
+            .follow_links(true)
+            .max_depth(1) // Only immediate children
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.is_file() && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy()) {
+                if let Ok(relative_path) = path.strip_prefix(&self.config.source_directory) {
+                    let relative_str = relative_path.to_string_lossy().to_string();
+                    
+                    if let Ok(metadata) = self.extract_image_metadata(path).await {
+                        self.insert_metadata_with_tracking(relative_str, metadata).await;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        
+        if count > 0 {
+            info!("Refreshed metadata for {} images in {}", count, directory_path);
+        }
+        
+        Ok(())
+    }
+    
     pub async fn refresh_all_metadata(&self) -> Result<(), super::GalleryError> {
         use walkdir::WalkDir;
         
@@ -247,8 +301,7 @@ impl Gallery {
                     
                     // Extract metadata for this image
                     if let Ok(metadata) = self.extract_image_metadata(path).await {
-                        let mut cache = self.metadata_cache.write().await;
-                        cache.insert(relative_str, metadata);
+                        self.insert_metadata_with_tracking(relative_str, metadata).await;
                         count += 1;
                         
                         if count % 100 == 0 {
@@ -288,5 +341,32 @@ impl Gallery {
             camera_info,
             location_info,
         })
+    }
+    
+    pub(crate) async fn insert_metadata_with_tracking(&self, path: String, metadata: ImageMetadata) {
+        use std::sync::atomic::Ordering;
+        
+        let mut cache = self.metadata_cache.write().await;
+        cache.insert(path, metadata);
+        
+        // Mark cache as dirty
+        self.metadata_cache_dirty.store(true, Ordering::Relaxed);
+        
+        // Increment update counter
+        let updates = self.metadata_updates_since_save.fetch_add(1, Ordering::Relaxed) + 1;
+        
+        // If we've made enough updates, trigger a save
+        const UPDATES_BEFORE_SAVE: usize = 100;
+        if updates >= UPDATES_BEFORE_SAVE {
+            drop(cache); // Release the lock before saving
+            
+            if let Err(e) = self.save_metadata_cache().await {
+                error!("Failed to save metadata cache after {} updates: {}", updates, e);
+            } else {
+                self.metadata_cache_dirty.store(false, Ordering::Relaxed);
+                self.metadata_updates_since_save.store(0, Ordering::Relaxed);
+                debug!("Saved metadata cache after {} updates", updates);
+            }
+        }
     }
 }

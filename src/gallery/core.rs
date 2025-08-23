@@ -383,11 +383,8 @@ impl Gallery {
         // Extract metadata
         let metadata = self.extract_image_metadata(&full_path).await?;
         
-        // Cache it
-        {
-            let mut cache = self.metadata_cache.write().await;
-            cache.insert(relative_path.to_string(), metadata.clone());
-        }
+        // Cache it with tracking
+        self.insert_metadata_with_tracking(relative_path.to_string(), metadata.clone()).await;
         
         Ok(ImageMetadataWithSize {
             dimensions: metadata.dimensions,

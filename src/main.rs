@@ -237,6 +237,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
     }
+    
+    // Start periodic cache save (every 5 minutes)
+    info!("Starting periodic metadata cache save every 5 minutes");
+    Gallery::start_periodic_cache_save(gallery.clone(), 5);
 
     // Clone gallery for shutdown handler before moving it into router state
     let gallery_for_shutdown = gallery.clone();

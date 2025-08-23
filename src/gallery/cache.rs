@@ -48,13 +48,46 @@ impl Gallery {
             }
         });
     }
+    
+    pub fn start_periodic_cache_save(gallery: super::SharedGallery, interval_minutes: u64) {
+        use std::sync::atomic::Ordering;
+        
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
+            interval.tick().await; // Skip the first immediate tick
+            
+            loop {
+                interval.tick().await;
+                
+                // Check if cache is dirty
+                if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
+                    debug!("Cache is dirty, saving to disk");
+                    
+                    if let Err(e) = gallery.save_metadata_cache().await {
+                        error!("Failed to save metadata cache: {}", e);
+                    } else {
+                        // Reset dirty flag and update counter
+                        gallery.metadata_cache_dirty.store(false, Ordering::Relaxed);
+                        gallery.metadata_updates_since_save.store(0, Ordering::Relaxed);
+                        info!("Periodic metadata cache save completed");
+                    }
+                }
+            }
+        });
+    }
 
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
+        use std::sync::atomic::Ordering;
+        
         let cache_file = self.config.cache_directory.join("metadata_cache.json");
         let cache = self.metadata_cache.read().await;
         
         let json = serde_json::to_string_pretty(&*cache)?;
         tokio::fs::write(cache_file, json).await?;
+        
+        // Reset dirty flag after successful save
+        self.metadata_cache_dirty.store(false, Ordering::Relaxed);
+        self.metadata_updates_since_save.store(0, Ordering::Relaxed);
         
         Ok(())
     }

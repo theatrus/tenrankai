@@ -14,7 +14,10 @@ pub use types::*;
 
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc,
+    },
     time::SystemTime,
 };
 use tokio::sync::RwLock;
@@ -27,6 +30,8 @@ pub struct Gallery {
     pub(crate) cache: Arc<RwLock<HashMap<String, CachedImage>>>,
     pub(crate) metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
     pub(crate) cache_metadata: Arc<RwLock<CacheMetadata>>,
+    pub(crate) metadata_cache_dirty: Arc<AtomicBool>,
+    pub(crate) metadata_updates_since_save: Arc<AtomicUsize>,
 }
 
 impl Gallery {
@@ -43,6 +48,8 @@ impl Gallery {
             cache: Arc::new(RwLock::new(HashMap::new())),
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
             cache_metadata: Arc::new(RwLock::new(cache_metadata)),
+            metadata_cache_dirty: Arc::new(AtomicBool::new(false)),
+            metadata_updates_since_save: Arc::new(AtomicUsize::new(0)),
         }
     }
     

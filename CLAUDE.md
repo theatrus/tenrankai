@@ -47,9 +47,34 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - All sizes support @2x variants for high-DPI displays
 
 ### Metadata Caching
-- Metadata (dimensions, EXIF data) is cached in memory and persisted to disk
-- Cache is automatically refreshed on version changes
-- Background refresh runs every 60 minutes by default
+
+#### Cache Storage
+- **In-memory cache**: HashMap storing image metadata (dimensions, EXIF, GPS, camera info)
+- **Persistent storage**: JSON files in cache directory
+  - `metadata_cache.json` - Image metadata
+  - `cache_metadata.json` - Cache version and last refresh timestamp
+
+#### Cache Refresh Mechanisms
+1. **Version-based refresh**: Automatic full refresh when app version changes
+2. **Background refresh**: Configurable interval (default 60 minutes)
+3. **Incremental updates**: 
+   - `refresh_single_image_metadata()` - Update single image
+   - `refresh_directory_metadata()` - Update all images in directory
+   - `refresh_all_metadata()` - Full gallery refresh
+
+#### Cache Persistence
+- **Automatic saves**:
+  - Every 5 minutes if cache is dirty
+  - After every 100 metadata updates
+  - After each full refresh
+  - On graceful shutdown (SIGTERM/SIGINT)
+- **Dirty tracking**: AtomicBool flag tracks unsaved changes
+- **Update counting**: Tracks updates since last save
+
+#### Performance Features
+- Lazy loading: Metadata extracted on first access if not cached
+- Batch saves: Reduces disk I/O by grouping updates
+- Lock optimization: Releases write locks before disk operations
 
 ### Gallery Preview
 - Shows random selection of images from across the gallery
@@ -148,3 +173,20 @@ cargo run -- --host 0.0.0.0 --port 8080
 2. Batch operations where possible
 3. Use background tasks for expensive operations
 4. Leverage browser caching with proper headers
+
+### Cache Management API
+```rust
+// Refresh single image metadata
+gallery.refresh_single_image_metadata("path/to/image.jpg").await
+
+// Refresh all images in a directory
+gallery.refresh_directory_metadata("vacation-2024").await
+
+// Manual cache save
+gallery.save_metadata_cache().await
+
+// Check cache dirty status
+if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
+    // Cache has unsaved changes
+}
+```
