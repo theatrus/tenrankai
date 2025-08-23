@@ -5,6 +5,7 @@ body {
     margin: 0;
     padding: 0;
     background-color: #1a1a1a;
+    overflow-x: hidden;
 }
 
 header {
@@ -494,9 +495,11 @@ footer p {
     .image-grid {
         flex-direction: column;
         gap: 1rem;
-        padding: 0;
+        padding: 0 0.5rem;
         width: 100%;
         margin: 0 auto;
+        box-sizing: border-box;
+        overflow-x: hidden;
     }
     
     .masonry-column[data-column="1"] {
@@ -512,7 +515,7 @@ footer p {
     .gallery-preview-component .preview-masonry {
         flex-direction: column;
         gap: 1rem;
-        padding: 0;
+        padding: 0 1rem;
         width: 100%;
         margin: 0 auto;
         box-sizing: border-box;
@@ -524,7 +527,7 @@ footer p {
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding: 0 1rem;
+        padding: 0;
     }
     
     .gallery-preview-component .masonry-column[data-column="1"] {
