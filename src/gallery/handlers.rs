@@ -93,6 +93,28 @@ pub async fn gallery_handler(
         format!("{}/gallery/{}", base_url, path)
     };
 
+    // Create OpenGraph title - use folder title or generate from path
+    let og_title = folder_title.clone().unwrap_or_else(|| {
+        if path.is_empty() {
+            "Gallery".to_string()
+        } else {
+            // Use the last part of the path as a display name
+            path.split('/').last().unwrap_or(&path)
+                .replace('-', " ")
+                .replace('_', " ")
+                .split_whitespace()
+                .map(|word| {
+                    let mut chars = word.chars();
+                    match chars.next() {
+                        None => String::new(),
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+    });
+    
     // Create a better description including folder count info
     let og_description = if let Some(desc) = &folder_description {
         // Strip HTML tags from description for OpenGraph
@@ -139,7 +161,7 @@ pub async fn gallery_handler(
         "folder_description": folder_description,
         "breadcrumbs": breadcrumbs,
         // OpenGraph meta tags
-        "og_title": folder_title.clone().unwrap_or_else(|| "Gallery".to_string()),
+        "og_title": og_title,
         "og_description": og_description,
         "og_image": og_image,
         "og_image_width": og_image_dimensions.map(|(w, _)| w),
@@ -148,7 +170,7 @@ pub async fn gallery_handler(
         "og_type": "website",
         // Twitter card
         "twitter_card_type": "summary_large_image",
-        "twitter_title": folder_title.clone().unwrap_or_else(|| "Gallery".to_string()),
+        "twitter_title": og_title,
         "twitter_description": og_description,
         "twitter_image": og_image,
     });
