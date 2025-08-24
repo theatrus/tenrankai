@@ -1,3 +1,37 @@
+
+
+/* ==========================================================================
+   CSS Custom Properties for Theming
+   ========================================================================== */
+:root {
+    /* Background colors */
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #2a2a2a;
+    --bg-card: #606060;
+    --bg-hover: #505050;
+    
+    /* Text colors */
+    --text-primary: #e0e0e0;
+    --text-secondary: #999;
+    --text-muted: #ccc;
+    
+    /* Link colors */
+    --link-color: #66b3ff;
+    --link-hover: #99ccff;
+    
+    /* Border colors */
+    --border-color: #555;
+    --border-hover: #777;
+    
+    /* Spacing */
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-xxl: 3rem;
+}
+
+
 body {
     font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     line-height: 1.6;
@@ -604,21 +638,7 @@ footer p {
         padding-right: env(safe-area-inset-right);
     }
     
-    /* Code block styling for consistency */
-    pre {
-        background: #2d2d2d !important;
-        color: #f8f8f2 !important;
-    }
-    
-    code {
-        color: #333 !important;
-        background: #e8e8e8 !important;
-    }
-    
-    pre code {
-        color: inherit !important;
-        background: none !important;
-    }
+    /* Moved to global code block styles */
     
     main {
         padding-left: env(safe-area-inset-left);
@@ -644,5 +664,203 @@ footer p {
             padding-left: 0;
             padding-right: 0;
         }
+    }
+}
+/* ==========================================================================
+   Utility Classes
+   ========================================================================== */
+
+/* Container widths */
+.container-sm {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: var(--spacing-xl);
+}
+
+.container-md {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--spacing-xl);
+}
+
+.container-lg {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: var(--spacing-xl);
+}
+
+/* Card component */
+.card {
+    padding: var(--spacing-lg);
+    background: var(--bg-card);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.card h3 {
+    margin-top: 0;
+    margin-bottom: var(--spacing-md);
+    color: var(--text-primary);
+    font-size: 1.1rem;
+}
+
+/* ==========================================================================
+   Common Components
+   ========================================================================== */
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background 0.3s;
+    border: 1px solid transparent;
+}
+
+.btn:hover {
+    background: var(--bg-hover);
+}
+
+.btn-primary {
+    background: var(--link-color);
+    color: var(--bg-primary);
+}
+
+.btn-primary:hover {
+    background: var(--link-hover);
+}
+
+/* Links */
+a {
+    color: var(--link-color);
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+a:hover {
+    color: var(--link-hover);
+}
+
+/* Time/Date displays */
+time {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Breadcrumbs */
+.breadcrumbs {
+    margin-bottom: var(--spacing-md);
+}
+
+.breadcrumbs a {
+    color: var(--link-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.breadcrumbs a:hover {
+    text-decoration: underline;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--spacing-xxl);
+    padding-top: var(--spacing-xl);
+    border-top: 1px solid var(--border-color);
+}
+
+.pagination a {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+.pagination a:hover {
+    text-decoration: underline;
+}
+
+.page-info {
+    color: var(--text-secondary);
+}
+
+/* Code blocks */
+pre {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: var(--spacing-md);
+    overflow-x: auto;
+    border-radius: 4px;
+    margin: var(--spacing-md) 0;
+    border: 1px solid #444;
+}
+
+code {
+    background: #e8e8e8;
+    color: #333;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+/* Blockquotes */
+blockquote {
+    border-left: 4px solid var(--border-color);
+    padding-left: var(--spacing-md);
+    margin: var(--spacing-md) 0;
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: var(--spacing-md) 0;
+}
+
+th, td {
+    border: 1px solid var(--border-color);
+    padding: var(--spacing-sm);
+    text-align: left;
+}
+
+th {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-weight: bold;
+}
+
+/* ==========================================================================
+   Responsive Utilities
+   ========================================================================== */
+@media (max-width: 768px) {
+    .container-sm,
+    .container-md,
+    .container-lg {
+        padding: var(--spacing-md);
+    }
+    
+    .hide-mobile {
+        display: none;
+    }
+}
+
+@media (min-width: 769px) {
+    .show-mobile {
+        display: none;
     }
 }

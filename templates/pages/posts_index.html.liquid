@@ -7,7 +7,7 @@
 {% assign page_css = "posts-index.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
-<div class="posts-container">
+<div class="posts-container container-sm">
     <h1>{{ posts_name | capitalize }}</h1>
     
     {% if posts.size > 0 %}

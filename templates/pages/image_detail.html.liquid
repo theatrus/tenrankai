@@ -21,7 +21,7 @@
 
 {% include "_header.html.liquid" %}
 
-<div class="container image-detail-container">
+<div class="container container-lg image-detail-container">
     <nav class="gallery-nav">
         {% for crumb in breadcrumbs %}
             {% unless forloop.first %}
@@ -122,7 +122,7 @@
                 </div>
             {% endif %}
             
-            <div class="image-metadata">
+            <div class="image-metadata card">
                 <h3>Image Information</h3>
                 <dl>
                     {% if image.capture_date %}
@@ -144,7 +144,7 @@
             </div>
             
             {% if image.camera_info %}
-                <div class="camera-info">
+                <div class="camera-info card">
                     <h3>Camera Information</h3>
                     <dl>
                         {% if image.camera_info.camera_make or image.camera_info.camera_model %}
@@ -185,7 +185,7 @@
             {% endif %}
             
             {% if image.location_info %}
-                <div class="location-info">
+                <div class="location-info card">
                     <h3>Location</h3>
                     <div class="location-content">
                         <div class="coordinates">

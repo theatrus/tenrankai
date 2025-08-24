@@ -1,45 +1,26 @@
+/* Contact Page Specific Styles */
+
 .contact-container {
-    max-width: 800px;
+    /* Uses .container-sm from utility classes */
 }
 
 .contact-content {
-    margin-top: 2rem;
+    margin-top: var(--spacing-xl);
 }
 
 .contact-methods {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
-    margin-top: 2rem;
+    gap: var(--spacing-xl);
+    margin-top: var(--spacing-xl);
 }
 
 .contact-item {
-    padding: 1.5rem;
-    background: #404040;
-    border-radius: 8px;
-    border: 1px solid #555;
-}
-
-.contact-item h3 {
-    margin-top: 0;
-    margin-bottom: 1rem;
-    color: #e0e0e0;
-    font-size: 1.1rem;
+    /* Uses .card from utility classes */
 }
 
 .contact-item p {
     margin: 0;
-}
-
-.contact-item a {
-    color: #66b3ff;
-    text-decoration: none;
-    transition: color 0.3s;
-}
-
-.contact-item a:hover {
-    color: #99ccff;
-    text-decoration: underline;
 }
 
 @media (max-width: 768px) {
