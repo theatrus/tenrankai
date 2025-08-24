@@ -1,8 +1,12 @@
 # Tenrankai
 
-[![CI](https://github.com/yourusername/tenrankai/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/tenrankai/actions/workflows/ci.yml)
-[![Security Audit](https://github.com/yourusername/tenrankai/actions/workflows/security.yml/badge.svg)](https://github.com/yourusername/tenrankai/actions/workflows/security.yml)
+[![CI](https://github.com/theatrus/tenrankai/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/tenrankai/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/theatrus/tenrankai/actions/workflows/security.yml/badge.svg)](https://github.com/theatrus/tenrankai/actions/workflows/security.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.89.0%2B-orange.svg)](https://www.rust-lang.org)
+[![Dependencies](https://deps.rs/repo/github/theatrus/tenrankai/status.svg)](https://deps.rs/repo/github/theatrus/tenrankai)
+[![GitHub release](https://img.shields.io/github/release/theatrus/tenrankai.svg)](https://github.com/theatrus/tenrankai/releases)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/theatrus/tenrankai/pulls)
 
 A high-performance web-based photo gallery server written in Rust using the Axum web framework. Tenrankai provides a responsive gallery interface with automatic image resizing, metadata extraction, and intelligent caching.
 
