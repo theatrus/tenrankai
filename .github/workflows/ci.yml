@@ -16,13 +16,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
-        rust: [stable, beta]
+        rust: [stable]
         exclude:
           # Reduce the number of jobs by excluding some combinations
           - os: windows-latest
-            rust: beta
+            rust: stable
           - os: macos-latest
-            rust: beta
+            rust: stable
     steps:
     - uses: actions/checkout@v5
     
