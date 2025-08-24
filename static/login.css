@@ -1,0 +1,133 @@
+/* ==========================================================================
+   Login Page Styles
+   Uses CSS variables from style.css for consistent theming
+   ========================================================================== */
+
+.login-container {
+    max-width: 400px;
+    margin: 100px auto;
+    padding: 30px;
+    background: var(--bg-card);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px var(--shadow-medium);
+}
+
+.login-container h1 {
+    text-align: center;
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-primary);
+}
+
+.login-container p {
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.form-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 16px;
+    box-sizing: border-box;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: border-color 0.3s, background-color 0.3s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--link-color);
+    background-color: var(--bg-primary);
+}
+
+.form-group input::placeholder {
+    color: var(--text-quaternary);
+}
+
+.btn-primary {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--link-color);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.1s;
+}
+
+.btn-primary:hover {
+    background-color: var(--link-hover);
+}
+
+.btn-primary:active {
+    transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+    background-color: var(--text-quaternary);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.message {
+    margin-top: var(--spacing-lg);
+    padding: 12px 16px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.message.success {
+    background-color: rgba(40, 167, 69, 0.1);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.message.error {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.try-again-link {
+    color: var(--link-color);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.3s;
+}
+
+.try-again-link:hover {
+    color: var(--link-hover);
+    text-decoration: underline;
+}
+
+#successContainer p {
+    margin-top: var(--spacing-lg);
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .login-container {
+        margin: 50px auto;
+        padding: 20px;
+    }
+    
+    .login-container h1 {
+        font-size: 1.5rem;
+    }
+}

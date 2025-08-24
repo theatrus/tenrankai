@@ -7,3 +7,6 @@ pub use auth::*;
 pub use error::*;
 pub use handlers::*;
 pub use types::*;
+
+#[cfg(test)]
+mod tests;

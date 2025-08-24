@@ -40,7 +40,7 @@ pub async fn login_request(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, LoginError> {
-    let username = request.username.trim().to_lowercase();
+    let identifier = request.username.trim().to_lowercase();
     let client_ip = addr.ip().to_string();
     
     // Check rate limit
@@ -61,12 +61,12 @@ pub async fn login_request(
         .await
         .map_err(|e| LoginError::DatabaseError(e.to_string()))?;
 
-    // Check if user exists
-    if let Some(user) = user_db.get_user(&username) {
-        // Create login token
+    // Check if user exists by username or email
+    if let Some(user) = user_db.get_user_by_username_or_email(&identifier) {
+        // Create login token using the actual username
         let token = {
             let mut login_state = app_state.login_state.write().await;
-            login_state.create_token(username.clone())
+            login_state.create_token(user.username.clone())
         };
         
         // Build login URL
@@ -82,13 +82,13 @@ pub async fn login_request(
         info!("Login URL for {}: {}", user.email, login_url);
     } else {
         // Log that no user was found, but don't reveal this to the client
-        info!("Login attempt for non-existent user: {}", username);
+        info!("Login attempt for non-existent user/email: {}", identifier);
     }
     
     // Always return success to avoid revealing user existence
     Ok(Json(LoginResponse {
         success: true,
-        message: "If your username is registered, you will receive a login link via email.".to_string(),
+        message: "If your account is registered, you will receive a login link via email.".to_string(),
     }))
 }
 

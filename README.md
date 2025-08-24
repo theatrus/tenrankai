@@ -30,6 +30,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Multiple Blog Systems**: Support for multiple independent blog/posts systems with markdown
 - **Dark Theme Code Blocks**: Optimized code block styling for readability in dark theme
 - **Email-based Authentication**: Secure passwordless login system with email verification links
+- **User Authentication**: Optional user authentication system with rate limiting
 
 ## Installation
 
@@ -59,7 +60,7 @@ port = 3000
 
 [app]
 name = "My Gallery"
-cookie_secret = "change-me-in-production-use-a-long-random-string"  # Used for signing cookies
+cookie_secret = "change-me-in-production-use-a-long-random-string"  # Required: Used for signing auth cookies
 copyright_holder = "Your Name"
 base_url = "https://yourdomain.com"
 user_database = "users.toml"  # Optional: Enable user authentication
@@ -278,29 +279,43 @@ Tenrankai uses an email-based authentication system for secure access:
    - Copy `users.toml.example` to `users.toml`
    - Add users with their username and email address
    - No self-registration - admin manages all users
+   - When `user_database` is not configured, the system runs without authentication
 
 2. **Login Flow**:
-   - User visits `/login` and enters their username
+   - User visits `/_login` and enters their username or email address
    - System sends an email with a secure login link (currently logs to console)
    - User clicks the link to authenticate
    - Session is maintained via secure HTTPOnly cookies
+   - Rate limiting prevents brute force attacks (5 attempts per 5 minutes per IP)
 
 3. **User Administration**:
    ```bash
    # List all users
-   cargo run --bin user_admin -- list
+   cargo run -- user list
    
    # Add a new user
-   cargo run --bin user_admin -- add --username alice --email alice@example.com
+   cargo run -- user add --username alice --email alice@example.com
    
    # Remove a user
-   cargo run --bin user_admin -- remove --username alice
+   cargo run -- user remove --username alice
    
    # Update user email
-   cargo run --bin user_admin -- update --username alice --email newemail@example.com
+   cargo run -- user update --username alice --email newemail@example.com
    ```
 
 **Note**: Email sending is not yet implemented. Login URLs are currently logged to the server console.
+
+### Running Without Authentication
+
+To run Tenrankai without user authentication:
+1. Remove or comment out the `user_database` line in your config.toml
+2. The system will allow access to all features without login
+3. The user menu will not appear in the interface
+
+This is useful for:
+- Personal use on a private network
+- Development and testing
+- Public galleries where authentication isn't needed
 
 ## API Endpoints
 
@@ -317,10 +332,11 @@ Tenrankai uses an email-based authentication system for secure access:
 - `POST /api/posts/{name}/refresh` - Refresh posts cache
 
 ### Authentication Endpoints
-- `GET /login` - Login page
-- `POST /login/request` - Request login email
-- `GET /login/verify?token={token}` - Verify login token
-- `GET /logout` - Logout and clear session
+- `GET /_login` - Login page
+- `POST /_login/request` - Request login email (accepts username or email)
+- `GET /_login/verify?token={token}` - Verify login token
+- `GET /_login/logout` - Logout and clear session
+- `GET /api/verify` - Check authentication status (JSON)
 
 ## Performance
 
@@ -373,6 +389,18 @@ Control logging verbosity with the `RUST_LOG` environment variable or `--log-lev
 RUST_LOG=debug cargo run
 cargo run -- --log-level trace
 ```
+
+## Development
+
+Tenrankai is under active development. Some features are planned but not yet implemented:
+- Email sending for authentication (currently logs to console)
+- Full-text search across galleries and posts
+- Video file support
+- Tag-based filtering
+- User roles and permissions
+- Two-factor authentication
+
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
 
 ## License
 

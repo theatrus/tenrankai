@@ -40,6 +40,16 @@ impl UserDatabase {
     pub fn get_user(&self, username: &str) -> Option<&User> {
         self.users.get(username)
     }
+    
+    pub fn get_user_by_username_or_email(&self, identifier: &str) -> Option<&User> {
+        // First try direct username lookup
+        if let Some(user) = self.users.get(identifier) {
+            return Some(user);
+        }
+        
+        // Then try email lookup
+        self.users.values().find(|user| user.email.eq_ignore_ascii_case(identifier))
+    }
 
     pub fn add_user(&mut self, user: User) {
         self.users.insert(user.username.clone(), user);
