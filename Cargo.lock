@@ -1409,6 +1409,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libwebp-sys"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9098eab890ebf345de17da067cfcde01a99a63945f09b8f7ce166d8aff29da7b"
+dependencies = [
+ "cc",
+ "glob",
+ "pkg-config",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2624,6 +2635,7 @@ dependencies = [
  "ico",
  "image",
  "imageproc",
+ "libwebp-sys 0.13.3",
  "liquid",
  "mime_guess",
  "pulldown-cmark",
@@ -3335,7 +3347,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f53152f51fb5af0c08484c33d16cca96175881d1f3dec068c23b31a158c2d99"
 dependencies = [
  "image",
- "libwebp-sys",
+ "libwebp-sys 0.9.6",
 ]
 
 [[package]]

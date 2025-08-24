@@ -11,6 +11,7 @@ pub mod robots;
 pub mod startup_checks;
 pub mod static_files;
 pub mod templating;
+pub mod webp_encoder;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {

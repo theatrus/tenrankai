@@ -1,5 +1,6 @@
 use super::{Gallery, GalleryError};
 use crate::copyright::{CopyrightConfig, add_copyright_notice};
+use crate::webp_encoder::{WebPEncoder, WebPError};
 use image::{ImageFormat, ImageEncoder, imageops::FilterType};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -227,26 +228,51 @@ impl Gallery {
                     }
                 }
                 OutputFormat::WebP => {
-                    // Use WebP crate for encoding with ICC profile preservation
+                    // Use our libwebp-sys wrapper for WebP encoding with ICC profile support
                     let rgb_image = final_image.to_rgb8();
                     let (img_width, img_height) = rgb_image.dimensions();
-
-                    // Create WebP encoder
-                    let encoder = webp::Encoder::from_rgb(rgb_image.as_raw(), img_width, img_height);
-
-                    // Encode to WebP with quality
-                    let encoded_webp = encoder.encode(_webp_quality);
-
-                    // WebP ICC profile embedding is complex due to VP8X format requirements
-                    // For now, we use standard WebP with excellent quality and broad compatibility
-                    // The Display P3/wide color gamut information is preserved in JPEG versions
-                    if let Some(ref profile_data) = icc_profile {
-                        debug!(
-                            "ICC profile detected ({} bytes) - preserved in JPEG, WebP uses standard color space",
-                            profile_data.len()
-                        );
+                    
+                    // Create our WebP encoder
+                    let rgb_data = rgb_image.into_raw();
+                    match WebPEncoder::new(img_width, img_height, rgb_data) {
+                        Ok(encoder) => {
+                            match encoder.encode(_webp_quality, icc_profile.as_deref()) {
+                                Ok(webp_data) => {
+                                    std::fs::write(&cache_path_clone, webp_data)?;
+                                    if let Some(ref profile_data) = icc_profile {
+                                        debug!(
+                                            "WebP written with ICC profile: {} bytes",
+                                            profile_data.len()
+                                        );
+                                    } else {
+                                        debug!("WebP written without ICC profile");
+                                    }
+                                }
+                                Err(WebPError::EncodingFailed) => {
+                                    error!("WebP encoding failed, falling back to basic webp crate");
+                                    // Fallback to the basic webp crate
+                                    let rgb_data = final_image.to_rgb8().into_raw();
+                                    let fallback_encoder = webp::Encoder::from_rgb(&rgb_data, img_width, img_height);
+                                    let encoded_webp = fallback_encoder.encode(_webp_quality);
+                                    std::fs::write(&cache_path_clone, &*encoded_webp)?;
+                                }
+                                Err(e) => {
+                                    error!("WebP encoding error: {}, falling back to basic webp crate", e);
+                                    let rgb_data = final_image.to_rgb8().into_raw();
+                                    let fallback_encoder = webp::Encoder::from_rgb(&rgb_data, img_width, img_height);
+                                    let encoded_webp = fallback_encoder.encode(_webp_quality);
+                                    std::fs::write(&cache_path_clone, &*encoded_webp)?;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to create WebP encoder: {}, falling back to basic webp crate", e);
+                            let rgb_data = final_image.to_rgb8().into_raw();
+                            let fallback_encoder = webp::Encoder::from_rgb(&rgb_data, img_width, img_height);
+                            let encoded_webp = fallback_encoder.encode(_webp_quality);
+                            std::fs::write(&cache_path_clone, &*encoded_webp)?;
+                        }
                     }
-                    std::fs::write(&cache_path_clone, &*encoded_webp)?;
                 }
             }
 
