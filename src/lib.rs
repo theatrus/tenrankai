@@ -6,6 +6,7 @@ pub mod composite;
 pub mod copyright;
 pub mod favicon;
 pub mod gallery;
+pub mod login;
 pub mod posts;
 pub mod robots;
 pub mod startup_checks;
@@ -242,6 +243,7 @@ pub struct AppState {
     pub galleries: Arc<HashMap<String, gallery::SharedGallery>>,
     pub favicon_renderer: favicon::FaviconRenderer,
     pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
+    pub login_state: Arc<tokio::sync::RwLock<login::LoginState>>,
     pub config: Config,
 }
 
@@ -327,12 +329,15 @@ pub async fn create_app(config: Config) -> Router {
 
     let posts_managers_arc = Arc::new(posts_managers);
 
+    let login_state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
+
     let app_state = AppState {
         template_engine,
         static_handler,
         galleries: galleries_arc,
         favicon_renderer,
         posts_managers: posts_managers_arc.clone(),
+        login_state,
         config: config.clone(),
     };
 
@@ -363,7 +368,11 @@ pub async fn create_app(config: Config) -> Router {
             "/robots.txt",
             axum::routing::get(robots::robots_txt_handler),
         )
-        .route("/static/{*path}", axum::routing::get(static_file_handler));
+        .route("/static/{*path}", axum::routing::get(static_file_handler))
+        .route("/login", axum::routing::get(login::login_page))
+        .route("/login/request", axum::routing::post(login::login_request))
+        .route("/login/verify", axum::routing::get(login::verify_login))
+        .route("/logout", axum::routing::get(login::logout));
 
     // Add gallery routes dynamically based on configuration
     if let Some(gallery_configs) = &config.galleries {

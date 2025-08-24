@@ -29,6 +29,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **New Image Highlighting**: Configurable highlighting of recently modified images
 - **Multiple Blog Systems**: Support for multiple independent blog/posts systems with markdown
 - **Dark Theme Code Blocks**: Optimized code block styling for readability in dark theme
+- **Email-based Authentication**: Secure passwordless login system with email verification links
 
 ## Installation
 
@@ -271,10 +272,43 @@ This ensures accurate color reproduction across all devices and browsers that su
 
 ## Authentication
 
-Large image downloads require authentication. Users can authenticate by:
+Tenrankai supports two authentication methods:
 
-1. Visiting `/api/auth` and entering the configured password
-2. Using the download links which include authentication tokens
+### Password Authentication
+For quick access and downloads, users can authenticate using a shared password:
+1. Visit `/api/auth` and enter the configured password
+2. Use download links which include authentication tokens
+
+### Email-based Login
+For more secure, user-specific access:
+
+1. **User Management**: Users are managed via a TOML file (`users.toml`)
+   - Copy `users.toml.example` to `users.toml`
+   - Add users with their username and email address
+   - No self-registration - admin manages all users
+
+2. **Login Flow**:
+   - User visits `/login` and enters their username
+   - System sends an email with a secure login link (currently logs to console)
+   - User clicks the link to authenticate
+   - Session is maintained via secure HTTPOnly cookies
+
+3. **User Administration**:
+   ```bash
+   # List all users
+   cargo run --bin user_admin -- list
+   
+   # Add a new user
+   cargo run --bin user_admin -- add --username alice --email alice@example.com
+   
+   # Remove a user
+   cargo run --bin user_admin -- remove --username alice
+   
+   # Update user email
+   cargo run --bin user_admin -- update --username alice --email newemail@example.com
+   ```
+
+**Note**: Email sending is not yet implemented. Login URLs are currently logged to the server console.
 
 ## API Endpoints
 
@@ -290,6 +324,12 @@ Large image downloads require authentication. Users can authenticate by:
 - `GET /{prefix}` - List posts with pagination
 - `GET /{prefix}/{slug}` - View individual post
 - `POST /api/posts/{name}/refresh` - Refresh posts cache
+
+### Authentication Endpoints
+- `GET /login` - Login page
+- `POST /login/request` - Request login email
+- `GET /login/verify?token={token}` - Verify login token
+- `GET /logout` - Logout and clear session
 
 ## Performance
 

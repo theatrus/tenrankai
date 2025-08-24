@@ -1,0 +1,59 @@
+{% assign page_title = "Login Successful" %}
+{% assign meta_description = "Successfully logged in to the photo gallery" %}
+{% include "_header.html.liquid" %}
+
+<div class="container">
+    <div class="success-container">
+        <h1>Login Successful!</h1>
+        <p>You have been successfully logged in.</p>
+        <p>You will be redirected to the gallery in a few seconds...</p>
+        
+        <a href="/gallery" class="btn-primary">Go to Gallery</a>
+    </div>
+</div>
+
+<style>
+.success-container {
+    max-width: 500px;
+    margin: 100px auto;
+    padding: 40px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.success-container h1 {
+    color: #28a745;
+    margin-bottom: 20px;
+}
+
+.success-container p {
+    margin-bottom: 20px;
+    color: #666;
+}
+
+.btn-primary {
+    display: inline-block;
+    padding: 12px 30px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+</style>
+
+<script>
+// Redirect to gallery after 3 seconds
+setTimeout(function() {
+    window.location.href = '/gallery';
+}, 3000);
+</script>
+
+{% include "_footer.html.liquid" %}
