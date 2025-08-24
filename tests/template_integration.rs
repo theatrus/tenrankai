@@ -83,11 +83,11 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         },
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),
-            url_prefix: "gallery".to_string(),
+            url_prefix: "/gallery".to_string(),
             source_directory: gallery_dir,
             cache_directory: cache_dir,
-            gallery_template: "gallery.html.liquid".to_string(),
-            image_detail_template: "image_detail.html.liquid".to_string(),
+            gallery_template: "modules/gallery.html.liquid".to_string(),
+            image_detail_template: "modules/image_detail.html.liquid".to_string(),
             images_per_page: 20,
             thumbnail: tenrankai::ImageSizeConfig {
                 width: 300,

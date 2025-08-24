@@ -141,7 +141,7 @@ This is the content of the second test post."#;
         },
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),
-            url_prefix: "gallery".to_string(),
+            url_prefix: "/gallery".to_string(),
             source_directory: gallery_dir,
             cache_directory: cache_dir,
             gallery_template: "gallery.html.liquid".to_string(),
