@@ -1,0 +1,9 @@
+.home-container {
+    max-width: 1200px;
+}
+
+.about-section {
+    margin-top: 4rem;
+    padding-top: 3rem;
+    border-top: 1px solid #404040;
+}

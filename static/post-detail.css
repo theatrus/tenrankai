@@ -1,0 +1,133 @@
+.post-detail {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+    color: #e0e0e0;
+}
+
+.post-header {
+    margin-bottom: 3rem;
+}
+
+.breadcrumbs {
+    margin-bottom: 1rem;
+}
+
+.breadcrumbs a {
+    color: #66b3ff;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.breadcrumbs a:hover {
+    text-decoration: underline;
+}
+
+.post-header h1 {
+    margin: 0 0 0.5rem 0;
+    line-height: 1.2;
+}
+
+.post-header time {
+    color: #999;
+    font-size: 0.9rem;
+}
+
+.post-content {
+    line-height: 1.8;
+    font-size: 1.1rem;
+    color: #e0e0e0;
+}
+
+.post-content h1,
+.post-content h2,
+.post-content h3,
+.post-content h4,
+.post-content h5,
+.post-content h6 {
+    margin: 2rem 0 1rem 0;
+}
+
+.post-content p {
+    margin: 1rem 0;
+}
+
+.post-content pre {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 1rem;
+    overflow-x: auto;
+    border-radius: 4px;
+    margin: 1rem 0;
+    border: 1px solid #444;
+}
+
+.post-content code {
+    background: #e8e8e8;
+    color: #333;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+.post-content pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.post-content blockquote {
+    border-left: 4px solid #555;
+    padding-left: 1rem;
+    margin: 1rem 0;
+    font-style: italic;
+    color: #999;
+}
+
+.post-content ul,
+.post-content ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+.post-content li {
+    margin: 0.5rem 0;
+}
+
+.post-content img {
+    max-width: 100%;
+    height: auto;
+    margin: 1rem 0;
+}
+
+.post-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+}
+
+.post-content th,
+.post-content td {
+    border: 1px solid #555;
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.post-content th {
+    background: #404040;
+    color: #e0e0e0;
+    font-weight: bold;
+}
+
+@media (max-width: 768px) {
+    .post-detail {
+        padding: 1rem;
+    }
+    
+    .post-content {
+        font-size: 1rem;
+    }
+}

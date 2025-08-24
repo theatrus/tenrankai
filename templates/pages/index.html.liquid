@@ -1,5 +1,6 @@
 {% assign page_title = "Home" %}
 {% assign meta_description = "theatr.us - A gallery of photographs and visual stories" %}
+{% assign page_css = "home.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container home-container">
@@ -31,17 +32,5 @@
     </section>
     -->
 </div>
-
-<style>
-.home-container {
-    max-width: 1200px;
-}
-
-.about-section {
-    margin-top: 4rem;
-    padding-top: 3rem;
-    border-top: 1px solid #404040;
-}
-</style>
 
 {% include "_footer.html.liquid" %}

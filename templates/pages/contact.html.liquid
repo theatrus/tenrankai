@@ -1,5 +1,6 @@
 {% assign page_title = "Contact" %}
 {% assign meta_description = "Get in touch with theatr.us" %}
+{% assign page_css = "contact.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container contact-container">
@@ -21,57 +22,5 @@
         </div>
     </div>
 </div>
-
-<style>
-.contact-container {
-    max-width: 800px;
-}
-
-.contact-content {
-    margin-top: 2rem;
-}
-
-.contact-methods {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
-    margin-top: 2rem;
-}
-
-.contact-item {
-    padding: 1.5rem;
-    background: #404040;
-    border-radius: 8px;
-    border: 1px solid #555;
-}
-
-.contact-item h3 {
-    margin-top: 0;
-    margin-bottom: 1rem;
-    color: #e0e0e0;
-    font-size: 1.1rem;
-}
-
-.contact-item p {
-    margin: 0;
-}
-
-.contact-item a {
-    color: #66b3ff;
-    text-decoration: none;
-    transition: color 0.3s;
-}
-
-.contact-item a:hover {
-    color: #99ccff;
-    text-decoration: underline;
-}
-
-@media (max-width: 768px) {
-    .contact-methods {
-        grid-template-columns: 1fr;
-    }
-}
-</style>
 
 {% include "_footer.html.liquid" %}
