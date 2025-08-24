@@ -1,0 +1,25 @@
+{% assign page_title = post.title %}
+{% assign meta_description = post.summary %}
+{% assign og_title = post.title %}
+{% assign og_description = post.summary %}
+{% assign og_url = base_url | append: url_prefix | append: "/" | append: post.slug %}
+{% assign og_type = "article" %}
+{% assign article_published_time = post.date | date: "%Y-%m-%dT%H:%M:%S%z" %}
+{% assign page_css = "post-detail.css" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<article class="post-detail container-sm">
+    <header class="post-header">
+        <nav class="breadcrumbs">
+            <a href="{{ url_prefix }}">← Back to {{ posts_name | capitalize }}</a>
+        </nav>
+        <h1>{{ post.title }}</h1>
+        <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
+    </header>
+    
+    <div class="post-content content">
+        {{ post.html_content }}
+    </div>
+</article>
+
+{% include "_footer.html.liquid" %}

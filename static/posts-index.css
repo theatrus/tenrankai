@@ -1,0 +1,47 @@
+/* Posts Index Page Specific Styles */
+
+.posts-container {
+    color: var(--text-primary);
+}
+
+.posts-list {
+    margin: var(--spacing-xl) 0;
+}
+
+.post-summary {
+    margin-bottom: var(--spacing-xxl);
+    padding-bottom: var(--spacing-xl);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.post-summary:last-child {
+    border-bottom: none;
+}
+
+.post-summary h2 {
+    margin: 0 0 var(--spacing-sm) 0;
+}
+
+.post-summary h2 a {
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.post-summary h2 a:hover {
+    color: var(--link-color);
+}
+
+.post-summary p {
+    margin: var(--spacing-md) 0;
+    line-height: 1.6;
+    color: var(--text-muted);
+}
+
+.read-more {
+    color: var(--link-color);
+    text-decoration: none;
+}
+
+.read-more:hover {
+    text-decoration: underline;
+}

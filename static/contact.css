@@ -1,0 +1,30 @@
+/* Contact Page Specific Styles */
+
+.contact-container {
+    /* Uses .container-sm from utility classes */
+}
+
+.contact-content {
+    margin-top: var(--spacing-xl);
+}
+
+.contact-methods {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--spacing-xl);
+    margin-top: var(--spacing-xl);
+}
+
+.contact-item {
+    /* Uses .card from utility classes */
+}
+
+.contact-item p {
+    margin: 0;
+}
+
+@media (max-width: 768px) {
+    .contact-methods {
+        grid-template-columns: 1fr;
+    }
+}

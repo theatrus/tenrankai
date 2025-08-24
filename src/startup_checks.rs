@@ -11,8 +11,8 @@ pub enum StartupCheckError {
     #[error("Static files directory does not exist")]
     StaticDirectoryMissing,
 
-    #[error("Gallery source directory does not exist")]
-    GallerySourceDirectoryMissing,
+    #[error("Gallery source directory does not exist: {0}")]
+    GallerySourceDirectoryMissing(String),
 
     #[error("Required file missing: {0}")]
     RequiredFileMissing(String),
@@ -23,18 +23,34 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
 
     info!("Performing startup checks...");
 
-    // Check cache directory
-    let cache_dir = Path::new(&config.gallery.cache_directory);
-    if !cache_dir.exists() {
-        info!("Cache directory does not exist, creating: {:?}", cache_dir);
-        if let Err(e) = tokio::fs::create_dir_all(cache_dir).await {
-            error!("Failed to create cache directory: {}", e);
-            errors.push(StartupCheckError::CacheDirectoryCreationFailed(e));
-        } else {
-            info!("Cache directory created successfully");
+    // Check cache directories for all galleries
+    if let Some(galleries) = &config.galleries {
+        for gallery_config in galleries {
+            let cache_dir = Path::new(&gallery_config.cache_directory);
+            if !cache_dir.exists() {
+                info!(
+                    "Cache directory for gallery '{}' does not exist, creating: {:?}",
+                    gallery_config.name, cache_dir
+                );
+                if let Err(e) = tokio::fs::create_dir_all(cache_dir).await {
+                    error!(
+                        "Failed to create cache directory for gallery '{}': {}",
+                        gallery_config.name, e
+                    );
+                    errors.push(StartupCheckError::CacheDirectoryCreationFailed(e));
+                } else {
+                    info!(
+                        "Cache directory for gallery '{}' created successfully",
+                        gallery_config.name
+                    );
+                }
+            } else {
+                info!(
+                    "Cache directory for gallery '{}' exists: {:?}",
+                    gallery_config.name, cache_dir
+                );
+            }
         }
-    } else {
-        info!("Cache directory exists: {:?}", cache_dir);
     }
 
     // Check static files directory
@@ -58,20 +74,40 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
         }
     }
 
-    // Check gallery source directory
-    let gallery_dir = Path::new(&config.gallery.source_directory);
-    if !gallery_dir.exists() {
-        error!("Gallery source directory does not exist: {:?}", gallery_dir);
-        errors.push(StartupCheckError::GallerySourceDirectoryMissing);
-    } else {
-        info!("Gallery source directory exists: {:?}", gallery_dir);
+    // Check gallery source directories
+    if let Some(galleries) = &config.galleries {
+        for gallery_config in galleries {
+            let gallery_dir = Path::new(&gallery_config.source_directory);
+            if !gallery_dir.exists() {
+                error!(
+                    "Gallery '{}' source directory does not exist: {:?}",
+                    gallery_config.name, gallery_dir
+                );
+                errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                    gallery_config.name.clone(),
+                ));
+            } else {
+                info!(
+                    "Gallery '{}' source directory exists: {:?}",
+                    gallery_config.name, gallery_dir
+                );
 
-        // Check if directory is readable
-        match tokio::fs::read_dir(gallery_dir).await {
-            Ok(_) => info!("Gallery source directory is accessible"),
-            Err(e) => {
-                error!("Gallery source directory is not accessible: {}", e);
-                errors.push(StartupCheckError::GallerySourceDirectoryMissing);
+                // Check if directory is readable
+                match tokio::fs::read_dir(gallery_dir).await {
+                    Ok(_) => info!(
+                        "Gallery '{}' source directory is accessible",
+                        gallery_config.name
+                    ),
+                    Err(e) => {
+                        error!(
+                            "Gallery '{}' source directory is not accessible: {}",
+                            gallery_config.name, e
+                        );
+                        errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                            gallery_config.name.clone(),
+                        ));
+                    }
+                }
             }
         }
     }

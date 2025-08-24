@@ -133,12 +133,19 @@ pub struct GalleryPreviewResponse {
     images: Vec<crate::gallery::GalleryItem>,
 }
 
-pub async fn gallery_preview_handler(
+// Named gallery API handlers for multiple gallery support
+pub async fn gallery_preview_handler_for_named(
     State(app_state): State<crate::AppState>,
+    Path(gallery_name): Path<String>,
     Query(query): Query<GalleryPreviewQuery>,
 ) -> Result<Json<GalleryPreviewResponse>, StatusCode> {
+    let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
+        tracing::error!("Gallery '{}' not found", gallery_name);
+        StatusCode::NOT_FOUND
+    })?;
+
     let count = query.count.unwrap_or(6).min(20); // Cap at 20 for performance
-    match app_state.gallery.get_gallery_preview(count).await {
+    match gallery.get_gallery_preview(count).await {
         Ok(images) => Ok(Json(GalleryPreviewResponse { images })),
         Err(e) => {
             tracing::error!("Failed to get gallery preview: {}", e);
@@ -147,10 +154,15 @@ pub async fn gallery_preview_handler(
     }
 }
 
-pub async fn gallery_composite_preview_handler(
+pub async fn gallery_composite_preview_handler_for_named(
     State(app_state): State<crate::AppState>,
-    Path(path): Path<String>,
+    Path((gallery_name, path)): Path<(String, String)>,
 ) -> Result<Response, StatusCode> {
+    let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
+        tracing::error!("Gallery '{}' not found", gallery_name);
+        StatusCode::NOT_FOUND
+    })?;
+
     // Handle special case for root gallery
     let gallery_path = if path == "_root" { String::new() } else { path };
 
@@ -158,8 +170,7 @@ pub async fn gallery_composite_preview_handler(
     let composite_cache_key = crate::gallery::Gallery::generate_composite_cache_key(&gallery_path);
 
     // Try to serve from cache first
-    if let Ok(cached_response) = app_state
-        .gallery
+    if let Ok(cached_response) = gallery
         .serve_cached_image(&composite_cache_key, "composite", "")
         .await
     {
@@ -168,8 +179,7 @@ pub async fn gallery_composite_preview_handler(
 
     // Not in cache, need to generate it
     // List directory to get images
-    let (_, images, _) = app_state
-        .gallery
+    let (_, images, _) = gallery
         .list_directory(&gallery_path, 0)
         .await
         .map_err(|e| {
@@ -185,7 +195,7 @@ pub async fn gallery_composite_preview_handler(
     }
 
     // Create composite image in a blocking task
-    let source_dir = app_state.gallery.source_directory().to_path_buf();
+    let source_dir = gallery.source_directory().to_path_buf();
     let composite_result = tokio::task::spawn_blocking(move || {
         crate::composite::create_composite_preview(source_dir, preview_images)
     })
@@ -201,8 +211,7 @@ pub async fn gallery_composite_preview_handler(
     })?;
 
     // Store in cache and serve
-    app_state
-        .gallery
+    gallery
         .store_and_serve_composite(&composite_cache_key, composite_image)
         .await
         .map_err(|e| {

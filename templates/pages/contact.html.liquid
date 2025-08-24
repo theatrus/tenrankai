@@ -1,0 +1,26 @@
+{% assign page_title = "Contact" %}
+{% assign meta_description = "Get in touch with theatr.us" %}
+{% assign page_css = "contact.css" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="container container-sm contact-container">
+    <h2>Contact</h2>
+    
+    <div class="contact-content">
+        <p>Get in touch through the following channels:</p>
+        
+        <div class="contact-methods">
+            <div class="contact-item card">
+                <h3>Email</h3>
+                <p><a href="mailto:blog@theatr.us">blog@theatr.us</a></p>
+            </div>
+            
+            <div class="contact-item card">
+                <h3>LinkedIn</h3>
+                <p><a href="https://www.linkedin.com/in/yannramin/" target="_blank" rel="noopener noreferrer">linkedin.com/in/yannramin</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "_footer.html.liquid" %}

@@ -1,0 +1,55 @@
+/* Post Detail Page Specific Styles */
+
+.post-detail {
+    color: var(--text-primary);
+}
+
+.post-header {
+    margin-bottom: var(--spacing-xxl);
+}
+
+.post-header h1 {
+    margin: 0 0 var(--spacing-sm) 0;
+    line-height: 1.2;
+}
+
+.post-content {
+    line-height: 1.8;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.post-content h1,
+.post-content h2,
+.post-content h3,
+.post-content h4,
+.post-content h5,
+.post-content h6 {
+    margin: var(--spacing-xl) 0 var(--spacing-md) 0;
+}
+
+.post-content p {
+    margin: var(--spacing-md) 0;
+}
+
+.post-content ul,
+.post-content ol {
+    margin: var(--spacing-md) 0;
+    padding-left: var(--spacing-xl);
+}
+
+.post-content li {
+    margin: var(--spacing-sm) 0;
+}
+
+.post-content img {
+    max-width: 100%;
+    height: auto;
+    margin: var(--spacing-md) 0;
+}
+
+@media (max-width: 768px) {
+    .post-content {
+        font-size: 1rem;
+    }
+}

@@ -6,6 +6,7 @@ pub mod composite;
 pub mod copyright;
 pub mod favicon;
 pub mod gallery;
+pub mod posts;
 pub mod robots;
 pub mod startup_checks;
 pub mod static_files;
@@ -17,7 +18,10 @@ pub struct Config {
     pub app: AppConfig,
     pub templates: TemplateConfig,
     pub static_files: StaticConfig,
-    pub gallery: GalleryConfig,
+    #[serde(default)]
+    pub galleries: Option<Vec<GallerySystemConfig>>,
+    #[serde(default)]
+    pub posts: Option<Vec<PostsSystemConfig>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -49,15 +53,26 @@ pub struct StaticConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GalleryConfig {
-    pub path_prefix: String,
+pub struct GallerySystemConfig {
+    pub name: String,
+    pub url_prefix: String,
     pub source_directory: PathBuf,
     pub cache_directory: PathBuf,
+    #[serde(default = "default_gallery_template")]
+    pub gallery_template: String,
+    #[serde(default = "default_image_detail_template")]
+    pub image_detail_template: String,
+    #[serde(default = "default_images_per_page")]
     pub images_per_page: usize,
+    #[serde(default = "default_thumbnail_size")]
     pub thumbnail: ImageSizeConfig,
+    #[serde(default = "default_gallery_size")]
     pub gallery_size: ImageSizeConfig,
+    #[serde(default = "default_medium_size")]
     pub medium: ImageSizeConfig,
+    #[serde(default = "default_large_size")]
     pub large: ImageSizeConfig,
+    #[serde(default = "default_preview_config")]
     pub preview: PreviewConfig,
     pub cache_refresh_interval_minutes: Option<u64>,
     pub jpeg_quality: Option<u8>,
@@ -81,6 +96,79 @@ pub struct PreviewConfig {
     pub max_per_folder: usize,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PostsSystemConfig {
+    pub name: String,
+    pub source_directory: PathBuf,
+    pub url_prefix: String,
+    #[serde(default = "default_posts_index_template")]
+    pub index_template: String,
+    #[serde(default = "default_posts_detail_template")]
+    pub post_template: String,
+    #[serde(default = "default_posts_per_page")]
+    pub posts_per_page: usize,
+}
+
+fn default_posts_index_template() -> String {
+    "modules/posts_index.html.liquid".to_string()
+}
+
+fn default_posts_detail_template() -> String {
+    "modules/post_detail.html.liquid".to_string()
+}
+
+fn default_posts_per_page() -> usize {
+    20
+}
+
+fn default_gallery_template() -> String {
+    "modules/gallery.html.liquid".to_string()
+}
+
+fn default_image_detail_template() -> String {
+    "modules/image_detail.html.liquid".to_string()
+}
+
+fn default_images_per_page() -> usize {
+    50
+}
+
+fn default_thumbnail_size() -> ImageSizeConfig {
+    ImageSizeConfig {
+        width: 300,
+        height: 300,
+    }
+}
+
+fn default_gallery_size() -> ImageSizeConfig {
+    ImageSizeConfig {
+        width: 800,
+        height: 800,
+    }
+}
+
+fn default_medium_size() -> ImageSizeConfig {
+    ImageSizeConfig {
+        width: 1200,
+        height: 1200,
+    }
+}
+
+fn default_large_size() -> ImageSizeConfig {
+    ImageSizeConfig {
+        width: 1600,
+        height: 1600,
+    }
+}
+
+fn default_preview_config() -> PreviewConfig {
+    PreviewConfig {
+        max_images: 4,
+        max_depth: 3,
+        max_per_folder: 3,
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -102,38 +190,26 @@ impl Default for Config {
             static_files: StaticConfig {
                 directory: PathBuf::from("static"),
             },
-            gallery: GalleryConfig {
-                path_prefix: "gallery".to_string(),
+            galleries: Some(vec![GallerySystemConfig {
+                name: "default".to_string(),
+                url_prefix: "/gallery".to_string(),
                 source_directory: PathBuf::from("photos"),
                 cache_directory: PathBuf::from("cache"),
-                images_per_page: 50,
-                thumbnail: ImageSizeConfig {
-                    width: 300,
-                    height: 300,
-                },
-                gallery_size: ImageSizeConfig {
-                    width: 800,
-                    height: 800,
-                },
-                medium: ImageSizeConfig {
-                    width: 1200,
-                    height: 1200,
-                },
-                large: ImageSizeConfig {
-                    width: 1600,
-                    height: 1600,
-                },
-                preview: PreviewConfig {
-                    max_images: 6,
-                    max_depth: 3,
-                    max_per_folder: 3,
-                },
+                gallery_template: default_gallery_template(),
+                image_detail_template: default_image_detail_template(),
+                images_per_page: default_images_per_page(),
+                thumbnail: default_thumbnail_size(),
+                gallery_size: default_gallery_size(),
+                medium: default_medium_size(),
+                large: default_large_size(),
+                preview: default_preview_config(),
                 cache_refresh_interval_minutes: Some(60),
                 jpeg_quality: Some(85),
                 webp_quality: Some(85.0),
                 pregenerate_cache: false,
                 new_threshold_days: None,
-            },
+            }]),
+            posts: None,
         }
     }
 }
@@ -145,15 +221,17 @@ use axum::{
     middleware::{self, Next},
     response::IntoResponse,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tower_http::trace::TraceLayer;
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct AppState {
     pub template_engine: Arc<templating::TemplateEngine>,
     pub static_handler: static_files::StaticFileHandler,
-    pub gallery: gallery::SharedGallery,
+    pub galleries: Arc<HashMap<String, gallery::SharedGallery>>,
     pub favicon_renderer: favicon::FaviconRenderer,
+    pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
     pub config: Config,
 }
 
@@ -190,50 +268,68 @@ pub async fn create_app(config: Config) -> Router {
 
     let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
 
-    let gallery = Arc::new(gallery::Gallery::new(
-        config.gallery.clone(),
-        config.app.clone(),
-    ));
+    // Initialize galleries
+    let mut galleries = HashMap::new();
+    if let Some(gallery_configs) = &config.galleries {
+        for gallery_config in gallery_configs {
+            let gallery = Arc::new(gallery::Gallery::new(
+                gallery_config.clone(),
+                config.app.clone(),
+            ));
+            galleries.insert(gallery_config.name.clone(), gallery);
+        }
+    }
+
+    // Initialize posts managers
+    let galleries_arc = Arc::new(galleries);
+    let mut posts_managers = HashMap::new();
+    if let Some(posts_configs) = &config.posts {
+        for posts_config in posts_configs {
+            let mut posts_manager = posts::PostsManager::new(posts::PostsConfig {
+                source_directory: posts_config.source_directory.clone(),
+                url_prefix: posts_config.url_prefix.clone(),
+                index_template: posts_config.index_template.clone(),
+                post_template: posts_config.post_template.clone(),
+                posts_per_page: posts_config.posts_per_page,
+            });
+
+            // Set galleries reference
+            posts_manager.set_galleries(galleries_arc.clone());
+
+            let posts_manager = Arc::new(posts_manager);
+
+            // Initialize posts on startup
+            info!(
+                "Initializing posts for '{}' from {:?}",
+                posts_config.name, posts_config.source_directory
+            );
+            if let Err(e) = posts_manager.refresh_posts().await {
+                error!(
+                    "Failed to initialize posts for '{}': {}",
+                    posts_config.name, e
+                );
+            }
+
+            posts_managers.insert(posts_config.name.clone(), posts_manager);
+        }
+    }
 
     let app_state = AppState {
         template_engine,
         static_handler,
-        gallery,
+        galleries: galleries_arc,
         favicon_renderer,
+        posts_managers: Arc::new(posts_managers),
         config: config.clone(),
     };
 
-    Router::new()
+    let mut router = Router::new()
         .route(
             "/",
             axum::routing::get(templating::template_with_gallery_handler),
         )
-        .route(
-            "/gallery",
-            axum::routing::get(gallery::gallery_root_handler),
-        )
-        .route(
-            "/gallery/{*path}",
-            axum::routing::get(gallery::gallery_handler),
-        )
-        .route(
-            "/gallery/image/{*path}",
-            axum::routing::get(gallery::image_handler),
-        )
-        .route(
-            "/gallery/detail/{*path}",
-            axum::routing::get(gallery::image_detail_handler),
-        )
         .route("/api/auth", axum::routing::post(api::authenticate_handler))
         .route("/api/verify", axum::routing::get(api::verify_handler))
-        .route(
-            "/api/gallery/preview",
-            axum::routing::get(api::gallery_preview_handler),
-        )
-        .route(
-            "/api/gallery/composite/{*path}",
-            axum::routing::get(api::gallery_composite_preview_handler),
-        )
         .route(
             "/favicon.ico",
             axum::routing::get(favicon::favicon_ico_handler),
@@ -254,11 +350,140 @@ pub async fn create_app(config: Config) -> Router {
             "/robots.txt",
             axum::routing::get(robots::robots_txt_handler),
         )
-        .route("/static/{*path}", axum::routing::get(static_file_handler))
-        .route(
-            "/{*path}",
-            axum::routing::get(templating::template_with_gallery_handler),
-        )
+        .route("/static/{*path}", axum::routing::get(static_file_handler));
+
+    // Add gallery routes dynamically based on configuration
+    if let Some(gallery_configs) = &config.galleries {
+        for gallery_config in gallery_configs {
+            let prefix = &gallery_config.url_prefix;
+            let name = gallery_config.name.clone();
+
+            // Root route for gallery
+            router = router.route(
+                prefix,
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, query| {
+                        gallery::gallery_root_handler_for_named(state, Path(name), query)
+                    }
+                }),
+            );
+
+            // Gallery folder browsing
+            router = router.route(
+                &format!("{}/{{*path}}", prefix),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>, query| {
+                        let gallery_path = path.0;
+                        gallery::gallery_handler_for_named(state, Path((name, gallery_path)), query)
+                    }
+                }),
+            );
+
+            // Image serving
+            router = router.route(
+                &format!("{}/image/{{*path}}", prefix),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>, query, headers| {
+                        let image_path = path.0;
+                        gallery::image_handler_for_named(
+                            state,
+                            Path((name, image_path)),
+                            query,
+                            headers,
+                        )
+                    }
+                }),
+            );
+
+            // Image detail view
+            router = router.route(
+                &format!("{}/detail/{{*path}}", prefix),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>| {
+                        let detail_path = path.0;
+                        gallery::image_detail_handler_for_named(state, Path((name, detail_path)))
+                    }
+                }),
+            );
+
+            // API routes for gallery
+            router = router.route(
+                &format!("/api/gallery/{}/preview", name),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, query| {
+                        api::gallery_preview_handler_for_named(state, Path(name), query)
+                    }
+                }),
+            );
+
+            router = router.route(
+                &format!("/api/gallery/{}/composite/{{*path}}", name),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>| {
+                        let composite_path = path.0;
+                        api::gallery_composite_preview_handler_for_named(
+                            state,
+                            Path((name, composite_path)),
+                        )
+                    }
+                }),
+            );
+        }
+    }
+
+    // Add posts routes dynamically based on configuration
+    if let Some(posts_configs) = &config.posts {
+        for posts_config in posts_configs {
+            let prefix = &posts_config.url_prefix;
+            let name = posts_config.name.clone();
+
+            // Index route for posts listing
+            router = router.route(
+                prefix,
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, query| {
+                        posts::handlers::posts_index_handler(state, Path(name), query)
+                    }
+                }),
+            );
+
+            // Detail route for individual posts
+            router = router.route(
+                &format!("{}/{{*slug}}", prefix),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>| {
+                        let slug = path.0;
+                        posts::handlers::post_detail_handler(state, Path((name, slug)))
+                    }
+                }),
+            );
+
+            // Refresh route for posts
+            router = router.route(
+                &format!("/api/posts/{}/refresh", name),
+                axum::routing::post({
+                    let name = name.clone();
+                    move |state| posts::handlers::refresh_posts_handler(state, Path(name))
+                }),
+            );
+        }
+    }
+
+    // Add catch-all route for templates
+    router = router.route(
+        "/{*path}",
+        axum::routing::get(templating::template_with_gallery_handler),
+    );
+
+    router
         .layer(middleware::from_fn(server_header_middleware))
         .layer(
             TraceLayer::new_for_http()

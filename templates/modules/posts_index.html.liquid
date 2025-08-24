@@ -1,0 +1,43 @@
+{% assign page_title = posts_name | capitalize %}
+{% assign meta_description = meta_description | default: "Browse " | append: posts_name | append: " posts" %}
+{% assign og_title = og_title | default: page_title %}
+{% assign og_description = og_description | default: meta_description %}
+{% assign og_url = base_url | append: url_prefix %}
+{% assign og_type = "website" %}
+{% assign page_css = "posts-index.css" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="posts-container container-sm">
+    <h1>{{ posts_name | capitalize }}</h1>
+    
+    {% if posts.size > 0 %}
+        <div class="posts-list">
+            {% for post in posts %}
+                <article class="post-summary">
+                    <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+                    <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
+                    <p>{{ post.summary }}</p>
+                    <a href="{{ post.url }}" class="read-more">Read more →</a>
+                </article>
+            {% endfor %}
+        </div>
+        
+        {% if total_pages > 1 %}
+            <nav class="pagination">
+                {% if has_prev %}
+                    <a href="{{ url_prefix }}?page={{ prev_page }}" class="prev">← Previous</a>
+                {% endif %}
+                
+                <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
+                
+                {% if has_next %}
+                    <a href="{{ url_prefix }}?page={{ next_page }}" class="next">Next →</a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <p>No posts found.</p>
+    {% endif %}
+</div>
+
+{% include "_footer.html.liquid" %}

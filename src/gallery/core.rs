@@ -63,11 +63,13 @@ impl Gallery {
                 let encoded_path = urlencoding::encode(&item_path);
                 let thumbnail_url = format!(
                     "/{}/image/{}?size=thumbnail",
-                    self.config.path_prefix, encoded_path
+                    self.config.url_prefix.trim_start_matches('/'),
+                    encoded_path
                 );
                 let gallery_url = format!(
                     "/{}/image/{}?size=gallery",
-                    self.config.path_prefix, encoded_path
+                    self.config.url_prefix.trim_start_matches('/'),
+                    encoded_path
                 );
 
                 // Get metadata from cache if available
@@ -234,7 +236,8 @@ impl Gallery {
                 let encoded_path = urlencoding::encode(&path_string);
                 let thumbnail_url = format!(
                     "/{}/image/{}?size=thumbnail",
-                    self.config.path_prefix, encoded_path
+                    self.config.url_prefix.trim_start_matches('/'),
+                    encoded_path
                 );
                 preview_images.push(thumbnail_url);
             }
@@ -282,18 +285,25 @@ impl Gallery {
                 .unwrap_or("unknown")
                 .to_string(),
             path: relative_path.to_string(),
-            url: format!("/{}/image/{}", self.config.path_prefix, encoded_path),
+            url: format!(
+                "/{}/image/{}",
+                self.config.url_prefix.trim_start_matches('/'),
+                encoded_path
+            ),
             thumbnail_url: format!(
                 "/{}/image/{}?size=thumbnail",
-                self.config.path_prefix, encoded_path
+                self.config.url_prefix.trim_start_matches('/'),
+                encoded_path
             ),
             gallery_url: format!(
                 "/{}/image/{}?size=gallery",
-                self.config.path_prefix, encoded_path
+                self.config.url_prefix.trim_start_matches('/'),
+                encoded_path
             ),
             medium_url: format!(
                 "/{}/image/{}?size=medium",
-                self.config.path_prefix, encoded_path
+                self.config.url_prefix.trim_start_matches('/'),
+                encoded_path
             ),
             description,
             camera_info: cached_metadata.camera_info,
@@ -535,11 +545,13 @@ impl Gallery {
                     let encoded_path = urlencoding::encode(&item_path);
                     let thumbnail_url = format!(
                         "/{}/image/{}?size=thumbnail",
-                        self.config.path_prefix, encoded_path
+                        self.config.url_prefix.trim_start_matches('/'),
+                        encoded_path
                     );
                     let gallery_url = format!(
                         "/{}/image/{}?size=gallery",
-                        self.config.path_prefix, encoded_path
+                        self.config.url_prefix.trim_start_matches('/'),
+                        encoded_path
                     );
 
                     folder_items.push(GalleryItem {

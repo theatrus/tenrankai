@@ -8,6 +8,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let template_path = temp_dir.path();
 
+        // Create pages and partials directories
+        fs::create_dir_all(template_path.join("pages")).unwrap();
+        fs::create_dir_all(template_path.join("partials")).unwrap();
+
         // Create test header template
         let header_content = r#"<!DOCTYPE html>
 <html>
@@ -22,7 +26,11 @@ mod tests {
         <h1>Test Site</h1>
     </header>
     <main>"#;
-        fs::write(template_path.join("_header.html.liquid"), header_content).unwrap();
+        fs::write(
+            template_path.join("partials/_header.html.liquid"),
+            header_content,
+        )
+        .unwrap();
 
         // Create test footer template
         let footer_content = r#"    </main>
@@ -31,7 +39,11 @@ mod tests {
     </footer>
 </body>
 </html>"#;
-        fs::write(template_path.join("_footer.html.liquid"), footer_content).unwrap();
+        fs::write(
+            template_path.join("partials/_footer.html.liquid"),
+            footer_content,
+        )
+        .unwrap();
 
         // Create a test index template
         let index_content = r#"{% assign page_title = "Home" %}
@@ -42,7 +54,11 @@ mod tests {
 <p>This is a test page.</p>
 
 {% include "_footer.html.liquid" %}"#;
-        fs::write(template_path.join("index.html.liquid"), index_content).unwrap();
+        fs::write(template_path.join("pages/index.html.liquid"), index_content).unwrap();
+
+        // Create modules directory for module templates
+        let modules_dir = template_path.join("modules");
+        fs::create_dir_all(&modules_dir).unwrap();
 
         // Create a test gallery template
         let gallery_content = r#"{% if folder_title %}
@@ -65,7 +81,11 @@ mod tests {
 </div>
 
 {% include "_footer.html.liquid" %}"#;
-        fs::write(template_path.join("gallery.html.liquid"), gallery_content).unwrap();
+        fs::write(
+            template_path.join("modules/gallery.html.liquid"),
+            gallery_content,
+        )
+        .unwrap();
 
         // Create a test gallery preview component
         let preview_content = r#"<div class="gallery-preview">
@@ -81,7 +101,7 @@ mod tests {
     {% endif %}
 </div>"#;
         fs::write(
-            template_path.join("_gallery_preview.html.liquid"),
+            template_path.join("partials/_gallery_preview.html.liquid"),
             preview_content,
         )
         .unwrap();
@@ -97,7 +117,9 @@ mod tests {
 
         let globals = liquid::object!({});
 
-        let result = engine.render_template("index.html.liquid", globals).await;
+        let result = engine
+            .render_template("pages/index.html.liquid", globals)
+            .await;
         assert!(
             result.is_ok(),
             "Failed to render index template: {:?}",
@@ -132,7 +154,9 @@ mod tests {
             "items": test_items,
         });
 
-        let result = engine.render_template("gallery.html.liquid", globals).await;
+        let result = engine
+            .render_template("modules/gallery.html.liquid", globals)
+            .await;
         assert!(
             result.is_ok(),
             "Failed to render gallery template: {:?}",
@@ -152,7 +176,9 @@ mod tests {
 
         let globals = liquid::object!({});
 
-        let result = engine.render_template("index.html.liquid", globals).await;
+        let result = engine
+            .render_template("pages/index.html.liquid", globals)
+            .await;
         assert!(
             result.is_ok(),
             "Failed to render with gallery preview: {:?}",
@@ -176,14 +202,18 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let template_path = temp_dir.path();
 
+        // Create pages directory
+        fs::create_dir_all(template_path.join("pages")).unwrap();
         // Create a template that includes a missing partial
         let bad_content = r#"{% include "_missing.html.liquid" %}"#;
-        fs::write(template_path.join("bad.html.liquid"), bad_content).unwrap();
+        fs::write(template_path.join("pages/bad.html.liquid"), bad_content).unwrap();
 
         let engine = TemplateEngine::new(template_path.to_path_buf());
         let globals = liquid::object!({});
 
-        let result = engine.render_template("bad.html.liquid", globals).await;
+        let result = engine
+            .render_template("pages/bad.html.liquid", globals)
+            .await;
         assert!(result.is_err(), "Should fail with missing partial");
     }
 
@@ -193,12 +223,16 @@ mod tests {
 
         // First render
         let globals1 = liquid::object!({});
-        let result1 = engine.render_template("index.html.liquid", globals1).await;
+        let result1 = engine
+            .render_template("pages/index.html.liquid", globals1)
+            .await;
         assert!(result1.is_ok());
 
         // Second render should use cache
         let globals2 = liquid::object!({});
-        let result2 = engine.render_template("index.html.liquid", globals2).await;
+        let result2 = engine
+            .render_template("pages/index.html.liquid", globals2)
+            .await;
         assert!(result2.is_ok());
 
         // Results should be similar (minus dynamic content like year)
@@ -228,7 +262,7 @@ mod tests {
 
         let temp_path = _temp_dir.path();
         fs::write(
-            temp_path.join("image_detail.html.liquid"),
+            temp_path.join("modules/image_detail.html.liquid"),
             image_detail_content,
         )
         .unwrap();
@@ -253,7 +287,11 @@ mod tests {
         <h1>Test Site</h1>
     </header>
     <main>"#;
-        fs::write(temp_path.join("_header.html.liquid"), header_with_og).unwrap();
+        fs::write(
+            temp_path.join("partials/_header.html.liquid"),
+            header_with_og,
+        )
+        .unwrap();
 
         let globals = liquid::object!({
             "image": {
@@ -266,7 +304,7 @@ mod tests {
         });
 
         let result = engine
-            .render_template("image_detail.html.liquid", globals)
+            .render_template("modules/image_detail.html.liquid", globals)
             .await;
         assert!(
             result.is_ok(),

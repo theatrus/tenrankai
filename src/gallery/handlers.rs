@@ -7,22 +7,42 @@ use axum::{
 };
 use tracing::error;
 
+fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
+    crate::api::get_cookie_value(headers, "download_allowed")
+        .map(|signed_value| crate::api::verify_signed_cookie(secret, &signed_value))
+        .unwrap_or(false)
+}
+
+// Named gallery handlers for multiple gallery support
 #[axum::debug_handler]
-pub async fn gallery_root_handler(
+pub async fn gallery_root_handler_for_named(
     State(app_state): State<AppState>,
+    Path(gallery_name): Path<String>,
     Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {
-    gallery_handler(State(app_state), Path("".to_string()), Query(query)).await
+    gallery_handler_for_named(
+        State(app_state),
+        Path((gallery_name, "".to_string())),
+        Query(query),
+    )
+    .await
 }
 
 #[axum::debug_handler]
-pub async fn gallery_handler(
+pub async fn gallery_handler_for_named(
     State(app_state): State<AppState>,
-    Path(path): Path<String>,
+    Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
-    let gallery = &app_state.gallery;
+
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            error!("Gallery '{}' not found", gallery_name);
+            return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
+        }
+    };
 
     let page = query.page.unwrap_or(0);
     let (directories, images, total_pages) = match gallery.list_directory(&path, page).await {
@@ -49,156 +69,105 @@ pub async fn gallery_handler(
 
     // Check if this is the root path
     let is_root = path.is_empty() || path == "/";
+    let gallery_config = gallery.get_config();
 
-    // Read folder metadata
+    // Render the template
+    let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
-    // Build breadcrumb data - all items should be clickable in gallery view
-    let breadcrumbs = gallery.build_breadcrumbs_with_mode(&path, true).await;
-
-    // Get base URL from config or use default
-    let base_url = app_state
-        .config
-        .app
-        .base_url
-        .as_deref()
-        .unwrap_or("https://theatr.us");
-
-    // Prepare OpenGraph image - use composite if multiple images, otherwise use first image
-    let (og_image, og_image_dimensions) = if images.len() >= 2 {
-        // Use composite preview for multiple images
-        let composite_path = if path.is_empty() {
-            "/api/gallery/composite/_root"
-        } else {
-            &format!("/api/gallery/composite/{}", path)
-        };
+    // Determine OpenGraph image - use composite if we have 2+ images, otherwise use first image
+    let (og_image, og_image_width, og_image_height) = if images.len() >= 2 {
+        // Use composite image for galleries with multiple images
+        let composite_path = if path.is_empty() { "_root" } else { &path };
+        let og_image_url = format!(
+            "{}/api/gallery/{}/composite/{}",
+            app_state
+                .config
+                .app
+                .base_url
+                .as_ref()
+                .unwrap_or(&String::new()),
+            gallery_name,
+            composite_path
+        );
+        (Some(og_image_url), Some(1210), Some(1210))
+    } else if let Some(first_image) = images.first() {
+        // Use the first image if we only have one
+        let og_image_url = format!(
+            "{}{}",
+            app_state
+                .config
+                .app
+                .base_url
+                .as_ref()
+                .unwrap_or(&String::new()),
+            first_image.gallery_url.as_ref().unwrap_or(&String::new())
+        );
         (
-            Some(format!("{}{}", base_url, composite_path)),
-            Some((1210, 1210)), // 2x2 grid of 600px images + padding
-        )
-    } else if let Some(first_img) = images.first() {
-        // Use single image for single image galleries
-        (
-            first_img
-                .gallery_url
-                .clone()
-                .map(|url| format!("{}{}", base_url, url)),
-            first_img.dimensions,
+            Some(og_image_url),
+            first_image.dimensions.map(|d| d.0),
+            first_image.dimensions.map(|d| d.1),
         )
     } else {
-        (None, None)
+        (None, None, None)
     };
 
-    // Build OpenGraph URL for this gallery page
-    let og_url = if path.is_empty() {
-        format!("{}/gallery", base_url)
-    } else {
-        format!("{}/gallery/{}", base_url, path)
-    };
-
-    // Create OpenGraph title - use folder title or generate from path
-    let og_title = folder_title.clone().unwrap_or_else(|| {
-        if path.is_empty() {
-            "Gallery".to_string()
-        } else {
-            // Use the last part of the path as a display name
-            path.split('/')
-                .next_back()
-                .unwrap_or(&path)
-                .replace(['-', '_'], " ")
-                .split_whitespace()
-                .map(|word| {
-                    let mut chars = word.chars();
-                    match chars.next() {
-                        None => String::new(),
-                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-    });
-
-    // Create a better description including folder count info
-    let og_description = if let Some(desc) = &folder_description {
-        // Strip HTML tags from description for OpenGraph
-        desc.replace("<p>", "")
-            .replace("</p>", " ")
-            .replace("<br>", " ")
-            .replace("<br/>", " ")
-            .replace("<br />", " ")
-            .chars()
-            .filter(|&c| c != '<' && c != '>')
-            .collect::<String>()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-    } else {
-        let folder_count = directories.len();
-        let image_count = images.len();
-        if folder_count > 0 && image_count > 0 {
-            format!(
-                "Browse {} folders and {} images in this gallery",
-                folder_count, image_count
-            )
-        } else if folder_count > 0 {
-            format!("Browse {} folders in this gallery", folder_count)
-        } else if image_count > 0 {
-            format!("Browse {} images in this gallery", image_count)
-        } else {
-            "Browse the photo gallery".to_string()
-        }
-    };
-
-    let globals = liquid::object!({
-        "items": items,
-        "images": images,
-        "images_json": images_json,
+    let liquid_context = liquid::object!({
+        "gallery_name": gallery_name,
+        "gallery_url": gallery_config.url_prefix,
         "gallery_path": path,
+        "is_root": is_root,
+        "breadcrumbs": breadcrumbs,
+        "directories": directories,
+        "images": images,
+        "items": items,
+        "images_json": images_json,
+        "page": page,
         "current_page": page,
         "total_pages": total_pages,
-        "has_prev": page > 0,
-        "has_next": page + 1 < total_pages,
-        "prev_page": if page > 0 { page - 1 } else { 0 },
-        "next_page": page + 1,
-        "is_root": is_root,
         "folder_title": folder_title,
         "folder_description": folder_description,
-        "breadcrumbs": breadcrumbs,
-        // OpenGraph meta tags
-        "og_title": og_title,
-        "og_description": og_description,
+        "page_title": if is_root { "Gallery".to_string() } else {
+            folder_title.clone().unwrap_or_else(|| breadcrumbs.last().map(|b| b.name.clone()).unwrap_or_else(|| "Gallery".to_string()))
+        },
+        "meta_description": "Browse our photo gallery",
+        "app_name": app_state.config.app.name,
+        "copyright_holder": app_state.config.app.copyright_holder,
+        "base_url": app_state.config.app.base_url,
+        "og_title": "Photo Gallery",
+        "og_description": "Browse our collection of photos",
         "og_image": og_image,
-        "og_image_width": og_image_dimensions.map(|(w, _)| w),
-        "og_image_height": og_image_dimensions.map(|(_, h)| h),
-        "og_url": og_url,
-        "og_type": "website",
-        // Twitter card
+        "og_image_width": og_image_width,
+        "og_image_height": og_image_height,
         "twitter_card_type": "summary_large_image",
-        "twitter_title": og_title,
-        "twitter_description": og_description,
-        "twitter_image": og_image,
     });
 
     match template_engine
-        .render_template("gallery.html.liquid", globals)
+        .render_template(&gallery_config.gallery_template, liquid_context)
         .await
     {
         Ok(html) => Html(html).into_response(),
         Err(e) => {
             error!("Template rendering error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Template error").into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR).into_response()
         }
     }
 }
 
 #[axum::debug_handler]
-pub async fn image_detail_handler(
+pub async fn image_detail_handler_for_named(
     State(app_state): State<AppState>,
-    Path(path): Path<String>,
+    Path((gallery_name, path)): Path<(String, String)>,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
-    let gallery = &app_state.gallery;
+
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            error!("Gallery '{}' not found", gallery_name);
+            return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
+        }
+    };
 
     let image_info = match gallery.get_image_info(&path).await {
         Ok(info) => info,
@@ -251,31 +220,32 @@ pub async fn image_detail_handler(
         (None, None)
     };
 
-    // Build breadcrumb data for the image's parent directory - all items should be clickable
-    let parent_path = std::path::Path::new(&path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("");
+    // Build breadcrumbs for the parent directory, not including the image filename
     let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
+    let gallery_config = gallery.get_config();
 
-    // Get base URL from config or use default
-    let base_url = app_state
-        .config
-        .app
-        .base_url
-        .as_deref()
-        .unwrap_or("http://localhost:8080");
-
-    let globals = liquid::object!({
+    let liquid_context = liquid::object!({
+        "gallery_name": gallery_name,
+        "gallery_url": gallery_config.url_prefix,
         "image": image_info,
+        "breadcrumbs": breadcrumbs,
         "prev_image": prev_image,
         "next_image": next_image,
-        "breadcrumbs": breadcrumbs,
-        "base_url": base_url,
+        "page_title": format!("{} - Photo Gallery", image_info.name),
+        "meta_description": format!("View {} in our photo gallery", image_info.name),
+        "app_name": app_state.config.app.name,
+        "copyright_holder": app_state.config.app.copyright_holder,
+        "base_url": app_state.config.app.base_url,
+        "og_title": image_info.name,
+        "og_description": format!("Photo: {}", image_info.name),
+        "og_image": format!("{}{}", app_state.config.app.base_url.as_ref().unwrap_or(&String::new()), image_info.medium_url),
+        "og_image_width": image_info.dimensions.0,
+        "og_image_height": image_info.dimensions.1,
+        "twitter_card_type": "summary_large_image",
     });
 
     match template_engine
-        .render_template("image_detail.html.liquid", globals)
+        .render_template(&gallery_config.image_detail_template, liquid_context)
         .await
     {
         Ok(html) => Html(html).into_response(),
@@ -286,18 +256,20 @@ pub async fn image_detail_handler(
     }
 }
 
-fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
-    crate::api::get_cookie_value(headers, "download_allowed")
-        .map(|signed_value| crate::api::verify_signed_cookie(secret, &signed_value))
-        .unwrap_or(false)
-}
-
-pub async fn image_handler(
+pub async fn image_handler_for_named(
     State(app_state): State<AppState>,
-    Path(path): Path<String>,
+    Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            error!("Gallery '{}' not found", gallery_name);
+            return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
+        }
+    };
+
     // Validate size parameter if provided
     if let Some(ref size) = query.size {
         // Check if it's a @2x variant
@@ -338,8 +310,5 @@ pub async fn image_handler(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    app_state
-        .gallery
-        .serve_image(&path, query.size, accept_header)
-        .await
+    gallery.serve_image(&path, query.size, accept_header).await
 }

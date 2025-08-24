@@ -9,7 +9,10 @@ mod types;
 
 // Re-export public items
 pub use error::GalleryError;
-pub use handlers::{gallery_handler, gallery_root_handler, image_detail_handler, image_handler};
+pub use handlers::{
+    gallery_handler_for_named, gallery_root_handler_for_named, image_detail_handler_for_named,
+    image_handler_for_named,
+};
 pub use types::*;
 
 use std::{
@@ -26,7 +29,7 @@ use tracing::info;
 pub type SharedGallery = Arc<Gallery>;
 
 pub struct Gallery {
-    pub(crate) config: crate::GalleryConfig,
+    pub(crate) config: crate::GallerySystemConfig,
     pub(crate) app_config: crate::AppConfig,
     pub(crate) metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
     pub(crate) cache_metadata: Arc<RwLock<CacheMetadata>>,
@@ -35,7 +38,7 @@ pub struct Gallery {
 }
 
 impl Gallery {
-    pub fn new(config: crate::GalleryConfig, app_config: crate::AppConfig) -> Self {
+    pub fn new(config: crate::GallerySystemConfig, app_config: crate::AppConfig) -> Self {
         let metadata_cache = cache::load_metadata_cache(&config).unwrap_or_default();
         let cache_metadata =
             cache::load_cache_metadata(&config).unwrap_or_else(|_| CacheMetadata {
@@ -100,5 +103,9 @@ impl Gallery {
         }
 
         Ok(())
+    }
+
+    pub fn get_config(&self) -> &crate::GallerySystemConfig {
+        &self.config
     }
 }

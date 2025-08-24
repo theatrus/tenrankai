@@ -16,10 +16,17 @@ directory = "templates"
 [static_files]
 directory = "static"
 
-[gallery]
-path_prefix = "gallery"
+# Configure one or more gallery systems
+# Each gallery has its own source directory, URL prefix, and settings
+
+# Main photo gallery
+[[galleries]]
+name = "photos"
+url_prefix = "/gallery"
 source_directory = "photos"
 cache_directory = "cache/photos"
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
 images_per_page = 50
 cache_refresh_interval_minutes = 60
 jpeg_quality = 85
@@ -29,23 +36,77 @@ pregenerate_cache = false
 # Remove or comment out to disable the feature
 new_threshold_days = 7
 
-[gallery.thumbnail]
+[galleries.thumbnail]
 width = 300
 height = 300
 
-[gallery.gallery_size]
+[galleries.gallery_size]
 width = 800
 height = 800
 
-[gallery.medium]
+[galleries.medium]
 width = 1200
 height = 1200
 
-[gallery.large]
+[galleries.large]
 width = 1600
 height = 1600
 
-[gallery.preview]
+[galleries.preview]
 max_images = 6
 max_depth = 3
 max_per_folder = 3
+
+# Example: Portfolio gallery with different settings
+[[galleries]]
+name = "portfolio"
+url_prefix = "/portfolio"
+source_directory = "portfolio_images"
+cache_directory = "cache/portfolio"
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+images_per_page = 20
+jpeg_quality = 90
+webp_quality = 90.0
+
+# Example: Screenshots gallery
+[[galleries]]
+name = "screenshots"
+url_prefix = "/screenshots"
+source_directory = "screenshots"
+cache_directory = "cache/screenshots"
+images_per_page = 100
+# Custom templates can be specified
+# gallery_template = "modules/screenshot_gallery.html.liquid"
+# image_detail_template = "modules/screenshot_detail.html.liquid"
+
+# Optional: Configure multiple post systems
+# Each posts system has its own source directory and URL prefix
+# You can have multiple systems like blog, stories, documentation, etc.
+
+# Example blog configuration
+[[posts]]
+name = "blog"
+source_directory = "posts/blog"
+url_prefix = "/blog"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+posts_per_page = 20
+
+# Example stories configuration
+[[posts]]
+name = "stories"
+source_directory = "posts/stories"
+url_prefix = "/stories"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+posts_per_page = 10
+
+# Example instructions/documentation configuration
+[[posts]]
+name = "instructions"
+source_directory = "posts/instructions"
+url_prefix = "/instructions"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+posts_per_page = 15
