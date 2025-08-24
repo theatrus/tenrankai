@@ -154,7 +154,7 @@ impl Gallery {
             let icc_profile: Option<Vec<u8>> = match decoder.format() {
                 Some(image::ImageFormat::Jpeg) => {
                     // For JPEG, try to extract ICC profile using rexif crate (already in dependencies)
-                    Self::extract_icc_profile_from_jpeg(&original_path)
+                    extract_icc_profile_from_jpeg(&original_path)
                 }
                 _ => None,
             };
@@ -283,51 +283,48 @@ impl Gallery {
 
         Ok(cache_path)
     }
+}
 
-    /// Extract ICC profile from JPEG file
-    fn extract_icc_profile_from_jpeg(path: &std::path::PathBuf) -> Option<Vec<u8>> {
-        use std::io::Read;
+/// Extract ICC profile from JPEG file
+pub(crate) fn extract_icc_profile_from_jpeg(path: &std::path::PathBuf) -> Option<Vec<u8>> {
+    use std::io::Read;
 
-        let mut file = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => return None,
-        };
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
 
-        let mut buffer = Vec::new();
-        if file.read_to_end(&mut buffer).is_err() {
-            return None;
-        }
+    let mut buffer = Vec::new();
+    if file.read_to_end(&mut buffer).is_err() {
+        return None;
+    }
 
-        // Look for ICC profile in JPEG APP2 segments
-        // ICC profiles in JPEG are stored in APP2 markers with ICC_PROFILE identifier
-        let mut pos = 0;
-        while pos < buffer.len() - 1 {
-            if buffer[pos] == 0xFF {
-                let marker = buffer[pos + 1];
-                if marker == 0xE2 {
-                    // APP2 marker
-                    if pos + 4 < buffer.len() {
-                        let segment_length =
-                            u16::from_be_bytes([buffer[pos + 2], buffer[pos + 3]]) as usize;
-                        if pos + 2 + segment_length <= buffer.len() {
-                            let segment_start = pos + 4;
-                            let segment_end = pos + 2 + segment_length;
-                            let segment_data = &buffer[segment_start..segment_end];
+    // Look for ICC profile in JPEG APP2 segments
+    // ICC profiles in JPEG are stored in APP2 markers with ICC_PROFILE identifier
+    let mut pos = 0;
+    while pos < buffer.len() - 1 {
+        if buffer[pos] == 0xFF {
+            let marker = buffer[pos + 1];
+            if marker == 0xE2 {
+                // APP2 marker
+                if pos + 4 < buffer.len() {
+                    let segment_length =
+                        u16::from_be_bytes([buffer[pos + 2], buffer[pos + 3]]) as usize;
+                    if pos + 2 + segment_length <= buffer.len() {
+                        let segment_start = pos + 4;
+                        let segment_end = pos + 2 + segment_length;
+                        let segment_data = &buffer[segment_start..segment_end];
 
-                            // Check for ICC_PROFILE identifier
-                            if segment_data.len() > 12 && segment_data.starts_with(b"ICC_PROFILE\0")
-                            {
-                                // ICC profile data starts after the identifier and 2 sequence bytes
-                                let icc_data = &segment_data[14..];
-                                if !icc_data.is_empty() {
-                                    debug!("Found ICC profile in JPEG: {} bytes", icc_data.len());
-                                    return Some(icc_data.to_vec());
-                                }
+                        // Check for ICC_PROFILE identifier
+                        if segment_data.len() > 12 && segment_data.starts_with(b"ICC_PROFILE\0") {
+                            // ICC profile data starts after the identifier and 2 sequence bytes
+                            let icc_data = &segment_data[14..];
+                            if !icc_data.is_empty() {
+                                debug!("Found ICC profile in JPEG: {} bytes", icc_data.len());
+                                return Some(icc_data.to_vec());
                             }
-                            pos = segment_end;
-                        } else {
-                            pos += 2;
                         }
+                        pos = segment_end;
                     } else {
                         pos += 2;
                     }
@@ -335,13 +332,122 @@ impl Gallery {
                     pos += 2;
                 }
             } else {
-                pos += 1;
+                pos += 2;
             }
+        } else {
+            pos += 1;
         }
-
-        None
     }
 
+    None
+}
+
+/// Extract display name from ICC profile data
+pub(crate) fn extract_icc_profile_name(icc_data: &[u8]) -> Option<String> {
+    // ICC profile structure:
+    // - Header: 128 bytes
+    // - Tag table: starts at byte 128
+    // - Tag data: after tag table
+
+    if icc_data.len() < 132 {
+        return None; // Too small to contain header + tag count
+    }
+
+    // Read tag count at offset 128
+    let tag_count =
+        u32::from_be_bytes([icc_data[128], icc_data[129], icc_data[130], icc_data[131]]) as usize;
+
+    let tag_table_start = 132;
+    let tag_entry_size = 12;
+
+    // Look for 'desc' tag (description)
+    for i in 0..tag_count {
+        let tag_start = tag_table_start + (i * tag_entry_size);
+        if tag_start + 12 > icc_data.len() {
+            break;
+        }
+
+        let tag_signature = &icc_data[tag_start..tag_start + 4];
+        if tag_signature == b"desc" {
+            // Found description tag
+            let offset = u32::from_be_bytes([
+                icc_data[tag_start + 4],
+                icc_data[tag_start + 5],
+                icc_data[tag_start + 6],
+                icc_data[tag_start + 7],
+            ]) as usize;
+            let size = u32::from_be_bytes([
+                icc_data[tag_start + 8],
+                icc_data[tag_start + 9],
+                icc_data[tag_start + 10],
+                icc_data[tag_start + 11],
+            ]) as usize;
+
+            if offset + size > icc_data.len() || size < 12 {
+                continue;
+            }
+
+            // Description tag data structure:
+            // - Type signature: 4 bytes (should be 'desc')
+            // - Reserved: 4 bytes
+            // - ASCII count: 4 bytes
+            // - ASCII string: variable length
+
+            let desc_data = &icc_data[offset..offset + size];
+            if desc_data.len() < 12 || &desc_data[0..4] != b"desc" {
+                continue;
+            }
+
+            let ascii_count =
+                u32::from_be_bytes([desc_data[8], desc_data[9], desc_data[10], desc_data[11]])
+                    as usize;
+
+            if ascii_count > 0 && 12 + ascii_count <= desc_data.len() {
+                let ascii_data = &desc_data[12..12 + ascii_count];
+                // Remove null terminator if present
+                let ascii_str = if ascii_data.last() == Some(&0) {
+                    &ascii_data[..ascii_data.len() - 1]
+                } else {
+                    ascii_data
+                };
+
+                if let Ok(name) = std::str::from_utf8(ascii_str) {
+                    let trimmed_name = name.trim();
+                    if !trimmed_name.is_empty() {
+                        debug!("Extracted ICC profile name: {}", trimmed_name);
+                        return Some(trimmed_name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // If no desc tag found, try to identify common profiles by their characteristics
+    // Check profile size and other markers
+    match icc_data.len() {
+        548 => {
+            // Common size for Display P3
+            debug!("ICC profile size matches Display P3 (548 bytes)");
+            Some("Display P3".to_string())
+        }
+        3144 | 3145 => {
+            // Common sizes for sRGB
+            debug!("ICC profile size matches sRGB ({} bytes)", icc_data.len());
+            Some("sRGB".to_string())
+        }
+        560 => {
+            // Common size for Adobe RGB
+            debug!("ICC profile size matches Adobe RGB (560 bytes)");
+            Some("Adobe RGB (1998)".to_string())
+        }
+        _ => {
+            debug!("Unknown ICC profile size: {} bytes", icc_data.len());
+            None
+        }
+    }
+}
+
+impl Gallery {
     async fn serve_file_with_cache_header(
         &self,
         path: &PathBuf,
@@ -978,7 +1084,7 @@ mod tests {
         let cache_path = result.unwrap();
 
         // Extract ICC profile from processed image
-        let processed_icc = Gallery::extract_icc_profile_from_jpeg(&cache_path);
+        let processed_icc = extract_icc_profile_from_jpeg(&cache_path);
 
         assert!(
             processed_icc.is_some(),
@@ -1122,7 +1228,7 @@ mod tests {
         let cache_path = result.unwrap();
 
         // Extract ICC profile from processed image
-        let processed_icc = Gallery::extract_icc_profile_from_jpeg(&cache_path);
+        let processed_icc = extract_icc_profile_from_jpeg(&cache_path);
 
         // ICC profile should be preserved regardless of watermarking
         assert!(
@@ -1153,7 +1259,7 @@ mod tests {
             .expect("Failed to create test JPEG");
 
         // Test extraction
-        let extracted_icc = Gallery::extract_icc_profile_from_jpeg(&jpeg_path);
+        let extracted_icc = extract_icc_profile_from_jpeg(&jpeg_path);
 
         assert!(extracted_icc.is_some(), "Failed to extract ICC profile");
         let extracted_icc = extracted_icc.unwrap();
@@ -1231,7 +1337,7 @@ mod tests {
                 match format {
                     OutputFormat::Jpeg => {
                         // Check JPEG has ICC profile
-                        let processed_icc = Gallery::extract_icc_profile_from_jpeg(&cache_path);
+                        let processed_icc = extract_icc_profile_from_jpeg(&cache_path);
                         assert!(
                             processed_icc.is_some(),
                             "ICC profile missing in {} JPEG",

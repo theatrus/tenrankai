@@ -33,6 +33,7 @@ pub struct ImageInfo {
     pub dimensions: (u32, u32),
     pub capture_date: Option<String>,
     pub is_new: bool,
+    pub color_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +82,7 @@ pub(crate) struct ImageMetadata {
     pub camera_info: Option<CameraInfo>,
     pub location_info: Option<LocationInfo>,
     pub modification_date: Option<SystemTime>,
+    pub color_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -394,6 +394,7 @@ impl Gallery {
             dimensions,
             capture_date,
             is_new,
+            color_profile: cached_metadata.color_profile,
         })
     }
 
@@ -533,6 +534,7 @@ impl Gallery {
                     location_info: metadata.location_info.clone(),
                     file_size: file_metadata.len(),
                     modification_date: metadata.modification_date,
+                    color_profile: metadata.color_profile.clone(),
                 });
             }
         }
@@ -556,6 +558,7 @@ impl Gallery {
             location_info: metadata.location_info,
             file_size,
             modification_date: metadata.modification_date,
+            color_profile: metadata.color_profile,
         })
     }
 
@@ -764,6 +767,7 @@ pub(crate) struct ImageMetadataWithSize {
     pub location_info: Option<super::LocationInfo>,
     pub file_size: u64,
     pub modification_date: Option<SystemTime>,
+    pub color_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
