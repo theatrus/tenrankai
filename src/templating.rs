@@ -134,11 +134,7 @@ impl TemplateEngine {
         
         // Add versioned URLs for common static files
         if let Some(ref static_handler) = self.static_handler {
-            let style_css_url = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    static_handler.get_versioned_url("/static/style.css").await
-                })
-            });
+            let style_css_url = static_handler.get_versioned_url("/static/style.css").await;
             globals.insert(
                 "style_css_url".into(),
                 liquid::model::Value::scalar(style_css_url),
@@ -147,21 +143,20 @@ impl TemplateEngine {
             // Process page_css array if it exists
             if let Some(page_css_value) = globals.get("page_css") {
                 if let Some(css_files) = page_css_value.as_array() {
+                    // Collect the CSS file names first to avoid holding references across await
+                    let css_file_names: Vec<String> = (0..css_files.size())
+                        .filter_map(|i| {
+                            css_files.get(i)
+                                .and_then(|v| v.as_scalar())
+                                .map(|s| format!("/static/{}", s.to_kstr()))
+                        })
+                        .collect();
+                    
+                    // Now process them asynchronously
                     let mut versioned_css_files = Vec::new();
-                    for i in 0..css_files.size() {
-                        if let Some(css_value) = css_files.get(i) {
-                            if let Some(css_file) = css_value.as_scalar() {
-                                let css_file_str = css_file.to_kstr();
-                                let versioned_url = tokio::task::block_in_place(|| {
-                                    let handler = static_handler.clone();
-                                    let file_path = format!("/static/{}", css_file_str);
-                                    tokio::runtime::Handle::current().block_on(async move {
-                                        handler.get_versioned_url(&file_path).await
-                                    })
-                                });
-                                versioned_css_files.push(liquid::model::Value::scalar(versioned_url));
-                            }
-                        }
+                    for file_path in css_file_names {
+                        let versioned_url = static_handler.get_versioned_url(&file_path).await;
+                        versioned_css_files.push(liquid::model::Value::scalar(versioned_url));
                     }
                     
                     globals.insert(
@@ -179,17 +174,13 @@ impl TemplateEngine {
             // If no static handler, just prepend /static/ to page_css files
             if let Some(page_css_value) = globals.get("page_css") {
                 if let Some(css_files) = page_css_value.as_array() {
-                    let mut static_css_files = Vec::new();
-                    for i in 0..css_files.size() {
-                        if let Some(css_value) = css_files.get(i) {
-                            if let Some(css_file) = css_value.as_scalar() {
-                                let css_file_str = css_file.to_kstr();
-                                static_css_files.push(liquid::model::Value::scalar(
-                                    format!("/static/{}", css_file_str)
-                                ));
-                            }
-                        }
-                    }
+                    let static_css_files: Vec<liquid::model::Value> = (0..css_files.size())
+                        .filter_map(|i| {
+                            css_files.get(i)
+                                .and_then(|v| v.as_scalar())
+                                .map(|s| liquid::model::Value::scalar(format!("/static/{}", s.to_kstr())))
+                        })
+                        .collect();
                     
                     globals.insert(
                         "page_css_versioned".into(),
