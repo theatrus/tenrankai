@@ -20,9 +20,9 @@ jobs:
         exclude:
           # Reduce the number of jobs by excluding some combinations
           - os: windows-latest
-            rust: stable
+            rust: beta
           - os: macos-latest
-            rust: stable
+            rust: beta
     steps:
     - uses: actions/checkout@v5
     
