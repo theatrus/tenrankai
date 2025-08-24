@@ -440,7 +440,7 @@ impl Gallery {
         max_items: usize,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         use rand::seq::SliceRandom;
-        use rand::{Rng, thread_rng};
+        use rand::{Rng, rng};
 
         let mut all_items = Vec::new();
 
@@ -456,9 +456,9 @@ impl Gallery {
 
         // If we have more items than requested, randomly select a subset
         if all_items.len() > max_items {
-            let mut rng = thread_rng();
+            let mut rng = rng();
             // Add some extra randomness by shuffling multiple times
-            for _ in 0..rng.gen_range(1..4) {
+            for _ in 0..rng.random_range(1..4) {
                 all_items.shuffle(&mut rng);
             }
             all_items.truncate(max_items);
