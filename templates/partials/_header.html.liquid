@@ -61,7 +61,12 @@
     <link rel="stylesheet" href="{{ style_css_url }}">
     
     {% comment %} Page-specific CSS files {% endcomment %}
-    {% if page_css %}
+    {% if page_css_versioned %}
+        {% for css_url in page_css_versioned %}
+        <link rel="stylesheet" href="{{ css_url }}">
+        {% endfor %}
+    {% elsif page_css %}
+        {% comment %} Fallback for templates that don't have versioned URLs {% endcomment %}
         {% for css_file in page_css %}
         <link rel="stylesheet" href="/static/{{ css_file }}">
         {% endfor %}
