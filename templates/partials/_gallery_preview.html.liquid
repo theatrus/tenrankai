@@ -1,8 +1,8 @@
 {% comment %}
   Gallery Preview Partial
   Parameters:
-    - gallery_name: (optional) Name of the gallery to fetch preview from
-    - gallery_url: (optional) URL to the gallery for the "Explore Full Gallery" link
+    - gallery_name: (required) Name of the gallery to fetch preview from
+    - gallery_url: (required) URL to the gallery for the "Explore Full Gallery" link
 {% endcomment %}
 <section class="gallery-preview-component" id="gallery-preview-component">
     <div class="preview-masonry" id="gallery-preview-grid">
@@ -10,7 +10,7 @@
         <div class="masonry-column" data-column="1"></div>
     </div>
     <div class="preview-footer">
-        <a href="{{ gallery_url | default: '/gallery' }}" class="btn-explore">Explore Full Gallery →</a>
+        <a href="{{ gallery_url }}" class="btn-explore">Explore Full Gallery →</a>
     </div>
 </section>
 
@@ -26,8 +26,13 @@
     let previewImages;
     try {
         // Fetch gallery preview data from API
-        const galleryName = '{{ gallery_name | default: '' }}';
-        const apiUrl = galleryName ? `/api/gallery/${galleryName}/preview` : '/api/gallery/preview';
+        const galleryName = '{{ gallery_name }}';
+        if (!galleryName) {
+            console.error('Gallery name is required for gallery preview');
+            previewComponent.style.display = 'none';
+            return;
+        }
+        const apiUrl = `/api/gallery/${galleryName}/preview`;
         const response = await fetch(apiUrl);
         if (!response.ok) {
             console.error('Failed to fetch gallery preview:', response.status);
@@ -94,7 +99,7 @@
             .replace(/_/g, '');
         
         const link = document.createElement('a');
-        const galleryBaseUrl = '{{ gallery_url | default: "/gallery" }}';
+        const galleryBaseUrl = '{{ gallery_url }}';
         link.href = galleryBaseUrl + '/' + image.parent_path + '#' + cleanName;
         link.className = 'preview-item image-preview-item' + (image.is_new ? ' is-new' : '');
         link.style.width = displayDimensions.width + 'px';
@@ -208,8 +213,8 @@
     
     async function fetchMoreImages() {
         try {
-            const galleryName = '{{ gallery_name | default: '' }}';
-            const apiUrl = galleryName ? `/api/gallery/${galleryName}/preview?count=20` : '/api/gallery/preview?count=20';
+            const galleryName = '{{ gallery_name }}';
+            const apiUrl = `/api/gallery/${galleryName}/preview?count=20`;
             const response = await fetch(apiUrl);
             if (!response.ok) {
                 console.error('Failed to fetch more gallery images:', response.status);

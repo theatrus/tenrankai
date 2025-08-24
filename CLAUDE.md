@@ -539,10 +539,10 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - First gallery in configuration serves as default for legacy routes
    - Each gallery maintains its own metadata cache and background refresh tasks
 
-6. **Backward Compatibility**:
-   - Legacy routes (`/gallery/*`, `/api/gallery/preview`) use the first configured gallery
-   - Templates don't need changes - they receive the same data structure
-   - Existing configurations can be migrated by wrapping `[gallery]` in `[[galleries]]` array
+6. **Migration from Single Gallery**:
+   - Legacy single gallery configurations must be converted to the array format
+   - All gallery references must include the gallery name
+   - Templates must pass `gallery_name` and `gallery_url` parameters to the gallery preview partial
 
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions

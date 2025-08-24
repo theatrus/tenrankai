@@ -55,18 +55,7 @@ download_password = "secure-password"
 copyright_holder = "Your Name"
 base_url = "https://yourdomain.com"
 
-# Single gallery configuration (legacy format still supported)
-[gallery]
-source_directory = "photos"
-cache_directory = "cache/photos"
-images_per_page = 50
-new_threshold_days = 7  # Mark images as "new" if modified within 7 days
-
-[gallery.medium]
-width = 1200
-height = 1200
-
-# Multiple galleries configuration (recommended)
+# Gallery configuration (multiple galleries supported)
 [[galleries]]
 name = "main"
 url_prefix = "/gallery"

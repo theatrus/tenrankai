@@ -7,51 +7,6 @@ use axum::{
 };
 use tracing::error;
 
-#[axum::debug_handler]
-pub async fn gallery_root_handler(
-    state: State<AppState>,
-    query: Query<GalleryQuery>,
-) -> impl IntoResponse {
-    // For backward compatibility, use the first gallery as default
-    let gallery_name = match state.galleries.iter().next() {
-        Some((name, _)) => name.clone(),
-        None => return (StatusCode::NOT_FOUND, "No galleries configured").into_response(),
-    };
-
-    gallery_handler_for_named(state, Path((gallery_name, "".to_string())), query)
-        .await
-        .into_response()
-}
-
-#[axum::debug_handler]
-pub async fn gallery_handler(
-    state: State<AppState>,
-    path: Path<String>,
-    query: Query<GalleryQuery>,
-) -> impl IntoResponse {
-    // For backward compatibility, use the first gallery as default
-    let gallery_name = match state.galleries.iter().next() {
-        Some((name, _)) => name.clone(),
-        None => return (StatusCode::NOT_FOUND, "No galleries configured").into_response(),
-    };
-
-    gallery_handler_for_named(state, Path((gallery_name, path.0)), query)
-        .await
-        .into_response()
-}
-
-#[axum::debug_handler]
-pub async fn image_detail_handler(state: State<AppState>, path: Path<String>) -> impl IntoResponse {
-    // For backward compatibility, use the first gallery as default
-    let gallery_name = match state.galleries.iter().next() {
-        Some((name, _)) => name.clone(),
-        None => return (StatusCode::NOT_FOUND, "No galleries configured").into_response(),
-    };
-
-    image_detail_handler_for_named(state, Path((gallery_name, path.0)))
-        .await
-        .into_response()
-}
 
 fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
     crate::api::get_cookie_value(headers, "download_allowed")
@@ -59,59 +14,6 @@ fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn image_handler(
-    State(app_state): State<AppState>,
-    Path(path): Path<String>,
-    Query(query): Query<GalleryQuery>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    // Validate size parameter if provided
-    if let Some(ref size) = query.size {
-        // Check if it's a @2x variant
-        let (base_size, _is_2x) = if size.ends_with("@2x") {
-            (size.trim_end_matches("@2x"), true)
-        } else {
-            (size.as_str(), false)
-        };
-
-        match base_size {
-            "thumbnail" | "gallery" | "medium" => {
-                // These sizes are allowed without authentication
-            }
-            "large" => {
-                // Large size requires authentication
-                if !has_download_permission(&headers, &app_state.config.app.download_secret) {
-                    tracing::warn!(path = %path, "Large image request denied - authentication required");
-                    return (StatusCode::FORBIDDEN, "Download permission required").into_response();
-                }
-            }
-            _ => {
-                // Invalid size parameter
-                tracing::warn!(path = %path, size = %size, "Invalid size parameter requested");
-                return (StatusCode::BAD_REQUEST, "Invalid size parameter. Valid sizes: thumbnail, gallery, medium, large (with optional @2x suffix)").into_response();
-            }
-        }
-    } else {
-        // No size parameter means full-size original image - requires authentication
-        if !has_download_permission(&headers, &app_state.config.app.download_secret) {
-            tracing::warn!(path = %path, "Full-size image request denied - authentication required");
-            return (StatusCode::FORBIDDEN, "Download permission required").into_response();
-        }
-    }
-
-    // Extract Accept header for format negotiation
-    let accept_header = headers
-        .get(axum::http::header::ACCEPT)
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-
-    // For backward compatibility, use the first gallery as default
-    if let Some((_, gallery)) = app_state.galleries.iter().next() {
-        gallery.serve_image(&path, query.size, accept_header).await
-    } else {
-        (StatusCode::NOT_FOUND, "No galleries configured").into_response()
-    }
-}
 
 // Named gallery handlers for multiple gallery support
 #[axum::debug_handler]

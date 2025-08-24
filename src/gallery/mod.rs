@@ -10,9 +10,10 @@ mod types;
 // Re-export public items
 pub use error::GalleryError;
 pub use handlers::{
-    gallery_handler, gallery_handler_for_named, gallery_root_handler,
-    gallery_root_handler_for_named, image_detail_handler, image_detail_handler_for_named,
-    image_handler, image_handler_for_named,
+    gallery_handler_for_named,
+    gallery_root_handler_for_named, 
+    image_detail_handler_for_named,
+    image_handler_for_named,
 };
 pub use types::*;
 

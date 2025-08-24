@@ -429,16 +429,6 @@ pub async fn create_app(config: Config) -> Router {
         }
     }
 
-    // Add backward compatibility routes for the default/first gallery
-    router = router.route(
-        "/api/gallery/preview",
-        axum::routing::get(api::gallery_preview_handler),
-    );
-    router = router.route(
-        "/api/gallery/composite/{*path}",
-        axum::routing::get(api::gallery_composite_preview_handler),
-    );
-
     // Add posts routes dynamically based on configuration
     if let Some(posts_configs) = &config.posts {
         for posts_config in posts_configs {

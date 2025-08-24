@@ -133,48 +133,6 @@ pub struct GalleryPreviewResponse {
     images: Vec<crate::gallery::GalleryItem>,
 }
 
-pub async fn gallery_preview_handler(
-    State(app_state): State<crate::AppState>,
-    Query(query): Query<GalleryPreviewQuery>,
-) -> Result<Json<GalleryPreviewResponse>, StatusCode> {
-    let count = query.count.unwrap_or(6).min(20); // Cap at 20 for performance
-
-    // For backward compatibility, use the first gallery as default
-    if let Some((gallery_name, gallery)) = app_state.galleries.iter().next() {
-        match gallery.get_gallery_preview(count).await {
-            Ok(images) => Ok(Json(GalleryPreviewResponse { images })),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to get gallery preview for '{}': {}",
-                    gallery_name,
-                    e
-                );
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        }
-    } else {
-        tracing::error!("No galleries configured");
-        Err(StatusCode::NOT_FOUND)
-    }
-}
-
-pub async fn gallery_composite_preview_handler(
-    state: State<crate::AppState>,
-    Path(path): Path<String>,
-) -> Result<Response, StatusCode> {
-    // For backward compatibility, use the first gallery as default
-    let gallery_name = state
-        .galleries
-        .iter()
-        .next()
-        .map(|(name, _)| name.clone())
-        .ok_or_else(|| {
-            tracing::error!("No galleries configured");
-            StatusCode::NOT_FOUND
-        })?;
-
-    gallery_composite_preview_handler_for_named(state, Path((gallery_name, path))).await
-}
 
 // Named gallery API handlers for multiple gallery support
 pub async fn gallery_preview_handler_for_named(
