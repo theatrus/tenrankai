@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Login Success Page Styles
+   Uses CSS variables from style.css for consistent theming
+   ========================================================================== */
+
+.success-container {
+    max-width: 500px;
+    margin: 100px auto;
+    padding: 40px;
+    background: var(--bg-card);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px var(--shadow-medium);
+    text-align: center;
+}
+
+.success-container h1 {
+    color: #28a745;
+    margin-bottom: var(--spacing-lg);
+}
+
+.success-container p {
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-secondary);
+}
+
+.success-container .btn-primary {
+    display: inline-block;
+    padding: 12px 30px;
+    background-color: var(--link-color);
+    color: var(--bg-primary);
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: background-color 0.3s, transform 0.1s;
+}
+
+.success-container .btn-primary:hover {
+    background-color: var(--link-hover);
+    transform: translateY(-1px);
+}
+
+.success-container .btn-primary:active {
+    transform: translateY(0);
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .success-container {
+        margin: 50px auto;
+        padding: 30px 20px;
+    }
+    
+    .success-container h1 {
+        font-size: 1.5rem;
+    }
+}
