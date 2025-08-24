@@ -69,12 +69,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error: User '{}' already exists", username);
                 std::process::exit(1);
             }
-            
+
             let user = User {
                 username: username.clone(),
                 email: email.trim().to_string(),
             };
-            
+
             db.add_user(user);
             db.save_to_file(db_path).await?;
             println!("Added user '{}' with email '{}'", username, email);

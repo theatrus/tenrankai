@@ -34,7 +34,9 @@ impl IntoResponse for LoginError {
             LoginError::TokenInvalid => (StatusCode::UNAUTHORIZED, "Invalid login token"),
             LoginError::TokenExpired => (StatusCode::UNAUTHORIZED, "Login token has expired"),
             LoginError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Database error"),
-            LoginError::InternalError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            LoginError::InternalError(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
         };
 
         (status, message).into_response()

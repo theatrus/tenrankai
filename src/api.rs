@@ -124,15 +124,14 @@ pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
 }
 
 pub fn is_authenticated(headers: &HeaderMap, secret: &str) -> Option<String> {
-    get_cookie_value(headers, "auth")
-        .and_then(|signed_value| {
-            if verify_signed_cookie(secret, &signed_value) {
-                // Extract username from signed value
-                signed_value.split(':').next().map(|s| s.to_string())
-            } else {
-                None
-            }
-        })
+    get_cookie_value(headers, "auth").and_then(|signed_value| {
+        if verify_signed_cookie(secret, &signed_value) {
+            // Extract username from signed value
+            signed_value.split(':').next().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
 }
 
 #[derive(Deserialize)]

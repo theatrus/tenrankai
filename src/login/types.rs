@@ -69,38 +69,38 @@ impl LoginState {
 
     pub fn create_token(&mut self, username: String) -> String {
         use rand::{Rng, rng};
-        
+
         let token: String = rng()
             .random::<[u8; 32]>()
             .iter()
             .map(|b| format!("{:02x}", b))
             .collect();
-        
+
         let expires_at = chrono::Utc::now().timestamp() + 600; // 10 minutes
-        
+
         let login_token = LoginToken {
             username: username.clone(),
             token: token.clone(),
             expires_at,
         };
-        
+
         self.pending_tokens.insert(token.clone(), login_token);
         token
     }
 
     pub fn verify_token(&mut self, token: &str) -> Option<String> {
         let now = chrono::Utc::now().timestamp();
-        
+
         // Remove expired tokens
         self.pending_tokens.retain(|_, t| t.expires_at > now);
-        
+
         // Check if token exists and is valid
         if let Some(login_token) = self.pending_tokens.remove(token) {
             if login_token.expires_at > now {
                 return Some(login_token.username);
             }
         }
-        
+
         None
     }
 
