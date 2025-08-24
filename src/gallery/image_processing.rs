@@ -686,8 +686,14 @@ impl Gallery {
         let total_images = image_paths.len();
         info!("Found {} images to pre-generate cache for", total_images);
 
-        // Use a semaphore to limit concurrent processing
-        let semaphore = Arc::new(Semaphore::new(4)); // Process 4 images concurrently
+        // Use all available CPU cores for parallel processing
+        let num_cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4); // Fallback to 4 if unable to determine
+        info!("Using {} CPU cores for cache pre-generation", num_cores);
+
+        // Use a semaphore to limit concurrent processing to number of CPU cores
+        let semaphore = Arc::new(Semaphore::new(num_cores));
         let mut handles = Vec::new();
 
         for (index, path) in image_paths.iter().enumerate() {
