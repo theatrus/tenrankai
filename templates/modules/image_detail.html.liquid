@@ -290,32 +290,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Function to request download access via API
-    window.requestDownloadAccess = async function() {
-        const password = prompt('Enter download password:');
-        if (password === null) return; // User cancelled
-        
-        try {
-            const response = await fetch('/api/auth', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ password: password })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                alert('Access granted! Reloading page...');
-                location.reload();
-            } else {
-                alert(data.message || 'Authentication failed');
-            }
-        } catch (error) {
-            console.error('Error during authentication:', error);
-            alert('Authentication request failed');
-        }
+    // Function to request download access - redirect to login
+    window.requestDownloadAccess = function() {
+        window.location.href = '/login';
     };
     
     // Initialize controls

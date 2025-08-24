@@ -8,9 +8,8 @@ use axum::{
 use tracing::error;
 
 fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
-    crate::api::get_cookie_value(headers, "download_allowed")
-        .map(|signed_value| crate::api::verify_signed_cookie(secret, &signed_value))
-        .unwrap_or(false)
+    // Check if user is authenticated with the login system
+    crate::login::is_authenticated(headers, secret)
 }
 
 // Named gallery handlers for multiple gallery support

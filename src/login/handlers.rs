@@ -1,10 +1,11 @@
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::{Html, IntoResponse, Redirect},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use tracing::{error, info};
 
 use crate::{AppState, api::create_signed_cookie};
@@ -36,9 +37,22 @@ pub async fn login_page(State(app_state): State<AppState>) -> Result<Html<String
 
 pub async fn login_request(
     State(app_state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, LoginError> {
     let username = request.username.trim().to_lowercase();
+    let client_ip = addr.ip().to_string();
+    
+    // Check rate limit
+    {
+        let mut login_state = app_state.login_state.write().await;
+        if let Err(msg) = login_state.check_rate_limit(&client_ip) {
+            return Ok(Json(LoginResponse {
+                success: false,
+                message: msg.to_string(),
+            }));
+        }
+    }
 
     // Load user database
     let db_path = std::path::Path::new("users.toml");
@@ -47,31 +61,33 @@ pub async fn login_request(
         .map_err(|e| LoginError::DatabaseError(e.to_string()))?;
 
     // Check if user exists
-    let user = user_db
-        .get_user(&username)
-        .ok_or(LoginError::UserNotFound)?;
-
-    // Create login token
-    let token = {
-        let mut login_state = app_state.login_state.write().await;
-        login_state.create_token(username.clone())
-    };
-
-    // Build login URL
-    let base_url = app_state
-        .config
-        .app
-        .base_url
-        .as_deref()
-        .unwrap_or("http://localhost:8080");
-    let login_url = format!("{}/login/verify?token={}", base_url, token);
-
-    // For now, just log the URL instead of sending email
-    info!("Login URL for {}: {}", user.email, login_url);
-
+    if let Some(user) = user_db.get_user(&username) {
+        // Create login token
+        let token = {
+            let mut login_state = app_state.login_state.write().await;
+            login_state.create_token(username.clone())
+        };
+        
+        // Build login URL
+        let base_url = app_state
+            .config
+            .app
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:8080");
+        let login_url = format!("{}/login/verify?token={}", base_url, token);
+        
+        // For now, just log the URL instead of sending email
+        info!("Login URL for {}: {}", user.email, login_url);
+    } else {
+        // Log that no user was found, but don't reveal this to the client
+        info!("Login attempt for non-existent user: {}", username);
+    }
+    
+    // Always return success to avoid revealing user existence
     Ok(Json(LoginResponse {
         success: true,
-        message: format!("Login link sent to {}", user.email),
+        message: "If your username is registered, you will receive a login link via email.".to_string(),
     }))
 }
 
@@ -130,4 +146,22 @@ pub async fn login_success(State(app_state): State<AppState>) -> Result<Html<Str
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthStatusResponse {
+    pub authorized: bool,
+    pub username: Option<String>,
+}
+
+pub async fn check_auth_status(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<AuthStatusResponse> {
+    let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.download_secret);
+    
+    Json(AuthStatusResponse {
+        authorized: username.is_some(),
+        username,
+    })
 }

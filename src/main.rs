@@ -212,6 +212,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
+    // Add ConnectInfo layer to track client IPs
+    let app = app.into_make_service_with_connect_info::<SocketAddr>();
+
     // Set up graceful shutdown
     let server = axum::serve(listener, app);
     let graceful = server.with_graceful_shutdown(shutdown_signal(args.quit_after));

@@ -457,7 +457,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
 
 2. **Fixed Route Mismatches**:
    - Changed `/gallery/info/` to `/gallery/detail/` to match templates
-   - Changed `/api/download/verify` to `/api/verify` to match client code
+   - `/api/verify` endpoint now checks user authentication status
 
 3. **Wildcard Route Syntax**:
    - Updated from `/*path` to `/{*path}` for Axum 0.8 compatibility
@@ -859,14 +859,68 @@ The project includes comprehensive integration tests for all major features:
    - **Format-appropriate handling**: JPEG for critical color accuracy, WebP for efficient web delivery
    - **Graceful degradation**: Fallback mechanisms ensure all images process successfully
 
+## Recent Major Changes (December 2024)
+
+### Email-based Authentication System
+1. **New Login Module** (`src/login/`):
+   - User database stored in TOML file (`users.toml`)
+   - No self-registration - admin manages users via CLI tool
+   - Email-based passwordless authentication
+   - Rate limiting per IP address (5 attempts per 5 minutes)
+   - Secure token generation with 10-minute expiration
+   - Periodic cleanup of expired tokens and rate limits
+
+2. **User Management**:
+   ```bash
+   # List users
+   cargo run --bin user_admin -- list
+   
+   # Add user
+   cargo run --bin user_admin -- add --username alice --email alice@example.com
+   
+   # Remove user
+   cargo run --bin user_admin -- remove --username alice
+   
+   # Update email
+   cargo run --bin user_admin -- update --username alice --email new@example.com
+   ```
+
+3. **Authentication Flow**:
+   - User visits `/login` and enters username
+   - System generates secure login link (currently logs to console)
+   - User clicks link to authenticate
+   - Session maintained via HTTPOnly secure cookies
+   - Gallery module now accepts both user auth and legacy password auth
+
+4. **Rate Limiting**:
+   - Per-IP address tracking
+   - 5 login attempts allowed per 5-minute window
+   - Automatic cleanup of old rate limit entries
+   - Prevents brute force attacks
+
+5. **Gallery Integration**:
+   - `has_download_permission()` checks user authentication only
+   - Legacy password authentication removed completely
+   - Authenticated users have full access to large images and downloads
+   - Clean, secure authentication without password sharing
+
+6. **Security Improvements**:
+   - Login endpoint always returns success to prevent user enumeration
+   - Rate limiting prevents brute force attacks
+   - No information leaked about user existence
+   - Secure token generation with cryptographic randomness
+
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions
 2. Add configuration for replacement interval
 3. Consider WebSocket for real-time updates
 4. Add analytics for popular images
 5. Support ICC profile preservation for other source formats (PNG, TIFF)
-5. Add support for video files in galleries
-6. Implement tag-based filtering for galleries
-7. Add gallery image browser/picker UI for posts editor
-8. Support for image captions in gallery references
-9. Batch gallery reference processing for better performance
+6. Add support for video files in galleries
+7. Implement tag-based filtering for galleries
+8. Add gallery image browser/picker UI for posts editor
+9. Support for image captions in gallery references
+10. Batch gallery reference processing for better performance
+11. Implement actual email sending for login links
+12. Add two-factor authentication support
+13. Add user roles and permissions system

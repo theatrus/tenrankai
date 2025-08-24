@@ -60,7 +60,7 @@ port = 3000
 [app]
 name = "My Gallery"
 download_secret = "change-me-in-production"
-download_password = "secure-password"
+download_password = "deprecated-not-used"  # This field is deprecated, use user authentication
 copyright_holder = "Your Name"
 base_url = "https://yourdomain.com"
 
@@ -272,15 +272,7 @@ This ensures accurate color reproduction across all devices and browsers that su
 
 ## Authentication
 
-Tenrankai supports two authentication methods:
-
-### Password Authentication
-For quick access and downloads, users can authenticate using a shared password:
-1. Visit `/api/auth` and enter the configured password
-2. Use download links which include authentication tokens
-
-### Email-based Login
-For more secure, user-specific access:
+Tenrankai uses an email-based authentication system for secure access:
 
 1. **User Management**: Users are managed via a TOML file (`users.toml`)
    - Copy `users.toml.example` to `users.toml`
@@ -317,7 +309,6 @@ For more secure, user-specific access:
 - `GET /gallery/{path}` - Browse specific folder
 - `GET /gallery/image/{path}?size={size}` - Get resized image
 - `GET /gallery/detail/{path}` - View image details page
-- `POST /api/auth` - Authenticate for downloads
 - `GET /api/gallery/preview` - Get random gallery preview images
 
 ### Posts Endpoints (configurable prefix)

@@ -270,7 +270,7 @@ async fn server_header_middleware(
     response
 }
 
-pub async fn create_app(config: Config) -> Router {
+pub async fn create_app(config: Config) -> axum::Router {
     let template_engine = Arc::new(templating::TemplateEngine::new(
         config.templates.directory.clone(),
     ));
@@ -330,6 +330,9 @@ pub async fn create_app(config: Config) -> Router {
     let posts_managers_arc = Arc::new(posts_managers);
 
     let login_state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
+    
+    // Start periodic cleanup for login tokens and rate limits
+    login::start_periodic_cleanup(login_state.clone());
 
     let app_state = AppState {
         template_engine,
@@ -346,8 +349,6 @@ pub async fn create_app(config: Config) -> Router {
             "/",
             axum::routing::get(templating::template_with_gallery_handler),
         )
-        .route("/api/auth", axum::routing::post(api::authenticate_handler))
-        .route("/api/verify", axum::routing::get(api::verify_handler))
         .route(
             "/favicon.ico",
             axum::routing::get(favicon::favicon_ico_handler),
@@ -372,7 +373,8 @@ pub async fn create_app(config: Config) -> Router {
         .route("/login", axum::routing::get(login::login_page))
         .route("/login/request", axum::routing::post(login::login_request))
         .route("/login/verify", axum::routing::get(login::verify_login))
-        .route("/logout", axum::routing::get(login::logout));
+        .route("/logout", axum::routing::get(login::logout))
+        .route("/api/verify", axum::routing::get(login::check_auth_status));
 
     // Add gallery routes dynamically based on configuration
     if let Some(gallery_configs) = &config.galleries {
