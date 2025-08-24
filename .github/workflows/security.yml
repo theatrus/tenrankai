@@ -1,0 +1,43 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  schedule:
+    # Run audit check daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  security_audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Cache cargo bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-audit
+      
+      - name: Install or update cargo-audit
+        run: |
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --features=fix
+          else
+            cargo install cargo-audit --features=fix --force
+          fi
+      
+      - name: Run security audit
+        run: cargo audit
+      
+      - name: Run security audit with fix suggestions
+        run: cargo audit fix --dry-run
+        continue-on-error: true
