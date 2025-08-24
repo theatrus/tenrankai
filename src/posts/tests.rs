@@ -60,6 +60,7 @@ This is a tutorial post in a subdirectory."#;
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         (temp_dir, config)
@@ -153,6 +154,7 @@ Just content."#;
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         let manager = PostsManager::new(config);
@@ -194,6 +196,7 @@ Content"#;
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         let manager = PostsManager::new(config);
@@ -256,6 +259,7 @@ Footnote[^1]
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         let manager = PostsManager::new(config);
@@ -417,6 +421,7 @@ Regular markdown image (not a gallery reference):
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         // Create posts manager with galleries
@@ -495,6 +500,7 @@ This is the initial content."#;
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         let manager = PostsManager::new(config);
@@ -552,6 +558,7 @@ date = "2024-01-01"
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         };
 
         let manager = PostsManager::new(config);

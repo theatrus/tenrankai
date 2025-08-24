@@ -55,6 +55,24 @@ impl PostsManager {
         Ok(())
     }
 
+    pub fn start_background_refresh(posts_manager: Arc<PostsManager>, interval_minutes: u64) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
+            interval.tick().await; // Skip the first immediate tick
+
+            loop {
+                interval.tick().await;
+                info!("Starting scheduled posts refresh");
+
+                if let Err(e) = posts_manager.refresh_posts().await {
+                    error!("Failed to refresh posts: {}", e);
+                } else {
+                    info!("Posts refresh completed successfully");
+                }
+            }
+        });
+    }
+
     async fn scan_directory(
         &self,
         dir: &Path,

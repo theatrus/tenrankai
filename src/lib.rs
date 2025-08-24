@@ -107,6 +107,7 @@ pub struct PostsSystemConfig {
     pub post_template: String,
     #[serde(default = "default_posts_per_page")]
     pub posts_per_page: usize,
+    pub refresh_interval_minutes: Option<u64>,
 }
 
 fn default_posts_index_template() -> String {
@@ -291,6 +292,7 @@ pub async fn create_app(config: Config) -> Router {
                 index_template: posts_config.index_template.clone(),
                 post_template: posts_config.post_template.clone(),
                 posts_per_page: posts_config.posts_per_page,
+                refresh_interval_minutes: posts_config.refresh_interval_minutes,
             });
 
             // Set galleries reference
@@ -314,12 +316,14 @@ pub async fn create_app(config: Config) -> Router {
         }
     }
 
+    let posts_managers_arc = Arc::new(posts_managers);
+    
     let app_state = AppState {
         template_engine,
         static_handler,
         galleries: galleries_arc,
         favicon_renderer,
-        posts_managers: Arc::new(posts_managers),
+        posts_managers: posts_managers_arc.clone(),
         config: config.clone(),
     };
 

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use tenrankai::{Config, create_app, gallery::Gallery, startup_checks};
+use tenrankai::{Config, create_app, gallery::Gallery, startup_checks, posts};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -166,6 +166,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Store gallery for shutdown handler
             galleries_for_shutdown.push(gallery);
+        }
+    }
+
+    // Initialize posts background refresh
+    // We need to recreate posts managers here for background tasks
+    // This is not ideal but avoids circular dependencies
+    if let Some(posts_configs) = &config.posts {
+        for posts_config in posts_configs {
+            if let Some(interval_minutes) = posts_config.refresh_interval_minutes 
+                && interval_minutes > 0
+            {
+                info!(
+                    "Starting background posts refresh for '{}' every {} minutes",
+                    posts_config.name, interval_minutes
+                );
+                
+                // Create a new posts manager for background refresh
+                let posts_manager = std::sync::Arc::new(posts::PostsManager::new(posts::PostsConfig {
+                    source_directory: posts_config.source_directory.clone(),
+                    url_prefix: posts_config.url_prefix.clone(),
+                    index_template: posts_config.index_template.clone(),
+                    post_template: posts_config.post_template.clone(),
+                    posts_per_page: posts_config.posts_per_page,
+                    refresh_interval_minutes: posts_config.refresh_interval_minutes,
+                }));
+                
+                // Initial refresh
+                if let Err(e) = posts_manager.refresh_posts().await {
+                    tracing::error!(
+                        "Failed to initialize posts for '{}': {}",
+                        posts_config.name, e
+                    );
+                }
+                
+                posts::PostsManager::start_background_refresh(posts_manager, interval_minutes);
+            }
         }
     }
 

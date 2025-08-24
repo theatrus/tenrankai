@@ -733,6 +733,34 @@ The project includes comprehensive integration tests for all major features:
 
 ## Recent Changes (December 2025)
 
+### Posts Periodic Refresh
+1. **Added Configurable Posts Refresh**:
+   - Posts can now be automatically refreshed at a configurable interval
+   - New configuration option: `refresh_interval_minutes` in posts config
+   - Similar to gallery metadata refresh functionality
+   
+2. **Configuration Example**:
+   ```toml
+   [[posts]]
+   name = "blog"
+   source_directory = "content/blog"
+   url_prefix = "/blog"
+   posts_per_page = 10
+   refresh_interval_minutes = 30  # Refresh every 30 minutes
+   ```
+   
+3. **Features**:
+   - Background task spawned for each posts system with refresh enabled
+   - Non-blocking refresh - server continues serving while refreshing
+   - Automatic detection of new, modified, or deleted posts
+   - Individual post reloading on access if file has changed
+   
+4. **Implementation Details**:
+   - `PostsManager::start_background_refresh()` spawns tokio task
+   - Initial refresh happens on startup
+   - Logs refresh start and completion/errors
+   - Skips first immediate tick to avoid duplicate initial refresh
+
 ### Gallery OpenGraph Metadata Fix
 1. **Fixed Generic OpenGraph Tags**:
    - Gallery pages now use folder display name and description for OpenGraph metadata

@@ -181,6 +181,7 @@ This is the content of the second test post."#;
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
+            refresh_interval_minutes: None,
         }]),
     };
 
