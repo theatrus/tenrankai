@@ -469,4 +469,100 @@ Regular markdown image (not a gallery reference):
                 .contains(r#"<img src="https://example.com/image.jpg" alt="Regular Image""#)
         );
     }
+
+    #[tokio::test]
+    async fn test_post_reload_on_change() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        // Create initial post
+        let initial_content = r#"+++
+title = "Test Post"
+summary = "Initial summary"
+date = "2024-01-01"
++++
+
+# Initial Content
+
+This is the initial content."#;
+
+        let post_path = posts_dir.join("test-post.md");
+        fs::write(&post_path, initial_content).unwrap();
+
+        let config = PostsConfig {
+            source_directory: posts_dir.to_path_buf(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+        };
+
+        let manager = PostsManager::new(config);
+        manager.refresh_posts().await.unwrap();
+
+        // Get the initial post
+        let post1 = manager.get_post("test-post").await.unwrap();
+        assert_eq!(post1.title, "Test Post");
+        assert_eq!(post1.summary, "Initial summary");
+        assert!(post1.html_content.contains("Initial Content"));
+
+        // Sleep briefly to ensure file modification time differs
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        // Modify the post
+        let updated_content = r#"+++
+title = "Updated Test Post"
+summary = "Updated summary"
+date = "2024-01-01"
++++
+
+# Updated Content
+
+This is the updated content with **bold text**."#;
+
+        fs::write(&post_path, updated_content).unwrap();
+
+        // Get the post again - it should automatically reload
+        let post2 = manager.get_post("test-post").await.unwrap();
+        assert_eq!(post2.title, "Updated Test Post");
+        assert_eq!(post2.summary, "Updated summary");
+        assert!(post2.html_content.contains("Updated Content"));
+        assert!(post2.html_content.contains("<strong>bold text</strong>"));
+    }
+
+    #[tokio::test]
+    async fn test_post_not_reloaded_when_unchanged() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        let content = r#"+++
+title = "Stable Post"
+summary = "This post won't change"
+date = "2024-01-01"
++++
+
+# Stable Content"#;
+
+        let post_path = posts_dir.join("stable-post.md");
+        fs::write(&post_path, content).unwrap();
+
+        let config = PostsConfig {
+            source_directory: posts_dir.to_path_buf(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+        };
+
+        let manager = PostsManager::new(config);
+        manager.refresh_posts().await.unwrap();
+
+        // Get the post twice without modifications
+        let post1 = manager.get_post("stable-post").await.unwrap();
+        let post2 = manager.get_post("stable-post").await.unwrap();
+
+        // The modification times should be the same (not reloaded)
+        assert_eq!(post1.last_modified, post2.last_modified);
+        assert_eq!(post1.title, post2.title);
+    }
 }

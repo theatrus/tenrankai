@@ -551,6 +551,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Dynamic refresh via API (`POST /api/posts/{name}/refresh`)
    - Configurable templates for index and detail pages
    - **Gallery Integration**: Reference images from any configured gallery with smart size handling
+   - **Automatic Reload on Change**: Posts are automatically reloaded when their markdown files are modified
    
 4. **Implementation Details**:
    - PostsManager handles scanning, caching, and serving posts
@@ -561,6 +562,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Dark theme optimized code blocks with #2d2d2d background and #f8f8f2 text
    - Inline code uses light background (#e8e8e8) with dark text (#333) for contrast
    - Gallery references are processed during markdown rendering to generate proper HTML
+   - File modification times are tracked to enable automatic reloading
 
 ### Multi-Gallery Support (August 2025 - Updated December 2024)
 1. **Multiple Gallery Instances**: The gallery module now supports multiple independent gallery instances
@@ -638,6 +640,26 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
 - **Template Paths**: Fixed template paths in tests to match actual file locations
 
 ## New Features (December 2024)
+
+### Automatic Post Reload on File Change
+Posts now automatically reload when their markdown files are modified, making development and content editing more efficient.
+
+#### How It Works
+- When a post is requested, the system checks if the file has been modified since it was last loaded
+- If the file is newer, it's automatically reloaded and reprocessed
+- The updated content is immediately available without restarting the server
+
+#### Implementation Details
+- Modification times are tracked using `SystemTime` for each loaded post
+- The `get_post()` method automatically handles freshness checking
+- Minimal performance impact - file metadata is only checked on access
+- Thread-safe implementation using RwLock for concurrent access
+
+#### Benefits
+- Live editing experience during development
+- No need to restart the server when editing posts
+- Content updates are immediate
+- Preserves memory efficiency by only reloading changed posts
 
 ### Gallery Image References in Posts
 Posts can now easily reference and embed images from any configured gallery with automatic link generation.

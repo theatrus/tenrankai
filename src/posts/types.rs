@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::SystemTime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Post {
@@ -11,6 +11,8 @@ pub struct Post {
     pub date: DateTime<Utc>,
     pub content: String,
     pub html_content: String,
+    #[serde(skip)]
+    pub last_modified: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
