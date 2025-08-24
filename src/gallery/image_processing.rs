@@ -10,6 +10,7 @@ use tracing::{debug, error, info};
 pub(crate) enum OutputFormat {
     Jpeg,
     WebP,
+    Png,
 }
 
 impl OutputFormat {
@@ -17,6 +18,7 @@ impl OutputFormat {
         match self {
             OutputFormat::Jpeg => "jpg",
             OutputFormat::WebP => "webp",
+            OutputFormat::Png => "png",
         }
     }
 
@@ -25,13 +27,19 @@ impl OutputFormat {
         match self {
             OutputFormat::Jpeg => ImageFormat::Jpeg,
             OutputFormat::WebP => ImageFormat::WebP,
+            OutputFormat::Png => ImageFormat::Png,
         }
     }
 }
 
 impl Gallery {
-    fn determine_output_format(&self, accept_header: &str) -> OutputFormat {
-        // Check if browser accepts WebP
+    fn determine_output_format(&self, accept_header: &str, source_path: &str) -> OutputFormat {
+        // PNG sources should always output as PNG to preserve transparency and quality
+        if source_path.to_lowercase().ends_with(".png") {
+            return OutputFormat::Png;
+        }
+
+        // For other formats, check if browser accepts WebP
         if accept_header.contains("image/webp") {
             OutputFormat::WebP
         } else {
@@ -53,8 +61,18 @@ impl Gallery {
             return (StatusCode::FORBIDDEN, "Forbidden").into_response();
         }
 
+        // Ensure the file exists
+        if !full_path.exists() {
+            error!("Image file not found: {:?}", full_path);
+            return (StatusCode::NOT_FOUND, "Image not found").into_response();
+        }
+
         let size = size.as_deref();
-        let output_format = self.determine_output_format(accept_header);
+        let output_format = self.determine_output_format(accept_header, relative_path);
+        debug!(
+            "Serving image: {}, output format: {:?}",
+            relative_path, output_format
+        );
 
         if let Some(size) = size {
             // Check if cached version exists first
@@ -142,24 +160,42 @@ impl Gallery {
         let _webp_quality = self.config.webp_quality.unwrap_or(85.0);
 
         tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-            // Open image with decoder to access ICC profile
-            let original_file = std::fs::File::open(&original_path)?;
-            let mut buf_reader = std::io::BufReader::new(original_file);
+            // First, determine the format and extract ICC profile if needed
+            let detected_format = {
+                let file = std::fs::File::open(&original_path)
+                    .map_err(|e| {
+                        error!("Failed to open image file {:?}: {}", original_path, e);
+                        GalleryError::IoError(e)
+                    })?;
+                let buf_reader = std::io::BufReader::new(file);
+                let decoder = image::ImageReader::new(buf_reader).with_guessed_format()
+                    .map_err(|e| {
+                        error!("Failed to guess image format for {:?}: {}", original_path, e);
+                        GalleryError::IoError(e)
+                    })?;
+                decoder.format()
+            };
 
-            let decoder = image::ImageReader::new(&mut buf_reader).with_guessed_format()?;
-
-            // Extract ICC profile before decoding
-            // Note: ICC profile extraction from JPEG requires reading the file again
-            // since the image crate doesn't expose ICC profiles from ImageReader
-            let icc_profile: Option<Vec<u8>> = match decoder.format() {
+            // Extract ICC profile based on detected format
+            let icc_profile: Option<Vec<u8>> = match detected_format {
                 Some(image::ImageFormat::Jpeg) => {
-                    // For JPEG, try to extract ICC profile using rexif crate (already in dependencies)
+                    // For JPEG, extract ICC profile from APP2 segments
                     extract_icc_profile_from_jpeg(&original_path)
+                }
+                Some(image::ImageFormat::Png) => {
+                    // For PNG, extract ICC profile from iCCP chunk
+                    extract_icc_profile_from_png(&original_path)
                 }
                 _ => None,
             };
 
-            let img = decoder.decode()?;
+            // Now open the file again for decoding
+            debug!("Opening image file: {:?}, detected format: {:?}", original_path, detected_format);
+            let img = image::open(&original_path)
+                .map_err(|e| {
+                    error!("Failed to decode image {:?}: {}", original_path, e);
+                    GalleryError::ImageError(e)
+                })?;
 
             // Get original dimensions
             let (orig_width, orig_height) = (img.width(), img.height());
@@ -274,6 +310,68 @@ impl Gallery {
                         }
                     }
                 }
+                OutputFormat::Png => {
+                    // For PNG output, we need to preserve transparency and ICC profile
+                    use image::codecs::png::{PngEncoder, CompressionType, FilterType as PngFilterType};
+
+                    // Convert to appropriate format based on image type
+                    let png_data = if final_image.color().has_alpha() {
+                        // Preserve alpha channel
+                        let rgba = final_image.to_rgba8();
+                        let (width, height) = rgba.dimensions();
+                        let raw_data = rgba.into_raw();
+
+                        // Create PNG with alpha
+                        let mut output = Vec::new();
+                        let encoder = PngEncoder::new_with_quality(
+                            &mut output,
+                            CompressionType::Best,
+                            PngFilterType::Adaptive
+                        );
+
+                        encoder.write_image(
+                            &raw_data,
+                            width,
+                            height,
+                            image::ColorType::Rgba8.into()
+                        )?;
+
+                        output
+                    } else {
+                        // No alpha channel, use RGB
+                        let rgb = final_image.to_rgb8();
+                        let (width, height) = rgb.dimensions();
+                        let raw_data = rgb.into_raw();
+
+                        // Create PNG without alpha
+                        let mut output = Vec::new();
+                        let encoder = PngEncoder::new_with_quality(
+                            &mut output,
+                            CompressionType::Best,
+                            PngFilterType::Adaptive
+                        );
+
+                        encoder.write_image(
+                            &raw_data,
+                            width,
+                            height,
+                            image::ColorType::Rgb8.into()
+                        )?;
+
+                        output
+                    };
+
+                    // If we have an ICC profile, we need to add it to the PNG
+                    if let Some(ref _profile_data) = icc_profile {
+                        // For now, write the PNG without ICC profile modification
+                        // since the image crate's PNG encoder doesn't support adding ICC profiles directly
+                        // We would need to implement PNG chunk manipulation to add iCCP chunk
+                        debug!("PNG ICC profile preservation not yet implemented, writing without profile");
+                        std::fs::write(&cache_path_clone, png_data)?;
+                    } else {
+                        std::fs::write(&cache_path_clone, png_data)?;
+                    }
+                }
             }
 
             Ok(())
@@ -336,6 +434,91 @@ pub(crate) fn extract_icc_profile_from_jpeg(path: &std::path::PathBuf) -> Option
             }
         } else {
             pos += 1;
+        }
+    }
+
+    None
+}
+
+/// Extract ICC profile from PNG file
+pub(crate) fn extract_icc_profile_from_png(path: &std::path::PathBuf) -> Option<Vec<u8>> {
+    use std::io::Read;
+
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
+
+    let mut buffer = Vec::new();
+    if file.read_to_end(&mut buffer).is_err() {
+        return None;
+    }
+
+    // PNG signature check
+    if buffer.len() < 8 || &buffer[0..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+
+    let mut pos = 8; // Skip PNG signature
+
+    while pos + 12 <= buffer.len() {
+        // Read chunk length (4 bytes, big-endian)
+        let chunk_length = u32::from_be_bytes([
+            buffer[pos],
+            buffer[pos + 1],
+            buffer[pos + 2],
+            buffer[pos + 3],
+        ]) as usize;
+
+        // Read chunk type (4 bytes)
+        let chunk_type = &buffer[pos + 4..pos + 8];
+
+        // Check for iCCP chunk (ICC profile)
+        if chunk_type == b"iCCP" {
+            let chunk_data_start = pos + 8;
+            let chunk_data_end = chunk_data_start + chunk_length;
+
+            if chunk_data_end <= buffer.len() {
+                let chunk_data = &buffer[chunk_data_start..chunk_data_end];
+
+                // iCCP chunk format:
+                // - Profile name (null-terminated string)
+                // - Compression method (1 byte, should be 0 for deflate)
+                // - Compressed profile data
+
+                // Find null terminator for profile name
+                if let Some(null_pos) = chunk_data.iter().position(|&b| b == 0)
+                    && null_pos + 2 < chunk_data.len()
+                {
+                    let compression_method = chunk_data[null_pos + 1];
+
+                    if compression_method == 0 {
+                        // Deflate compression
+                        let compressed_data = &chunk_data[null_pos + 2..];
+
+                        // Decompress using flate2
+                        use flate2::read::ZlibDecoder;
+                        let mut decoder = ZlibDecoder::new(compressed_data);
+                        let mut decompressed = Vec::new();
+
+                        if decoder.read_to_end(&mut decompressed).is_ok() {
+                            debug!(
+                                "Found ICC profile in PNG: {} bytes (decompressed)",
+                                decompressed.len()
+                            );
+                            return Some(decompressed);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Move to next chunk (length + type + data + CRC)
+        pos += 8 + chunk_length + 4;
+
+        // Stop at IEND chunk
+        if chunk_type == b"IEND" {
+            break;
         }
     }
 
@@ -509,11 +692,23 @@ impl Gallery {
                 "image/jpeg",
             )
         } else {
-            let output_format = self.determine_output_format(accept_header);
+            // For serve_cached_image, we need to determine format based on cache_key
+            // If it contains .png, use PNG format, otherwise use content negotiation
+            let output_format = if cache_key.to_lowercase().contains(".png") {
+                OutputFormat::Png
+            } else {
+                // Default to content negotiation for non-PNG files
+                if accept_header.contains("image/webp") {
+                    OutputFormat::WebP
+                } else {
+                    OutputFormat::Jpeg
+                }
+            };
             let hash = self.generate_image_cache_key(cache_key, size, output_format.extension());
             let content_type = match output_format {
                 OutputFormat::Jpeg => "image/jpeg",
                 OutputFormat::WebP => "image/webp",
+                OutputFormat::Png => "image/png",
             };
             (hash, content_type)
         };
@@ -525,7 +720,14 @@ impl Gallery {
             if size == "composite" {
                 "jpg"
             } else {
-                let output_format = self.determine_output_format(accept_header);
+                // Same logic as above
+                let output_format = if cache_key.to_lowercase().contains(".png") {
+                    OutputFormat::Png
+                } else if accept_header.contains("image/webp") {
+                    OutputFormat::WebP
+                } else {
+                    OutputFormat::Jpeg
+                };
                 output_format.extension()
             }
         );
@@ -607,8 +809,12 @@ impl Gallery {
             ("medium", true), // @2x
         ];
 
-        // Pre-generate for both JPEG and WebP formats
-        let formats = [OutputFormat::Jpeg, OutputFormat::WebP];
+        // Determine which formats to pre-generate based on source file
+        let formats = if relative_path.to_lowercase().ends_with(".png") {
+            vec![OutputFormat::Png] // PNG files only generate PNG output
+        } else {
+            vec![OutputFormat::Jpeg, OutputFormat::WebP] // Other formats get both
+        };
 
         let mut generated_count = 0;
 
@@ -1298,6 +1504,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_png_support_and_transparency() {
+        let (gallery, _temp_dir) = create_test_gallery().await;
+
+        // Create a PNG with transparency
+        let img = ImageBuffer::from_pixel(100, 100, Rgba([255u8, 128, 64, 128])); // Semi-transparent
+        let source_path = gallery.config.source_directory.join("test_transparent.png");
+        img.save(&source_path).unwrap();
+
+        // Process the PNG image
+        let relative_path = "test_transparent.png";
+
+        // Test that PNG is always output as PNG
+        let result = gallery
+            .get_resized_image(&source_path, relative_path, "thumbnail", OutputFormat::Png)
+            .await;
+
+        assert!(result.is_ok(), "Failed to process PNG: {:?}", result);
+
+        let cache_path = result.unwrap();
+
+        // Verify it's a PNG file
+        assert!(cache_path.to_string_lossy().ends_with(".png"));
+
+        // Load the processed image and verify it has alpha channel
+        let processed_img = image::open(&cache_path).unwrap();
+        assert!(
+            processed_img.color().has_alpha(),
+            "Processed PNG lost alpha channel"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_png_icc_profile_extraction() {
+        let temp_dir = TempDir::new().unwrap();
+        let png_path = temp_dir.path().join("test_icc.png");
+
+        // Create a simple PNG
+        let img = ImageBuffer::from_pixel(50, 50, Rgba([255u8, 128, 64, 255]));
+        img.save(&png_path).unwrap();
+
+        // For now, just test that extraction doesn't crash
+        // Real PNG ICC profile testing would require creating a PNG with iCCP chunk
+        let icc_profile = extract_icc_profile_from_png(&png_path);
+
+        // This should return None for a basic PNG without ICC profile
+        assert!(icc_profile.is_none());
+    }
+
+    #[tokio::test]
     async fn test_icc_profile_preservation_all_sizes() {
         let (gallery, _temp_dir) = create_test_gallery().await;
 
@@ -1378,6 +1633,17 @@ mod tests {
                         }
 
                         assert!(found_iccp, "ICCP chunk missing in {} WebP", size);
+                    }
+                    OutputFormat::Png => {
+                        // For PNG, we don't yet support ICC profile preservation in output
+                        // Just verify it's a valid PNG
+                        let png_data = std::fs::read(&cache_path).unwrap();
+                        assert!(png_data.len() >= 8);
+                        assert_eq!(
+                            &png_data[0..8],
+                            b"\x89PNG\r\n\x1a\n",
+                            "Not a valid PNG file"
+                        );
                     }
                 }
             }
