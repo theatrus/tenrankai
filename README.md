@@ -16,6 +16,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Metadata Extraction**: EXIF data parsing including camera info, GPS coordinates, and capture dates
 - **Smart Caching**: Persistent metadata caching and image cache with background refresh
 - **Multiple Format Support**: Automatic WebP delivery for supported browsers with JPEG fallback
+- **Color Profile Preservation**: Full ICC profile support for both JPEG and WebP, including Display P3
 - **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection
 - **Markdown Support**: Folder descriptions and image captions via markdown files
 - **Hidden Folders**: Hide folders from listings while keeping them accessible via direct URL
@@ -248,6 +249,17 @@ Tenrankai automatically generates multiple sizes for each image:
 - **Large**: Full quality (requires authentication)
 
 All sizes support @2x variants for high-DPI displays.
+
+### Color Profile Support
+
+Tenrankai preserves ICC color profiles throughout the image processing pipeline:
+
+- **JPEG**: Extracts and preserves ICC profiles from source images
+- **WebP**: Embeds ICC profiles using libwebp-sys WebPMux API
+- **Wide Gamut**: Full support for Display P3, Adobe RGB, and other color spaces
+- **Watermarking**: Color profiles maintained even when adding copyright notices
+
+This ensures accurate color reproduction across all devices and browsers that support color management.
 
 ## Authentication
 

@@ -1,7 +1,7 @@
 use super::{Gallery, GalleryError};
 use crate::copyright::{CopyrightConfig, add_copyright_notice};
 use crate::webp_encoder::{WebPEncoder, WebPError};
-use image::{ImageFormat, ImageEncoder, imageops::FilterType};
+use image::{ImageEncoder, ImageFormat, imageops::FilterType};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -284,113 +284,6 @@ impl Gallery {
         Ok(cache_path)
     }
 
-    /// Embed ICC profile in WebP file by converting to VP8X format
-    #[allow(dead_code)]
-    fn embed_icc_in_webp(webp_data: &[u8], icc_profile: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GalleryError> {
-        // WebP file format:
-        // - RIFF header (12 bytes): "RIFF" + file_size + "WEBP"
-        // - For extended WebP: VP8X chunk, then optional chunks (ICCP, etc.), then VP8/VP8L
-
-        if webp_data.len() < 20 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
-            return Err(GalleryError::ImageError(image::ImageError::Decoding(
-                image::error::DecodingError::new(
-                    image::ImageFormat::WebP.into(),
-                    "Invalid WebP format",
-                ),
-            )));
-        }
-
-        // Check if this is already VP8X (extended) or VP8/VP8L (simple)
-        let first_chunk = &webp_data[12..16];
-        
-        if first_chunk == b"VP8X" {
-            // Already extended format - insert ICCP after VP8X chunk
-            Self::insert_iccp_in_vp8x(webp_data, icc_profile)
-        } else if first_chunk == b"VP8 " || first_chunk == b"VP8L" {
-            // Simple format - convert to VP8X format with ICCP
-            Self::convert_to_vp8x_with_iccp(webp_data, icc_profile, width, height)
-        } else {
-            Err(GalleryError::ImageError(image::ImageError::Decoding(
-                image::error::DecodingError::new(
-                    image::ImageFormat::WebP.into(),
-                    "Unknown WebP chunk type",
-                ),
-            )))
-        }
-    }
-    
-    /// Convert simple WebP (VP8/VP8L) to VP8X format with ICCP chunk
-    #[allow(dead_code)]
-    fn convert_to_vp8x_with_iccp(webp_data: &[u8], icc_profile: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GalleryError> {
-        let mut result = Vec::new();
-        
-        // Copy RIFF header (12 bytes)
-        result.extend_from_slice(&webp_data[0..12]);
-        
-        // Create VP8X chunk
-        // VP8X chunk: "VP8X" + size(4) + flags(1) + reserved(3) + width(3) + height(3)
-        result.extend_from_slice(b"VP8X");
-        result.extend_from_slice(&10u32.to_le_bytes()); // VP8X chunk size (always 10)
-        result.push(0x10); // flags: ICCP bit set (bit 5)
-        result.extend_from_slice(&[0, 0, 0]); // reserved bytes
-        
-        // Use the provided dimensions
-        let width_minus_1 = width - 1;
-        let height_minus_1 = height - 1;
-        
-        // Width and height as 24-bit little-endian (minus 1)
-        result.push((width_minus_1 & 0xFF) as u8);
-        result.push(((width_minus_1 >> 8) & 0xFF) as u8);
-        result.push(((width_minus_1 >> 16) & 0xFF) as u8);
-        result.push((height_minus_1 & 0xFF) as u8);
-        result.push(((height_minus_1 >> 8) & 0xFF) as u8);
-        result.push(((height_minus_1 >> 16) & 0xFF) as u8);
-        
-        // Add ICCP chunk
-        let iccp_chunk = Self::create_webp_iccp_chunk(icc_profile);
-        result.extend_from_slice(&iccp_chunk);
-        
-        // Copy the original VP8/VP8L chunk
-        result.extend_from_slice(&webp_data[12..]);
-        
-        // Update RIFF size
-        let new_size = (result.len() - 8) as u32;
-        result[4..8].copy_from_slice(&new_size.to_le_bytes());
-        
-        Ok(result)
-    }
-    
-    /// Insert ICCP chunk in existing VP8X format
-    #[allow(dead_code)]
-    fn insert_iccp_in_vp8x(webp_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, GalleryError> {
-        // For VP8X format, insert ICCP chunk after VP8X chunk but before VP8/VP8L
-        let mut result = Vec::new();
-        
-        // Find the end of the VP8X chunk
-        let vp8x_size = u32::from_le_bytes([webp_data[16], webp_data[17], webp_data[18], webp_data[19]]) as usize;
-        let vp8x_end = 20 + vp8x_size + (vp8x_size % 2); // Include padding
-        
-        // Copy up to end of VP8X chunk
-        result.extend_from_slice(&webp_data[0..vp8x_end]);
-        
-        // Update VP8X flags to include ICCP bit
-        result[20] |= 0x10; // Set ICCP flag
-        
-        // Add ICCP chunk
-        let iccp_chunk = Self::create_webp_iccp_chunk(icc_profile);
-        result.extend_from_slice(&iccp_chunk);
-        
-        // Copy remaining chunks
-        result.extend_from_slice(&webp_data[vp8x_end..]);
-        
-        // Update RIFF size
-        let new_size = (result.len() - 8) as u32;
-        result[4..8].copy_from_slice(&new_size.to_le_bytes());
-        
-        Ok(result)
-    }
-    
-
     /// Extract ICC profile from JPEG file
     fn extract_icc_profile_from_jpeg(path: &std::path::PathBuf) -> Option<Vec<u8>> {
         use std::io::Read;
@@ -447,29 +340,6 @@ impl Gallery {
         }
 
         None
-    }
-
-    /// Create a WebP ICCP chunk containing the ICC profile
-    #[allow(dead_code)]
-    fn create_webp_iccp_chunk(icc_profile: &[u8]) -> Vec<u8> {
-        let mut chunk = Vec::new();
-
-        // ICCP chunk header: "ICCP" + chunk_size
-        chunk.extend_from_slice(b"ICCP");
-
-        // Chunk size (excluding the 8-byte chunk header)
-        let chunk_size = icc_profile.len() as u32;
-        chunk.extend_from_slice(&chunk_size.to_le_bytes());
-
-        // ICC profile data
-        chunk.extend_from_slice(icc_profile);
-
-        // Add padding if needed (WebP chunks must be even-sized)
-        if chunk.len() % 2 == 1 {
-            chunk.push(0);
-        }
-
-        chunk
     }
 
     async fn serve_file_with_cache_header(

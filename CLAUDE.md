@@ -86,7 +86,11 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
 - **Cache separation**: Different cache files for JPEG and WebP versions
 - **Content negotiation**: Automatic format selection based on browser capabilities
-- **ICC color profile preservation**: Extracts ICC color profiles (including Display P3) from source JPEG images and preserves them in JPEG outputs through the entire processing pipeline, including copyright watermarking. WebP currently uses standard encoding with sRGB color space
+- **ICC Profile Preservation**: Full support for color profiles in both JPEG and WebP formats
+  - JPEG: ICC profiles extracted from source and preserved in output
+  - WebP: ICC profiles embedded using libwebp-sys (v0.13+) WebPMux API
+  - Display P3 and other wide gamut color spaces fully supported
+  - Profiles preserved through entire processing pipeline including watermarking
 
 ### Metadata Caching
 
@@ -829,11 +833,12 @@ The project includes comprehensive integration tests for all major features:
    - Graceful fallback to standard JPEG if profile embedding fails
    - Preserves photographer's color grading and camera-specific color profiles
 
-3. **WebP Color Handling**:
-   - Uses dedicated WebP crate for high-quality encoding with configurable quality settings
-   - Currently uses standard WebP encoding (sRGB color space) due to VP8X format complexity
-   - Maintains excellent compression and image quality while ensuring broad compatibility
-   - WebP VP8X ICC profile embedding implementation available but disabled due to validation issues
+3. **WebP ICC Profile Support** (Updated August 2025):
+   - **libwebp-sys Integration**: Created wrapper module using libwebp-sys v0.13+ for proper ICC support
+   - **WebPMux API**: Uses WebPMux to add ICC profile chunks to WebP files after encoding
+   - **Full Color Support**: Display P3, Adobe RGB, and other wide gamut profiles now preserved
+   - **Fallback Strategy**: Gracefully falls back to basic WebP encoding if ICC embedding fails
+   - **Validated Format**: Produces properly formatted VP8X extended WebP files with ICCP chunks
 
 4. **Color Profile Workflow**:
    ```
