@@ -48,7 +48,10 @@ async fn setup_test_server() -> (TempDir, TestServer) {
 <h2>Gallery</h2>
 <div class="gallery">Test gallery</div>
 {% include "_footer.html.liquid" %}"#;
-    fs::write(templates_dir.join("pages/gallery.html.liquid"), gallery_content).unwrap();
+    // Create modules directory for module templates
+    let modules_dir = templates_dir.join("modules");
+    fs::create_dir_all(&modules_dir).unwrap();
+    fs::write(modules_dir.join("gallery.html.liquid"), gallery_content).unwrap();
 
     // Create test config
     let config = Config {

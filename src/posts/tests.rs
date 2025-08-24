@@ -57,8 +57,8 @@ This is a tutorial post in a subdirectory."#;
         let config = PostsConfig {
             source_directory: posts_dir.to_path_buf(),
             url_prefix: "/posts".to_string(),
-            index_template: "pages/posts_index.html.liquid".to_string(),
-            post_template: "pages/post_detail.html.liquid".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
         };
 
@@ -150,8 +150,8 @@ Just content."#;
         let config = PostsConfig {
             source_directory: posts_dir.to_path_buf(),
             url_prefix: "/posts".to_string(),
-            index_template: "pages/posts_index.html.liquid".to_string(),
-            post_template: "pages/post_detail.html.liquid".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
         };
 
@@ -191,8 +191,8 @@ Content"#;
         let config = PostsConfig {
             source_directory: posts_dir.to_path_buf(),
             url_prefix: "/posts".to_string(),
-            index_template: "pages/posts_index.html.liquid".to_string(),
-            post_template: "pages/post_detail.html.liquid".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
         };
 
@@ -253,8 +253,8 @@ Footnote[^1]
         let config = PostsConfig {
             source_directory: posts_dir.to_path_buf(),
             url_prefix: "/posts".to_string(),
-            index_template: "pages/posts_index.html.liquid".to_string(),
-            post_template: "pages/post_detail.html.liquid".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
         };
 

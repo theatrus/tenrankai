@@ -223,19 +223,20 @@ Tenrankai includes several performance optimizations:
 
 ## Template Structure
 
-Templates are organized into two directories:
+Templates are organized into three directories:
 
 ```
 templates/
-├── pages/              # Full page templates
+├── pages/              # Regular page templates
 │   ├── index.html.liquid
-│   ├── gallery.html.liquid
-│   ├── image_detail.html.liquid
-│   ├── posts_index.html.liquid
-│   ├── post_detail.html.liquid
 │   ├── about.html.liquid
 │   ├── contact.html.liquid
 │   └── 404.html.liquid
+├── modules/            # Module-specific templates
+│   ├── gallery.html.liquid
+│   ├── image_detail.html.liquid
+│   ├── posts_index.html.liquid
+│   └── post_detail.html.liquid
 └── partials/           # Reusable template components
     ├── _header.html.liquid
     ├── _footer.html.liquid

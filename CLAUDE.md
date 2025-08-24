@@ -53,12 +53,14 @@ A flexible markdown-based posts/blog system supporting multiple independent coll
 - `tests.rs` - Comprehensive test suite
 
 ### Template Structure
-Templates are organized into two directories for better maintainability:
-- `templates/pages/` - Full page templates (index, gallery, image_detail, posts_index, post_detail, 404, etc.)
+Templates are organized into three directories for better maintainability:
+- `templates/pages/` - Regular page templates (index, about, contact, 404)
+- `templates/modules/` - Module-specific templates (gallery, image_detail, posts_index, post_detail)
 - `templates/partials/` - Reusable components (_header, _footer, _gallery_preview)
 
 All templates use the Liquid templating language. When loading templates:
 - Page templates are referenced as `pages/template_name.html.liquid`
+- Module templates are referenced as `modules/template_name.html.liquid`
 - Partial templates are referenced as `partials/_partial_name.html.liquid`
 - Partials are automatically loaded and made available to all templates
 

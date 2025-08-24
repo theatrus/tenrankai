@@ -43,8 +43,8 @@ impl Default for PostsConfig {
         Self {
             source_directory: PathBuf::from("posts"),
             url_prefix: String::from("/posts"),
-            index_template: String::from("pages/posts_index.html.liquid"),
-            post_template: String::from("pages/post_detail.html.liquid"),
+            index_template: String::from("modules/posts_index.html.liquid"),
+            post_template: String::from("modules/post_detail.html.liquid"),
             posts_per_page: 20,
         }
     }

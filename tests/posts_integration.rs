@@ -69,7 +69,10 @@ async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
 {% endif %}
 
 {% include "_footer.html.liquid" %}"#;
-    fs::write(pages_dir.join("posts_index.html.liquid"), posts_index_content).unwrap();
+    // Create modules directory for module templates
+    let modules_dir = templates_dir.join("modules");
+    fs::create_dir_all(&modules_dir).unwrap();
+    fs::write(modules_dir.join("posts_index.html.liquid"), posts_index_content).unwrap();
 
     // Create post detail template
     let post_detail_content = r#"{% assign page_title = post.title %}
@@ -83,7 +86,7 @@ async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
 </article>
 
 {% include "_footer.html.liquid" %}"#;
-    fs::write(pages_dir.join("post_detail.html.liquid"), post_detail_content).unwrap();
+    fs::write(modules_dir.join("post_detail.html.liquid"), post_detail_content).unwrap();
 
     // Create test posts
     let post1_content = r#"+++
@@ -165,8 +168,8 @@ This is the content of the second test post."#;
                 name: "blog".to_string(),
                 source_directory: blog_dir,
                 url_prefix: "/blog".to_string(),
-                index_template: "pages/posts_index.html.liquid".to_string(),
-                post_template: "pages/post_detail.html.liquid".to_string(),
+                index_template: "modules/posts_index.html.liquid".to_string(),
+                post_template: "modules/post_detail.html.liquid".to_string(),
                 posts_per_page: 10,
             }
         ]),

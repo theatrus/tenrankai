@@ -98,11 +98,11 @@ pub struct PostsSystemConfig {
 }
 
 fn default_posts_index_template() -> String {
-    "pages/posts_index.html.liquid".to_string()
+    "modules/posts_index.html.liquid".to_string()
 }
 
 fn default_posts_detail_template() -> String {
-    "pages/post_detail.html.liquid".to_string()
+    "modules/post_detail.html.liquid".to_string()
 }
 
 fn default_posts_per_page() -> usize {

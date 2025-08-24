@@ -59,8 +59,8 @@ max_per_folder = 3
 name = "blog"
 source_directory = "posts/blog"
 url_prefix = "/blog"
-index_template = "pages/posts_index.html.liquid"
-post_template = "pages/post_detail.html.liquid"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
 posts_per_page = 20
 
 # Example stories configuration
@@ -68,8 +68,8 @@ posts_per_page = 20
 name = "stories"
 source_directory = "posts/stories"
 url_prefix = "/stories"
-index_template = "pages/posts_index.html.liquid"
-post_template = "pages/post_detail.html.liquid"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
 posts_per_page = 10
 
 # Example instructions/documentation configuration
@@ -77,6 +77,6 @@ posts_per_page = 10
 name = "instructions"
 source_directory = "posts/instructions"
 url_prefix = "/instructions"
-index_template = "pages/posts_index.html.liquid"
-post_template = "pages/post_detail.html.liquid"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
 posts_per_page = 15

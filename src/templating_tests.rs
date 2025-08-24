@@ -48,6 +48,10 @@ mod tests {
 {% include "_footer.html.liquid" %}"#;
         fs::write(template_path.join("pages/index.html.liquid"), index_content).unwrap();
 
+        // Create modules directory for module templates
+        let modules_dir = template_path.join("modules");
+        fs::create_dir_all(&modules_dir).unwrap();
+
         // Create a test gallery template
         let gallery_content = r#"{% if folder_title %}
     {% assign page_title = folder_title %}
@@ -69,7 +73,7 @@ mod tests {
 </div>
 
 {% include "_footer.html.liquid" %}"#;
-        fs::write(template_path.join("pages/gallery.html.liquid"), gallery_content).unwrap();
+        fs::write(template_path.join("modules/gallery.html.liquid"), gallery_content).unwrap();
 
         // Create a test gallery preview component
         let preview_content = r#"<div class="gallery-preview">
@@ -136,7 +140,7 @@ mod tests {
             "items": test_items,
         });
 
-        let result = engine.render_template("pages/gallery.html.liquid", globals).await;
+        let result = engine.render_template("modules/gallery.html.liquid", globals).await;
         assert!(
             result.is_ok(),
             "Failed to render gallery template: {:?}",
@@ -234,7 +238,7 @@ mod tests {
 
         let temp_path = _temp_dir.path();
         fs::write(
-            temp_path.join("pages/image_detail.html.liquid"),
+            temp_path.join("modules/image_detail.html.liquid"),
             image_detail_content,
         )
         .unwrap();
@@ -272,7 +276,7 @@ mod tests {
         });
 
         let result = engine
-            .render_template("pages/image_detail.html.liquid", globals)
+            .render_template("modules/image_detail.html.liquid", globals)
             .await;
         assert!(
             result.is_ok(),
