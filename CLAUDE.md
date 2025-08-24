@@ -86,7 +86,7 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
 - **Cache separation**: Different cache files for JPEG and WebP versions
 - **Content negotiation**: Automatic format selection based on browser capabilities
-- **Complete ICC color profile preservation**: Extracts ICC color profiles from source JPEG images and preserves them through the entire processing pipeline, including copyright watermarking. JPEG outputs retain full ICC profiles; WebP attempts embedding with fallback
+- **ICC color profile preservation**: Extracts ICC color profiles (including Display P3) from source JPEG images and preserves them in JPEG outputs through the entire processing pipeline, including copyright watermarking. WebP currently uses standard encoding with sRGB color space
 
 ### Metadata Caching
 
@@ -816,33 +816,41 @@ The project includes comprehensive integration tests for all major features:
    - Subfolders show "[Folder Display Name] - Photo Gallery"
    - Uses folder display names when available, otherwise uses folder names
 
-### ICC Color Profile Implementation
+### ICC Color Profile Implementation  
 1. **JPEG ICC Profile Extraction**:
    - Manually parses JPEG file structure to find APP2 segments containing ICC_PROFILE markers
    - Extracts ICC profile data from JPEG APP2 segments (standard location for color profiles)
+   - Successfully extracts Display P3, Adobe RGB, and other wide color gamut profiles
    - Handles multi-segment ICC profiles correctly
 
-2. **WebP ICC Profile Handling**:
-   - Attempts to embed ICC profiles by converting WebP to VP8X extended format
-   - Creates VP8X chunks with ICCP metadata chunks for color profile storage
-   - Falls back to standard WebP if ICC embedding fails (maintains compatibility)
-   - Uses dedicated WebP crate for high-quality encoding with configurable quality settings
+2. **JPEG ICC Profile Preservation**:
+   - Embeds extracted ICC profiles directly into JPEG output using `JpegEncoder::set_icc_profile()`
+   - Maintains complete color accuracy for JPEG images including watermarked versions
+   - Graceful fallback to standard JPEG if profile embedding fails
+   - Preserves photographer's color grading and camera-specific color profiles
 
-3. **Color Profile Workflow**:
+3. **WebP Color Handling**:
+   - Uses dedicated WebP crate for high-quality encoding with configurable quality settings
+   - Currently uses standard WebP encoding (sRGB color space) due to VP8X format complexity
+   - Maintains excellent compression and image quality while ensuring broad compatibility
+   - WebP VP8X ICC profile embedding implementation available but disabled due to validation issues
+
+4. **Color Profile Workflow**:
    ```
    JPEG Source → Extract ICC Profile → Resize → Apply Watermark → Encode with ICC → Cache
    ```
 
-4. **Watermark Compatibility**:
-   - ICC profiles preserved even when copyright watermarks are applied
-   - Color information flows through entire processing pipeline
-   - Both watermarked medium images and non-watermarked sizes retain color profiles
+5. **Watermark Compatibility**:
+   - ICC profiles preserved even when copyright watermarks are applied to medium-sized images
+   - Color information flows through entire processing pipeline without degradation
+   - Both watermarked and non-watermarked JPEG images retain original color profiles
 
-5. **Benefits**:
-   - Complete ICC color profile preservation from source to output
-   - Maintains photographer's color grading and camera profiles through all processing steps
-   - JPEG format provides full ICC profile support with graceful fallback handling
-   - Ensures professional color accuracy for both plain and watermarked images
+6. **Benefits**:
+   - **Complete JPEG color accuracy**: Display P3, Adobe RGB, and custom profiles preserved perfectly
+   - **Professional photography support**: Camera color profiles and custom grading maintained
+   - **Watermark color preservation**: Copyright watermarks don't affect color profile integrity  
+   - **Format-appropriate handling**: JPEG for critical color accuracy, WebP for efficient web delivery
+   - **Graceful degradation**: Fallback mechanisms ensure all images process successfully
 
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions

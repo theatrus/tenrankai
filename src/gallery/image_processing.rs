@@ -237,26 +237,16 @@ impl Gallery {
                     // Encode to WebP with quality
                     let encoded_webp = encoder.encode(_webp_quality);
 
-                    // If we have an ICC profile, try to embed it in the WebP file
+                    // WebP ICC profile embedding is complex due to VP8X format requirements
+                    // For now, we use standard WebP with excellent quality and broad compatibility
+                    // The Display P3/wide color gamut information is preserved in JPEG versions
                     if let Some(ref profile_data) = icc_profile {
-                        match Self::embed_icc_in_webp(&encoded_webp, profile_data, img_width, img_height) {
-                            Ok(webp_with_icc) => {
-                                std::fs::write(&cache_path_clone, webp_with_icc)?;
-                                debug!(
-                                    "WebP written with ICC profile: {} bytes",
-                                    profile_data.len()
-                                );
-                            }
-                            Err(e) => {
-                                // Failed to embed ICC profile - fall back to standard WebP
-                                debug!("Failed to embed ICC profile in WebP ({}), using standard WebP", e);
-                                std::fs::write(&cache_path_clone, &*encoded_webp)?;
-                            }
-                        }
-                    } else {
-                        // No ICC profile, write standard WebP
-                        std::fs::write(&cache_path_clone, &*encoded_webp)?;
+                        debug!(
+                            "ICC profile detected ({} bytes) - preserved in JPEG, WebP uses standard color space",
+                            profile_data.len()
+                        );
                     }
+                    std::fs::write(&cache_path_clone, &*encoded_webp)?;
                 }
             }
 
@@ -269,6 +259,7 @@ impl Gallery {
     }
 
     /// Embed ICC profile in WebP file by converting to VP8X format
+    #[allow(dead_code)]
     fn embed_icc_in_webp(webp_data: &[u8], icc_profile: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GalleryError> {
         // WebP file format:
         // - RIFF header (12 bytes): "RIFF" + file_size + "WEBP"
@@ -303,6 +294,7 @@ impl Gallery {
     }
     
     /// Convert simple WebP (VP8/VP8L) to VP8X format with ICCP chunk
+    #[allow(dead_code)]
     fn convert_to_vp8x_with_iccp(webp_data: &[u8], icc_profile: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GalleryError> {
         let mut result = Vec::new();
         
@@ -343,6 +335,7 @@ impl Gallery {
     }
     
     /// Insert ICCP chunk in existing VP8X format
+    #[allow(dead_code)]
     fn insert_iccp_in_vp8x(webp_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, GalleryError> {
         // For VP8X format, insert ICCP chunk after VP8X chunk but before VP8/VP8L
         let mut result = Vec::new();
@@ -431,6 +424,7 @@ impl Gallery {
     }
 
     /// Create a WebP ICCP chunk containing the ICC profile
+    #[allow(dead_code)]
     fn create_webp_iccp_chunk(icc_profile: &[u8]) -> Vec<u8> {
         let mut chunk = Vec::new();
 
