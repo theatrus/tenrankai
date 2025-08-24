@@ -82,6 +82,9 @@ pub struct GallerySystemConfig {
     pub pregenerate_cache: bool,
     /// Number of days to consider an image as "new" (based on file modification date)
     pub new_threshold_days: Option<u32>,
+    /// When true, show only approximate capture dates (month/year) to non-authenticated users
+    #[serde(default = "default_false")]
+    pub approximate_dates_for_public: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -121,6 +124,10 @@ fn default_posts_detail_template() -> String {
 
 fn default_posts_per_page() -> usize {
     20
+}
+
+fn default_false() -> bool {
+    false
 }
 
 fn default_gallery_template() -> String {
@@ -210,6 +217,7 @@ impl Default for Config {
                 webp_quality: Some(85.0),
                 pregenerate_cache: false,
                 new_threshold_days: None,
+                approximate_dates_for_public: false,
             }]),
             posts: None,
         }
@@ -368,8 +376,8 @@ pub async fn create_app(config: Config) -> Router {
                 prefix,
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, query| {
-                        gallery::gallery_root_handler_for_named(state, Path(name), query)
+                    move |state, query, headers| {
+                        gallery::gallery_root_handler_for_named(state, Path(name), query, headers)
                     }
                 }),
             );
@@ -379,9 +387,14 @@ pub async fn create_app(config: Config) -> Router {
                 &format!("{}/{{*path}}", prefix),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>, query| {
+                    move |state, path: Path<String>, query, headers| {
                         let gallery_path = path.0;
-                        gallery::gallery_handler_for_named(state, Path((name, gallery_path)), query)
+                        gallery::gallery_handler_for_named(
+                            state,
+                            Path((name, gallery_path)),
+                            query,
+                            headers,
+                        )
                     }
                 }),
             );
@@ -408,9 +421,13 @@ pub async fn create_app(config: Config) -> Router {
                 &format!("{}/detail/{{*path}}", prefix),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>| {
+                    move |state, path: Path<String>, headers| {
                         let detail_path = path.0;
-                        gallery::image_detail_handler_for_named(state, Path((name, detail_path)))
+                        gallery::image_detail_handler_for_named(
+                            state,
+                            Path((name, detail_path)),
+                            headers,
+                        )
                     }
                 }),
             );
