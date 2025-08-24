@@ -130,12 +130,66 @@ pub async fn gallery_handler_for_named(
         "page_title": if is_root { "Gallery".to_string() } else {
             folder_title.clone().unwrap_or_else(|| breadcrumbs.last().map(|b| b.name.clone()).unwrap_or_else(|| "Gallery".to_string()))
         },
-        "meta_description": "Browse our photo gallery",
+        "meta_description": folder_description.as_ref().map(|desc_html| {
+            // Strip HTML tags from the description
+            let stripped = desc_html
+                .replace("<p>", "")
+                .replace("</p>", " ")
+                .replace("<br>", " ")
+                .replace("<br/>", " ")
+                .replace("<br />", " ")
+                .split('<')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+
+            if stripped.is_empty() {
+                "".to_string()
+            } else {
+                // Limit length for meta description
+                if stripped.len() > 160 {
+                    format!("{}...", &stripped[..157])
+                } else {
+                    stripped
+                }
+            }
+        }).unwrap_or_else(|| "".to_string()),
         "app_name": app_state.config.app.name,
         "copyright_holder": app_state.config.app.copyright_holder,
         "base_url": app_state.config.app.base_url,
-        "og_title": "Photo Gallery",
-        "og_description": "Browse our collection of photos",
+        "og_title": folder_title.clone().unwrap_or_else(|| {
+            if is_root {
+                "Photo Gallery".to_string()
+            } else {
+                format!("{} - Photo Gallery", breadcrumbs.last().map(|b| &b.display_name).unwrap_or(&"Gallery".to_string()))
+            }
+        }),
+        "og_description": folder_description.as_ref().map(|desc_html| {
+            // Strip HTML tags from the description for OpenGraph
+            let stripped = desc_html
+                .replace("<p>", "")
+                .replace("</p>", " ")
+                .replace("<br>", " ")
+                .replace("<br/>", " ")
+                .replace("<br />", " ")
+                .split('<')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+
+            if stripped.is_empty() {
+                "".to_string()
+            } else {
+                // Limit length for social media
+                if stripped.len() > 160 {
+                    format!("{}...", &stripped[..157])
+                } else {
+                    stripped
+                }
+            }
+        }).unwrap_or_else(|| "".to_string()),
         "og_image": og_image,
         "og_image_width": og_image_width,
         "og_image_height": og_image_height,
