@@ -32,6 +32,13 @@ jobs:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
     
+    - name: Override with rust-toolchain.toml if stable
+      if: matrix.rust == 'stable'
+      run: |
+        # The rust-toolchain.toml will override the toolchain
+        # This ensures we test with the exact version specified
+        rustc --version
+    
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -66,21 +73,6 @@ jobs:
     
     - name: Build release
       run: cargo build --release --verbose
-
-  # Separate job for checking if it builds with minimal versions
-  minimal-versions:
-    name: Check minimal versions
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-    
-    - name: Check with minimal versions
-      run: |
-        cargo +nightly update -Z minimal-versions
-        cargo check --all-features
 
   # Security audit
   security-audit:

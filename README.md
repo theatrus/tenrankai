@@ -35,6 +35,8 @@ cd tenrankai
 cargo build --release
 ```
 
+The project includes a `rust-toolchain.toml` file that will automatically download and use Rust 1.89.0 when you run cargo commands. This ensures consistent builds across all development environments.
+
 ## Configuration
 
 Create a `config.toml` file in the project root. See `config.example.toml` for a complete example:
