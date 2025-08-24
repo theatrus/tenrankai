@@ -16,7 +16,7 @@
             {% if crumb.is_current %}
                 <span class="nav-current">{{ crumb.display_name }}</span>
             {% else %}
-                <a href="/gallery{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
+                <a href="{{ gallery_url }}{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
             {% endif %}
         {% endfor %}
     </nav>
@@ -41,7 +41,7 @@
                 <h3>Folders</h3>
                 <div class="folder-grid">
                     {% for dir in directories %}
-                        <a href="/gallery/{{ dir.path }}" class="folder-item">
+                        <a href="{{ gallery_url }}/{{ dir.path }}" class="folder-item">
                             <div class="folder-preview">
                                 {% if dir.preview_images and dir.preview_images.size > 0 %}
                                     <div class="preview-images">
@@ -170,7 +170,7 @@
         itemDiv.style.height = displayDimensions.height + 'px';
         
         const link = document.createElement('a');
-        link.href = '/gallery/detail/' + image.path;
+        link.href = '{{ gallery_url }}/detail/' + image.path;
         link.className = 'image-link';
         
         const img = document.createElement('img');

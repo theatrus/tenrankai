@@ -74,10 +74,35 @@ pub async fn gallery_handler_for_named(
 
     // Render the template
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
-    let (_, markdown_content) = gallery.read_folder_metadata(&path).await;
+    let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
+    
+    // Determine OpenGraph image - use composite if we have 2+ images, otherwise use first image
+    let (og_image, og_image_width, og_image_height) = if images.len() >= 2 {
+        // Use composite image for galleries with multiple images
+        let composite_path = if path.is_empty() { "_root" } else { &path };
+        let og_image_url = format!(
+            "{}/api/gallery/{}/composite/{}",
+            app_state.config.app.base_url.as_ref().unwrap_or(&String::new()),
+            gallery_name,
+            composite_path
+        );
+        (Some(og_image_url), Some(1210), Some(1210))
+    } else if let Some(first_image) = images.first() {
+        // Use the first image if we only have one
+        let og_image_url = format!(
+            "{}{}",
+            app_state.config.app.base_url.as_ref().unwrap_or(&String::new()),
+            first_image.gallery_url.as_ref().unwrap_or(&String::new())
+        );
+        (Some(og_image_url), first_image.dimensions.map(|d| d.0), first_image.dimensions.map(|d| d.1))
+    } else {
+        (None, None, None)
+    };
+    
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
-        "path": path,
+        "gallery_url": gallery_config.url_prefix,
+        "gallery_path": path,
         "is_root": is_root,
         "breadcrumbs": breadcrumbs,
         "directories": directories,
@@ -86,9 +111,10 @@ pub async fn gallery_handler_for_named(
         "images_json": images_json,
         "page": page,
         "total_pages": total_pages,
-        "markdown_content": markdown_content,
+        "folder_title": folder_title,
+        "folder_description": folder_description,
         "page_title": if is_root { "Gallery".to_string() } else {
-            breadcrumbs.last().map(|b| b.name.clone()).unwrap_or_else(|| "Gallery".to_string())
+            folder_title.clone().unwrap_or_else(|| breadcrumbs.last().map(|b| b.name.clone()).unwrap_or_else(|| "Gallery".to_string()))
         },
         "meta_description": "Browse our photo gallery",
         "app_name": app_state.config.app.name,
@@ -96,6 +122,9 @@ pub async fn gallery_handler_for_named(
         "base_url": app_state.config.app.base_url,
         "og_title": "Photo Gallery",
         "og_description": "Browse our collection of photos",
+        "og_image": og_image,
+        "og_image_width": og_image_width,
+        "og_image_height": og_image_height,
         "twitter_card_type": "summary_large_image",
     });
 
@@ -182,6 +211,7 @@ pub async fn image_detail_handler_for_named(
 
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
+        "gallery_url": gallery_config.url_prefix,
         "image": image_info,
         "breadcrumbs": breadcrumbs,
         "prev_image": prev_image,

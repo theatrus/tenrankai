@@ -10,7 +10,7 @@
     {% assign og_image_height = image.dimensions[1] %}
 {% endif %}
 {% assign og_type = "article" %}
-{% assign og_url = base_url | append: "/gallery/detail/" | append: image.path %}
+{% assign og_url = base_url | append: gallery_url | append: "/detail/" | append: image.path %}
 
 {% comment %} Twitter Card tags {% endcomment %}
 {% assign twitter_card_type = "summary_large_image" %}
@@ -30,7 +30,7 @@
             {% if crumb.is_current %}
                 <span class="nav-current">{{ crumb.display_name }}</span>
             {% else %}
-                <a href="/gallery{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
+                <a href="{{ gallery_url }}{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
             {% endif %}
         {% endfor %}
         <span class="nav-separator">→</span>
@@ -55,7 +55,7 @@
             {% if prev_image or next_image %}
                 <div class="image-navigation">
                     {% if prev_image %}
-                        <a href="/gallery/detail/{{ prev_image.path }}" class="nav-item nav-prev" title="Previous: {{ prev_image.name }}">
+                        <a href="{{ gallery_url }}/detail/{{ prev_image.path }}" class="nav-item nav-prev" title="Previous: {{ prev_image.name }}">
                             <div class="nav-thumbnail">
                                 <img src="{{ prev_image.thumbnail_url }}" srcset="{{ prev_image.thumbnail_url }} 1x, {{ prev_image.thumbnail_url | replace: '?size=thumbnail', '?size=thumbnail@2x' }} 2x" alt="{{ prev_image.name }}">
                             </div>
@@ -74,7 +74,7 @@
                     {% endif %}
                     
                     {% if next_image %}
-                        <a href="/gallery/detail/{{ next_image.path }}" class="nav-item nav-next" title="Next: {{ next_image.name }}">
+                        <a href="{{ gallery_url }}/detail/{{ next_image.path }}" class="nav-item nav-next" title="Next: {{ next_image.name }}">
                             <div class="nav-info">
                                 <div class="nav-direction">
                                     Next
@@ -321,14 +321,14 @@ document.addEventListener('DOMContentLoaded', function() {
         {% if prev_image %}
         if (e.key === 'ArrowLeft') {
             e.preventDefault();
-            window.location.href = '/gallery/detail/{{ prev_image.path }}';
+            window.location.href = '{{ gallery_url }}/detail/{{ prev_image.path }}';
         }
         {% endif %}
         
         {% if next_image %}
         if (e.key === 'ArrowRight') {
             e.preventDefault();
-            window.location.href = '/gallery/detail/{{ next_image.path }}';
+            window.location.href = '{{ gallery_url }}/detail/{{ next_image.path }}';
         }
         {% endif %}
         
@@ -346,19 +346,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     {% endif %}
                 {% endunless %}
             {% endfor %}
-            window.location.href = '/gallery/{{ gallery_path }}';
+            window.location.href = '{{ gallery_url }}/{{ gallery_path }}';
         }
     });
     
     // Preload adjacent images for faster navigation
     {% if prev_image %}
     const prevImg = new Image();
-    prevImg.src = '/gallery/image/{{ prev_image.path }}?size=medium';
+    prevImg.src = '{{ gallery_url }}/image/{{ prev_image.path }}?size=medium';
     {% endif %}
     
     {% if next_image %}
     const nextImg = new Image();
-    nextImg.src = '/gallery/image/{{ next_image.path }}?size=medium';
+    nextImg.src = '{{ gallery_url }}/image/{{ next_image.path }}?size=medium';
     {% endif %}
 });
 </script>
