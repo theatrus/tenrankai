@@ -181,7 +181,7 @@ pub async fn refresh_static_versions(
     }
     
     // Check if user is authenticated
-    if !crate::login::is_authenticated(&headers, &app_state.config.app.download_secret) {
+    if !crate::login::is_authenticated(&headers, &app_state.config.app.cookie_secret) {
         return Ok(Json(RefreshResponse {
             success: false,
             message: "Authentication required".to_string(),

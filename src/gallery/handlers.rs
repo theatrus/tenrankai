@@ -14,7 +14,7 @@ fn has_download_permission(app_state: &AppState, headers: &HeaderMap) -> bool {
     }
     
     // Check if user is authenticated with the login system
-    crate::login::is_authenticated(headers, &app_state.config.app.download_secret)
+    crate::login::is_authenticated(headers, &app_state.config.app.cookie_secret)
 }
 
 // Named gallery handlers for multiple gallery support

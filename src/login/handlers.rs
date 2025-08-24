@@ -105,7 +105,7 @@ pub async fn verify_login(
     };
 
     // Create secure session cookie
-    let signed_value = create_signed_cookie(&app_state.config.app.download_secret, &username)
+    let signed_value = create_signed_cookie(&app_state.config.app.cookie_secret, &username)
         .map_err(|e| LoginError::InternalError(e))?;
 
     let cookie = format!(
@@ -167,7 +167,7 @@ pub async fn check_auth_status(
         });
     }
     
-    let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.download_secret);
+    let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret);
     
     Json(AuthStatusResponse {
         authorized: username.is_some(),

@@ -5,10 +5,11 @@ port = 3000
 [app]
 name = "Tenrankai"
 log_level = "info"
-download_secret = "change-me-in-production"
-download_password = "secure-password"
+cookie_secret = "change-me-in-production-use-a-long-random-string"
 copyright_holder = "Your Name"
 base_url = "https://your-domain.com"
+# Optional: Set user_database to enable authentication
+# user_database = "users.toml"
 
 [templates]
 directory = "templates"

@@ -70,10 +70,10 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         app: tenrankai::AppConfig {
             name: "TestServer".to_string(),
             log_level: "error".to_string(),
-            download_secret: "test-secret".to_string(),
-            download_password: "test-pass".to_string(),
+            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
             base_url: Some("http://localhost:3000".to_string()),
+            user_database: None,
         },
         templates: tenrankai::TemplateConfig {
             directory: templates_dir,

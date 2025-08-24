@@ -36,8 +36,7 @@ pub struct ServerConfig {
 pub struct AppConfig {
     pub name: String,
     pub log_level: String,
-    pub download_secret: String,
-    pub download_password: String,
+    pub cookie_secret: String,
     #[serde(default)]
     pub copyright_holder: Option<String>,
     #[serde(default)]
@@ -191,8 +190,7 @@ impl Default for Config {
             app: AppConfig {
                 name: "Tenrankai".to_string(),
                 log_level: "info".to_string(),
-                download_secret: "change-me-in-production".to_string(),
-                download_password: "password".to_string(),
+                cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
                 copyright_holder: None,
                 base_url: None,
                 user_database: None,

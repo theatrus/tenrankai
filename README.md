@@ -59,10 +59,10 @@ port = 3000
 
 [app]
 name = "My Gallery"
-download_secret = "change-me-in-production"
-download_password = "deprecated-not-used"  # This field is deprecated, use user authentication
+cookie_secret = "change-me-in-production-use-a-long-random-string"  # Used for signing cookies
 copyright_holder = "Your Name"
 base_url = "https://yourdomain.com"
+user_database = "users.toml"  # Optional: Enable user authentication
 
 # Gallery configuration (multiple galleries supported)
 [[galleries]]
