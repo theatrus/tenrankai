@@ -7,24 +7,23 @@ use axum::{
 };
 use tracing::error;
 
-
 fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
     crate::api::get_cookie_value(headers, "download_allowed")
         .map(|signed_value| crate::api::verify_signed_cookie(secret, &signed_value))
         .unwrap_or(false)
 }
 
-
 // Named gallery handlers for multiple gallery support
 #[axum::debug_handler]
 pub async fn gallery_root_handler_for_named(
     State(app_state): State<AppState>,
     Path(gallery_name): Path<String>,
+    Query(query): Query<GalleryQuery>,
 ) -> impl IntoResponse {
     gallery_handler_for_named(
         State(app_state),
         Path((gallery_name, "".to_string())),
-        Query(GalleryQuery::default()),
+        Query(query),
     )
     .await
 }
@@ -75,14 +74,19 @@ pub async fn gallery_handler_for_named(
     // Render the template
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
-    
+
     // Determine OpenGraph image - use composite if we have 2+ images, otherwise use first image
     let (og_image, og_image_width, og_image_height) = if images.len() >= 2 {
         // Use composite image for galleries with multiple images
         let composite_path = if path.is_empty() { "_root" } else { &path };
         let og_image_url = format!(
             "{}/api/gallery/{}/composite/{}",
-            app_state.config.app.base_url.as_ref().unwrap_or(&String::new()),
+            app_state
+                .config
+                .app
+                .base_url
+                .as_ref()
+                .unwrap_or(&String::new()),
             gallery_name,
             composite_path
         );
@@ -91,14 +95,23 @@ pub async fn gallery_handler_for_named(
         // Use the first image if we only have one
         let og_image_url = format!(
             "{}{}",
-            app_state.config.app.base_url.as_ref().unwrap_or(&String::new()),
+            app_state
+                .config
+                .app
+                .base_url
+                .as_ref()
+                .unwrap_or(&String::new()),
             first_image.gallery_url.as_ref().unwrap_or(&String::new())
         );
-        (Some(og_image_url), first_image.dimensions.map(|d| d.0), first_image.dimensions.map(|d| d.1))
+        (
+            Some(og_image_url),
+            first_image.dimensions.map(|d| d.0),
+            first_image.dimensions.map(|d| d.1),
+        )
     } else {
         (None, None, None)
     };
-    
+
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -110,6 +123,7 @@ pub async fn gallery_handler_for_named(
         "items": items,
         "images_json": images_json,
         "page": page,
+        "current_page": page,
         "total_pages": total_pages,
         "folder_title": folder_title,
         "folder_description": folder_description,

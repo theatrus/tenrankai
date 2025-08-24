@@ -133,7 +133,6 @@ pub struct GalleryPreviewResponse {
     images: Vec<crate::gallery::GalleryItem>,
 }
 
-
 // Named gallery API handlers for multiple gallery support
 pub async fn gallery_preview_handler_for_named(
     State(app_state): State<crate::AppState>,

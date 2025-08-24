@@ -357,7 +357,9 @@ pub async fn create_app(config: Config) -> Router {
                 prefix,
                 axum::routing::get({
                     let name = name.clone();
-                    move |state| gallery::gallery_root_handler_for_named(state, Path(name))
+                    move |state, query| {
+                        gallery::gallery_root_handler_for_named(state, Path(name), query)
+                    }
                 }),
             );
 
