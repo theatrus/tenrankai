@@ -56,6 +56,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             webp_quality: Some(85.0),
             pregenerate_cache: false,
             new_threshold_days: Some(7),
+            approximate_dates_for_public: false,
         },
         GallerySystemConfig {
             name: "portfolio".to_string(),
@@ -91,6 +92,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             webp_quality: Some(90.0),
             pregenerate_cache: false,
             new_threshold_days: None,
+            approximate_dates_for_public: false,
         },
     ]);
 
