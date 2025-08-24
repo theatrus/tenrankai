@@ -14,20 +14,20 @@ rexif = "0.7"
 image = "0.25"
 imageproc = "0.25"
 ab_glyph = "0.2"
-resvg = "0.43"
-usvg = "0.43"
-ico = "0.3"
+resvg = "0.45"
+usvg = "0.45"
+ico = "0.4"
 liquid = "0.26"
 mime_guess = "2.0"
-pulldown-cmark = "0.12"
-rand = "0.8"
+pulldown-cmark = "0.13"
+rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
-toml = "0.8"
+toml = "0.9"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
@@ -37,4 +37,4 @@ walkdir = "2.5"
 
 [dev-dependencies]
 tempfile = "3.8"
-axum-test = "17.0"
+axum-test = "18.0"
