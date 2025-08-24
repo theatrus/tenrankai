@@ -49,3 +49,34 @@ height = 1600
 max_images = 6
 max_depth = 3
 max_per_folder = 3
+
+# Optional: Configure multiple post systems
+# Each posts system has its own source directory and URL prefix
+# You can have multiple systems like blog, stories, documentation, etc.
+
+# Example blog configuration
+[[posts]]
+name = "blog"
+source_directory = "posts/blog"
+url_prefix = "/blog"
+index_template = "pages/posts_index.html.liquid"
+post_template = "pages/post_detail.html.liquid"
+posts_per_page = 20
+
+# Example stories configuration
+[[posts]]
+name = "stories"
+source_directory = "posts/stories"
+url_prefix = "/stories"
+index_template = "pages/posts_index.html.liquid"
+post_template = "pages/post_detail.html.liquid"
+posts_per_page = 10
+
+# Example instructions/documentation configuration
+[[posts]]
+name = "instructions"
+source_directory = "posts/instructions"
+url_prefix = "/instructions"
+index_template = "pages/posts_index.html.liquid"
+post_template = "pages/post_detail.html.liquid"
+posts_per_page = 15

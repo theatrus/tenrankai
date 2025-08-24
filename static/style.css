@@ -604,6 +604,22 @@ footer p {
         padding-right: env(safe-area-inset-right);
     }
     
+    /* Code block styling for consistency */
+    pre {
+        background: #2d2d2d !important;
+        color: #f8f8f2 !important;
+    }
+    
+    code {
+        color: #333 !important;
+        background: #e8e8e8 !important;
+    }
+    
+    pre code {
+        color: inherit !important;
+        background: none !important;
+    }
+    
     main {
         padding-left: env(safe-area-inset-left);
         padding-right: env(safe-area-inset-right);

@@ -19,6 +19,8 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection
 - **Markdown Support**: Folder descriptions and image captions via markdown files
 - **New Image Highlighting**: Configurable highlighting of recently modified images
+- **Multiple Blog Systems**: Support for multiple independent blog/posts systems with markdown
+- **Dark Theme Code Blocks**: Optimized code block styling for readability in dark theme
 
 ## Installation
 
@@ -121,6 +123,61 @@ photos/
 - `_folder.md`: Place in any directory to add a description that appears at the top of the gallery page
 - `<imagename>.md`: Create alongside any image to add a caption (e.g., `sunset.jpg` → `sunset.md`)
 
+## Posts System
+
+Tenrankai includes a flexible posts/blog system that supports multiple independent collections:
+
+### Post Format
+
+Posts are markdown files with TOML front matter:
+
+```markdown
++++
+title = "My Post Title"
+summary = "A brief summary of the post"
+date = "2024-08-24"
++++
+
+# Post Content
+
+Your markdown content here...
+```
+
+### Multiple Post Systems
+
+Configure multiple independent post systems in your `config.toml`:
+
+```toml
+[[posts]]
+name = "blog"
+source_directory = "posts/blog"
+url_prefix = "/blog"
+posts_per_page = 20
+
+[[posts]]
+name = "stories"
+source_directory = "posts/stories"
+url_prefix = "/stories"
+posts_per_page = 10
+```
+
+Each system has its own:
+- Source directory for markdown files
+- URL prefix for web access
+- Templates (customizable)
+- Posts per page setting
+
+### Features
+
+- Full CommonMark support with extensions (tables, strikethrough, footnotes)
+- Automatic HTML generation from markdown
+- Chronological sorting (newest first)
+- Pagination support
+- Subdirectory organization (URL reflects directory structure)
+- Dynamic refresh via API
+- Dark theme optimized code blocks with syntax highlighting
+- Responsive post layout for mobile and desktop
+
 ## Image Sizes
 
 Tenrankai automatically generates multiple sizes for each image:
@@ -141,12 +198,18 @@ Large image downloads require authentication. Users can authenticate by:
 
 ## API Endpoints
 
+### Gallery Endpoints
 - `GET /gallery` - Gallery root
 - `GET /gallery/{path}` - Browse specific folder
 - `GET /gallery/image/{path}?size={size}` - Get resized image
 - `GET /gallery/detail/{path}` - View image details page
 - `POST /api/auth` - Authenticate for downloads
 - `GET /api/gallery/preview` - Get random gallery preview images
+
+### Posts Endpoints (configurable prefix)
+- `GET /{prefix}` - List posts with pagination
+- `GET /{prefix}/{slug}` - View individual post
+- `POST /api/posts/{name}/refresh` - Refresh posts cache
 
 ## Performance
 
@@ -168,6 +231,8 @@ templates/
 │   ├── index.html.liquid
 │   ├── gallery.html.liquid
 │   ├── image_detail.html.liquid
+│   ├── posts_index.html.liquid
+│   ├── post_detail.html.liquid
 │   ├── about.html.liquid
 │   ├── contact.html.liquid
 │   └── 404.html.liquid

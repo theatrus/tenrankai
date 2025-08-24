@@ -19,6 +19,8 @@ This is especially useful for verifying startup behavior, testing API endpoints,
 - **Performance Optimization**: Metadata caching, image caching, and background refresh
 - **Markdown Support**: Folder descriptions and image captions via markdown files
 - **New Image Highlighting**: Automatic highlighting of recently modified images based on configurable threshold
+- **Multiple Blog Systems**: Support for multiple independent markdown-based blog/posts systems
+- **Dark Theme Code Blocks**: Optimized code block styling for readability with proper contrast
 
 ## Project Structure
 
@@ -28,6 +30,7 @@ This is especially useful for verifying startup behavior, testing API endpoints,
 - `src/templating.rs` - Liquid template engine integration
 - `src/copyright.rs` - Watermarking functionality with intelligent text color selection
 - `src/composite.rs` - Composite image generation for OpenGraph previews
+- `src/posts/` - Posts/blog system for markdown-based content
 
 ### Gallery Module (`src/gallery/`)
 The gallery functionality was recently refactored from a single 3000-line file into organized submodules:
@@ -40,9 +43,18 @@ The gallery functionality was recently refactored from a single 3000-line file i
 - `cache.rs` - Cache management and persistence
 - `error.rs` - Error type definitions
 
+### Posts Module (`src/posts/`)
+A flexible markdown-based posts/blog system supporting multiple independent collections:
+- `mod.rs` - Module exports
+- `types.rs` - Post, PostSummary, PostsConfig structures
+- `core.rs` - PostsManager for scanning, caching, and serving posts
+- `handlers.rs` - HTTP handlers for posts index and detail pages
+- `error.rs` - Posts-specific error types
+- `tests.rs` - Comprehensive test suite
+
 ### Template Structure
 Templates are organized into two directories for better maintainability:
-- `templates/pages/` - Full page templates (index, gallery, image_detail, 404, etc.)
+- `templates/pages/` - Full page templates (index, gallery, image_detail, posts_index, post_detail, 404, etc.)
 - `templates/partials/` - Reusable components (_header, _footer, _gallery_preview)
 
 All templates use the Liquid templating language. When loading templates:
@@ -441,6 +453,32 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - All template loading code updated to use new paths
    - Tests updated to reflect new structure
    - No breaking changes for end users
+
+### Posts System Implementation (August 2025)
+1. **Multiple Blog Systems**: Added support for multiple independent markdown-based blog/posts systems
+   - Each system has its own source directory, URL prefix, and configuration
+   - Examples: /blog, /stories, /instructions, /documentation
+   
+2. **Post Format**:
+   - Markdown files with TOML front matter (title, summary, date)
+   - Full CommonMark support with extensions (tables, strikethrough, footnotes)
+   - Automatic HTML generation and caching
+   
+3. **Features**:
+   - Chronological sorting (newest first)
+   - Pagination support
+   - Subdirectory organization (URLs reflect directory structure)
+   - Dynamic refresh via API (`POST /api/posts/{name}/refresh`)
+   - Configurable templates for index and detail pages
+   
+4. **Implementation Details**:
+   - PostsManager handles scanning, caching, and serving posts
+   - Posts are cached in memory and refreshed on startup
+   - Supports both simple date (YYYY-MM-DD) and RFC3339 formats
+   - Comprehensive test coverage including markdown rendering tests
+   - Uses chrono's built-in date formatting for human-readable dates
+   - Dark theme optimized code blocks with #2d2d2d background and #f8f8f2 text
+   - Inline code uses light background (#e8e8e8) with dark text (#333) for contrast
 
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions

@@ -102,6 +102,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             pregenerate_cache: false,
             new_threshold_days: None,
         },
+        posts: None,
     };
 
     let app = create_app(config).await;
