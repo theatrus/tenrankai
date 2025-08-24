@@ -24,7 +24,7 @@ jobs:
           - os: macos-latest
             rust: beta
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -79,7 +79,7 @@ jobs:
     name: Security audit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install cargo-audit
       run: cargo install cargo-audit
