@@ -81,10 +81,13 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         static_files: tenrankai::StaticConfig {
             directory: static_dir,
         },
-        gallery: tenrankai::GalleryConfig {
-            path_prefix: "gallery".to_string(),
+        galleries: Some(vec![tenrankai::GallerySystemConfig {
+            name: "test".to_string(),
+            url_prefix: "gallery".to_string(),
             source_directory: gallery_dir,
             cache_directory: cache_dir,
+            gallery_template: "gallery.html.liquid".to_string(),
+            image_detail_template: "image_detail.html.liquid".to_string(),
             images_per_page: 20,
             thumbnail: tenrankai::ImageSizeConfig {
                 width: 300,
@@ -112,7 +115,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             webp_quality: Some(85.0),
             pregenerate_cache: false,
             new_threshold_days: None,
-        },
+        }]),
         posts: None,
     };
 

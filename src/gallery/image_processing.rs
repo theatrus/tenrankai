@@ -496,7 +496,7 @@ impl Gallery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AppConfig, GalleryConfig};
+    use crate::{AppConfig, GallerySystemConfig};
     use image::{ImageBuffer, Rgba};
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -506,8 +506,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
 
-        let config = GalleryConfig {
-            path_prefix: "gallery".to_string(),
+        let config = GallerySystemConfig {
+            name: "test".to_string(),
+            url_prefix: "gallery".to_string(),
+            gallery_template: "gallery.html.liquid".to_string(),
+            image_detail_template: "image_detail.html.liquid".to_string(),
             source_directory: temp_dir.path().to_path_buf(),
             cache_directory: cache_dir,
             images_per_page: 50,

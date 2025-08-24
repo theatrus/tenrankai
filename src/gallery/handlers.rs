@@ -220,7 +220,8 @@ pub async fn image_detail_handler_for_named(
         (None, None)
     };
 
-    let breadcrumbs = gallery.build_breadcrumbs_with_mode(&path, true).await;
+    // Build breadcrumbs for the parent directory, not including the image filename
+    let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
     let gallery_config = gallery.get_config();
 
     let liquid_context = liquid::object!({

@@ -429,7 +429,10 @@ mod tests {
     async fn test_location_extraction_a7c5795() {
         // Create a test gallery instance
         let gallery_config = crate::GallerySystemConfig {
-            path_prefix: "gallery".to_string(),
+            name: "test".to_string(),
+            url_prefix: "gallery".to_string(),
+            gallery_template: "gallery.html.liquid".to_string(),
+            image_detail_template: "image_detail.html.liquid".to_string(),
             source_directory: PathBuf::from("photos"),
             cache_directory: PathBuf::from("test_cache"),
             images_per_page: 50,
