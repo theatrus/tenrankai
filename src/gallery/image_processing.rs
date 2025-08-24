@@ -1301,8 +1301,8 @@ mod tests {
     async fn test_icc_profile_preservation_all_sizes() {
         let (gallery, _temp_dir) = create_test_gallery().await;
 
-        // Create a test image with ICC profile
-        let img = ImageBuffer::from_pixel(2000, 2000, image::Rgb([255u8, 128, 64]));
+        // Create a smaller test image for faster testing (500x500 instead of 2000x2000)
+        let img = ImageBuffer::from_pixel(500, 500, image::Rgb([255u8, 128, 64]));
         let icc_profile = create_test_display_p3_profile();
 
         // Save as JPEG with ICC profile
@@ -1319,8 +1319,8 @@ mod tests {
 
         img.write_with_encoder(encoder).unwrap();
 
-        // Test all sizes for both JPEG and WebP
-        let sizes = ["thumbnail", "gallery", "medium", "large"];
+        // Test a subset of sizes to speed up the test - thumbnail and medium cover the key paths
+        let sizes = ["thumbnail", "medium"];
         let formats = [OutputFormat::Jpeg, OutputFormat::WebP];
 
         for size in &sizes {

@@ -6,6 +6,8 @@
 
 A high-performance web-based photo gallery server written in Rust using the Axum web framework. Tenrankai provides a responsive gallery interface with automatic image resizing, metadata extraction, and intelligent caching.
 
+It's a gallery, CMS, and blog platform relying on nothing more than folders and files. Simply drop files in, or even use SyncThing to keep your gallery or website up to date.
+
 The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show", reflecting the project's purpose as a platform for displaying photographic collections.
 
 ## Features
