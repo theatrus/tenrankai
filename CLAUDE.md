@@ -158,6 +158,7 @@ jpeg_quality = 85                         # JPEG quality (1-100)
 webp_quality = 85.0                       # WebP quality (0.0-100.0)
 new_threshold_days = 7                    # Mark images modified within 7 days as "NEW"
 pregenerate_cache = false                 # Pre-generate all image sizes on startup
+approximate_dates_for_public = false      # Show only month/year to non-authenticated users
 
 [galleries.thumbnail]
 width = 300

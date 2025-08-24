@@ -19,11 +19,13 @@ pub async fn gallery_root_handler_for_named(
     State(app_state): State<AppState>,
     Path(gallery_name): Path<String>,
     Query(query): Query<GalleryQuery>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     gallery_handler_for_named(
         State(app_state),
         Path((gallery_name, "".to_string())),
         Query(query),
+        headers,
     )
     .await
 }
@@ -33,6 +35,7 @@ pub async fn gallery_handler_for_named(
     State(app_state): State<AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
+    _headers: HeaderMap,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
 
@@ -212,6 +215,7 @@ pub async fn gallery_handler_for_named(
 pub async fn image_detail_handler_for_named(
     State(app_state): State<AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
 
@@ -223,13 +227,33 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    let image_info = match gallery.get_image_info(&path).await {
+    let mut image_info = match gallery.get_image_info(&path).await {
         Ok(info) => info,
         Err(e) => {
             error!("Failed to get image info: {}", e);
             return (StatusCode::NOT_FOUND, "Image not found").into_response();
         }
     };
+
+    // Check if user has download permission
+    let has_permission = has_download_permission(&headers, &app_state.config.app.download_secret);
+
+    // If approximate dates are enabled and user doesn't have permission, modify the capture date
+    if gallery.get_config().approximate_dates_for_public
+        && !has_permission
+        && let Some(ref capture_date_str) = image_info.capture_date
+    {
+        // Parse the existing date and reformat to show only month and year
+        if let Ok(datetime) =
+            chrono::DateTime::parse_from_str(capture_date_str, "%B %d, %Y at %H:%M:%S")
+        {
+            image_info.capture_date = Some(datetime.format("%B %Y").to_string());
+        } else if let Ok(datetime) =
+            chrono::NaiveDateTime::parse_from_str(capture_date_str, "%B %d, %Y at %H:%M:%S")
+        {
+            image_info.capture_date = Some(datetime.format("%B %Y").to_string());
+        }
+    }
 
     // Get the parent directory for navigation
     let parent_path = std::path::Path::new(&path)
