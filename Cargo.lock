@@ -2631,6 +2631,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "flate2",
  "hmac",
  "ico",
  "image",

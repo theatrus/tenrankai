@@ -83,10 +83,11 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 ### Image Format Support
 - **Automatic WebP delivery**: Serves WebP format to browsers that support it (based on Accept header)
 - **JPEG fallback**: Falls back to JPEG for browsers without WebP support
+- **PNG support**: PNG images are always served as PNG to preserve transparency
 - **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
-- **Cache separation**: Different cache files for JPEG and WebP versions
-- **Content negotiation**: Automatic format selection based on browser capabilities
-- **ICC Profile Preservation**: Full support for color profiles in both JPEG and WebP formats
+- **Cache separation**: Different cache files for JPEG, WebP, and PNG versions
+- **Content negotiation**: Automatic format selection based on browser capabilities and source format
+- **ICC Profile Preservation**: Full support for color profiles in JPEG, PNG, and WebP formats
   - JPEG: ICC profiles extracted from source and preserved in output
   - WebP: ICC profiles embedded using libwebp-sys (v0.13+) WebPMux API
   - Display P3 and other wide gamut color spaces fully supported
