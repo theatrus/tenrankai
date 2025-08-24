@@ -24,6 +24,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
+use tracing::error;
 use tracing::info;
 
 pub type SharedGallery = Arc<Gallery>;
@@ -96,10 +97,18 @@ impl Gallery {
         // First refresh metadata
         self.clone().refresh_all_metadata().await?;
 
-        // Then optionally pre-generate cache
+        // Then optionally pre-generate cache in background
         if pregenerate {
-            info!("Starting cache pre-generation after metadata refresh");
-            self.pregenerate_all_images_cache().await?;
+            info!("Spawning background task for cache pre-generation");
+            let gallery_clone = self.clone();
+            tokio::spawn(async move {
+                info!("Starting cache pre-generation in background after metadata refresh");
+                if let Err(e) = gallery_clone.pregenerate_all_images_cache().await {
+                    error!("Failed to pre-generate image cache: {}", e);
+                } else {
+                    info!("Background cache pre-generation completed successfully");
+                }
+            });
         }
 
         Ok(())

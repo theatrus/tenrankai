@@ -86,6 +86,11 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
 - **Cache separation**: Different cache files for JPEG and WebP versions
 - **Content negotiation**: Automatic format selection based on browser capabilities
+- **ICC Profile Preservation**: Full support for color profiles in both JPEG and WebP formats
+  - JPEG: ICC profiles extracted from source and preserved in output
+  - WebP: ICC profiles embedded using libwebp-sys (v0.13+) WebPMux API
+  - Display P3 and other wide gamut color spaces fully supported
+  - Profiles preserved through entire processing pipeline including watermarking
 
 ### Metadata Caching
 
@@ -126,6 +131,7 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - Applied only to medium-sized images
 - Uses WCAG luminance calculation to determine text color (black/white)
 - Automatically converts RGBA to RGB for JPEG compatibility
+- Preserves ICC color profiles from source images through watermark processing
 - Requires DejaVuSans.ttf font in static directory
 
 ## Configuration
@@ -814,11 +820,49 @@ The project includes comprehensive integration tests for all major features:
    - Subfolders show "[Folder Display Name] - Photo Gallery"
    - Uses folder display names when available, otherwise uses folder names
 
+### ICC Color Profile Implementation  
+1. **JPEG ICC Profile Extraction**:
+   - Manually parses JPEG file structure to find APP2 segments containing ICC_PROFILE markers
+   - Extracts ICC profile data from JPEG APP2 segments (standard location for color profiles)
+   - Successfully extracts Display P3, Adobe RGB, and other wide color gamut profiles
+   - Handles multi-segment ICC profiles correctly
+
+2. **JPEG ICC Profile Preservation**:
+   - Embeds extracted ICC profiles directly into JPEG output using `JpegEncoder::set_icc_profile()`
+   - Maintains complete color accuracy for JPEG images including watermarked versions
+   - Graceful fallback to standard JPEG if profile embedding fails
+   - Preserves photographer's color grading and camera-specific color profiles
+
+3. **WebP ICC Profile Support** (Updated August 2025):
+   - **libwebp-sys Integration**: Created wrapper module using libwebp-sys v0.13+ for proper ICC support
+   - **WebPMux API**: Uses WebPMux to add ICC profile chunks to WebP files after encoding
+   - **Full Color Support**: Display P3, Adobe RGB, and other wide gamut profiles now preserved
+   - **Fallback Strategy**: Gracefully falls back to basic WebP encoding if ICC embedding fails
+   - **Validated Format**: Produces properly formatted VP8X extended WebP files with ICCP chunks
+
+4. **Color Profile Workflow**:
+   ```
+   JPEG Source → Extract ICC Profile → Resize → Apply Watermark → Encode with ICC → Cache
+   ```
+
+5. **Watermark Compatibility**:
+   - ICC profiles preserved even when copyright watermarks are applied to medium-sized images
+   - Color information flows through entire processing pipeline without degradation
+   - Both watermarked and non-watermarked JPEG images retain original color profiles
+
+6. **Benefits**:
+   - **Complete JPEG color accuracy**: Display P3, Adobe RGB, and custom profiles preserved perfectly
+   - **Professional photography support**: Camera color profiles and custom grading maintained
+   - **Watermark color preservation**: Copyright watermarks don't affect color profile integrity  
+   - **Format-appropriate handling**: JPEG for critical color accuracy, WebP for efficient web delivery
+   - **Graceful degradation**: Fallback mechanisms ensure all images process successfully
+
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions
 2. Add configuration for replacement interval
 3. Consider WebSocket for real-time updates
 4. Add analytics for popular images
+5. Support ICC profile preservation for other source formats (PNG, TIFF)
 5. Add support for video files in galleries
 6. Implement tag-based filtering for galleries
 7. Add gallery image browser/picker UI for posts editor

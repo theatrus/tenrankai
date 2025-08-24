@@ -373,12 +373,28 @@ impl Gallery {
             .ok()
             .and_then(|m| m.modified().ok());
 
+        // Extract ICC profile name if present
+        let color_profile = if path.extension().and_then(|s| s.to_str()) == Some("jpg")
+            || path.extension().and_then(|s| s.to_str()) == Some("jpeg")
+        {
+            if let Some(icc_data) =
+                super::image_processing::extract_icc_profile_from_jpeg(&path.to_path_buf())
+            {
+                super::image_processing::extract_icc_profile_name(&icc_data)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(ImageMetadata {
             dimensions,
             capture_date,
             camera_info,
             location_info,
             modification_date,
+            color_profile,
         })
     }
 

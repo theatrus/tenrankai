@@ -140,6 +140,11 @@
                     
                     <dt>File Size</dt>
                     <dd>{{ image.file_size | divided_by: 1024 | divided_by: 1024 | round: 2 }} MB</dd>
+                    
+                    {% if image.color_profile %}
+                        <dt>Color Profile</dt>
+                        <dd>{{ image.color_profile }}</dd>
+                    {% endif %}
                 </dl>
             </div>
             
