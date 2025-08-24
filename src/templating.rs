@@ -10,6 +10,7 @@ use tracing::{debug, error, info};
 pub struct TemplateEngine {
     pub template_dir: PathBuf,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
+    static_handler: Option<crate::static_files::StaticFileHandler>,
 }
 
 struct CachedTemplate {
@@ -22,7 +23,12 @@ impl TemplateEngine {
         Self {
             template_dir,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            static_handler: None,
         }
+    }
+    
+    pub fn set_static_handler(&mut self, handler: crate::static_files::StaticFileHandler) {
+        self.static_handler = Some(handler);
     }
 
     async fn load_template(&self, path: &str) -> Result<String, String> {
@@ -112,6 +118,24 @@ impl TemplateEngine {
             "current_year".into(),
             liquid::model::Value::scalar(current_year as i64),
         );
+        
+        // Add versioned URLs for common static files
+        if let Some(ref static_handler) = self.static_handler {
+            let style_css_url = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    static_handler.get_versioned_url("/static/style.css").await
+                })
+            });
+            globals.insert(
+                "style_css_url".into(),
+                liquid::model::Value::scalar(style_css_url),
+            );
+        } else {
+            globals.insert(
+                "style_css_url".into(),
+                liquid::model::Value::scalar("/static/style.css"),
+            );
+        }
 
         // Load common partials first (before loading main template)
         let header_content = self
@@ -199,7 +223,8 @@ pub async fn template_with_gallery_handler(
         {
             debug!("Found static file for path: {}, serving it", path);
             // Pass the path without the "static/" prefix to the serve method
-            return app_state.static_handler.serve(check_path).await;
+            // Templates don't have version parameters, so pass false
+            return app_state.static_handler.serve(check_path, false).await;
         }
 
         debug!(

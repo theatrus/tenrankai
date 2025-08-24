@@ -2633,6 +2633,7 @@ dependencies = [
  "clap",
  "flate2",
  "hmac",
+ "httpdate",
  "ico",
  "image",
  "imageproc",

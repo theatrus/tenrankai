@@ -7,6 +7,7 @@ use base64::{Engine, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use tracing::info;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -159,4 +160,33 @@ pub async fn gallery_composite_preview_handler_for_named(
             tracing::error!("Failed to store composite in cache: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefreshResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+pub async fn refresh_static_versions(
+    State(app_state): State<crate::AppState>,
+    headers: HeaderMap,
+) -> Result<Json<RefreshResponse>, StatusCode> {
+    // Check if user is authenticated
+    if !crate::login::is_authenticated(&headers, &app_state.config.app.download_secret) {
+        return Ok(Json(RefreshResponse {
+            success: false,
+            message: "Authentication required".to_string(),
+        }));
+    }
+    
+    // Refresh static file versions
+    app_state.static_handler.refresh_file_versions().await;
+    
+    info!("Static file versions refreshed");
+    
+    Ok(Json(RefreshResponse {
+        success: true,
+        message: "Static file versions refreshed successfully".to_string(),
+    }))
 }

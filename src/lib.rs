@@ -250,8 +250,11 @@ pub struct AppState {
 async fn static_file_handler(
     State(app_state): State<AppState>,
     Path(path): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    app_state.static_handler.serve(&path).await
+    // Check if request has version parameter
+    let has_version = params.contains_key("v");
+    app_state.static_handler.serve(&path, has_version).await
 }
 
 async fn server_header_middleware(
@@ -271,12 +274,17 @@ async fn server_header_middleware(
 }
 
 pub async fn create_app(config: Config) -> axum::Router {
-    let template_engine = Arc::new(templating::TemplateEngine::new(
+    let mut template_engine = templating::TemplateEngine::new(
         config.templates.directory.clone(),
-    ));
+    );
 
     let static_handler =
         static_files::StaticFileHandler::new(config.static_files.directory.clone());
+
+    // Set the static handler on the template engine for cache busting
+    template_engine.set_static_handler(static_handler.clone());
+    
+    let template_engine = Arc::new(template_engine);
 
     let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
 
@@ -374,7 +382,8 @@ pub async fn create_app(config: Config) -> axum::Router {
         .route("/login/request", axum::routing::post(login::login_request))
         .route("/login/verify", axum::routing::get(login::verify_login))
         .route("/logout", axum::routing::get(login::logout))
-        .route("/api/verify", axum::routing::get(login::check_auth_status));
+        .route("/api/verify", axum::routing::get(login::check_auth_status))
+        .route("/api/refresh-static-versions", axum::routing::post(api::refresh_static_versions));
 
     // Add gallery routes dynamically based on configuration
     if let Some(gallery_configs) = &config.galleries {
