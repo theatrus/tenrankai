@@ -11,16 +11,14 @@ pub struct User {
     pub email: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserDatabase {
     pub users: HashMap<String, User>,
 }
 
 impl UserDatabase {
     pub fn new() -> Self {
-        Self {
-            users: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub async fn load_from_file(path: &Path) -> Result<Self, std::io::Error> {
@@ -40,15 +38,17 @@ impl UserDatabase {
     pub fn get_user(&self, username: &str) -> Option<&User> {
         self.users.get(username)
     }
-    
+
     pub fn get_user_by_username_or_email(&self, identifier: &str) -> Option<&User> {
         // First try direct username lookup
         if let Some(user) = self.users.get(identifier) {
             return Some(user);
         }
-        
+
         // Then try email lookup
-        self.users.values().find(|user| user.email.eq_ignore_ascii_case(identifier))
+        self.users
+            .values()
+            .find(|user| user.email.eq_ignore_ascii_case(identifier))
     }
 
     pub fn add_user(&mut self, user: User) {
@@ -73,7 +73,7 @@ pub struct RateLimitEntry {
     pub last_attempt: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LoginState {
     pub pending_tokens: HashMap<String, LoginToken>,
     pub rate_limits: HashMap<String, RateLimitEntry>,
@@ -81,10 +81,7 @@ pub struct LoginState {
 
 impl LoginState {
     pub fn new() -> Self {
-        Self {
-            pending_tokens: HashMap::new(),
-            rate_limits: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn create_token(&mut self, username: String) -> String {
@@ -115,10 +112,10 @@ impl LoginState {
         self.pending_tokens.retain(|_, t| t.expires_at > now);
 
         // Check if token exists and is valid
-        if let Some(login_token) = self.pending_tokens.remove(token) {
-            if login_token.expires_at > now {
-                return Some(login_token.username);
-            }
+        if let Some(login_token) = self.pending_tokens.remove(token)
+            && login_token.expires_at > now
+        {
+            return Some(login_token.username);
         }
 
         None
@@ -127,17 +124,18 @@ impl LoginState {
     pub fn cleanup_expired(&mut self) {
         let now = chrono::Utc::now().timestamp();
         self.pending_tokens.retain(|_, t| t.expires_at > now);
-        
+
         // Also cleanup old rate limit entries (older than 1 hour)
         let one_hour_ago = now - 3600;
-        self.rate_limits.retain(|_, entry| entry.last_attempt > one_hour_ago);
+        self.rate_limits
+            .retain(|_, entry| entry.last_attempt > one_hour_ago);
     }
-    
+
     pub fn check_rate_limit(&mut self, ip: &str) -> Result<(), &'static str> {
         let now = chrono::Utc::now().timestamp();
         const MAX_ATTEMPTS: u32 = 5;
         const WINDOW_SECONDS: i64 = 300; // 5 minutes
-        
+
         if let Some(entry) = self.rate_limits.get_mut(ip) {
             // Reset if outside window
             if now - entry.last_attempt > WINDOW_SECONDS {
@@ -153,10 +151,13 @@ impl LoginState {
             }
         } else {
             // First attempt from this IP
-            self.rate_limits.insert(ip.to_string(), RateLimitEntry {
-                attempts: 1,
-                last_attempt: now,
-            });
+            self.rate_limits.insert(
+                ip.to_string(),
+                RateLimitEntry {
+                    attempts: 1,
+                    last_attempt: now,
+                },
+            );
             Ok(())
         }
     }
@@ -176,13 +177,13 @@ pub struct LoginResponse {
 pub fn start_periodic_cleanup(login_state: Arc<RwLock<LoginState>>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300)); // 5 minutes
-        
+
         loop {
             interval.tick().await;
-            
+
             let mut state = login_state.write().await;
             state.cleanup_expired();
-            
+
             tracing::debug!("Cleaned up expired login tokens and rate limits");
         }
     });

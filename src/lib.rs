@@ -275,19 +275,17 @@ async fn server_header_middleware(
 }
 
 pub async fn create_app(config: Config) -> axum::Router {
-    let mut template_engine = templating::TemplateEngine::new(
-        config.templates.directory.clone(),
-    );
+    let mut template_engine = templating::TemplateEngine::new(config.templates.directory.clone());
 
     let static_handler =
         static_files::StaticFileHandler::new(config.static_files.directory.clone());
 
     // Set the static handler on the template engine for cache busting
     template_engine.set_static_handler(static_handler.clone());
-    
+
     // Set whether user auth is enabled
     template_engine.set_has_user_auth(config.app.user_database.is_some());
-    
+
     let template_engine = Arc::new(template_engine);
 
     let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
@@ -388,7 +386,7 @@ pub async fn create_app(config: Config) -> axum::Router {
             axum::routing::get(robots::robots_txt_handler),
         )
         .route("/static/{*path}", axum::routing::get(static_file_handler));
-    
+
     // Add login routes only if user database is configured
     if config.app.user_database.is_some() {
         router = router
@@ -397,7 +395,10 @@ pub async fn create_app(config: Config) -> axum::Router {
             .route("/_login/verify", axum::routing::get(login::verify_login))
             .route("/_login/logout", axum::routing::get(login::logout))
             .route("/api/verify", axum::routing::get(login::check_auth_status))
-            .route("/api/refresh-static-versions", axum::routing::post(api::refresh_static_versions));
+            .route(
+                "/api/refresh-static-versions",
+                axum::routing::post(api::refresh_static_versions),
+            );
     }
 
     // Add gallery routes dynamically based on configuration

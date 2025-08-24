@@ -12,7 +12,7 @@ fn has_download_permission(app_state: &AppState, headers: &HeaderMap) -> bool {
     if app_state.config.app.user_database.is_none() {
         return true;
     }
-    
+
     // Check if user is authenticated with the login system
     crate::login::is_authenticated(headers, &app_state.config.app.cookie_secret)
 }

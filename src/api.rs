@@ -11,7 +11,6 @@ use tracing::info;
 
 type HmacSha256 = Hmac<Sha256>;
 
-
 pub fn create_signed_cookie(secret: &str, value: &str) -> Result<String, String> {
     let mut mac =
         HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| "Invalid secret key")?;
@@ -31,8 +30,6 @@ pub fn verify_signed_cookie(secret: &str, signed_value: &str) -> bool {
     }
     false
 }
-
-
 
 pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
@@ -179,7 +176,7 @@ pub async fn refresh_static_versions(
             message: "Authentication not configured".to_string(),
         }));
     }
-    
+
     // Check if user is authenticated
     if !crate::login::is_authenticated(&headers, &app_state.config.app.cookie_secret) {
         return Ok(Json(RefreshResponse {
@@ -187,12 +184,12 @@ pub async fn refresh_static_versions(
             message: "Authentication required".to_string(),
         }));
     }
-    
+
     // Refresh static file versions
     app_state.static_handler.refresh_file_versions().await;
-    
+
     info!("Static file versions refreshed");
-    
+
     Ok(Json(RefreshResponse {
         success: true,
         message: "Static file versions refreshed successfully".to_string(),

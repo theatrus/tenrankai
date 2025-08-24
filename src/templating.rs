@@ -29,11 +29,11 @@ impl TemplateEngine {
             has_user_auth: false,
         }
     }
-    
+
     pub fn set_static_handler(&mut self, handler: crate::static_files::StaticFileHandler) {
         self.static_handler = Some(handler);
     }
-    
+
     pub fn set_has_user_auth(&mut self, has_auth: bool) {
         self.has_user_auth = has_auth;
     }
@@ -125,13 +125,13 @@ impl TemplateEngine {
             "current_year".into(),
             liquid::model::Value::scalar(current_year as i64),
         );
-        
+
         // Add user auth flag
         globals.insert(
             "has_user_auth".into(),
             liquid::model::Value::scalar(self.has_user_auth),
         );
-        
+
         // Add versioned URLs for common static files
         if let Some(ref static_handler) = self.static_handler {
             let style_css_url = static_handler.get_versioned_url("/static/style.css").await;
@@ -139,54 +139,55 @@ impl TemplateEngine {
                 "style_css_url".into(),
                 liquid::model::Value::scalar(style_css_url),
             );
-            
+
             // Process page_css array if it exists
-            if let Some(page_css_value) = globals.get("page_css") {
-                if let Some(css_files) = page_css_value.as_array() {
-                    // Collect the CSS file names first to avoid holding references across await
-                    let css_file_names: Vec<String> = (0..css_files.size())
-                        .filter_map(|i| {
-                            css_files.get(i)
-                                .and_then(|v| v.as_scalar())
-                                .map(|s| format!("/static/{}", s.to_kstr()))
-                        })
-                        .collect();
-                    
-                    // Now process them asynchronously
-                    let mut versioned_css_files = Vec::new();
-                    for file_path in css_file_names {
-                        let versioned_url = static_handler.get_versioned_url(&file_path).await;
-                        versioned_css_files.push(liquid::model::Value::scalar(versioned_url));
-                    }
-                    
-                    globals.insert(
-                        "page_css_versioned".into(),
-                        liquid::model::Value::array(versioned_css_files),
-                    );
+            if let Some(page_css_value) = globals.get("page_css")
+                && let Some(css_files) = page_css_value.as_array()
+            {
+                // Collect the CSS file names first to avoid holding references across await
+                let css_file_names: Vec<String> = (0..css_files.size())
+                    .filter_map(|i| {
+                        css_files
+                            .get(i)
+                            .and_then(|v| v.as_scalar())
+                            .map(|s| format!("/static/{}", s.to_kstr()))
+                    })
+                    .collect();
+
+                // Now process them asynchronously
+                let mut versioned_css_files = Vec::new();
+                for file_path in css_file_names {
+                    let versioned_url = static_handler.get_versioned_url(&file_path).await;
+                    versioned_css_files.push(liquid::model::Value::scalar(versioned_url));
                 }
+
+                globals.insert(
+                    "page_css_versioned".into(),
+                    liquid::model::Value::array(versioned_css_files),
+                );
             }
         } else {
             globals.insert(
                 "style_css_url".into(),
                 liquid::model::Value::scalar("/static/style.css"),
             );
-            
+
             // If no static handler, just prepend /static/ to page_css files
-            if let Some(page_css_value) = globals.get("page_css") {
-                if let Some(css_files) = page_css_value.as_array() {
-                    let static_css_files: Vec<liquid::model::Value> = (0..css_files.size())
-                        .filter_map(|i| {
-                            css_files.get(i)
-                                .and_then(|v| v.as_scalar())
-                                .map(|s| liquid::model::Value::scalar(format!("/static/{}", s.to_kstr())))
+            if let Some(page_css_value) = globals.get("page_css")
+                && let Some(css_files) = page_css_value.as_array()
+            {
+                let static_css_files: Vec<liquid::model::Value> = (0..css_files.size())
+                    .filter_map(|i| {
+                        css_files.get(i).and_then(|v| v.as_scalar()).map(|s| {
+                            liquid::model::Value::scalar(format!("/static/{}", s.to_kstr()))
                         })
-                        .collect();
-                    
-                    globals.insert(
-                        "page_css_versioned".into(),
-                        liquid::model::Value::array(static_css_files),
-                    );
-                }
+                    })
+                    .collect();
+
+                globals.insert(
+                    "page_css_versioned".into(),
+                    liquid::model::Value::array(static_css_files),
+                );
             }
         }
 
@@ -212,7 +213,7 @@ impl TemplateEngine {
                 error!("Failed to load gallery preview partial: {}", e);
                 String::new()
             });
-        
+
         // Load user menu partial if user auth is enabled
         let user_menu_content = if self.has_user_auth {
             self.load_template("partials/_user_menu.html.liquid")

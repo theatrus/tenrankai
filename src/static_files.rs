@@ -3,16 +3,8 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::Arc,
-    time::UNIX_EPOCH,
-};
-use tokio::{
-    fs::File,
-    sync::RwLock,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::UNIX_EPOCH};
+use tokio::{fs::File, sync::RwLock};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
@@ -28,59 +20,52 @@ impl StaticFileHandler {
             static_dir,
             file_versions: Arc::new(RwLock::new(HashMap::new())),
         };
-        
+
         // Initialize file versions on startup
         let handler_clone = handler.clone();
         tokio::spawn(async move {
             handler_clone.refresh_file_versions().await;
         });
-        
+
         handler
     }
-    
+
     pub async fn refresh_file_versions(&self) {
         info!("Refreshing static file versions");
         let mut versions = self.file_versions.write().await;
         versions.clear();
-        
+
         // Scan CSS and JS files
         if let Ok(entries) = std::fs::read_dir(&self.static_dir) {
             for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        let path = entry.path();
-                        if let Some(ext) = path.extension() {
-                            if ext == "css" || ext == "js" {
-                                if let Ok(modified) = metadata.modified() {
-                                    if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
-                                        if let Some(file_name) = path.file_name() {
-                                            if let Some(file_name_str) = file_name.to_str() {
-                                                versions.insert(
-                                                    file_name_str.to_string(),
-                                                    duration.as_secs(),
-                                                );
-                                                debug!("File version: {} -> {}", file_name_str, duration.as_secs());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_file()
+                {
+                    let path = entry.path();
+                    if let Some(ext) = path.extension()
+                        && (ext == "css" || ext == "js")
+                        && let Ok(modified) = metadata.modified()
+                        && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
+                        && let Some(file_name) = path.file_name()
+                        && let Some(file_name_str) = file_name.to_str()
+                    {
+                        versions.insert(file_name_str.to_string(), duration.as_secs());
+                        debug!("File version: {} -> {}", file_name_str, duration.as_secs());
                     }
                 }
             }
         }
     }
-    
+
     pub async fn get_file_version(&self, filename: &str) -> Option<u64> {
         let versions = self.file_versions.read().await;
         versions.get(filename).copied()
     }
-    
+
     pub async fn get_versioned_url(&self, path: &str) -> String {
         // Extract filename from path
-        let filename = path.split('/').last().unwrap_or(path);
-        
+        let filename = path.rsplit('/').next().unwrap_or(path);
+
         if let Some(version) = self.get_file_version(filename).await {
             format!("{}?v={}", path, version)
         } else {
@@ -128,7 +113,9 @@ impl StaticFileHandler {
         } else if content_type.starts_with("image/") {
             // Images without version get long cache
             "public, max-age=31536000"
-        } else if content_type.starts_with("text/css") || content_type.starts_with("application/javascript") {
+        } else if content_type.starts_with("text/css")
+            || content_type.starts_with("application/javascript")
+        {
             // CSS/JS without version get short cache
             "public, max-age=300, must-revalidate"
         } else {
@@ -142,19 +129,15 @@ impl StaticFileHandler {
             .header(header::CACHE_CONTROL, cache_control);
 
         // Add Last-Modified header
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
-                let http_date = httpdate::fmt_http_date(modified);
-                response = response.header(header::LAST_MODIFIED, http_date);
-                
-                // Add ETag based on modification time and file size
-                let etag = format!(
-                    "\"{}-{}\"",
-                    duration.as_secs(),
-                    metadata.len()
-                );
-                response = response.header(header::ETAG, etag);
-            }
+        if let Ok(modified) = metadata.modified()
+            && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
+        {
+            let http_date = httpdate::fmt_http_date(modified);
+            response = response.header(header::LAST_MODIFIED, http_date);
+
+            // Add ETag based on modification time and file size
+            let etag = format!("\"{}-{}\"", duration.as_secs(), metadata.len());
+            response = response.header(header::ETAG, etag);
         }
 
         response.body(body).unwrap()

@@ -4,14 +4,19 @@ use std::path::PathBuf;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use tenrankai::{Config, create_app, gallery::Gallery, posts, startup_checks, login::{User, UserDatabase}};
+use tenrankai::{
+    Config, create_app,
+    gallery::Gallery,
+    login::{User, UserDatabase},
+    posts, startup_checks,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    
+
     /// Global options that apply to all commands
     #[arg(short, long, default_value = "config.toml", global = true)]
     config: PathBuf,
@@ -34,7 +39,7 @@ enum Commands {
         #[arg(long)]
         quit_after: Option<u64>,
     },
-    
+
     /// Manage users
     #[command(subcommand)]
     User(UserCommands),
@@ -81,7 +86,7 @@ enum UserCommands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    
+
     // Set up logging first
     let level = match cli.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
@@ -94,13 +99,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber)?;
-    
+
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
-        Some(Commands::Serve { port, host, quit_after }) => {
-            run_server(cli.config, port, host, quit_after).await
-        }
+        Some(Commands::Serve {
+            port,
+            host,
+            quit_after,
+        }) => run_server(cli.config, port, host, quit_after).await,
         None => {
             // Default to serve command if no subcommand specified
             run_server(cli.config, None, None, None).await
@@ -123,12 +130,16 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
                 println!("No users in database");
             } else {
                 println!("Users in database:");
-                for (_, user) in &db.users {
+                for user in db.users.values() {
                     println!("  {} <{}>", user.username, user.email);
                 }
             }
         }
-        UserCommands::Add { username, email, database } => {
+        UserCommands::Add {
+            username,
+            email,
+            database,
+        } => {
             let db_path = std::path::Path::new(&database);
             let mut db = if db_path.exists() {
                 UserDatabase::load_from_file(db_path).await?
@@ -170,7 +181,11 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
                 std::process::exit(1);
             }
         }
-        UserCommands::Update { username, email, database } => {
+        UserCommands::Update {
+            username,
+            email,
+            database,
+        } => {
             let db_path = std::path::Path::new(&database);
             let mut db = if db_path.exists() {
                 UserDatabase::load_from_file(db_path).await?
@@ -190,7 +205,7 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
             }
         }
     }
-    
+
     Ok(())
 }
 

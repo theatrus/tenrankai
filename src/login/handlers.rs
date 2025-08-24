@@ -42,7 +42,7 @@ pub async fn login_request(
 ) -> Result<Json<LoginResponse>, LoginError> {
     let identifier = request.username.trim().to_lowercase();
     let client_ip = addr.ip().to_string();
-    
+
     // Check rate limit
     {
         let mut login_state = app_state.login_state.write().await;
@@ -55,7 +55,11 @@ pub async fn login_request(
     }
 
     // Load user database from configured path
-    let db_path = app_state.config.app.user_database.as_ref()
+    let db_path = app_state
+        .config
+        .app
+        .user_database
+        .as_ref()
         .ok_or_else(|| LoginError::DatabaseError("User database not configured".to_string()))?;
     let user_db = UserDatabase::load_from_file(db_path)
         .await
@@ -68,7 +72,7 @@ pub async fn login_request(
             let mut login_state = app_state.login_state.write().await;
             login_state.create_token(user.username.clone())
         };
-        
+
         // Build login URL
         let base_url = app_state
             .config
@@ -77,18 +81,19 @@ pub async fn login_request(
             .as_deref()
             .unwrap_or("http://localhost:8080");
         let login_url = format!("{}/_login/verify?token={}", base_url, token);
-        
+
         // For now, just log the URL instead of sending email
         info!("Login URL for {}: {}", user.email, login_url);
     } else {
         // Log that no user was found, but don't reveal this to the client
         info!("Login attempt for non-existent user/email: {}", identifier);
     }
-    
+
     // Always return success to avoid revealing user existence
     Ok(Json(LoginResponse {
         success: true,
-        message: "If your account is registered, you will receive a login link via email.".to_string(),
+        message: "If your account is registered, you will receive a login link via email."
+            .to_string(),
     }))
 }
 
@@ -106,7 +111,7 @@ pub async fn verify_login(
 
     // Create secure session cookie
     let signed_value = create_signed_cookie(&app_state.config.app.cookie_secret, &username)
-        .map_err(|e| LoginError::InternalError(e))?;
+        .map_err(LoginError::InternalError)?;
 
     let cookie = format!(
         "auth={}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax",
@@ -166,9 +171,10 @@ pub async fn check_auth_status(
             username: None,
         });
     }
-    
-    let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret);
-    
+
+    let username =
+        crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret);
+
     Json(AuthStatusResponse {
         authorized: username.is_some(),
         username,
