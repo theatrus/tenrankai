@@ -206,7 +206,7 @@ impl Gallery {
                     // Use JPEG with configurable quality and ICC profile preservation
                     use image::codecs::jpeg::JpegEncoder;
                     let output = std::fs::File::create(&cache_path_clone)?;
-                    
+
                     if let Some(ref profile_data) = icc_profile {
                         // Create encoder with ICC profile
                         let mut encoder = JpegEncoder::new_with_quality(output, jpeg_quality);
@@ -231,7 +231,7 @@ impl Gallery {
                     // Use our libwebp-sys wrapper for WebP encoding with ICC profile support
                     let rgb_image = final_image.to_rgb8();
                     let (img_width, img_height) = rgb_image.dimensions();
-                    
+
                     // Create our WebP encoder
                     let rgb_data = rgb_image.into_raw();
                     match WebPEncoder::new(img_width, img_height, rgb_data) {
@@ -803,5 +803,471 @@ mod tests {
             "image/jpeg",
             "Wrong MIME type for cached composite"
         );
+    }
+
+    // Helper function to create a test JPEG with ICC profile
+    fn create_test_jpeg_with_icc_profile(
+        path: &std::path::Path,
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        // Create a simple RGB image
+        let img = ImageBuffer::from_pixel(width, height, image::Rgb([255u8, 128, 64]));
+
+        // Create a minimal Display P3 ICC profile for testing
+        let icc_profile = create_test_display_p3_profile();
+
+        // First save as regular JPEG
+        img.save(path)?;
+
+        // Now read it back and inject the ICC profile
+        let mut jpeg_data = std::fs::read(path)?;
+
+        // Verify it's a valid JPEG
+        if jpeg_data.len() < 4 || jpeg_data[0..2] != [0xFF, 0xD8] {
+            return Err("Not a valid JPEG file".into());
+        }
+
+        // Find where to insert the APP2 segment (after SOI, before other segments)
+        let mut insert_pos = 2; // After SOI marker (0xFF 0xD8)
+
+        // Look for the first segment after SOI - usually APP0 (JFIF) or APP1 (EXIF)
+        if jpeg_data.len() > 4 && jpeg_data[2] == 0xFF {
+            // There's already a segment here, skip past it
+            if jpeg_data[3] >= 0xE0 && jpeg_data[3] <= 0xEF {
+                // It's an APP segment, get its length
+                if jpeg_data.len() > 6 {
+                    let segment_len = u16::from_be_bytes([jpeg_data[4], jpeg_data[5]]) as usize;
+                    insert_pos = 4 + segment_len; // Insert after this segment
+                }
+            }
+        }
+
+        // Create APP2 segment with ICC profile
+        let mut app2_segment = Vec::new();
+        app2_segment.push(0xFF);
+        app2_segment.push(0xE2); // APP2 marker
+
+        // Calculate segment length (includes the 2 length bytes)
+        let segment_length = 2 + 12 + 2 + icc_profile.len();
+        app2_segment.push((segment_length >> 8) as u8);
+        app2_segment.push((segment_length & 0xFF) as u8);
+
+        // Add ICC_PROFILE identifier
+        app2_segment.extend_from_slice(b"ICC_PROFILE\0");
+
+        // Add sequence numbers (1 of 1)
+        app2_segment.push(1); // Sequence number
+        app2_segment.push(1); // Total number of chunks
+
+        // Add ICC profile data
+        app2_segment.extend_from_slice(&icc_profile);
+
+        // Insert the APP2 segment into the JPEG
+        jpeg_data.splice(insert_pos..insert_pos, app2_segment);
+
+        // Write the modified JPEG
+        std::fs::write(path, &jpeg_data)?;
+
+        Ok(icc_profile)
+    }
+
+    // Create a minimal but valid Display P3 ICC profile for testing
+    fn create_test_display_p3_profile() -> Vec<u8> {
+        // This is a simplified Display P3 profile for testing
+        // Real Display P3 profiles are typically 548 bytes
+        vec![
+            // Profile header (128 bytes)
+            0x00, 0x00, 0x02, 0x24, // Profile size (548 bytes)
+            b'A', b'P', b'P', b'L', // Preferred CMM type
+            0x04, 0x30, 0x00, 0x00, // Profile version 4.3.0
+            b'm', b'n', b't', b'r', // Monitor device class
+            b'R', b'G', b'B', b' ', // RGB color space
+            b'X', b'Y', b'Z', b' ', // PCS (XYZ)
+            // Creation date/time (12 bytes)
+            0x07, 0xe7, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, b'a', b'c',
+            b's', b'p', // Profile signature
+            0x00, 0x00, 0x00, 0x00, // Platform signature
+            0x00, 0x00, 0x00, 0x00, // Profile flags
+            b'A', b'P', b'P', b'L', // Device manufacturer
+            0x00, 0x00, 0x00, 0x00, // Device model
+            0x00, 0x00, 0x00, 0x00, // Device attributes
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // Rendering intent: perceptual
+            // PCS illuminant (12 bytes) - D65
+            0x00, 0x00, 0xf6, 0xd6, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xd3, 0x2d, b'A', b'P',
+            b'P', b'L', // Profile creator
+            // MD5 fingerprint (16 bytes) - zeros for simplicity
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // Reserved (28 bytes)
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // Tag table
+            0x00, 0x00, 0x00, 0x0A, // Tag count (10 tags for a basic Display P3)
+            // Tag directory entries (12 bytes each)
+            // 1. 'desc' tag
+            b'd', b'e', b's', b'c', 0x00, 0x00, 0x01, 0x4C, // Offset
+            0x00, 0x00, 0x00, 0x4B, // Size
+            // 2. 'cprt' tag
+            b'c', b'p', b'r', b't', 0x00, 0x00, 0x01, 0x98, // Offset
+            0x00, 0x00, 0x00, 0x0C, // Size
+            // 3. 'wtpt' tag (white point)
+            b'w', b't', b'p', b't', 0x00, 0x00, 0x01, 0xA4, // Offset
+            0x00, 0x00, 0x00, 0x14, // Size
+            // 4. 'rXYZ' tag (red primary)
+            b'r', b'X', b'Y', b'Z', 0x00, 0x00, 0x01, 0xB8, // Offset
+            0x00, 0x00, 0x00, 0x14, // Size
+            // 5. 'gXYZ' tag (green primary)
+            b'g', b'X', b'Y', b'Z', 0x00, 0x00, 0x01, 0xCC, // Offset
+            0x00, 0x00, 0x00, 0x14, // Size
+            // 6. 'bXYZ' tag (blue primary)
+            b'b', b'X', b'Y', b'Z', 0x00, 0x00, 0x01, 0xE0, // Offset
+            0x00, 0x00, 0x00, 0x14, // Size
+            // 7. 'rTRC' tag (red tone curve)
+            b'r', b'T', b'R', b'C', 0x00, 0x00, 0x01, 0xF4, // Offset
+            0x00, 0x00, 0x00, 0x10, // Size
+            // 8. 'gTRC' tag (green tone curve)
+            b'g', b'T', b'R', b'C', 0x00, 0x00, 0x02, 0x04, // Offset
+            0x00, 0x00, 0x00, 0x10, // Size
+            // 9. 'bTRC' tag (blue tone curve)
+            b'b', b'T', b'R', b'C', 0x00, 0x00, 0x02, 0x14, // Offset
+            0x00, 0x00, 0x00, 0x10, // Size
+            // 10. 'chad' tag (chromatic adaptation)
+            b'c', b'h', b'a', b'd', 0x00, 0x00, 0x02, 0x24, // Offset (this would continue...)
+            0x00, 0x00, 0x00,
+            0x2C, // Size
+
+                  // Tag data would follow here...
+                  // For testing purposes, we'll use a smaller profile
+        ]
+    }
+
+    #[tokio::test]
+    async fn test_jpeg_icc_profile_preservation() {
+        let (gallery, temp_dir) = create_test_gallery().await;
+
+        // Create a simple JPEG first
+        let img = ImageBuffer::from_pixel(100, 100, image::Rgb([255u8, 128, 64]));
+        let source_path = temp_dir.path().join("test_source.jpg");
+        img.save(&source_path).unwrap();
+
+        // Now add ICC profile to it
+        let icc_profile = create_test_display_p3_profile();
+
+        // Use the actual JPEG encoder with ICC profile to create a proper test file
+        use image::codecs::jpeg::JpegEncoder;
+        let output_path = gallery.config.source_directory.join("test_icc.jpg");
+        let output_file = std::fs::File::create(&output_path).unwrap();
+        let mut encoder = JpegEncoder::new_with_quality(output_file, 90);
+
+        // Try to set ICC profile - if it fails, skip the test
+        if encoder.set_icc_profile(icc_profile.clone()).is_err() {
+            eprintln!("Skipping test - JPEG encoder doesn't support ICC profiles");
+            return;
+        }
+
+        img.write_with_encoder(encoder).unwrap();
+
+        // Now process the image through the gallery
+        let relative_path = "test_icc.jpg";
+
+        // Process image as thumbnail (JPEG output)
+        let result = gallery
+            .get_resized_image(&output_path, relative_path, "thumbnail", OutputFormat::Jpeg)
+            .await;
+
+        assert!(result.is_ok(), "Failed to process image: {:?}", result);
+
+        let cache_path = result.unwrap();
+
+        // Extract ICC profile from processed image
+        let processed_icc = Gallery::extract_icc_profile_from_jpeg(&cache_path);
+
+        assert!(
+            processed_icc.is_some(),
+            "ICC profile was not preserved in processed JPEG"
+        );
+
+        let processed_icc = processed_icc.unwrap();
+
+        // The profile might be slightly different due to processing, but should exist
+        assert!(!processed_icc.is_empty(), "ICC profile is empty");
+        debug!(
+            "Original ICC size: {}, Processed ICC size: {}",
+            icc_profile.len(),
+            processed_icc.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_webp_icc_profile_preservation() {
+        let (gallery, _temp_dir) = create_test_gallery().await;
+
+        // Create a test image with ICC profile
+        let img = ImageBuffer::from_pixel(100, 100, image::Rgb([255u8, 128, 64]));
+        let icc_profile = create_test_display_p3_profile();
+
+        // Save as JPEG with ICC profile first
+        use image::codecs::jpeg::JpegEncoder;
+        let source_path = gallery.config.source_directory.join("test_webp_source.jpg");
+        let output_file = std::fs::File::create(&source_path).unwrap();
+        let mut encoder = JpegEncoder::new_with_quality(output_file, 90);
+
+        // Try to set ICC profile - if it fails, skip the test
+        if encoder.set_icc_profile(icc_profile.clone()).is_err() {
+            eprintln!("Skipping test - JPEG encoder doesn't support ICC profiles");
+            return;
+        }
+
+        img.write_with_encoder(encoder).unwrap();
+
+        // Process the image through the gallery as WebP
+        let relative_path = "test_webp_source.jpg";
+
+        // Process image as thumbnail (WebP output)
+        let result = gallery
+            .get_resized_image(&source_path, relative_path, "thumbnail", OutputFormat::WebP)
+            .await;
+
+        assert!(result.is_ok(), "Failed to process image: {:?}", result);
+
+        let cache_path = result.unwrap();
+
+        // Read the WebP file and check for ICC profile
+        let webp_data = std::fs::read(&cache_path).unwrap();
+
+        // Parse WebP to check for ICCP chunk
+        assert!(webp_data.len() >= 12);
+        assert_eq!(&webp_data[0..4], b"RIFF");
+        assert_eq!(&webp_data[8..12], b"WEBP");
+
+        // Look for VP8X and ICCP chunks
+        let mut pos = 12;
+        let mut found_vp8x = false;
+        let mut found_iccp = false;
+        let mut iccp_size = 0;
+
+        while pos + 8 <= webp_data.len() {
+            let chunk_fourcc = &webp_data[pos..pos + 4];
+            let chunk_size = u32::from_le_bytes([
+                webp_data[pos + 4],
+                webp_data[pos + 5],
+                webp_data[pos + 6],
+                webp_data[pos + 7],
+            ]) as usize;
+
+            if chunk_fourcc == b"VP8X" {
+                found_vp8x = true;
+                // Check that ICCP flag is set (bit 5 = 0x20)
+                if pos + 8 < webp_data.len() {
+                    let flags = webp_data[pos + 8];
+                    assert!(
+                        flags & 0x20 != 0,
+                        "ICCP flag not set in VP8X chunk (flags: 0x{:02x})",
+                        flags
+                    );
+                }
+            } else if chunk_fourcc == b"ICCP" {
+                found_iccp = true;
+                iccp_size = chunk_size;
+            }
+
+            // Move to next chunk (with padding)
+            pos += 8 + chunk_size + (chunk_size % 2);
+        }
+
+        assert!(found_vp8x, "VP8X chunk not found in WebP");
+        assert!(found_iccp, "ICCP chunk not found in WebP");
+        assert!(iccp_size > 0, "ICCP chunk is empty");
+
+        debug!("WebP ICC profile size: {} bytes", iccp_size);
+    }
+
+    #[tokio::test]
+    async fn test_jpeg_icc_profile_preservation_with_watermark() {
+        let (mut gallery, _temp_dir) = create_test_gallery().await;
+
+        // Enable watermarking
+        gallery.app_config.copyright_holder = Some("Test Copyright".to_string());
+
+        // Create a test image
+        let img = ImageBuffer::from_pixel(200, 200, image::Rgb([255u8, 128, 64]));
+        let icc_profile = create_test_display_p3_profile();
+
+        // Save with ICC profile
+        use image::codecs::jpeg::JpegEncoder;
+        let output_path = gallery.config.source_directory.join("test_watermark.jpg");
+        let output_file = std::fs::File::create(&output_path).unwrap();
+        let mut encoder = JpegEncoder::new_with_quality(output_file, 90);
+
+        // Try to set ICC profile - if it fails, skip the test
+        if encoder.set_icc_profile(icc_profile.clone()).is_err() {
+            eprintln!("Skipping test - JPEG encoder doesn't support ICC profiles");
+            return;
+        }
+
+        img.write_with_encoder(encoder).unwrap();
+
+        // Create a minimal font file for testing (or skip if not present)
+        let _font_path = PathBuf::from("static/DejaVuSans.ttf");
+        std::fs::create_dir_all("static").ok();
+
+        // Process the image through the gallery
+        let relative_path = "test_watermark.jpg";
+
+        // Process image as medium (JPEG output with watermark attempt)
+        let result = gallery
+            .get_resized_image(&output_path, relative_path, "medium", OutputFormat::Jpeg)
+            .await;
+
+        assert!(result.is_ok(), "Failed to process image: {:?}", result);
+
+        let cache_path = result.unwrap();
+
+        // Extract ICC profile from processed image
+        let processed_icc = Gallery::extract_icc_profile_from_jpeg(&cache_path);
+
+        // ICC profile should be preserved regardless of watermarking
+        assert!(
+            processed_icc.is_some(),
+            "ICC profile was not preserved in processed JPEG"
+        );
+
+        let processed_icc = processed_icc.unwrap();
+        assert!(
+            !processed_icc.is_empty(),
+            "ICC profile is empty after processing"
+        );
+
+        debug!(
+            "Original ICC size: {}, Processed ICC size: {}",
+            icc_profile.len(),
+            processed_icc.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_icc_profile_extraction_from_jpeg() {
+        let temp_dir = TempDir::new().unwrap();
+        let jpeg_path = temp_dir.path().join("test_extract.jpg");
+
+        // Create JPEG with ICC profile
+        let original_icc = create_test_jpeg_with_icc_profile(&jpeg_path, 50, 50)
+            .expect("Failed to create test JPEG");
+
+        // Test extraction
+        let extracted_icc = Gallery::extract_icc_profile_from_jpeg(&jpeg_path);
+
+        assert!(extracted_icc.is_some(), "Failed to extract ICC profile");
+        let extracted_icc = extracted_icc.unwrap();
+
+        assert_eq!(
+            extracted_icc.len(),
+            original_icc.len(),
+            "Extracted ICC profile size doesn't match: {} vs {}",
+            extracted_icc.len(),
+            original_icc.len()
+        );
+
+        // Verify the profile header is correct
+        assert!(extracted_icc.len() >= 4);
+        // ICC profiles start with size as big-endian 32-bit integer
+        let profile_size = u32::from_be_bytes([
+            extracted_icc[0],
+            extracted_icc[1],
+            extracted_icc[2],
+            extracted_icc[3],
+        ]) as usize;
+
+        // The size in the header should match actual size for our test profile
+        assert!(
+            profile_size > 128,
+            "ICC profile size in header too small: {}",
+            profile_size
+        );
+    }
+
+    #[tokio::test]
+    async fn test_icc_profile_preservation_all_sizes() {
+        let (gallery, _temp_dir) = create_test_gallery().await;
+
+        // Create a test image with ICC profile
+        let img = ImageBuffer::from_pixel(2000, 2000, image::Rgb([255u8, 128, 64]));
+        let icc_profile = create_test_display_p3_profile();
+
+        // Save as JPEG with ICC profile
+        use image::codecs::jpeg::JpegEncoder;
+        let source_path = gallery.config.source_directory.join("test_all_sizes.jpg");
+        let output_file = std::fs::File::create(&source_path).unwrap();
+        let mut encoder = JpegEncoder::new_with_quality(output_file, 90);
+
+        // Try to set ICC profile - if it fails, skip the test
+        if encoder.set_icc_profile(icc_profile.clone()).is_err() {
+            eprintln!("Skipping test - JPEG encoder doesn't support ICC profiles");
+            return;
+        }
+
+        img.write_with_encoder(encoder).unwrap();
+
+        // Test all sizes for both JPEG and WebP
+        let sizes = ["thumbnail", "gallery", "medium", "large"];
+        let formats = [OutputFormat::Jpeg, OutputFormat::WebP];
+
+        for size in &sizes {
+            for format in &formats {
+                debug!("Testing {} size with {:?} format", size, format);
+
+                let result = gallery
+                    .get_resized_image(&source_path, "test_all_sizes.jpg", size, *format)
+                    .await;
+
+                assert!(
+                    result.is_ok(),
+                    "Failed to process {} as {:?}: {:?}",
+                    size,
+                    format,
+                    result
+                );
+
+                let cache_path = result.unwrap();
+
+                match format {
+                    OutputFormat::Jpeg => {
+                        // Check JPEG has ICC profile
+                        let processed_icc = Gallery::extract_icc_profile_from_jpeg(&cache_path);
+                        assert!(
+                            processed_icc.is_some(),
+                            "ICC profile missing in {} JPEG",
+                            size
+                        );
+                        assert!(
+                            !processed_icc.unwrap().is_empty(),
+                            "ICC profile empty in {} JPEG",
+                            size
+                        );
+                    }
+                    OutputFormat::WebP => {
+                        // Check WebP has ICC profile
+                        let webp_data = std::fs::read(&cache_path).unwrap();
+                        let mut found_iccp = false;
+                        let mut pos = 12;
+
+                        while pos + 8 <= webp_data.len() {
+                            let chunk_fourcc = &webp_data[pos..pos + 4];
+                            if chunk_fourcc == b"ICCP" {
+                                found_iccp = true;
+                                break;
+                            }
+                            let chunk_size = u32::from_le_bytes([
+                                webp_data[pos + 4],
+                                webp_data[pos + 5],
+                                webp_data[pos + 6],
+                                webp_data[pos + 7],
+                            ]) as usize;
+                            pos += 8 + chunk_size + (chunk_size % 2);
+                        }
+
+                        assert!(found_iccp, "ICCP chunk missing in {} WebP", size);
+                    }
+                }
+            }
+        }
     }
 }

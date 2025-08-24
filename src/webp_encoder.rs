@@ -144,7 +144,7 @@ impl WebPEncoder {
             };
 
             // Add ICC profile chunk ("ICCP" fourcc)
-            let iccp_fourcc = b"ICCP\0".as_ptr() as *const i8;
+            let iccp_fourcc = c"ICCP".as_ptr();
             let set_result = libwebp_sys::WebPMuxSetChunk(mux, iccp_fourcc, &icc_data_struct, 1);
 
             if set_result != libwebp_sys::WebPMuxError::WEBP_MUX_OK {
