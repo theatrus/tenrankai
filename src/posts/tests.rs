@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod posts_tests {
     use super::super::*;
     use std::fs;
     use tempfile::TempDir;

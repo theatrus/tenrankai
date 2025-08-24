@@ -317,7 +317,7 @@ pub async fn create_app(config: Config) -> Router {
     }
 
     let posts_managers_arc = Arc::new(posts_managers);
-    
+
     let app_state = AppState {
         template_engine,
         static_handler,

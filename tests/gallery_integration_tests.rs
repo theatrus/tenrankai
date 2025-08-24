@@ -132,7 +132,7 @@ async fn test_gallery_root_renders_correctly() {
 
     // Create some test images
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         3,
@@ -163,7 +163,7 @@ async fn test_portfolio_gallery_renders_with_custom_prefix() {
 
     // Create test images in portfolio
     create_test_images(
-        &config.galleries.as_ref().unwrap()[1]
+        config.galleries.as_ref().unwrap()[1]
             .source_directory
             .as_path(),
         2,
@@ -232,7 +232,7 @@ async fn test_gallery_opengraph_with_composite_image() {
 
     // Create multiple images to trigger composite image
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         4,
@@ -259,7 +259,7 @@ async fn test_gallery_opengraph_with_single_image() {
 
     // Create only one image to test fallback
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         1,
@@ -284,7 +284,7 @@ async fn test_gallery_preview_api() {
 
     // Create test images
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         10,
@@ -317,7 +317,7 @@ async fn test_image_detail_page() {
 
     // Create test images
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         3,
@@ -399,7 +399,7 @@ async fn test_gallery_pagination() {
 
     // Create many images to test pagination (main gallery has 20 per page)
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         25,
@@ -447,7 +447,7 @@ async fn test_gallery_preview_partial_in_template() {
 
     // Create images in main gallery
     create_test_images(
-        &config.galleries.as_ref().unwrap()[0]
+        config.galleries.as_ref().unwrap()[0]
             .source_directory
             .as_path(),
         6,

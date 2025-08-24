@@ -40,6 +40,18 @@ impl Gallery {
             };
 
             if is_directory {
+                // Check if this directory is hidden
+                let folder_metadata = self.read_folder_metadata_full(&item_path).await;
+                let is_hidden = folder_metadata
+                    .as_ref()
+                    .map(|m| m.config.hidden)
+                    .unwrap_or(false);
+
+                // Skip hidden directories in listings
+                if is_hidden {
+                    continue;
+                }
+
                 let item_count = self.count_images_in_directory(&item_path).await;
                 let preview_images = self.get_directory_preview_images(&item_path).await;
                 let (display_name, description) = self.read_folder_metadata(&item_path).await;
@@ -195,17 +207,71 @@ impl Gallery {
         let full_path = self.config.source_directory.join(relative_path);
         let mut count = 0;
 
+        // Pre-load hidden folder paths for this directory tree
+        let hidden_folders = self.collect_hidden_folders(relative_path).await;
+
         for entry in WalkDir::new(full_path).min_depth(1).into_iter().flatten() {
-            if entry.file_type().is_file()
+            if entry.file_type().is_dir() {
+                // Check if this subdirectory is hidden
+                if let Ok(subdir_relative) =
+                    entry.path().strip_prefix(&self.config.source_directory)
+                {
+                    let subdir_path = subdir_relative.to_string_lossy().replace('\\', "/");
+                    if hidden_folders.contains(&subdir_path) {
+                        // Skip this entire directory tree
+                        continue;
+                    }
+                }
+            } else if entry.file_type().is_file()
                 && let Some(name) = entry.file_name().to_str()
                 && self.is_image(name)
                 && !name.starts_with('.')
             {
-                count += 1;
+                // Check if this file is in a hidden directory
+                if let Ok(file_relative) = entry.path().strip_prefix(&self.config.source_directory)
+                {
+                    let file_path = file_relative.to_string_lossy().replace('\\', "/");
+                    let is_in_hidden = hidden_folders.iter().any(|hidden| {
+                        file_path.starts_with(hidden) && file_path[hidden.len()..].starts_with('/')
+                    });
+                    if !is_in_hidden {
+                        count += 1;
+                    }
+                }
             }
         }
 
         count
+    }
+
+    async fn collect_hidden_folders(&self, base_path: &str) -> Vec<String> {
+        let mut hidden_folders = Vec::new();
+        let full_base_path = self.config.source_directory.join(base_path);
+
+        for entry in WalkDir::new(&full_base_path).into_iter().flatten() {
+            if entry.file_type().is_dir()
+                && let Ok(relative) = entry.path().strip_prefix(&self.config.source_directory)
+            {
+                let relative_str = relative.to_string_lossy().replace('\\', "/");
+
+                // Check if _folder.md exists with hidden flag
+                let folder_md_path = entry.path().join("_folder.md");
+                if folder_md_path.exists()
+                    && let Ok(content) = std::fs::read_to_string(&folder_md_path)
+                    && content.trim_start().starts_with("+++")
+                {
+                    let parts: Vec<&str> = content.splitn(3, "+++").collect();
+                    if parts.len() >= 3
+                        && let Ok(config) = toml::from_str::<super::FolderConfig>(parts[1])
+                        && config.hidden
+                    {
+                        hidden_folders.push(relative_str);
+                    }
+                }
+            }
+        }
+
+        hidden_folders
     }
 
     async fn get_directory_preview_images(&self, relative_path: &str) -> Vec<String> {
@@ -215,6 +281,9 @@ impl Gallery {
         // Get up to configured number of images for preview
         let max_preview_images = self.config.preview.max_images;
 
+        // Pre-load hidden folder paths
+        let hidden_folders = self.collect_hidden_folders(relative_path).await;
+
         for entry in WalkDir::new(&full_path)
             .min_depth(1)
             .max_depth(self.config.preview.max_depth)
@@ -223,6 +292,19 @@ impl Gallery {
         {
             if preview_images.len() >= max_preview_images {
                 break;
+            }
+
+            // Skip if in hidden directory
+            if let Ok(entry_relative) = entry.path().strip_prefix(&self.config.source_directory) {
+                let entry_path = entry_relative.to_string_lossy().replace('\\', "/");
+                let is_in_hidden = hidden_folders.iter().any(|hidden| {
+                    entry_path.starts_with(hidden)
+                        && (entry_path.len() == hidden.len()
+                            || entry_path[hidden.len()..].starts_with('/'))
+                });
+                if is_in_hidden {
+                    continue;
+                }
             }
 
             if entry.file_type().is_file()
@@ -319,6 +401,56 @@ impl Gallery {
         &self,
         folder_path: &str,
     ) -> (Option<String>, Option<String>) {
+        let metadata = self.read_folder_metadata_full(folder_path).await;
+        match metadata {
+            Some(meta) => {
+                let has_config_title = meta.config.title.is_some();
+                let title = meta.config.title.or_else(|| {
+                    // Try to extract title from markdown if not in config
+                    meta.description_markdown
+                        .lines()
+                        .find(|line| line.trim().starts_with("# "))
+                        .map(|line| line.trim_start_matches("# ").trim().to_string())
+                });
+
+                // Convert description markdown to HTML
+                let description = if meta.description_markdown.trim().is_empty() {
+                    None
+                } else {
+                    // If we found a title in the markdown, remove it from the description
+                    let desc_content = if title.is_some() && !has_config_title {
+                        meta.description_markdown
+                            .lines()
+                            .skip_while(|line| !line.trim().starts_with("# "))
+                            .skip(1)
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                            .trim()
+                            .to_string()
+                    } else {
+                        meta.description_markdown
+                    };
+
+                    if desc_content.is_empty() {
+                        None
+                    } else {
+                        let parser = Parser::new(&desc_content);
+                        let mut html_output = String::new();
+                        html::push_html(&mut html_output, parser);
+                        Some(html_output)
+                    }
+                };
+
+                (title, description)
+            }
+            None => (None, None),
+        }
+    }
+
+    pub(crate) async fn read_folder_metadata_full(
+        &self,
+        folder_path: &str,
+    ) -> Option<super::FolderMetadata> {
         let folder_md_path = self
             .config
             .source_directory
@@ -327,47 +459,39 @@ impl Gallery {
 
         match tokio::fs::read_to_string(&folder_md_path).await {
             Ok(content) => {
-                let mut title: Option<String> = None;
-                let mut description_content = String::new();
-                let mut found_title = false;
+                // Check if content starts with TOML front matter
+                if content.trim_start().starts_with("+++") {
+                    // Parse TOML front matter
+                    let parts: Vec<&str> = content.splitn(3, "+++").collect();
 
-                for line in content.lines() {
-                    let trimmed = line.trim();
+                    if parts.len() >= 3 {
+                        let toml_content = parts[1];
+                        let markdown_content = parts[2].trim().to_string();
 
-                    // Look for the first title (# heading)
-                    if !found_title && trimmed.starts_with("# ") {
-                        title = Some(trimmed.trim_start_matches("# ").to_string());
-                        found_title = true;
-                        continue;
-                    }
-
-                    // Skip empty lines immediately after title
-                    if found_title && trimmed.is_empty() && description_content.is_empty() {
-                        continue;
-                    }
-
-                    // Collect description content (everything after the title)
-                    if found_title {
-                        if !description_content.is_empty() {
-                            description_content.push('\n');
+                        match toml::from_str::<super::FolderConfig>(toml_content) {
+                            Ok(config) => {
+                                return Some(super::FolderMetadata {
+                                    config,
+                                    description_markdown: markdown_content,
+                                });
+                            }
+                            Err(e) => {
+                                debug!("Failed to parse folder TOML config: {}", e);
+                            }
                         }
-                        description_content.push_str(line);
                     }
                 }
 
-                // Convert description markdown to HTML if there's content
-                let description = if description_content.trim().is_empty() {
-                    None
-                } else {
-                    let parser = Parser::new(&description_content);
-                    let mut html_output = String::new();
-                    html::push_html(&mut html_output, parser);
-                    Some(html_output)
-                };
-
-                (title, description)
+                // No TOML front matter, treat entire content as markdown
+                Some(super::FolderMetadata {
+                    config: super::FolderConfig {
+                        hidden: false,
+                        title: None,
+                    },
+                    description_markdown: content,
+                })
             }
-            Err(_) => (None, None),
+            Err(_) => None,
         }
     }
 
@@ -507,6 +631,18 @@ impl Gallery {
                 };
 
                 if metadata.is_dir() {
+                    // Check if this subdirectory is hidden
+                    let folder_metadata = self.read_folder_metadata_full(&item_path).await;
+                    let is_hidden = folder_metadata
+                        .as_ref()
+                        .map(|m| m.config.hidden)
+                        .unwrap_or(false);
+
+                    // Skip hidden directories
+                    if is_hidden {
+                        continue;
+                    }
+
                     // Recursively collect from subdirectories
                     self.collect_preview_items(
                         &item_path,

@@ -733,6 +733,43 @@ The project includes comprehensive integration tests for all major features:
 
 ## Recent Changes (December 2025)
 
+### Hidden Gallery Folders
+1. **TOML Front Matter Support in _folder.md**:
+   - Gallery folders can now use TOML front matter similar to posts
+   - Allows configuration of folder behavior and metadata
+   - Backward compatible - folders without TOML continue to work as before
+   
+2. **Hidden Folder Feature**:
+   - Folders can be marked as `hidden = true` in TOML config
+   - Hidden folders are excluded from:
+     - Gallery listings (scan_directory)
+     - Gallery preview images
+     - Image counts
+     - Recursive directory traversal
+   - Hidden folders remain accessible if you know the direct URL
+   
+3. **_folder.md Format**:
+   ```markdown
+   +++
+   hidden = true
+   title = "Private Photos"
+   +++
+   
+   # Optional Markdown Title
+   
+   Description content in markdown...
+   ```
+   
+4. **Configuration Options**:
+   - `hidden`: Boolean flag to hide folder from listings (default: false)
+   - `title`: Override folder display name (optional)
+   
+5. **Implementation Details**:
+   - New types: `FolderConfig` and `FolderMetadata` 
+   - `read_folder_metadata_full()` returns full metadata including config
+   - `read_folder_metadata()` maintains backward compatibility
+   - Title priority: TOML title > Markdown # heading > folder name
+
 ### Posts Periodic Refresh
 1. **Added Configurable Posts Refresh**:
    - Posts can now be automatically refreshed at a configurable interval
