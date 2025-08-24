@@ -28,13 +28,21 @@ async fn setup_test_server() -> (TempDir, TestServer) {
 <body>
     <header><h1>Test Site</h1></header>
     <main>"#;
-    fs::write(templates_dir.join("partials/_header.html.liquid"), header_content).unwrap();
+    fs::write(
+        templates_dir.join("partials/_header.html.liquid"),
+        header_content,
+    )
+    .unwrap();
 
     let footer_content = r#"    </main>
     <footer><p>&copy; {{ current_year }} Test</p></footer>
 </body>
 </html>"#;
-    fs::write(templates_dir.join("partials/_footer.html.liquid"), footer_content).unwrap();
+    fs::write(
+        templates_dir.join("partials/_footer.html.liquid"),
+        footer_content,
+    )
+    .unwrap();
 
     let index_content = r#"{% assign page_title = "Home" %}
 {% include "_header.html.liquid" %}
@@ -149,7 +157,11 @@ async fn test_404_page_renders() {
 {% include "_header.html.liquid" %}
 <h1>404 - Page Not Found</h1>
 {% include "_footer.html.liquid" %}"#;
-    fs::write(templates_dir.join("pages/404.html.liquid"), not_found_content).unwrap();
+    fs::write(
+        templates_dir.join("pages/404.html.liquid"),
+        not_found_content,
+    )
+    .unwrap();
 
     let response = server.get("/nonexistent").await;
 

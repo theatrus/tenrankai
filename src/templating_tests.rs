@@ -26,7 +26,11 @@ mod tests {
         <h1>Test Site</h1>
     </header>
     <main>"#;
-        fs::write(template_path.join("partials/_header.html.liquid"), header_content).unwrap();
+        fs::write(
+            template_path.join("partials/_header.html.liquid"),
+            header_content,
+        )
+        .unwrap();
 
         // Create test footer template
         let footer_content = r#"    </main>
@@ -35,7 +39,11 @@ mod tests {
     </footer>
 </body>
 </html>"#;
-        fs::write(template_path.join("partials/_footer.html.liquid"), footer_content).unwrap();
+        fs::write(
+            template_path.join("partials/_footer.html.liquid"),
+            footer_content,
+        )
+        .unwrap();
 
         // Create a test index template
         let index_content = r#"{% assign page_title = "Home" %}
@@ -73,7 +81,11 @@ mod tests {
 </div>
 
 {% include "_footer.html.liquid" %}"#;
-        fs::write(template_path.join("modules/gallery.html.liquid"), gallery_content).unwrap();
+        fs::write(
+            template_path.join("modules/gallery.html.liquid"),
+            gallery_content,
+        )
+        .unwrap();
 
         // Create a test gallery preview component
         let preview_content = r#"<div class="gallery-preview">
@@ -105,7 +117,9 @@ mod tests {
 
         let globals = liquid::object!({});
 
-        let result = engine.render_template("pages/index.html.liquid", globals).await;
+        let result = engine
+            .render_template("pages/index.html.liquid", globals)
+            .await;
         assert!(
             result.is_ok(),
             "Failed to render index template: {:?}",
@@ -140,7 +154,9 @@ mod tests {
             "items": test_items,
         });
 
-        let result = engine.render_template("modules/gallery.html.liquid", globals).await;
+        let result = engine
+            .render_template("modules/gallery.html.liquid", globals)
+            .await;
         assert!(
             result.is_ok(),
             "Failed to render gallery template: {:?}",
@@ -160,7 +176,9 @@ mod tests {
 
         let globals = liquid::object!({});
 
-        let result = engine.render_template("pages/index.html.liquid", globals).await;
+        let result = engine
+            .render_template("pages/index.html.liquid", globals)
+            .await;
         assert!(
             result.is_ok(),
             "Failed to render with gallery preview: {:?}",
@@ -193,7 +211,9 @@ mod tests {
         let engine = TemplateEngine::new(template_path.to_path_buf());
         let globals = liquid::object!({});
 
-        let result = engine.render_template("pages/bad.html.liquid", globals).await;
+        let result = engine
+            .render_template("pages/bad.html.liquid", globals)
+            .await;
         assert!(result.is_err(), "Should fail with missing partial");
     }
 
@@ -203,12 +223,16 @@ mod tests {
 
         // First render
         let globals1 = liquid::object!({});
-        let result1 = engine.render_template("pages/index.html.liquid", globals1).await;
+        let result1 = engine
+            .render_template("pages/index.html.liquid", globals1)
+            .await;
         assert!(result1.is_ok());
 
         // Second render should use cache
         let globals2 = liquid::object!({});
-        let result2 = engine.render_template("pages/index.html.liquid", globals2).await;
+        let result2 = engine
+            .render_template("pages/index.html.liquid", globals2)
+            .await;
         assert!(result2.is_ok());
 
         // Results should be similar (minus dynamic content like year)
@@ -263,7 +287,11 @@ mod tests {
         <h1>Test Site</h1>
     </header>
     <main>"#;
-        fs::write(temp_path.join("partials/_header.html.liquid"), header_with_og).unwrap();
+        fs::write(
+            temp_path.join("partials/_header.html.liquid"),
+            header_with_og,
+        )
+        .unwrap();
 
         let globals = liquid::object!({
             "image": {

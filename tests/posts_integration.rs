@@ -72,7 +72,11 @@ async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
     // Create modules directory for module templates
     let modules_dir = templates_dir.join("modules");
     fs::create_dir_all(&modules_dir).unwrap();
-    fs::write(modules_dir.join("posts_index.html.liquid"), posts_index_content).unwrap();
+    fs::write(
+        modules_dir.join("posts_index.html.liquid"),
+        posts_index_content,
+    )
+    .unwrap();
 
     // Create post detail template
     let post_detail_content = r#"{% assign page_title = post.title %}
@@ -86,7 +90,11 @@ async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
 </article>
 
 {% include "_footer.html.liquid" %}"#;
-    fs::write(modules_dir.join("post_detail.html.liquid"), post_detail_content).unwrap();
+    fs::write(
+        modules_dir.join("post_detail.html.liquid"),
+        post_detail_content,
+    )
+    .unwrap();
 
     // Create test posts
     let post1_content = r#"+++
@@ -163,16 +171,14 @@ This is the content of the second test post."#;
             pregenerate_cache: false,
             new_threshold_days: None,
         },
-        posts: Some(vec![
-            PostsSystemConfig {
-                name: "blog".to_string(),
-                source_directory: blog_dir,
-                url_prefix: "/blog".to_string(),
-                index_template: "modules/posts_index.html.liquid".to_string(),
-                post_template: "modules/post_detail.html.liquid".to_string(),
-                posts_per_page: 10,
-            }
-        ]),
+        posts: Some(vec![PostsSystemConfig {
+            name: "blog".to_string(),
+            source_directory: blog_dir,
+            url_prefix: "/blog".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+        }]),
     };
 
     let app = create_app(config).await;
@@ -189,21 +195,21 @@ async fn test_posts_index_renders() {
 
     assert_eq!(response.status_code(), StatusCode::OK);
     let html = response.text();
-    
+
     // Check that the page renders with proper title
     assert!(html.contains("<title>Blog - Test Site</title>"));
     assert!(html.contains("<h1>Blog</h1>"));
-    
+
     // Check that posts are listed
     assert!(html.contains("Second Test Post")); // Should be first (newer)
     assert!(html.contains("First Test Post"));
     assert!(html.contains("This is the first test post"));
     assert!(html.contains("This is the second test post"));
-    
+
     // Check dates are rendered with formatted dates
     assert!(html.contains("January 1, 2024"));
     assert!(html.contains("January 2, 2024"));
-    
+
     // Check meta tags
     assert!(html.contains(r#"<meta property="og:title" content="Blog">"#));
     assert!(html.contains(r#"<meta property="og:description" content="Browse blog posts">"#));
@@ -217,11 +223,11 @@ async fn test_post_detail_renders() {
 
     assert_eq!(response.status_code(), StatusCode::OK);
     let html = response.text();
-    
+
     // Check that the page renders with proper title
     assert!(html.contains("<title>First Test Post - Test Site</title>"));
     assert!(html.contains("<h1>First Test Post</h1>"));
-    
+
     // Check content is rendered
     assert!(html.contains("This is the content of the first test post"));
     assert!(html.contains("January 1, 2024"));
@@ -314,9 +320,13 @@ async fn test_posts_subdirectory() {
     let (_temp_dir, server) = setup_test_server_with_posts().await;
 
     // Create a post in a subdirectory
-    let tutorials_dir = _temp_dir.path().join("posts").join("blog").join("tutorials");
+    let tutorials_dir = _temp_dir
+        .path()
+        .join("posts")
+        .join("blog")
+        .join("tutorials");
     fs::create_dir_all(&tutorials_dir).unwrap();
-    
+
     let tutorial_content = r#"+++
 title = "Rust Tutorial"
 summary = "Learn Rust basics"

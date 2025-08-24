@@ -1,12 +1,8 @@
 use super::{error::PostsError, types::*};
 use chrono::{DateTime, NaiveDate, Utc};
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{Options, Parser, html};
 use serde::Deserialize;
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
@@ -151,12 +147,11 @@ impl PostsManager {
         }
 
         if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            return Ok(
-                date.and_hms_opt(0, 0, 0)
-                    .unwrap()
-                    .and_local_timezone(Utc)
-                    .unwrap(),
-            );
+            return Ok(date
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_local_timezone(Utc)
+                .unwrap());
         }
 
         Err(PostsError::DateParseError(format!(

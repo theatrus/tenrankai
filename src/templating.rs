@@ -1,4 +1,3 @@
-use crate::gallery::SharedGallery;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -63,11 +62,7 @@ impl TemplateEngine {
         Ok(content)
     }
 
-    pub async fn render_with_gallery(
-        &self,
-        path: &str,
-        _gallery: &SharedGallery,
-    ) -> Result<Html<String>, StatusCode> {
+    pub async fn render_with_gallery(&self, path: &str) -> Result<Html<String>, StatusCode> {
         let template_path = if path.is_empty() || path == "/" {
             "pages/index.html.liquid"
         } else {
@@ -85,10 +80,7 @@ impl TemplateEngine {
         }
     }
 
-    pub async fn render_404_page(
-        &self,
-        _gallery: &SharedGallery,
-    ) -> Result<Html<String>, StatusCode> {
+    pub async fn render_404_page(&self) -> Result<Html<String>, StatusCode> {
         let globals = liquid::object!({});
 
         match self.render_template("pages/404.html.liquid", globals).await {
@@ -214,21 +206,13 @@ pub async fn template_with_gallery_handler(
             "No template or static file found for: {}, returning 404",
             path
         );
-        return match app_state
-            .template_engine
-            .render_404_page(&app_state.gallery)
-            .await
-        {
+        return match app_state.template_engine.render_404_page().await {
             Ok(html) => (StatusCode::NOT_FOUND, html).into_response(),
             Err(_) => StatusCode::NOT_FOUND.into_response(),
         };
     }
 
-    match app_state
-        .template_engine
-        .render_with_gallery(&path, &app_state.gallery)
-        .await
-    {
+    match app_state.template_engine.render_with_gallery(&path).await {
         Ok(html) => html.into_response(),
         Err(status) => status.into_response(),
     }

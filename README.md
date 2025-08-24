@@ -55,6 +55,7 @@ download_password = "secure-password"
 copyright_holder = "Your Name"
 base_url = "https://yourdomain.com"
 
+# Single gallery configuration (legacy format still supported)
 [gallery]
 source_directory = "photos"
 cache_directory = "cache/photos"
@@ -64,10 +65,32 @@ new_threshold_days = 7  # Mark images as "new" if modified within 7 days
 [gallery.medium]
 width = 1200
 height = 1200
+
+# Multiple galleries configuration (recommended)
+[[galleries]]
+name = "main"
+url_prefix = "/gallery"
+source_directory = "photos/main"
+cache_directory = "cache/main"
+images_per_page = 50
+jpeg_quality = 85
+webp_quality = 85.0
+
+[[galleries]]
+name = "portfolio"
+url_prefix = "/portfolio"
+source_directory = "photos/portfolio"
+cache_directory = "cache/portfolio"
+images_per_page = 20
+jpeg_quality = 90
+webp_quality = 90.0
 ```
 
 ### Key Configuration Options
 
+**Gallery Configuration:**
+- `name`: Unique identifier for the gallery (required for multiple galleries)
+- `url_prefix`: URL path where the gallery will be accessible (e.g., `/gallery`, `/portfolio`)
 - `source_directory`: Path to your photo directory
 - `cache_directory`: Where processed images and metadata are cached
 - `images_per_page`: Number of images to display per page
@@ -75,6 +98,8 @@ height = 1200
 - `pregenerate_cache`: Pre-generate all image sizes on startup/refresh
 - `jpeg_quality`: JPEG compression quality (1-100)
 - `webp_quality`: WebP compression quality (0.0-100.0)
+- `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")
+- `image_detail_template`: Custom template for image detail pages (default: "modules/image_detail.html.liquid")
 
 ## Usage
 
@@ -102,9 +127,25 @@ cargo run --release -- --log-level debug
 - `--log-level <level>`: Set logging level (trace, debug, info, warn, error)
 - `--quit-after <seconds>`: Auto-shutdown after specified seconds (useful for testing)
 
-## Gallery Organization
+## Gallery Features
 
-### Directory Structure
+### Multiple Galleries
+
+Tenrankai supports multiple independent gallery instances, each with its own:
+- Source directory for photos
+- URL prefix for web access
+- Cache directory and settings
+- Templates (customizable per gallery)
+- Image quality and pagination settings
+
+Example URLs for different galleries:
+- Main gallery: `http://localhost:8080/gallery/`
+- Portfolio: `http://localhost:8080/portfolio/`
+- Archive: `http://localhost:8080/photos/archive/`
+
+### Gallery Organization
+
+#### Directory Structure
 
 ```
 photos/

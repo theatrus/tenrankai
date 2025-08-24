@@ -62,14 +62,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Static files directory: {:?}",
         config.static_files.directory
     );
-    info!(
-        "Gallery source directory: {:?}",
-        config.gallery.source_directory
-    );
-    info!(
-        "Gallery cache directory: {:?}",
-        config.gallery.cache_directory
-    );
+    if let Some(galleries) = &config.galleries {
+        for gallery in galleries {
+            info!(
+                "Gallery '{}' source directory: {:?}",
+                gallery.name, gallery.source_directory
+            );
+            info!(
+                "Gallery '{}' cache directory: {:?}",
+                gallery.name, gallery.cache_directory
+            );
+        }
+    }
 
     // Perform startup checks
     match startup_checks::perform_startup_checks(&config).await {
@@ -83,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let critical_error = errors.iter().any(|e| {
                 matches!(
                     e,
-                    startup_checks::StartupCheckError::GallerySourceDirectoryMissing
+                    startup_checks::StartupCheckError::GallerySourceDirectoryMissing(_)
                         | startup_checks::StartupCheckError::CacheDirectoryCreationFailed(_)
                 )
             });
@@ -99,47 +103,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = create_app(config.clone()).await;
 
-    // Get the gallery from the app state to set up background tasks
-    let gallery = std::sync::Arc::new(Gallery::new(config.gallery.clone(), config.app.clone()));
+    // Initialize galleries and set up background tasks
+    let mut galleries_for_shutdown = Vec::new();
 
-    // Initialize gallery and check for version changes
-    if let Err(e) = gallery.initialize_and_check_version().await {
-        tracing::warn!("Failed to initialize gallery metadata cache: {}", e);
-    }
+    if let Some(gallery_configs) = &config.galleries {
+        for gallery_config in gallery_configs {
+            let gallery =
+                std::sync::Arc::new(Gallery::new(gallery_config.clone(), config.app.clone()));
 
-    // Trigger refresh with pre-generation if configured
-    if gallery.is_metadata_cache_empty().await {
-        info!("Metadata cache is empty, triggering initial refresh");
-        let pregenerate = config.gallery.pregenerate_cache;
-        if pregenerate {
-            info!("Cache pre-generation is enabled");
+            // Initialize gallery and check for version changes
+            if let Err(e) = gallery.initialize_and_check_version().await {
+                tracing::warn!(
+                    "Failed to initialize gallery '{}' metadata cache: {}",
+                    gallery_config.name,
+                    e
+                );
+            }
+
+            // Trigger refresh with pre-generation if configured
+            if gallery.is_metadata_cache_empty().await {
+                info!(
+                    "Metadata cache for gallery '{}' is empty, triggering initial refresh",
+                    gallery_config.name
+                );
+                let pregenerate = gallery_config.pregenerate_cache;
+                if pregenerate {
+                    info!(
+                        "Cache pre-generation is enabled for gallery '{}'",
+                        gallery_config.name
+                    );
+                }
+                if let Err(e) = gallery
+                    .clone()
+                    .refresh_metadata_and_pregenerate_cache(pregenerate)
+                    .await
+                {
+                    tracing::error!(
+                        "Failed to refresh metadata and pre-generate cache for gallery '{}': {}",
+                        gallery_config.name,
+                        e
+                    );
+                }
+            }
+
+            // Start background cache refresh if configured
+            if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
+                && interval_minutes > 0
+            {
+                info!(
+                    "Starting background metadata cache refresh for gallery '{}' every {} minutes",
+                    gallery_config.name, interval_minutes
+                );
+                Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+            }
+
+            // Start periodic cache save (every 5 minutes)
+            info!(
+                "Starting periodic metadata cache save for gallery '{}' every 5 minutes",
+                gallery_config.name
+            );
+            Gallery::start_periodic_cache_save(gallery.clone(), 5);
+
+            // Store gallery for shutdown handler
+            galleries_for_shutdown.push(gallery);
         }
-        if let Err(e) = gallery
-            .clone()
-            .refresh_metadata_and_pregenerate_cache(pregenerate)
-            .await
-        {
-            tracing::error!("Failed to refresh metadata and pre-generate cache: {}", e);
-        }
     }
-
-    // Start background cache refresh if configured
-    if let Some(interval_minutes) = config.gallery.cache_refresh_interval_minutes
-        && interval_minutes > 0
-    {
-        info!(
-            "Starting background metadata cache refresh every {} minutes",
-            interval_minutes
-        );
-        Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
-    }
-
-    // Start periodic cache save (every 5 minutes)
-    info!("Starting periodic metadata cache save every 5 minutes");
-    Gallery::start_periodic_cache_save(gallery.clone(), 5);
-
-    // Clone gallery for shutdown handler before moving it into router state
-    let gallery_for_shutdown = gallery.clone();
 
     let addr = SocketAddr::from((host.parse::<std::net::IpAddr>()?, port));
     info!("Server listening on {}", addr);
@@ -155,12 +183,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::error!("Server error: {}", e);
     }
 
-    // Save cache on shutdown
-    info!("Shutting down - saving metadata cache...");
-    if let Err(e) = gallery_for_shutdown.save_caches().await {
-        tracing::error!("Failed to save metadata cache on shutdown: {}", e);
-    } else {
-        info!("Metadata cache saved successfully");
+    // Save caches on shutdown
+    info!("Shutting down - saving metadata caches...");
+    for gallery in galleries_for_shutdown {
+        if let Err(e) = gallery.save_caches().await {
+            tracing::error!("Failed to save metadata cache on shutdown: {}", e);
+        } else {
+            info!("Metadata cache saved successfully");
+        }
     }
 
     Ok(())

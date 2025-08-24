@@ -61,7 +61,7 @@ pub struct NavigationImage {
     pub thumbnail_url: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct GalleryQuery {
     pub page: Option<usize>,
     pub size: Option<String>,

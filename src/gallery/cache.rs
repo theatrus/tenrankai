@@ -1,5 +1,4 @@
 use super::{CacheMetadata, Gallery, ImageMetadata};
-use crate::GalleryConfig;
 use std::collections::HashMap;
 use tracing::{debug, error, info};
 
@@ -165,7 +164,7 @@ impl Gallery {
 }
 
 pub(crate) fn load_metadata_cache(
-    config: &GalleryConfig,
+    config: &crate::GallerySystemConfig,
 ) -> Result<HashMap<String, ImageMetadata>, super::GalleryError> {
     let cache_file = config.cache_directory.join("metadata_cache.json");
 
@@ -182,7 +181,7 @@ pub(crate) fn load_metadata_cache(
 }
 
 pub(crate) fn load_cache_metadata(
-    config: &GalleryConfig,
+    config: &crate::GallerySystemConfig,
 ) -> Result<CacheMetadata, super::GalleryError> {
     let metadata_file = config.cache_directory.join("cache_metadata.json");
 

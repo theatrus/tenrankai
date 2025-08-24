@@ -28,37 +28,40 @@ pub async fn posts_index_handler(
     };
 
     let posts_raw = posts_manager.get_posts_page(page).await;
-    
+
     // Convert posts to include formatted dates
-    let posts: Vec<_> = posts_raw.into_iter().map(|post| {
-        let date = post.date;
-        liquid::object!({
-            "slug": post.slug,
-            "title": post.title,
-            "summary": post.summary,
-            "url": post.url,
-            "date": post.date.to_rfc3339(),
-            "date_formatted": format!("{} {}, {}", 
-                match date.month() {
-                    1 => "January",
-                    2 => "February",
-                    3 => "March",
-                    4 => "April",
-                    5 => "May",
-                    6 => "June",
-                    7 => "July",
-                    8 => "August",
-                    9 => "September",
-                    10 => "October",
-                    11 => "November",
-                    12 => "December",
-                    _ => "",
-                },
-                date.day(),
-                date.year()
-            ),
+    let posts: Vec<_> = posts_raw
+        .into_iter()
+        .map(|post| {
+            let date = post.date;
+            liquid::object!({
+                "slug": post.slug,
+                "title": post.title,
+                "summary": post.summary,
+                "url": post.url,
+                "date": post.date.to_rfc3339(),
+                "date_formatted": format!("{} {}, {}",
+                    match date.month() {
+                        1 => "January",
+                        2 => "February",
+                        3 => "March",
+                        4 => "April",
+                        5 => "May",
+                        6 => "June",
+                        7 => "July",
+                        8 => "August",
+                        9 => "September",
+                        10 => "October",
+                        11 => "November",
+                        12 => "December",
+                        _ => "",
+                    },
+                    date.day(),
+                    date.year()
+                ),
+            })
         })
-    }).collect();
+        .collect();
     let total_pages = posts_manager.get_total_pages().await;
     let config = posts_manager.get_config();
 
@@ -69,9 +72,15 @@ pub async fn posts_index_handler(
         .as_deref()
         .unwrap_or("http://localhost:8080");
 
-    let page_title = posts_name.chars().next().unwrap().to_uppercase().to_string() + &posts_name[1..];
+    let page_title = posts_name
+        .chars()
+        .next()
+        .unwrap()
+        .to_uppercase()
+        .to_string()
+        + &posts_name[1..];
     let meta_description = format!("Browse {} posts", posts_name);
-    
+
     let globals = liquid::object!({
         "posts": posts,
         "posts_name": posts_name,
@@ -132,7 +141,7 @@ pub async fn post_detail_handler(
         .unwrap_or("http://localhost:8080");
 
     let full_url = format!("{}{}/{}", base_url, config.url_prefix, post.slug);
-    
+
     let date_formatted = post.date.format("%B %-d, %Y").to_string();
 
     let globals = liquid::object!({

@@ -428,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn test_location_extraction_a7c5795() {
         // Create a test gallery instance
-        let gallery_config = crate::GalleryConfig {
+        let gallery_config = crate::GallerySystemConfig {
             path_prefix: "gallery".to_string(),
             source_directory: PathBuf::from("photos"),
             cache_directory: PathBuf::from("test_cache"),

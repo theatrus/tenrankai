@@ -121,7 +121,7 @@ This is a tutorial post in a subdirectory."#;
         let (_temp_dir, config_orig) = setup_test_posts_dir().await;
         let mut config = config_orig;
         config.posts_per_page = 2;
-        
+
         let manager = PostsManager::new(config);
         manager.refresh_posts().await.unwrap();
 
@@ -262,7 +262,7 @@ Footnote[^1]
         manager.refresh_posts().await.unwrap();
 
         let post = manager.get_post("markdown-test").await.unwrap();
-        
+
         // Check various markdown features are rendered
         assert!(post.html_content.contains("<h1>Heading 1</h1>"));
         assert!(post.html_content.contains("<h2>Heading 2</h2>"));
@@ -272,9 +272,12 @@ Footnote[^1]
         assert!(post.html_content.contains("<ol>"));
         assert!(post.html_content.contains("<pre><code"));
         assert!(post.html_content.contains("<blockquote>"));
-        assert!(post.html_content.contains("<a href=\"https://example.com\""));
+        assert!(
+            post.html_content
+                .contains("<a href=\"https://example.com\"")
+        );
         assert!(post.html_content.contains("<table>"));
         assert!(post.html_content.contains("<del>Strikethrough text</del>"));
-        assert!(post.html_content.contains("sup"));  // Footnote reference
+        assert!(post.html_content.contains("sup")); // Footnote reference
     }
 }

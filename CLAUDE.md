@@ -482,6 +482,68 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Dark theme optimized code blocks with #2d2d2d background and #f8f8f2 text
    - Inline code uses light background (#e8e8e8) with dark text (#333) for contrast
 
+### Multi-Gallery Support (August 2025)
+1. **Multiple Gallery Instances**: The gallery module now supports multiple independent gallery instances
+   - Each gallery has its own source directory, cache directory, and URL prefix
+   - Similar architecture to the posts system for consistency
+   - Backward compatible - existing single gallery configurations still work
+
+2. **Configuration Changes**:
+   - Changed from single `[gallery]` section to `[[galleries]]` array format
+   - Each gallery requires a unique `name` identifier
+   - Custom URL prefixes allow galleries at any path (e.g., `/gallery`, `/portfolio`, `/photos/archive`)
+   - Per-gallery configuration for image quality, pagination, cache settings, etc.
+
+3. **Example Configuration**:
+   ```toml
+   [[galleries]]
+   name = "main"
+   url_prefix = "/gallery"
+   source_directory = "/path/to/photos"
+   cache_directory = "cache/main"
+   gallery_template = "modules/gallery.html.liquid"
+   image_detail_template = "modules/image_detail.html.liquid"
+   images_per_page = 12
+   jpeg_quality = 85
+   webp_quality = 85.0
+   pregenerate_cache = false
+   cache_refresh_interval_minutes = 60
+
+   [galleries.preview]
+   max_depth = 3
+   max_per_folder = 2
+   max_images = 6
+
+   [[galleries]]
+   name = "portfolio"
+   url_prefix = "/portfolio"
+   source_directory = "/path/to/portfolio"
+   cache_directory = "cache/portfolio"
+   gallery_template = "modules/gallery.html.liquid"
+   image_detail_template = "modules/image_detail.html.liquid"
+   images_per_page = 20
+   ```
+
+4. **URL Structure**:
+   - Gallery root: `/{url_prefix}/`
+   - Gallery folders: `/{url_prefix}/folder/subfolder`
+   - Image serving: `/{url_prefix}/image/path/to/image.jpg?size=gallery`
+   - Image detail: `/{url_prefix}/detail/path/to/image.jpg`
+   - API preview: `/api/gallery/{name}/preview`
+   - API composite: `/api/gallery/{name}/composite/path`
+
+5. **Implementation Details**:
+   - AppState now contains `galleries: Arc<HashMap<String, gallery::SharedGallery>>`
+   - Routes are dynamically registered for each configured gallery
+   - All handlers support named galleries while maintaining backward compatibility
+   - First gallery in configuration serves as default for legacy routes
+   - Each gallery maintains its own metadata cache and background refresh tasks
+
+6. **Backward Compatibility**:
+   - Legacy routes (`/gallery/*`, `/api/gallery/preview`) use the first configured gallery
+   - Templates don't need changes - they receive the same data structure
+   - Existing configurations can be migrated by wrapping `[gallery]` in `[[galleries]]` array
+
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions
 2. Add configuration for replacement interval
