@@ -281,16 +281,22 @@ pub async fn create_app(config: Config) -> Router {
     }
 
     // Initialize posts managers
+    let galleries_arc = Arc::new(galleries);
     let mut posts_managers = HashMap::new();
     if let Some(posts_configs) = &config.posts {
         for posts_config in posts_configs {
-            let posts_manager = Arc::new(posts::PostsManager::new(posts::PostsConfig {
+            let mut posts_manager = posts::PostsManager::new(posts::PostsConfig {
                 source_directory: posts_config.source_directory.clone(),
                 url_prefix: posts_config.url_prefix.clone(),
                 index_template: posts_config.index_template.clone(),
                 post_template: posts_config.post_template.clone(),
                 posts_per_page: posts_config.posts_per_page,
-            }));
+            });
+
+            // Set galleries reference
+            posts_manager.set_galleries(galleries_arc.clone());
+
+            let posts_manager = Arc::new(posts_manager);
 
             // Initialize posts on startup
             info!(
@@ -311,7 +317,7 @@ pub async fn create_app(config: Config) -> Router {
     let app_state = AppState {
         template_engine,
         static_handler,
-        galleries: Arc::new(galleries),
+        galleries: galleries_arc,
         favicon_renderer,
         posts_managers: Arc::new(posts_managers),
         config: config.clone(),

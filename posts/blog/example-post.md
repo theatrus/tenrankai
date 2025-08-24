@@ -60,7 +60,7 @@ fn main() {
 
 You can include [links to other sites](https://example.com) and images:
 
-![Alt text for image](/static/example-image.jpg)
+![gallery:main:2009-hawaii/_MG_3149.jpg](gallery)
 
 ## Directory Structure
 

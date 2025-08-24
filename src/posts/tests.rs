@@ -280,4 +280,193 @@ Footnote[^1]
         assert!(post.html_content.contains("<del>Strikethrough text</del>"));
         assert!(post.html_content.contains("sup")); // Footnote reference
     }
+
+    #[tokio::test]
+    async fn test_gallery_image_references() {
+        use crate::gallery::Gallery;
+        use crate::{AppConfig, GallerySystemConfig, ImageSizeConfig, PreviewConfig};
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        // Create a post with gallery references
+        let post_content = r#"+++
+title = "Gallery Test Post"
+summary = "Testing gallery image references"
+date = "2024-01-15"
++++
+
+# Gallery Test Post
+
+Here's a thumbnail from the main gallery:
+![gallery:main:vacation/beach.jpg](thumbnail)
+
+And here's a gallery-sized image:
+![gallery:main:vacation/sunset.jpg](gallery)
+
+And a medium-sized image with a link:
+![gallery:portfolio:projects/app-screenshot.png](medium)
+
+Regular markdown image (not a gallery reference):
+![Regular Image](https://example.com/image.jpg)
+"#;
+
+        fs::write(posts_dir.join("gallery-test.md"), post_content).unwrap();
+
+        // Set up mock galleries
+        let mut galleries = HashMap::new();
+
+        // Create main gallery
+        let main_gallery_config = GallerySystemConfig {
+            name: "main".to_string(),
+            url_prefix: "/gallery".to_string(),
+            source_directory: temp_dir.path().join("photos"),
+            cache_directory: temp_dir.path().join("cache/main"),
+            gallery_template: "modules/gallery.html.liquid".to_string(),
+            image_detail_template: "modules/image_detail.html.liquid".to_string(),
+            images_per_page: 50,
+            thumbnail: ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            preview: PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: Some(85),
+            webp_quality: Some(85.0),
+            pregenerate_cache: false,
+            new_threshold_days: None,
+        };
+
+        let app_config = AppConfig {
+            name: "Test".to_string(),
+            log_level: "info".to_string(),
+            download_secret: "secret".to_string(),
+            download_password: "pass".to_string(),
+            copyright_holder: None,
+            base_url: None,
+        };
+
+        let main_gallery = Arc::new(Gallery::new(
+            main_gallery_config.clone(),
+            app_config.clone(),
+        ));
+        galleries.insert("main".to_string(), main_gallery);
+
+        // Create portfolio gallery
+        let portfolio_gallery_config = GallerySystemConfig {
+            name: "portfolio".to_string(),
+            url_prefix: "/my-portfolio".to_string(),
+            source_directory: temp_dir.path().join("portfolio"),
+            cache_directory: temp_dir.path().join("cache/portfolio"),
+            gallery_template: "modules/gallery.html.liquid".to_string(),
+            image_detail_template: "modules/image_detail.html.liquid".to_string(),
+            images_per_page: 20,
+            thumbnail: ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            preview: PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: Some(90),
+            webp_quality: Some(90.0),
+            pregenerate_cache: false,
+            new_threshold_days: None,
+        };
+
+        let portfolio_gallery = Arc::new(Gallery::new(portfolio_gallery_config, app_config));
+        galleries.insert("portfolio".to_string(), portfolio_gallery);
+
+        // Create posts config
+        let config = PostsConfig {
+            source_directory: posts_dir.to_path_buf(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+        };
+
+        // Create posts manager with galleries
+        let mut posts_manager = PostsManager::new(config);
+        posts_manager.set_galleries(Arc::new(galleries));
+
+        // Load posts
+        posts_manager.refresh_posts().await.unwrap();
+
+        // Get the gallery test post
+        let post = posts_manager.get_post("gallery-test").await.unwrap();
+
+        // Check that gallery references were converted to HTML
+        assert!(post.html_content.contains(
+            r#"<a href="/gallery/detail/vacation%2Fbeach.jpg" class="gallery-image-link">"#
+        ));
+        assert!(
+            post.html_content
+                .contains(r#"<img src="/gallery/image/vacation%2Fbeach.jpg?size=thumbnail""#)
+        );
+        assert!(
+            post.html_content
+                .contains(r#"class="gallery-image gallery-image-thumbnail""#)
+        );
+
+        assert!(post.html_content.contains(
+            r#"<a href="/gallery/detail/vacation%2Fsunset.jpg" class="gallery-image-link">"#
+        ));
+        assert!(
+            post.html_content
+                .contains(r#"<img src="/gallery/image/vacation%2Fsunset.jpg?size=gallery""#)
+        );
+        assert!(
+            post.html_content
+                .contains(r#"class="gallery-image gallery-image-gallery""#)
+        );
+
+        assert!(post.html_content.contains(r#"<a href="/my-portfolio/detail/projects%2Fapp-screenshot.png" class="gallery-image-link">"#));
+        assert!(post.html_content.contains(
+            r#"<img src="/my-portfolio/image/projects%2Fapp-screenshot.png?size=medium""#
+        ));
+        assert!(
+            post.html_content
+                .contains(r#"class="gallery-image gallery-image-medium""#)
+        );
+
+        // Check that regular images are not converted
+        assert!(
+            post.html_content
+                .contains(r#"<img src="https://example.com/image.jpg" alt="Regular Image""#)
+        );
+    }
 }

@@ -1,6 +1,7 @@
 use super::{error::PostsError, types::*};
+use crate::gallery::SharedGallery;
 use chrono::{DateTime, NaiveDate, Utc};
-use pulldown_cmark::{Options, Parser, html};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::RwLock;
@@ -10,6 +11,7 @@ pub struct PostsManager {
     config: PostsConfig,
     posts: Arc<RwLock<HashMap<String, Post>>>,
     sorted_slugs: Arc<RwLock<Vec<String>>>,
+    galleries: Option<Arc<HashMap<String, SharedGallery>>>,
 }
 
 impl PostsManager {
@@ -18,7 +20,12 @@ impl PostsManager {
             config,
             posts: Arc::new(RwLock::new(HashMap::new())),
             sorted_slugs: Arc::new(RwLock::new(Vec::new())),
+            galleries: None,
         }
+    }
+
+    pub fn set_galleries(&mut self, galleries: Arc<HashMap<String, SharedGallery>>) {
+        self.galleries = Some(galleries);
     }
 
     pub async fn refresh_posts(&self) -> Result<(), PostsError> {
@@ -95,8 +102,7 @@ impl PostsManager {
         options.insert(Options::ENABLE_SMART_PUNCTUATION);
 
         let parser = Parser::new_ext(&markdown_content, options);
-        let mut html_content = String::new();
-        html::push_html(&mut html_content, parser);
+        let html_content = self.process_markdown_with_gallery_refs(parser).await;
 
         Ok(Post {
             slug,
@@ -219,5 +225,100 @@ impl PostsManager {
 
     pub fn get_config(&self) -> &PostsConfig {
         &self.config
+    }
+
+    async fn process_markdown_with_gallery_refs<'a>(&self, parser: Parser<'a>) -> String {
+        let mut events = Vec::new();
+        let mut in_image = false;
+        let mut current_image_alt = String::new();
+        let mut current_image_url = String::new();
+        let mut current_image_title = String::new();
+
+        for event in parser {
+            match event {
+                Event::Start(Tag::Image {
+                    dest_url, title, ..
+                }) => {
+                    in_image = true;
+                    current_image_alt.clear();
+                    current_image_url = dest_url.to_string();
+                    current_image_title = title.to_string();
+                }
+                Event::Text(text) if in_image => {
+                    current_image_alt.push_str(&text);
+                }
+                Event::End(TagEnd::Image) => {
+                    in_image = false;
+
+                    // Check if this is a gallery reference
+                    if current_image_alt.starts_with("gallery:")
+                        && let Some(gallery_html) = self
+                            .process_gallery_reference(&current_image_alt, &current_image_url)
+                            .await
+                    {
+                        events.push(Event::Html(gallery_html.into()));
+                        continue;
+                    }
+
+                    // Not a gallery reference, reconstruct the original image
+                    events.push(Event::Start(Tag::Image {
+                        link_type: pulldown_cmark::LinkType::Inline,
+                        dest_url: current_image_url.clone().into(),
+                        title: current_image_title.clone().into(),
+                        id: "".into(),
+                    }));
+                    events.push(Event::Text(current_image_alt.clone().into()));
+                    events.push(Event::End(TagEnd::Image));
+                }
+                _ => events.push(event),
+            }
+        }
+
+        let mut html_output = String::new();
+        html::push_html(&mut html_output, events.into_iter());
+        html_output
+    }
+
+    async fn process_gallery_reference(&self, alt_text: &str, size_hint: &str) -> Option<String> {
+        // Parse gallery reference format: gallery:gallery_name:path/to/image.jpg
+        let parts: Vec<&str> = alt_text.splitn(3, ':').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        let gallery_name = parts[1];
+        let image_path = parts[2];
+
+        // Determine size from the URL/hint (default to thumbnail)
+        let size = match size_hint.to_lowercase().as_str() {
+            "gallery" | "medium" | "large" => size_hint,
+            _ => "thumbnail",
+        };
+
+        // Get the gallery
+        let galleries = self.galleries.as_ref()?;
+        let gallery = galleries.get(gallery_name)?;
+        let gallery_config = gallery.get_config();
+
+        // Generate URLs
+        let encoded_path = urlencoding::encode(image_path);
+        let image_url = format!(
+            "{}/image/{}?size={}",
+            gallery_config.url_prefix, encoded_path, size
+        );
+        let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded_path);
+
+        // Generate HTML with proper link
+        let html = format!(
+            r#"<a href="{}" class="gallery-image-link">
+                <img src="{}" alt="{}" loading="lazy" class="gallery-image gallery-image-{}" />
+            </a>"#,
+            detail_url,
+            image_url,
+            image_path.split('/').next_back().unwrap_or(image_path),
+            size
+        );
+
+        Some(html)
     }
 }

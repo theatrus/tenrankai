@@ -1,7 +1,7 @@
 # Tenrankai Project Documentation
 
 ## Project Overview
-Tenrankai is a web-based photo gallery server written in Rust using the Axum web framework. It provides a dynamic, responsive gallery interface with features like image resizing, metadata extraction, watermarking, and caching.
+Tenrankai is a web-based photo gallery server written in Rust using the Axum web framework. It provides a dynamic, responsive gallery interface with features like image resizing, metadata extraction, watermarking, and caching. The system supports multiple independent gallery instances, each with its own configuration, URL prefix, and content directories.
 
 ## Testing Note for AI Development
 When implementing features, use the `--quit-after` flag to test the server without it running indefinitely:
@@ -11,6 +11,7 @@ cargo run -- --quit-after 5  # Server auto-shuts down after 5 seconds
 This is especially useful for verifying startup behavior, testing API endpoints, and checking that new features don't break server initialization.
 
 ## Key Features
+- **Multiple Gallery Support**: Configure and run multiple independent gallery instances with unique URLs and settings
 - **Responsive Web Gallery**: Mobile-friendly masonry layout that adapts to different screen sizes
 - **Image Processing**: On-the-fly image resizing with caching for thumbnails, gallery, medium, and large sizes
 - **High-DPI Support**: Automatic @2x image generation for retina displays
@@ -135,15 +136,56 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - `cache/cache_metadata.json` - Cache version tracking
 
 ### Configuration Options
-```toml
-[gallery]
-# Image quality settings
-jpeg_quality = 85        # JPEG quality (1-100)
-webp_quality = 85.0      # WebP quality (0.0-100.0)
 
-# New image highlighting
-new_threshold_days = 7   # Images modified within 7 days are marked as "NEW"
-                        # Remove or comment out to disable the feature
+#### Multiple Gallery Configuration
+```toml
+# Define multiple galleries, each with its own configuration
+[[galleries]]
+name = "main"                              # Unique identifier for this gallery
+url_prefix = "/gallery"                    # URL prefix (must start with /)
+source_directory = "photos"                # Directory containing photos
+cache_directory = "cache/main"             # Cache directory for this gallery
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+images_per_page = 50
+jpeg_quality = 85                         # JPEG quality (1-100)
+webp_quality = 85.0                       # WebP quality (0.0-100.0)
+new_threshold_days = 7                    # Mark images modified within 7 days as "NEW"
+pregenerate_cache = false                 # Pre-generate all image sizes on startup
+
+[galleries.thumbnail]
+width = 300
+height = 300
+
+[galleries.gallery_size]
+width = 800
+height = 800
+
+[galleries.medium]
+width = 1200
+height = 1200
+
+[galleries.large]
+width = 1600
+height = 1600
+
+[galleries.preview]
+max_images = 6
+max_depth = 3
+max_per_folder = 3
+
+# Add a second gallery with different settings
+[[galleries]]
+name = "portfolio"
+url_prefix = "/my-portfolio"
+source_directory = "portfolio"
+cache_directory = "cache/portfolio"
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+images_per_page = 20
+jpeg_quality = 90
+webp_quality = 90.0
+# No new_threshold_days - this gallery won't highlight new images
 ```
 
 ### Environment Variables
@@ -158,11 +200,29 @@ new_threshold_days = 7   # Images modified within 7 days are marked as "NEW"
 - **Dynamic Meta Tags**: Each page can specify custom title, description, and image
 - **Base URL Configuration**: Added `base_url` to app config for absolute URLs in meta tags
 
+### Multi-Gallery Architecture (December 2024)
+- **Complete refactoring to support multiple gallery instances**
+- Each gallery can have its own:
+  - URL prefix (e.g., `/gallery`, `/portfolio`, `/family-photos`)
+  - Source and cache directories
+  - Image size configurations
+  - Quality settings
+  - Preview settings
+  - Templates
+- **Removed all backward compatibility** - only named galleries are supported
+- **API changes**:
+  - All API endpoints now include gallery name: `/api/gallery/{name}/preview`
+  - Composite image API: `/api/gallery/{name}/composite/{path}`
+- **Template changes**:
+  - Gallery preview partial now requires `gallery_name` and `gallery_url` parameters
+  - All gallery URLs are dynamically generated based on configuration
+
 ### Gallery Module Refactoring
 - Split 3000-line gallery.rs into logical submodules
 - Fixed "no images in directory" issue after refactoring
 - Ensured gallery view uses metadata cache for performance
 - Fixed missing gallery_url field in GalleryItem
+- **Fixed duplicate image name in breadcrumbs** - breadcrumbs now correctly show only the directory path on image detail pages
 
 ### Mobile and Display Fixes
 1. Gallery preview width adjustments for mobile
@@ -214,9 +274,12 @@ This feature is particularly helpful when implementing new features to verify th
 - Test startup and shutdown: `cargo run -- --quit-after 5`
 
 ### Testing URLs
-- Gallery root: `http://localhost:8080/gallery`
+- Gallery root: `http://localhost:8080/gallery` (for main gallery)
+- Portfolio root: `http://localhost:8080/my-portfolio` (for portfolio gallery)
 - Specific folder: `http://localhost:8080/gallery/folder-name`
 - Image with size: `http://localhost:8080/gallery/image/path/to/image.jpg?size=gallery`
+- Gallery preview API: `http://localhost:8080/api/gallery/main/preview?count=12`
+- Composite image: `http://localhost:8080/api/gallery/main/composite/_root`
 
 ## Known Issues and Considerations
 
@@ -250,6 +313,20 @@ To add social media meta tags to a template:
 {% assign og_image_height = "630" %}
 {% assign twitter_card_type = "summary_large_image" %}
 {% include "_header.html.liquid" %}
+```
+
+### Gallery Preview Partial
+To include a gallery preview in any template:
+```liquid
+{% comment %} For the main gallery {% endcomment %}
+{% assign gallery_name = "main" %}
+{% assign gallery_url = "/gallery" %}
+{% include "partials/_gallery_preview.html.liquid" %}
+
+{% comment %} For a different gallery {% endcomment %}
+{% assign gallery_name = "portfolio" %}
+{% assign gallery_url = "/my-portfolio" %}
+{% include "partials/_gallery_preview.html.liquid" %}
 ```
 
 ### Adding New Image Sizes
@@ -465,6 +542,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Markdown files with TOML front matter (title, summary, date)
    - Full CommonMark support with extensions (tables, strikethrough, footnotes)
    - Automatic HTML generation and caching
+   - **Gallery Image References**: Easy embedding of gallery images with automatic linking
    
 3. **Features**:
    - Chronological sorting (newest first)
@@ -472,6 +550,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Subdirectory organization (URLs reflect directory structure)
    - Dynamic refresh via API (`POST /api/posts/{name}/refresh`)
    - Configurable templates for index and detail pages
+   - **Gallery Integration**: Reference images from any configured gallery with smart size handling
    
 4. **Implementation Details**:
    - PostsManager handles scanning, caching, and serving posts
@@ -481,12 +560,13 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Uses chrono's built-in date formatting for human-readable dates
    - Dark theme optimized code blocks with #2d2d2d background and #f8f8f2 text
    - Inline code uses light background (#e8e8e8) with dark text (#333) for contrast
+   - Gallery references are processed during markdown rendering to generate proper HTML
 
-### Multi-Gallery Support (August 2025)
+### Multi-Gallery Support (August 2025 - Updated December 2024)
 1. **Multiple Gallery Instances**: The gallery module now supports multiple independent gallery instances
    - Each gallery has its own source directory, cache directory, and URL prefix
    - Similar architecture to the posts system for consistency
-   - Backward compatible - existing single gallery configurations still work
+   - **BREAKING CHANGE (December 2024)**: Removed backward compatibility - only named galleries are supported
 
 2. **Configuration Changes**:
    - Changed from single `[gallery]` section to `[[galleries]]` array format
@@ -544,8 +624,98 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - All gallery references must include the gallery name
    - Templates must pass `gallery_name` and `gallery_url` parameters to the gallery preview partial
 
+## Recent Bug Fixes (December 2024)
+
+### Breadcrumb Duplication Fix
+- **Issue**: Image names were appearing twice in breadcrumbs on image detail pages
+- **Cause**: Breadcrumbs were built with the full image path, then the template added the name again
+- **Fix**: Changed to build breadcrumbs using only the parent directory path
+- **Result**: Clean navigation showing: Gallery → Folder → Subfolder → Image Name
+
+### Test Suite Fixes
+- **URL Prefix Requirements**: Fixed failing tests by ensuring all URL prefixes start with `/`
+- **Configuration Updates**: Updated test configurations to use the new multi-gallery structure
+- **Template Paths**: Fixed template paths in tests to match actual file locations
+
+## New Features (December 2024)
+
+### Gallery Image References in Posts
+Posts can now easily reference and embed images from any configured gallery with automatic link generation.
+
+#### Syntax
+```markdown
+![gallery:gallery_name:path/to/image.jpg](size)
+```
+
+- `gallery_name`: The name of the gallery (as configured in config.toml)
+- `path/to/image.jpg`: The path to the image within that gallery
+- `size`: The desired image size (thumbnail, gallery, medium, or large)
+
+#### Examples
+```markdown
+# My Blog Post
+
+Here's a thumbnail that links to the full gallery view:
+![gallery:main:vacation/beach.jpg](thumbnail)
+
+A larger gallery-sized image:
+![gallery:main:vacation/sunset.jpg](gallery)
+
+An image from my portfolio gallery:
+![gallery:portfolio:projects/app-screenshot.png](medium)
+```
+
+#### Generated HTML
+The markdown processor automatically converts gallery references into proper HTML:
+```html
+<a href="/gallery/detail/vacation%2Fbeach.jpg" class="gallery-image-link">
+    <img src="/gallery/image/vacation%2Fbeach.jpg?size=thumbnail" 
+         alt="beach.jpg" loading="lazy" 
+         class="gallery-image gallery-image-thumbnail" />
+</a>
+```
+
+#### Features
+- Automatic URL encoding for proper path handling
+- Links wrap images to navigate to the gallery detail view
+- Lazy loading for better performance
+- CSS classes for easy styling
+- Falls back gracefully if gallery or image doesn't exist
+
+## Integration Testing
+
+The project includes comprehensive integration tests for all major features:
+
+### Gallery Integration Tests (`tests/gallery_integration_tests.rs`)
+- Multiple gallery instances with different configurations
+- Pagination functionality
+- OpenGraph metadata generation (composite and single images)
+- Gallery preview API
+- Breadcrumb navigation
+- Folder metadata display
+- 404 handling for non-existent galleries
+
+### Posts Integration Tests (`tests/posts_integration.rs`)
+- Multiple posts systems
+- Pagination
+- Post rendering with markdown
+- API refresh functionality
+- Subdirectory support
+- 404 handling
+
+### Template Integration Tests (`tests/template_integration.rs`)
+- Template rendering with partials
+- Gallery preview inclusion
+- Error handling for missing templates
+- Meta tag generation
+
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions
 2. Add configuration for replacement interval
 3. Consider WebSocket for real-time updates
 4. Add analytics for popular images
+5. Add support for video files in galleries
+6. Implement tag-based filtering for galleries
+7. Add gallery image browser/picker UI for posts editor
+8. Support for image captions in gallery references
+9. Batch gallery reference processing for better performance
