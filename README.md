@@ -18,6 +18,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Multiple Format Support**: Automatic WebP delivery for supported browsers with JPEG fallback
 - **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection
 - **Markdown Support**: Folder descriptions and image captions via markdown files
+- **Hidden Folders**: Hide folders from listings while keeping them accessible via direct URL
 - **New Image Highlighting**: Configurable highlighting of recently modified images
 - **Multiple Blog Systems**: Support for multiple independent blog/posts systems with markdown
 - **Dark Theme Code Blocks**: Optimized code block styling for readability in dark theme
@@ -153,6 +154,31 @@ photos/
 - `_folder.md`: Place in any directory to add a description that appears at the top of the gallery page
 - `<imagename>.md`: Create alongside any image to add a caption (e.g., `sunset.jpg` → `sunset.md`)
 
+#### Advanced Folder Configuration
+
+Folders can use TOML front matter in `_folder.md` files for advanced configuration:
+
+```markdown
++++
+hidden = true
+title = "Private Collection"
++++
+
+# Optional Markdown Content
+
+This folder is hidden from gallery listings but remains accessible via direct URL.
+```
+
+**Configuration Options:**
+- `hidden = true`: Hides the folder from gallery listings, previews, and counts (but allows direct access)
+- `title = "Custom Name"`: Override the folder display name
+
+**Hidden Folders:**
+- Do not appear in gallery navigation or listings
+- Are excluded from gallery preview images and image counts
+- Remain fully accessible if you know the direct URL
+- Perfect for private collections or work-in-progress galleries
+
 ## Posts System
 
 Tenrankai includes a flexible posts/blog system that supports multiple independent collections:
@@ -183,6 +209,7 @@ name = "blog"
 source_directory = "posts/blog"
 url_prefix = "/blog"
 posts_per_page = 20
+refresh_interval_minutes = 30  # Auto-refresh posts every 30 minutes
 
 [[posts]]
 name = "stories"
@@ -196,6 +223,7 @@ Each system has its own:
 - URL prefix for web access
 - Templates (customizable)
 - Posts per page setting
+- Optional automatic refresh interval for detecting new/changed posts
 
 ### Features
 
@@ -205,6 +233,8 @@ Each system has its own:
 - Pagination support
 - Subdirectory organization (URL reflects directory structure)
 - Dynamic refresh via API
+- Automatic periodic refresh (configurable interval)
+- Individual post reloading when files change
 - Dark theme optimized code blocks with syntax highlighting
 - Responsive post layout for mobile and desktop
 

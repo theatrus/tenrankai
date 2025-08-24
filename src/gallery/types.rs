@@ -82,3 +82,16 @@ pub(crate) struct ImageMetadata {
     pub location_info: Option<LocationInfo>,
     pub modification_date: Option<SystemTime>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct FolderConfig {
+    #[serde(default)]
+    pub hidden: bool,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FolderMetadata {
+    pub config: FolderConfig,
+    pub description_markdown: String,
+}

@@ -57,7 +57,8 @@ impl PostsManager {
 
     pub fn start_background_refresh(posts_manager: Arc<PostsManager>, interval_minutes: u64) {
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
+            let mut interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
             interval.tick().await; // Skip the first immediate tick
 
             loop {

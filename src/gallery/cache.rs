@@ -268,4 +268,177 @@ mod tests {
         let hash = gallery.generate_image_cache_key("test.jpg", "thumbnail", "webp");
         assert_eq!(filename, format!("{}.webp", hash));
     }
+
+    #[tokio::test]
+    async fn test_hidden_folder_not_in_listing() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&cache_dir).unwrap();
+
+        // Create visible folder
+        let visible_dir = source_dir.join("visible");
+        fs::create_dir_all(&visible_dir).unwrap();
+        fs::write(
+            visible_dir.join("_folder.md"),
+            "# Visible Folder\nThis is visible",
+        )
+        .unwrap();
+
+        // Create hidden folder with TOML front matter
+        let hidden_dir = source_dir.join("hidden");
+        fs::create_dir_all(&hidden_dir).unwrap();
+        fs::write(
+            hidden_dir.join("_folder.md"),
+            r#"+++
+hidden = true
+title = "Hidden Folder"
++++
+
+# Hidden Content
+
+This folder should not appear in listings.
+"#,
+        )
+        .unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            url_prefix: "/gallery".to_string(),
+            source_directory: source_dir,
+            cache_directory: cache_dir,
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            images_per_page: 50,
+            thumbnail: crate::ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: crate::ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: crate::ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: crate::ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            preview: crate::PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: Some(85),
+            webp_quality: Some(85.0),
+            pregenerate_cache: false,
+            new_threshold_days: None,
+        };
+
+        let app_config = crate::AppConfig {
+            name: "Test".to_string(),
+            log_level: "info".to_string(),
+            download_secret: "secret".to_string(),
+            download_password: "pass".to_string(),
+            copyright_holder: None,
+            base_url: None,
+        };
+
+        let gallery = Gallery::new(config, app_config);
+
+        let items = gallery.scan_directory("").await.unwrap();
+
+        // Should have 1 visible folder, hidden folder should not appear
+        assert_eq!(items.len(), 1);
+        assert!(items.iter().any(|i| i.name == "visible"));
+        assert!(!items.iter().any(|i| i.name == "hidden"));
+    }
+
+    #[tokio::test]
+    async fn test_hidden_folder_directly_accessible() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&cache_dir).unwrap();
+
+        // Create hidden folder
+        let hidden_dir = source_dir.join("hidden");
+        fs::create_dir_all(&hidden_dir).unwrap();
+        fs::write(
+            hidden_dir.join("_folder.md"),
+            r#"+++
+hidden = true
++++
+Hidden folder
+"#,
+        )
+        .unwrap();
+        // Create a test image file
+        fs::write(hidden_dir.join("test.jpg"), vec![0xFF, 0xD8, 0xFF, 0xE0]).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            url_prefix: "/gallery".to_string(),
+            source_directory: source_dir,
+            cache_directory: cache_dir,
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            images_per_page: 50,
+            thumbnail: crate::ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: crate::ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: crate::ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: crate::ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            preview: crate::PreviewConfig {
+                max_images: 4,
+                max_depth: 3,
+                max_per_folder: 3,
+            },
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: Some(85),
+            webp_quality: Some(85.0),
+            pregenerate_cache: false,
+            new_threshold_days: None,
+        };
+
+        let app_config = crate::AppConfig {
+            name: "Test".to_string(),
+            log_level: "info".to_string(),
+            download_secret: "secret".to_string(),
+            download_password: "pass".to_string(),
+            copyright_holder: None,
+            base_url: None,
+        };
+
+        let gallery = Gallery::new(config, app_config);
+
+        // Should be able to access hidden folder directly
+        let items = gallery.scan_directory("hidden").await.unwrap();
+        assert_eq!(items.len(), 1); // Should see the image
+        assert_eq!(items[0].name, "test.jpg");
+    }
 }
