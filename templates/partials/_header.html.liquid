@@ -75,20 +75,20 @@
                 <li><a href="/gallery">Gallery</a></li>
                 <li><a href="/about">About</a></li>
                 <li><a href="/contact">Contact</a></li>
-            </ul>
-            <div class="user-menu">
-                <button class="user-menu-toggle" onclick="toggleUserMenu()" aria-label="User menu">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="8" r="3"/>
-                        <path d="M12 14c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/>
-                    </svg>
-                </button>
-                <div class="user-menu-dropdown" id="userMenuDropdown">
-                    <div id="userMenuContent">
-                        <div class="user-info">Loading...</div>
+                <li class="user-menu">
+                    <button class="user-menu-toggle" onclick="toggleUserMenu(event)" aria-label="User menu">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="8" r="3"/>
+                            <path d="M12 14c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/>
+                        </svg>
+                    </button>
+                    <div class="user-menu-dropdown" id="userMenuDropdown">
+                        <div id="userMenuContent">
+                            <div class="user-info">Loading...</div>
+                        </div>
                     </div>
-                </div>
-            </div>
+                </li>
+            </ul>
         </nav>
     </header>
     <main>
@@ -97,14 +97,17 @@
     // User menu functionality
     let userMenuOpen = false;
     
-    function toggleUserMenu() {
+    function toggleUserMenu(event) {
+        event.stopPropagation();
         const dropdown = document.getElementById('userMenuDropdown');
         userMenuOpen = !userMenuOpen;
         
         if (userMenuOpen) {
             dropdown.classList.add('show');
             // Add click outside listener
-            document.addEventListener('click', handleClickOutside);
+            setTimeout(() => {
+                document.addEventListener('click', handleClickOutside);
+            }, 0);
         } else {
             dropdown.classList.remove('show');
             document.removeEventListener('click', handleClickOutside);
@@ -131,13 +134,14 @@
             if (data.authorized && data.username) {
                 menuContent.innerHTML = `
                     <div class="user-info">
-                        Logged in as <span class="username">${data.username}</span>
+                        Signed in as
+                        <span class="username">${data.username}</span>
                     </div>
-                    <a href="/logout">Logout</a>
+                    <a href="/logout">Sign out</a>
                 `;
             } else {
                 menuContent.innerHTML = `
-                    <a href="/login">Login</a>
+                    <a href="/login">Sign in</a>
                 `;
             }
         } catch (error) {

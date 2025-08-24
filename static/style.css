@@ -914,22 +914,35 @@ th {
 
 .user-menu-dropdown {
     position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 8px;
+    top: 150%;
+    right: -10px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    min-width: 200px;
-    box-shadow: 0 4px 12px var(--shadow-medium);
+    border-radius: 6px;
+    min-width: 160px;
+    box-shadow: 0 2px 8px var(--shadow-medium);
     opacity: 0;
     visibility: hidden;
-    transform: translateY(-10px);
-    transition: all 0.3s ease;
+    transform: translateY(-5px);
+    transition: all 0.2s ease;
     z-index: 1000;
 }
 
-.user-menu-dropdown.show {
+.user-menu-dropdown::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    right: 20px;
+    width: 12px;
+    height: 12px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-color);
+    transform: rotate(45deg);
+}
+
+.user-menu-dropdown.show,
+.user-menu:hover .user-menu-dropdown {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
@@ -937,15 +950,11 @@ th {
 
 .user-menu-dropdown a {
     display: block;
-    padding: 12px 16px;
+    padding: 10px 14px;
     color: var(--text-primary);
     text-decoration: none;
     transition: background 0.2s ease;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.user-menu-dropdown a:last-child {
-    border-bottom: none;
+    font-size: 0.85rem;
 }
 
 .user-menu-dropdown a:hover {
@@ -953,23 +962,30 @@ th {
 }
 
 .user-menu-dropdown a:first-child {
-    border-radius: 7px 7px 0 0;
+    border-radius: 5px 5px 0 0;
 }
 
 .user-menu-dropdown a:last-child {
-    border-radius: 0 0 7px 7px;
+    border-radius: 0 0 5px 5px;
+}
+
+.user-menu-dropdown a:only-child {
+    border-radius: 5px;
 }
 
 .user-info {
-    padding: 12px 16px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--border-color);
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
 }
 
 .user-info .username {
+    display: block;
     color: var(--text-primary);
     font-weight: 500;
+    font-size: 0.85rem;
+    margin-top: 2px;
 }
 
 /* Mobile adjustments */
@@ -977,10 +993,6 @@ th {
     nav ul {
         gap: 1rem;
         font-size: 0.85rem;
-    }
-    
-    .user-menu {
-        margin-left: 1rem;
     }
     
     .user-menu-dropdown {
