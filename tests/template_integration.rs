@@ -115,6 +115,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             webp_quality: Some(85.0),
             pregenerate_cache: false,
             new_threshold_days: None,
+            approximate_dates_for_public: false,
         }]),
         posts: None,
     };

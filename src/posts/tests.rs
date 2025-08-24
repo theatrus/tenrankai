@@ -357,6 +357,7 @@ Regular markdown image (not a gallery reference):
             webp_quality: Some(85.0),
             pregenerate_cache: false,
             new_threshold_days: None,
+            approximate_dates_for_public: false,
         };
 
         let app_config = AppConfig {
@@ -409,6 +410,7 @@ Regular markdown image (not a gallery reference):
             webp_quality: Some(90.0),
             pregenerate_cache: false,
             new_threshold_days: None,
+            approximate_dates_for_public: false,
         };
 
         let portfolio_gallery = Arc::new(Gallery::new(portfolio_gallery_config, app_config));
