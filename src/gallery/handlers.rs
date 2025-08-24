@@ -7,9 +7,14 @@ use axum::{
 };
 use tracing::error;
 
-fn has_download_permission(headers: &HeaderMap, secret: &str) -> bool {
+fn has_download_permission(app_state: &AppState, headers: &HeaderMap) -> bool {
+    // If no user database is configured, allow all downloads
+    if app_state.config.app.user_database.is_none() {
+        return true;
+    }
+    
     // Check if user is authenticated with the login system
-    crate::login::is_authenticated(headers, secret)
+    crate::login::is_authenticated(headers, &app_state.config.app.download_secret)
 }
 
 // Named gallery handlers for multiple gallery support
@@ -235,7 +240,7 @@ pub async fn image_detail_handler_for_named(
     };
 
     // Check if user has download permission
-    let has_permission = has_download_permission(&headers, &app_state.config.app.download_secret);
+    let has_permission = has_download_permission(&app_state, &headers);
 
     // If approximate dates are enabled and user doesn't have permission, modify the capture date
     if gallery.get_config().approximate_dates_for_public
@@ -362,7 +367,7 @@ pub async fn image_handler_for_named(
             }
             "large" => {
                 // Large size requires authentication
-                if !has_download_permission(&headers, &app_state.config.app.download_secret) {
+                if !has_download_permission(&app_state, &headers) {
                     tracing::warn!(path = %path, "Large image request denied - authentication required");
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }
@@ -375,7 +380,7 @@ pub async fn image_handler_for_named(
         }
     } else {
         // No size parameter means full-size original image - requires authentication
-        if !has_download_permission(&headers, &app_state.config.app.download_secret) {
+        if !has_download_permission(&app_state, &headers) {
             tracing::warn!(path = %path, "Full-size image request denied - authentication required");
             return (StatusCode::FORBIDDEN, "Download permission required").into_response();
         }

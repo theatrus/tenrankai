@@ -42,6 +42,8 @@ pub struct AppConfig {
     pub copyright_holder: Option<String>,
     #[serde(default)]
     pub base_url: Option<String>,
+    #[serde(default)]
+    pub user_database: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -193,6 +195,7 @@ impl Default for Config {
                 download_password: "password".to_string(),
                 copyright_holder: None,
                 base_url: None,
+                user_database: None,
             },
             templates: TemplateConfig {
                 directory: PathBuf::from("templates"),
@@ -284,6 +287,9 @@ pub async fn create_app(config: Config) -> axum::Router {
     // Set the static handler on the template engine for cache busting
     template_engine.set_static_handler(static_handler.clone());
     
+    // Set whether user auth is enabled
+    template_engine.set_has_user_auth(config.app.user_database.is_some());
+    
     let template_engine = Arc::new(template_engine);
 
     let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
@@ -337,10 +343,16 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     let posts_managers_arc = Arc::new(posts_managers);
 
-    let login_state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
-    
-    // Start periodic cleanup for login tokens and rate limits
-    login::start_periodic_cleanup(login_state.clone());
+    // Initialize login state only if user database is configured
+    let login_state = if config.app.user_database.is_some() {
+        let state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
+        // Start periodic cleanup for login tokens and rate limits
+        login::start_periodic_cleanup(state.clone());
+        state
+    } else {
+        // Create an empty login state for consistency
+        Arc::new(tokio::sync::RwLock::new(login::LoginState::new()))
+    };
 
     let app_state = AppState {
         template_engine,
@@ -377,13 +389,18 @@ pub async fn create_app(config: Config) -> axum::Router {
             "/robots.txt",
             axum::routing::get(robots::robots_txt_handler),
         )
-        .route("/static/{*path}", axum::routing::get(static_file_handler))
-        .route("/login", axum::routing::get(login::login_page))
-        .route("/login/request", axum::routing::post(login::login_request))
-        .route("/login/verify", axum::routing::get(login::verify_login))
-        .route("/logout", axum::routing::get(login::logout))
-        .route("/api/verify", axum::routing::get(login::check_auth_status))
-        .route("/api/refresh-static-versions", axum::routing::post(api::refresh_static_versions));
+        .route("/static/{*path}", axum::routing::get(static_file_handler));
+    
+    // Add login routes only if user database is configured
+    if config.app.user_database.is_some() {
+        router = router
+            .route("/_login", axum::routing::get(login::login_page))
+            .route("/_login/request", axum::routing::post(login::login_request))
+            .route("/_login/verify", axum::routing::get(login::verify_login))
+            .route("/_login/logout", axum::routing::get(login::logout))
+            .route("/api/verify", axum::routing::get(login::check_auth_status))
+            .route("/api/refresh-static-versions", axum::routing::post(api::refresh_static_versions));
+    }
 
     // Add gallery routes dynamically based on configuration
     if let Some(gallery_configs) = &config.galleries {

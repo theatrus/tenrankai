@@ -122,7 +122,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     submitButton.textContent = 'Sending...';
     
     try {
-        const response = await fetch('/login/request', {
+        const response = await fetch('/_login/request', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

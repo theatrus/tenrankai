@@ -172,6 +172,14 @@ pub async fn refresh_static_versions(
     State(app_state): State<crate::AppState>,
     headers: HeaderMap,
 ) -> Result<Json<RefreshResponse>, StatusCode> {
+    // If no user database is configured, deny access
+    if app_state.config.app.user_database.is_none() {
+        return Ok(Json(RefreshResponse {
+            success: false,
+            message: "Authentication not configured".to_string(),
+        }));
+    }
+    
     // Check if user is authenticated
     if !crate::login::is_authenticated(&headers, &app_state.config.app.download_secret) {
         return Ok(Json(RefreshResponse {

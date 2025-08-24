@@ -80,84 +80,10 @@
                 <li><a href="/gallery">Gallery</a></li>
                 <li><a href="/about">About</a></li>
                 <li><a href="/contact">Contact</a></li>
-                <li class="user-menu">
-                    <button class="user-menu-toggle" onclick="toggleUserMenu(event)" aria-label="User menu">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="8" r="3"/>
-                            <path d="M12 14c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/>
-                        </svg>
-                    </button>
-                    <div class="user-menu-dropdown" id="userMenuDropdown">
-                        <div id="userMenuContent">
-                            <div class="user-info">Loading...</div>
-                        </div>
-                    </div>
-                </li>
+                {% if has_user_auth %}
+                    {% include "_user_menu.html.liquid" %}
+                {% endif %}
             </ul>
         </nav>
     </header>
     <main>
-    
-    <script>
-    // User menu functionality
-    let userMenuOpen = false;
-    
-    function toggleUserMenu(event) {
-        event.stopPropagation();
-        const dropdown = document.getElementById('userMenuDropdown');
-        userMenuOpen = !userMenuOpen;
-        
-        if (userMenuOpen) {
-            dropdown.classList.add('show');
-            // Add click outside listener
-            setTimeout(() => {
-                document.addEventListener('click', handleClickOutside);
-            }, 0);
-        } else {
-            dropdown.classList.remove('show');
-            document.removeEventListener('click', handleClickOutside);
-        }
-    }
-    
-    function handleClickOutside(event) {
-        const userMenu = document.querySelector('.user-menu');
-        if (!userMenu.contains(event.target)) {
-            userMenuOpen = false;
-            document.getElementById('userMenuDropdown').classList.remove('show');
-            document.removeEventListener('click', handleClickOutside);
-        }
-    }
-    
-    // Check authentication status and populate menu
-    async function initUserMenu() {
-        try {
-            const response = await fetch('/api/verify');
-            const data = await response.json();
-            
-            const menuContent = document.getElementById('userMenuContent');
-            
-            if (data.authorized && data.username) {
-                menuContent.innerHTML = `
-                    <div class="user-info">
-                        Signed in as
-                        <span class="username">${data.username}</span>
-                    </div>
-                    <a href="/logout">Sign out</a>
-                `;
-            } else {
-                menuContent.innerHTML = `
-                    <a href="/login">Sign in</a>
-                `;
-            }
-        } catch (error) {
-            console.error('Error checking auth status:', error);
-            // Default to showing login
-            document.getElementById('userMenuContent').innerHTML = `
-                <a href="/login">Login</a>
-            `;
-        }
-    }
-    
-    // Initialize on page load
-    document.addEventListener('DOMContentLoaded', initUserMenu);
-    </script>

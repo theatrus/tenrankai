@@ -54,8 +54,9 @@ pub async fn login_request(
         }
     }
 
-    // Load user database
-    let db_path = std::path::Path::new("users.toml");
+    // Load user database from configured path
+    let db_path = app_state.config.app.user_database.as_ref()
+        .ok_or_else(|| LoginError::DatabaseError("User database not configured".to_string()))?;
     let user_db = UserDatabase::load_from_file(db_path)
         .await
         .map_err(|e| LoginError::DatabaseError(e.to_string()))?;
@@ -75,7 +76,7 @@ pub async fn login_request(
             .base_url
             .as_deref()
             .unwrap_or("http://localhost:8080");
-        let login_url = format!("{}/login/verify?token={}", base_url, token);
+        let login_url = format!("{}/_login/verify?token={}", base_url, token);
         
         // For now, just log the URL instead of sending email
         info!("Login URL for {}: {}", user.email, login_url);
@@ -158,6 +159,14 @@ pub async fn check_auth_status(
     State(app_state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<AuthStatusResponse> {
+    // If no user database is configured, return not authorized
+    if app_state.config.app.user_database.is_none() {
+        return Json(AuthStatusResponse {
+            authorized: false,
+            username: None,
+        });
+    }
+    
     let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.download_secret);
     
     Json(AuthStatusResponse {

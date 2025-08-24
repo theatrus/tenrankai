@@ -12,6 +12,7 @@ pub struct TemplateEngine {
     pub template_dir: PathBuf,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
     static_handler: Option<crate::static_files::StaticFileHandler>,
+    has_user_auth: bool,
 }
 
 struct CachedTemplate {
@@ -25,11 +26,16 @@ impl TemplateEngine {
             template_dir,
             cache: Arc::new(RwLock::new(HashMap::new())),
             static_handler: None,
+            has_user_auth: false,
         }
     }
     
     pub fn set_static_handler(&mut self, handler: crate::static_files::StaticFileHandler) {
         self.static_handler = Some(handler);
+    }
+    
+    pub fn set_has_user_auth(&mut self, has_auth: bool) {
+        self.has_user_auth = has_auth;
     }
 
     async fn load_template(&self, path: &str) -> Result<String, String> {
@@ -118,6 +124,12 @@ impl TemplateEngine {
         globals.insert(
             "current_year".into(),
             liquid::model::Value::scalar(current_year as i64),
+        );
+        
+        // Add user auth flag
+        globals.insert(
+            "has_user_auth".into(),
+            liquid::model::Value::scalar(self.has_user_auth),
         );
         
         // Add versioned URLs for common static files
@@ -209,6 +221,18 @@ impl TemplateEngine {
                 error!("Failed to load gallery preview partial: {}", e);
                 String::new()
             });
+        
+        // Load user menu partial if user auth is enabled
+        let user_menu_content = if self.has_user_auth {
+            self.load_template("partials/_user_menu.html.liquid")
+                .await
+                .unwrap_or_else(|e| {
+                    error!("Failed to load user menu partial: {}", e);
+                    String::new()
+                })
+        } else {
+            String::new()
+        };
 
         let template_content = self.load_template(template_name).await?;
 
@@ -220,6 +244,9 @@ impl TemplateEngine {
             "_gallery_preview.html.liquid",
             gallery_preview_content.clone(),
         );
+        if self.has_user_auth {
+            partials_source.add("_user_menu.html.liquid", user_menu_content.clone());
+        }
 
         let partials = liquid::partials::EagerCompiler::new(partials_source);
 
