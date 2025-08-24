@@ -55,6 +55,24 @@ impl PostsManager {
         Ok(())
     }
 
+    pub fn start_background_refresh(posts_manager: Arc<PostsManager>, interval_minutes: u64) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
+            interval.tick().await; // Skip the first immediate tick
+
+            loop {
+                interval.tick().await;
+                info!("Starting scheduled posts refresh");
+
+                if let Err(e) = posts_manager.refresh_posts().await {
+                    error!("Failed to refresh posts: {}", e);
+                } else {
+                    info!("Posts refresh completed successfully");
+                }
+            }
+        });
+    }
+
     async fn scan_directory(
         &self,
         dir: &Path,
@@ -91,6 +109,10 @@ impl PostsManager {
     async fn load_post(&self, path: &Path) -> Result<Post, PostsError> {
         let content = tokio::fs::read_to_string(path).await?;
 
+        // Get file modification time
+        let file_metadata = tokio::fs::metadata(path).await?;
+        let last_modified = file_metadata.modified().ok();
+
         let (metadata, markdown_content) = self.parse_front_matter(&content)?;
 
         let slug = self.generate_slug(path)?;
@@ -112,6 +134,7 @@ impl PostsManager {
             date: metadata.date,
             content: markdown_content,
             html_content,
+            last_modified,
         })
     }
 
@@ -214,8 +237,58 @@ impl PostsManager {
     }
 
     pub async fn get_post(&self, slug: &str) -> Option<Post> {
+        // First check if the post needs reloading
+        if let Some(post) = self.get_post_if_fresh(slug).await {
+            return Some(post);
+        }
+
+        // Post is stale or doesn't exist, try to reload it
+        if let Err(e) = self.reload_post_by_slug(slug).await {
+            debug!("Failed to reload post {}: {}", slug, e);
+        }
+
+        // Return the post (either freshly loaded or existing)
         let posts = self.posts.read().await;
         posts.get(slug).cloned()
+    }
+
+    async fn get_post_if_fresh(&self, slug: &str) -> Option<Post> {
+        let posts = self.posts.read().await;
+
+        if let Some(post) = posts.get(slug) {
+            // Check if the file has been modified since we loaded it
+            if let Ok(metadata) = tokio::fs::metadata(&post.path).await
+                && let (Ok(file_modified), Some(post_modified)) =
+                    (metadata.modified(), post.last_modified)
+                && file_modified <= post_modified
+            {
+                // Post is still fresh
+                return Some(post.clone());
+            }
+        }
+
+        None
+    }
+
+    async fn reload_post_by_slug(&self, slug: &str) -> Result<(), PostsError> {
+        // Find the path for this slug
+        let path = {
+            let posts = self.posts.read().await;
+            posts.get(slug).map(|p| p.path.clone())
+        };
+
+        if let Some(path) = path {
+            // Reload the post
+            let post = self.load_post(&path).await?;
+
+            // Update the post in our cache
+            let mut posts = self.posts.write().await;
+            posts.insert(slug.to_string(), post);
+
+            debug!("Reloaded post: {}", slug);
+        }
+
+        Ok(())
     }
 
     pub async fn get_total_pages(&self) -> usize {

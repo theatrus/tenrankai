@@ -551,6 +551,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Dynamic refresh via API (`POST /api/posts/{name}/refresh`)
    - Configurable templates for index and detail pages
    - **Gallery Integration**: Reference images from any configured gallery with smart size handling
+   - **Automatic Reload on Change**: Posts are automatically reloaded when their markdown files are modified
    
 4. **Implementation Details**:
    - PostsManager handles scanning, caching, and serving posts
@@ -561,6 +562,7 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - Dark theme optimized code blocks with #2d2d2d background and #f8f8f2 text
    - Inline code uses light background (#e8e8e8) with dark text (#333) for contrast
    - Gallery references are processed during markdown rendering to generate proper HTML
+   - File modification times are tracked to enable automatic reloading
 
 ### Multi-Gallery Support (August 2025 - Updated December 2024)
 1. **Multiple Gallery Instances**: The gallery module now supports multiple independent gallery instances
@@ -639,6 +641,26 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
 
 ## New Features (December 2024)
 
+### Automatic Post Reload on File Change
+Posts now automatically reload when their markdown files are modified, making development and content editing more efficient.
+
+#### How It Works
+- When a post is requested, the system checks if the file has been modified since it was last loaded
+- If the file is newer, it's automatically reloaded and reprocessed
+- The updated content is immediately available without restarting the server
+
+#### Implementation Details
+- Modification times are tracked using `SystemTime` for each loaded post
+- The `get_post()` method automatically handles freshness checking
+- Minimal performance impact - file metadata is only checked on access
+- Thread-safe implementation using RwLock for concurrent access
+
+#### Benefits
+- Live editing experience during development
+- No need to restart the server when editing posts
+- Content updates are immediate
+- Preserves memory efficiency by only reloading changed posts
+
 ### Gallery Image References in Posts
 Posts can now easily reference and embed images from any configured gallery with automatic link generation.
 
@@ -708,6 +730,52 @@ The project includes comprehensive integration tests for all major features:
 - Gallery preview inclusion
 - Error handling for missing templates
 - Meta tag generation
+
+## Recent Changes (December 2025)
+
+### Posts Periodic Refresh
+1. **Added Configurable Posts Refresh**:
+   - Posts can now be automatically refreshed at a configurable interval
+   - New configuration option: `refresh_interval_minutes` in posts config
+   - Similar to gallery metadata refresh functionality
+   
+2. **Configuration Example**:
+   ```toml
+   [[posts]]
+   name = "blog"
+   source_directory = "content/blog"
+   url_prefix = "/blog"
+   posts_per_page = 10
+   refresh_interval_minutes = 30  # Refresh every 30 minutes
+   ```
+   
+3. **Features**:
+   - Background task spawned for each posts system with refresh enabled
+   - Non-blocking refresh - server continues serving while refreshing
+   - Automatic detection of new, modified, or deleted posts
+   - Individual post reloading on access if file has changed
+   
+4. **Implementation Details**:
+   - `PostsManager::start_background_refresh()` spawns tokio task
+   - Initial refresh happens on startup
+   - Logs refresh start and completion/errors
+   - Skips first immediate tick to avoid duplicate initial refresh
+
+### Gallery OpenGraph Metadata Fix
+1. **Fixed Generic OpenGraph Tags**:
+   - Gallery pages now use folder display name and description for OpenGraph metadata
+   - Previously showed hardcoded "Photo Gallery" and "Browse our collection of photos"
+   - Now properly displays custom folder titles from `_folder.md` files
+   
+2. **Smart Description Processing**:
+   - HTML tags are stripped from folder descriptions for social media previews
+   - Descriptions are truncated to 160 characters for optimal display
+   - Falls back to generic description if no folder description is available
+   
+3. **Improved Page Titles**:
+   - Root gallery shows "Photo Gallery"
+   - Subfolders show "[Folder Display Name] - Photo Gallery"
+   - Uses folder display names when available, otherwise uses folder names
 
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::SystemTime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Post {
@@ -11,6 +11,8 @@ pub struct Post {
     pub date: DateTime<Utc>,
     pub content: String,
     pub html_content: String,
+    #[serde(skip)]
+    pub last_modified: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +38,7 @@ pub struct PostsConfig {
     pub index_template: String,
     pub post_template: String,
     pub posts_per_page: usize,
+    pub refresh_interval_minutes: Option<u64>,
 }
 
 impl Default for PostsConfig {
@@ -46,6 +49,7 @@ impl Default for PostsConfig {
             index_template: String::from("modules/posts_index.html.liquid"),
             post_template: String::from("modules/post_detail.html.liquid"),
             posts_per_page: 20,
+            refresh_interval_minutes: None,
         }
     }
 }
