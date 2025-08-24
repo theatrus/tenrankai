@@ -1,6 +1,6 @@
 use super::{Gallery, GalleryError};
 use crate::copyright::{CopyrightConfig, add_copyright_notice};
-use image::{ImageFormat, imageops::FilterType};
+use image::{ImageFormat, ImageEncoder, imageops::FilterType};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -19,6 +19,7 @@ impl OutputFormat {
         }
     }
 
+    #[allow(dead_code)]
     fn image_format(&self) -> ImageFormat {
         match self {
             OutputFormat::Jpeg => ImageFormat::Jpeg,
@@ -142,9 +143,20 @@ impl Gallery {
         tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
             // Open image with decoder to access ICC profile
             let original_file = std::fs::File::open(&original_path)?;
+            let mut buf_reader = std::io::BufReader::new(original_file);
 
-            let decoder = image::ImageReader::new(std::io::BufReader::new(original_file))
-                .with_guessed_format()?;
+            let decoder = image::ImageReader::new(&mut buf_reader).with_guessed_format()?;
+
+            // Extract ICC profile before decoding
+            // Note: ICC profile extraction from JPEG requires reading the file again
+            // since the image crate doesn't expose ICC profiles from ImageReader
+            let icc_profile: Option<Vec<u8>> = match decoder.format() {
+                Some(image::ImageFormat::Jpeg) => {
+                    // For JPEG, try to extract ICC profile using rexif crate (already in dependencies)
+                    Self::extract_icc_profile_from_jpeg(&original_path)
+                }
+                _ => None,
+            };
 
             let img = decoder.decode()?;
 
@@ -187,20 +199,64 @@ impl Gallery {
                 resized
             };
 
-            // Save final image in the requested format with quality settings
+            // Save final image in the requested format with quality settings and color profile preservation
             match format {
                 OutputFormat::Jpeg => {
-                    // Use JPEG with configurable quality
+                    // Use JPEG with configurable quality and ICC profile preservation
                     use image::codecs::jpeg::JpegEncoder;
-                    let mut output = std::fs::File::create(&cache_path_clone)?;
-                    let encoder = JpegEncoder::new_with_quality(&mut output, jpeg_quality);
-                    final_image.write_with_encoder(encoder)?;
+                    let output = std::fs::File::create(&cache_path_clone)?;
+                    
+                    if let Some(ref profile_data) = icc_profile {
+                        // Create encoder with ICC profile
+                        let mut encoder = JpegEncoder::new_with_quality(output, jpeg_quality);
+                        match encoder.set_icc_profile(profile_data.clone()) {
+                            Ok(()) => {
+                                final_image.write_with_encoder(encoder)?;
+                                debug!("JPEG written with ICC profile: {} bytes", profile_data.len());
+                            }
+                            Err(e) => {
+                                debug!("Failed to set ICC profile on JPEG encoder ({}), using standard JPEG", e);
+                                let encoder = JpegEncoder::new_with_quality(std::fs::File::create(&cache_path_clone)?, jpeg_quality);
+                                final_image.write_with_encoder(encoder)?;
+                            }
+                        }
+                    } else {
+                        // No ICC profile, use standard encoder
+                        let encoder = JpegEncoder::new_with_quality(output, jpeg_quality);
+                        final_image.write_with_encoder(encoder)?;
+                    }
                 }
                 OutputFormat::WebP => {
-                    // WebP encoding with quality
-                    // Note: The image crate's WebP support might be limited
-                    // For better WebP encoding, consider using webp crate directly
-                    final_image.save_with_format(&cache_path_clone, format.image_format())?;
+                    // Use WebP crate for encoding with ICC profile preservation
+                    let rgb_image = final_image.to_rgb8();
+                    let (img_width, img_height) = rgb_image.dimensions();
+
+                    // Create WebP encoder
+                    let encoder = webp::Encoder::from_rgb(rgb_image.as_raw(), img_width, img_height);
+
+                    // Encode to WebP with quality
+                    let encoded_webp = encoder.encode(_webp_quality);
+
+                    // If we have an ICC profile, try to embed it in the WebP file
+                    if let Some(ref profile_data) = icc_profile {
+                        match Self::embed_icc_in_webp(&encoded_webp, profile_data, img_width, img_height) {
+                            Ok(webp_with_icc) => {
+                                std::fs::write(&cache_path_clone, webp_with_icc)?;
+                                debug!(
+                                    "WebP written with ICC profile: {} bytes",
+                                    profile_data.len()
+                                );
+                            }
+                            Err(e) => {
+                                // Failed to embed ICC profile - fall back to standard WebP
+                                debug!("Failed to embed ICC profile in WebP ({}), using standard WebP", e);
+                                std::fs::write(&cache_path_clone, &*encoded_webp)?;
+                            }
+                        }
+                    } else {
+                        // No ICC profile, write standard WebP
+                        std::fs::write(&cache_path_clone, &*encoded_webp)?;
+                    }
                 }
             }
 
@@ -210,6 +266,190 @@ impl Gallery {
         .map_err(|e| GalleryError::IoError(std::io::Error::other(e)))??;
 
         Ok(cache_path)
+    }
+
+    /// Embed ICC profile in WebP file by converting to VP8X format
+    fn embed_icc_in_webp(webp_data: &[u8], icc_profile: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GalleryError> {
+        // WebP file format:
+        // - RIFF header (12 bytes): "RIFF" + file_size + "WEBP"
+        // - For extended WebP: VP8X chunk, then optional chunks (ICCP, etc.), then VP8/VP8L
+
+        if webp_data.len() < 20 || &webp_data[0..4] != b"RIFF" || &webp_data[8..12] != b"WEBP" {
+            return Err(GalleryError::ImageError(image::ImageError::Decoding(
+                image::error::DecodingError::new(
+                    image::ImageFormat::WebP.into(),
+                    "Invalid WebP format",
+                ),
+            )));
+        }
+
+        // Check if this is already VP8X (extended) or VP8/VP8L (simple)
+        let first_chunk = &webp_data[12..16];
+        
+        if first_chunk == b"VP8X" {
+            // Already extended format - insert ICCP after VP8X chunk
+            Self::insert_iccp_in_vp8x(webp_data, icc_profile)
+        } else if first_chunk == b"VP8 " || first_chunk == b"VP8L" {
+            // Simple format - convert to VP8X format with ICCP
+            Self::convert_to_vp8x_with_iccp(webp_data, icc_profile, width, height)
+        } else {
+            Err(GalleryError::ImageError(image::ImageError::Decoding(
+                image::error::DecodingError::new(
+                    image::ImageFormat::WebP.into(),
+                    "Unknown WebP chunk type",
+                ),
+            )))
+        }
+    }
+    
+    /// Convert simple WebP (VP8/VP8L) to VP8X format with ICCP chunk
+    fn convert_to_vp8x_with_iccp(webp_data: &[u8], icc_profile: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GalleryError> {
+        let mut result = Vec::new();
+        
+        // Copy RIFF header (12 bytes)
+        result.extend_from_slice(&webp_data[0..12]);
+        
+        // Create VP8X chunk
+        // VP8X chunk: "VP8X" + size(4) + flags(1) + reserved(3) + width(3) + height(3)
+        result.extend_from_slice(b"VP8X");
+        result.extend_from_slice(&10u32.to_le_bytes()); // VP8X chunk size (always 10)
+        result.push(0x10); // flags: ICCP bit set (bit 5)
+        result.extend_from_slice(&[0, 0, 0]); // reserved bytes
+        
+        // Use the provided dimensions
+        let width_minus_1 = width - 1;
+        let height_minus_1 = height - 1;
+        
+        // Width and height as 24-bit little-endian (minus 1)
+        result.push((width_minus_1 & 0xFF) as u8);
+        result.push(((width_minus_1 >> 8) & 0xFF) as u8);
+        result.push(((width_minus_1 >> 16) & 0xFF) as u8);
+        result.push((height_minus_1 & 0xFF) as u8);
+        result.push(((height_minus_1 >> 8) & 0xFF) as u8);
+        result.push(((height_minus_1 >> 16) & 0xFF) as u8);
+        
+        // Add ICCP chunk
+        let iccp_chunk = Self::create_webp_iccp_chunk(icc_profile);
+        result.extend_from_slice(&iccp_chunk);
+        
+        // Copy the original VP8/VP8L chunk
+        result.extend_from_slice(&webp_data[12..]);
+        
+        // Update RIFF size
+        let new_size = (result.len() - 8) as u32;
+        result[4..8].copy_from_slice(&new_size.to_le_bytes());
+        
+        Ok(result)
+    }
+    
+    /// Insert ICCP chunk in existing VP8X format
+    fn insert_iccp_in_vp8x(webp_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, GalleryError> {
+        // For VP8X format, insert ICCP chunk after VP8X chunk but before VP8/VP8L
+        let mut result = Vec::new();
+        
+        // Find the end of the VP8X chunk
+        let vp8x_size = u32::from_le_bytes([webp_data[16], webp_data[17], webp_data[18], webp_data[19]]) as usize;
+        let vp8x_end = 20 + vp8x_size + (vp8x_size % 2); // Include padding
+        
+        // Copy up to end of VP8X chunk
+        result.extend_from_slice(&webp_data[0..vp8x_end]);
+        
+        // Update VP8X flags to include ICCP bit
+        result[20] |= 0x10; // Set ICCP flag
+        
+        // Add ICCP chunk
+        let iccp_chunk = Self::create_webp_iccp_chunk(icc_profile);
+        result.extend_from_slice(&iccp_chunk);
+        
+        // Copy remaining chunks
+        result.extend_from_slice(&webp_data[vp8x_end..]);
+        
+        // Update RIFF size
+        let new_size = (result.len() - 8) as u32;
+        result[4..8].copy_from_slice(&new_size.to_le_bytes());
+        
+        Ok(result)
+    }
+    
+
+    /// Extract ICC profile from JPEG file
+    fn extract_icc_profile_from_jpeg(path: &std::path::PathBuf) -> Option<Vec<u8>> {
+        use std::io::Read;
+
+        let mut file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return None,
+        };
+
+        let mut buffer = Vec::new();
+        if file.read_to_end(&mut buffer).is_err() {
+            return None;
+        }
+
+        // Look for ICC profile in JPEG APP2 segments
+        // ICC profiles in JPEG are stored in APP2 markers with ICC_PROFILE identifier
+        let mut pos = 0;
+        while pos < buffer.len() - 1 {
+            if buffer[pos] == 0xFF {
+                let marker = buffer[pos + 1];
+                if marker == 0xE2 {
+                    // APP2 marker
+                    if pos + 4 < buffer.len() {
+                        let segment_length =
+                            u16::from_be_bytes([buffer[pos + 2], buffer[pos + 3]]) as usize;
+                        if pos + 2 + segment_length <= buffer.len() {
+                            let segment_start = pos + 4;
+                            let segment_end = pos + 2 + segment_length;
+                            let segment_data = &buffer[segment_start..segment_end];
+
+                            // Check for ICC_PROFILE identifier
+                            if segment_data.len() > 12 && segment_data.starts_with(b"ICC_PROFILE\0")
+                            {
+                                // ICC profile data starts after the identifier and 2 sequence bytes
+                                let icc_data = &segment_data[14..];
+                                if !icc_data.is_empty() {
+                                    debug!("Found ICC profile in JPEG: {} bytes", icc_data.len());
+                                    return Some(icc_data.to_vec());
+                                }
+                            }
+                            pos = segment_end;
+                        } else {
+                            pos += 2;
+                        }
+                    } else {
+                        pos += 2;
+                    }
+                } else {
+                    pos += 2;
+                }
+            } else {
+                pos += 1;
+            }
+        }
+
+        None
+    }
+
+    /// Create a WebP ICCP chunk containing the ICC profile
+    fn create_webp_iccp_chunk(icc_profile: &[u8]) -> Vec<u8> {
+        let mut chunk = Vec::new();
+
+        // ICCP chunk header: "ICCP" + chunk_size
+        chunk.extend_from_slice(b"ICCP");
+
+        // Chunk size (excluding the 8-byte chunk header)
+        let chunk_size = icc_profile.len() as u32;
+        chunk.extend_from_slice(&chunk_size.to_le_bytes());
+
+        // ICC profile data
+        chunk.extend_from_slice(icc_profile);
+
+        // Add padding if needed (WebP chunks must be even-sized)
+        if chunk.len() % 2 == 1 {
+            chunk.push(0);
+        }
+
+        chunk
     }
 
     async fn serve_file_with_cache_header(

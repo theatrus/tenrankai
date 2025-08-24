@@ -86,6 +86,7 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
 - **Cache separation**: Different cache files for JPEG and WebP versions
 - **Content negotiation**: Automatic format selection based on browser capabilities
+- **Complete ICC color profile preservation**: Extracts ICC color profiles from source JPEG images and preserves them through the entire processing pipeline, including copyright watermarking. JPEG outputs retain full ICC profiles; WebP attempts embedding with fallback
 
 ### Metadata Caching
 
@@ -126,6 +127,7 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - Applied only to medium-sized images
 - Uses WCAG luminance calculation to determine text color (black/white)
 - Automatically converts RGBA to RGB for JPEG compatibility
+- Preserves ICC color profiles from source images through watermark processing
 - Requires DejaVuSans.ttf font in static directory
 
 ## Configuration
@@ -814,11 +816,40 @@ The project includes comprehensive integration tests for all major features:
    - Subfolders show "[Folder Display Name] - Photo Gallery"
    - Uses folder display names when available, otherwise uses folder names
 
+### ICC Color Profile Implementation
+1. **JPEG ICC Profile Extraction**:
+   - Manually parses JPEG file structure to find APP2 segments containing ICC_PROFILE markers
+   - Extracts ICC profile data from JPEG APP2 segments (standard location for color profiles)
+   - Handles multi-segment ICC profiles correctly
+
+2. **WebP ICC Profile Handling**:
+   - Attempts to embed ICC profiles by converting WebP to VP8X extended format
+   - Creates VP8X chunks with ICCP metadata chunks for color profile storage
+   - Falls back to standard WebP if ICC embedding fails (maintains compatibility)
+   - Uses dedicated WebP crate for high-quality encoding with configurable quality settings
+
+3. **Color Profile Workflow**:
+   ```
+   JPEG Source → Extract ICC Profile → Resize → Apply Watermark → Encode with ICC → Cache
+   ```
+
+4. **Watermark Compatibility**:
+   - ICC profiles preserved even when copyright watermarks are applied
+   - Color information flows through entire processing pipeline
+   - Both watermarked medium images and non-watermarked sizes retain color profiles
+
+5. **Benefits**:
+   - Complete ICC color profile preservation from source to output
+   - Maintains photographer's color grading and camera profiles through all processing steps
+   - JPEG format provides full ICC profile support with graceful fallback handling
+   - Ensures professional color accuracy for both plain and watermarked images
+
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions
 2. Add configuration for replacement interval
 3. Consider WebSocket for real-time updates
 4. Add analytics for popular images
+5. Support ICC profile preservation for other source formats (PNG, TIFF)
 5. Add support for video files in galleries
 6. Implement tag-based filtering for galleries
 7. Add gallery image browser/picker UI for posts editor

@@ -17,6 +17,7 @@ ab_glyph = "0.2"
 resvg = "0.45"
 usvg = "0.45"
 ico = "0.4"
+webp = { version = "0.3", features = ["img"] }
 liquid = "0.26"
 mime_guess = "2.0"
 pulldown-cmark = "0.13"
