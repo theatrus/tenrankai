@@ -181,7 +181,7 @@ pub async fn gallery_handler(
     });
 
     match template_engine
-        .render_template("gallery.html.liquid", globals)
+        .render_template("pages/gallery.html.liquid", globals)
         .await
     {
         Ok(html) => Html(html).into_response(),
@@ -275,7 +275,7 @@ pub async fn image_detail_handler(
     });
 
     match template_engine
-        .render_template("image_detail.html.liquid", globals)
+        .render_template("pages/image_detail.html.liquid", globals)
         .await
     {
         Ok(html) => Html(html).into_response(),

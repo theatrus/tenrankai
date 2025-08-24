@@ -40,6 +40,16 @@ The gallery functionality was recently refactored from a single 3000-line file i
 - `cache.rs` - Cache management and persistence
 - `error.rs` - Error type definitions
 
+### Template Structure
+Templates are organized into two directories for better maintainability:
+- `templates/pages/` - Full page templates (index, gallery, image_detail, 404, etc.)
+- `templates/partials/` - Reusable components (_header, _footer, _gallery_preview)
+
+All templates use the Liquid templating language. When loading templates:
+- Page templates are referenced as `pages/template_name.html.liquid`
+- Partial templates are referenced as `partials/_partial_name.html.liquid`
+- Partials are automatically loaded and made available to all templates
+
 ## Important Implementation Details
 
 ### Mobile Responsiveness
@@ -416,6 +426,21 @@ if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
    - First-time visitors get instant image loading
    - No lag while images are processed on-demand
    - Background processing doesn't block server operation
+
+### Template Reorganization (August 2025)
+1. **Directory Structure**: Templates are now organized into subdirectories
+   - `templates/pages/` - Contains all page templates
+   - `templates/partials/` - Contains reusable partial templates
+   
+2. **Benefits**:
+   - Better organization and maintainability
+   - Clear separation between full pages and components
+   - Easier to find specific templates
+   
+3. **Code Updates**:
+   - All template loading code updated to use new paths
+   - Tests updated to reflect new structure
+   - No breaking changes for end users
 
 ## Future Improvements
 1. Consider adding image preloading for smoother transitions

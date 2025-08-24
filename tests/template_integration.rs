@@ -13,6 +13,8 @@ async fn setup_test_server() -> (TempDir, TestServer) {
     let cache_dir = temp_dir.path().join("cache");
 
     fs::create_dir_all(&templates_dir).unwrap();
+    fs::create_dir_all(templates_dir.join("pages")).unwrap();
+    fs::create_dir_all(templates_dir.join("partials")).unwrap();
     fs::create_dir_all(&static_dir).unwrap();
     fs::create_dir_all(&gallery_dir).unwrap();
     fs::create_dir_all(&cache_dir).unwrap();
@@ -26,27 +28,27 @@ async fn setup_test_server() -> (TempDir, TestServer) {
 <body>
     <header><h1>Test Site</h1></header>
     <main>"#;
-    fs::write(templates_dir.join("_header.html.liquid"), header_content).unwrap();
+    fs::write(templates_dir.join("partials/_header.html.liquid"), header_content).unwrap();
 
     let footer_content = r#"    </main>
     <footer><p>&copy; {{ current_year }} Test</p></footer>
 </body>
 </html>"#;
-    fs::write(templates_dir.join("_footer.html.liquid"), footer_content).unwrap();
+    fs::write(templates_dir.join("partials/_footer.html.liquid"), footer_content).unwrap();
 
     let index_content = r#"{% assign page_title = "Home" %}
 {% include "_header.html.liquid" %}
 <h2>Welcome</h2>
 <p>Test home page</p>
 {% include "_footer.html.liquid" %}"#;
-    fs::write(templates_dir.join("index.html.liquid"), index_content).unwrap();
+    fs::write(templates_dir.join("pages/index.html.liquid"), index_content).unwrap();
 
     let gallery_content = r#"{% assign page_title = "Gallery" %}
 {% include "_header.html.liquid" %}
 <h2>Gallery</h2>
 <div class="gallery">Test gallery</div>
 {% include "_footer.html.liquid" %}"#;
-    fs::write(templates_dir.join("gallery.html.liquid"), gallery_content).unwrap();
+    fs::write(templates_dir.join("pages/gallery.html.liquid"), gallery_content).unwrap();
 
     // Create test config
     let config = Config {
@@ -143,7 +145,7 @@ async fn test_404_page_renders() {
 {% include "_header.html.liquid" %}
 <h1>404 - Page Not Found</h1>
 {% include "_footer.html.liquid" %}"#;
-    fs::write(templates_dir.join("404.html.liquid"), not_found_content).unwrap();
+    fs::write(templates_dir.join("pages/404.html.liquid"), not_found_content).unwrap();
 
     let response = server.get("/nonexistent").await;
 
@@ -159,7 +161,7 @@ async fn test_template_with_missing_include_fails_gracefully() {
     // Create a template with a bad include
     let templates_dir = _temp_dir.path().join("templates");
     let bad_content = r#"{% include "_nonexistent.html.liquid" %}"#;
-    fs::write(templates_dir.join("bad.html.liquid"), bad_content).unwrap();
+    fs::write(templates_dir.join("pages/bad.html.liquid"), bad_content).unwrap();
 
     let response = server.get("/bad").await;
 

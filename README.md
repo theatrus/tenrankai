@@ -158,6 +158,27 @@ Tenrankai includes several performance optimizations:
 - Automatic cache pre-generation option for instant loading
 - Browser-based caching headers for processed images
 
+## Template Structure
+
+Templates are organized into two directories:
+
+```
+templates/
+├── pages/              # Full page templates
+│   ├── index.html.liquid
+│   ├── gallery.html.liquid
+│   ├── image_detail.html.liquid
+│   ├── about.html.liquid
+│   ├── contact.html.liquid
+│   └── 404.html.liquid
+└── partials/           # Reusable template components
+    ├── _header.html.liquid
+    ├── _footer.html.liquid
+    └── _gallery_preview.html.liquid
+```
+
+All templates use the Liquid templating language and support includes for reusable components.
+
 ## Static Files
 
 Place the following in the `static` directory:

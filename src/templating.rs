@@ -69,9 +69,9 @@ impl TemplateEngine {
         _gallery: &SharedGallery,
     ) -> Result<Html<String>, StatusCode> {
         let template_path = if path.is_empty() || path == "/" {
-            "index.html.liquid"
+            "pages/index.html.liquid"
         } else {
-            &format!("{}.html.liquid", path.trim_start_matches('/'))
+            &format!("pages/{}.html.liquid", path.trim_start_matches('/'))
         };
 
         let globals = liquid::object!({});
@@ -91,7 +91,7 @@ impl TemplateEngine {
     ) -> Result<Html<String>, StatusCode> {
         let globals = liquid::object!({});
 
-        match self.render_template("404.html.liquid", globals).await {
+        match self.render_template("pages/404.html.liquid", globals).await {
             Ok(html) => {
                 // Create custom response with 404 status
                 Ok(Html(html))
@@ -123,21 +123,21 @@ impl TemplateEngine {
 
         // Load common partials first (before loading main template)
         let header_content = self
-            .load_template("_header.html.liquid")
+            .load_template("partials/_header.html.liquid")
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load header partial: {}", e);
                 String::new()
             });
         let footer_content = self
-            .load_template("_footer.html.liquid")
+            .load_template("partials/_footer.html.liquid")
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load footer partial: {}", e);
                 String::new()
             });
         let gallery_preview_content = self
-            .load_template("_gallery_preview.html.liquid")
+            .load_template("partials/_gallery_preview.html.liquid")
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load gallery preview partial: {}", e);
@@ -181,9 +181,9 @@ pub async fn template_with_gallery_handler(
 
     // Check if template exists first
     let template_path = if path.is_empty() || path == "/" {
-        "index.html.liquid"
+        "pages/index.html.liquid"
     } else {
-        &format!("{}.html.liquid", path.trim_start_matches('/'))
+        &format!("pages/{}.html.liquid", path.trim_start_matches('/'))
     };
 
     let template_file_path = app_state.template_engine.template_dir.join(template_path);
