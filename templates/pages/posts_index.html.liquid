@@ -1,0 +1,118 @@
+{% assign page_title = posts_name | capitalize %}
+{% assign meta_description = meta_description | default: "Browse " | append: posts_name | append: " posts" %}
+{% assign og_title = og_title | default: page_title %}
+{% assign og_description = og_description | default: meta_description %}
+{% assign og_url = base_url | append: url_prefix %}
+{% assign og_type = "website" %}
+{% include "_header.html.liquid" %}
+
+<div class="posts-container">
+    <h1>{{ posts_name | capitalize }}</h1>
+    
+    {% if posts.size > 0 %}
+        <div class="posts-list">
+            {% for post in posts %}
+                <article class="post-summary">
+                    <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+                    <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
+                    <p>{{ post.summary }}</p>
+                    <a href="{{ post.url }}" class="read-more">Read more →</a>
+                </article>
+            {% endfor %}
+        </div>
+        
+        {% if total_pages > 1 %}
+            <nav class="pagination">
+                {% if has_prev %}
+                    <a href="{{ url_prefix }}?page={{ prev_page }}" class="prev">← Previous</a>
+                {% endif %}
+                
+                <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
+                
+                {% if has_next %}
+                    <a href="{{ url_prefix }}?page={{ next_page }}" class="next">Next →</a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <p>No posts found.</p>
+    {% endif %}
+</div>
+
+<style>
+.posts-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.posts-list {
+    margin: 2rem 0;
+}
+
+.post-summary {
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.post-summary:last-child {
+    border-bottom: none;
+}
+
+.post-summary h2 {
+    margin: 0 0 0.5rem 0;
+}
+
+.post-summary h2 a {
+    color: #333;
+    text-decoration: none;
+}
+
+.post-summary h2 a:hover {
+    color: #0066cc;
+}
+
+.post-summary time {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.post-summary p {
+    margin: 1rem 0;
+    line-height: 1.6;
+}
+
+.read-more {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+.read-more:hover {
+    text-decoration: underline;
+}
+
+.pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+.pagination a {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+.pagination a:hover {
+    text-decoration: underline;
+}
+
+.page-info {
+    color: #666;
+}
+</style>
+
+{% include "_footer.html.liquid" %}
