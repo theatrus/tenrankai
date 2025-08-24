@@ -38,7 +38,7 @@ impl Gallery {
         if source_path.to_lowercase().ends_with(".png") {
             return OutputFormat::Png;
         }
-        
+
         // For other formats, check if browser accepts WebP
         if accept_header.contains("image/webp") {
             OutputFormat::WebP
@@ -61,8 +61,18 @@ impl Gallery {
             return (StatusCode::FORBIDDEN, "Forbidden").into_response();
         }
 
+        // Ensure the file exists
+        if !full_path.exists() {
+            error!("Image file not found: {:?}", full_path);
+            return (StatusCode::NOT_FOUND, "Image not found").into_response();
+        }
+
         let size = size.as_deref();
         let output_format = self.determine_output_format(accept_header, relative_path);
+        debug!(
+            "Serving image: {}, output format: {:?}",
+            relative_path, output_format
+        );
 
         if let Some(size) = size {
             // Check if cached version exists first
@@ -150,16 +160,24 @@ impl Gallery {
         let _webp_quality = self.config.webp_quality.unwrap_or(85.0);
 
         tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-            // Open image with decoder to access ICC profile
-            let original_file = std::fs::File::open(&original_path)?;
-            let mut buf_reader = std::io::BufReader::new(original_file);
+            // First, determine the format and extract ICC profile if needed
+            let detected_format = {
+                let file = std::fs::File::open(&original_path)
+                    .map_err(|e| {
+                        error!("Failed to open image file {:?}: {}", original_path, e);
+                        GalleryError::IoError(e)
+                    })?;
+                let buf_reader = std::io::BufReader::new(file);
+                let decoder = image::ImageReader::new(buf_reader).with_guessed_format()
+                    .map_err(|e| {
+                        error!("Failed to guess image format for {:?}: {}", original_path, e);
+                        GalleryError::IoError(e)
+                    })?;
+                decoder.format()
+            };
 
-            let decoder = image::ImageReader::new(&mut buf_reader).with_guessed_format()?;
-
-            // Extract ICC profile before decoding
-            // Note: ICC profile extraction from JPEG/PNG requires reading the file again
-            // since the image crate doesn't expose ICC profiles from ImageReader
-            let icc_profile: Option<Vec<u8>> = match decoder.format() {
+            // Extract ICC profile based on detected format
+            let icc_profile: Option<Vec<u8>> = match detected_format {
                 Some(image::ImageFormat::Jpeg) => {
                     // For JPEG, extract ICC profile from APP2 segments
                     extract_icc_profile_from_jpeg(&original_path)
@@ -171,7 +189,13 @@ impl Gallery {
                 _ => None,
             };
 
-            let img = decoder.decode()?;
+            // Now open the file again for decoding
+            debug!("Opening image file: {:?}, detected format: {:?}", original_path, detected_format);
+            let img = image::open(&original_path)
+                .map_err(|e| {
+                    error!("Failed to decode image {:?}: {}", original_path, e);
+                    GalleryError::ImageError(e)
+                })?;
 
             // Get original dimensions
             let (orig_width, orig_height) = (img.width(), img.height());
@@ -289,14 +313,14 @@ impl Gallery {
                 OutputFormat::Png => {
                     // For PNG output, we need to preserve transparency and ICC profile
                     use image::codecs::png::{PngEncoder, CompressionType, FilterType as PngFilterType};
-                    
+
                     // Convert to appropriate format based on image type
                     let png_data = if final_image.color().has_alpha() {
                         // Preserve alpha channel
                         let rgba = final_image.to_rgba8();
                         let (width, height) = rgba.dimensions();
                         let raw_data = rgba.into_raw();
-                        
+
                         // Create PNG with alpha
                         let mut output = Vec::new();
                         let encoder = PngEncoder::new_with_quality(
@@ -304,21 +328,21 @@ impl Gallery {
                             CompressionType::Best,
                             PngFilterType::Adaptive
                         );
-                        
+
                         encoder.write_image(
                             &raw_data,
                             width,
                             height,
                             image::ColorType::Rgba8.into()
                         )?;
-                        
+
                         output
                     } else {
                         // No alpha channel, use RGB
                         let rgb = final_image.to_rgb8();
                         let (width, height) = rgb.dimensions();
                         let raw_data = rgb.into_raw();
-                        
+
                         // Create PNG without alpha
                         let mut output = Vec::new();
                         let encoder = PngEncoder::new_with_quality(
@@ -326,17 +350,17 @@ impl Gallery {
                             CompressionType::Best,
                             PngFilterType::Adaptive
                         );
-                        
+
                         encoder.write_image(
                             &raw_data,
                             width,
                             height,
                             image::ColorType::Rgb8.into()
                         )?;
-                        
+
                         output
                     };
-                    
+
                     // If we have an ICC profile, we need to add it to the PNG
                     if let Some(ref _profile_data) = icc_profile {
                         // For now, write the PNG without ICC profile modification
@@ -467,18 +491,21 @@ pub(crate) fn extract_icc_profile_from_png(path: &std::path::PathBuf) -> Option<
                     && null_pos + 2 < chunk_data.len()
                 {
                     let compression_method = chunk_data[null_pos + 1];
-                    
+
                     if compression_method == 0 {
                         // Deflate compression
                         let compressed_data = &chunk_data[null_pos + 2..];
-                        
+
                         // Decompress using flate2
                         use flate2::read::ZlibDecoder;
                         let mut decoder = ZlibDecoder::new(compressed_data);
                         let mut decompressed = Vec::new();
-                        
+
                         if decoder.read_to_end(&mut decompressed).is_ok() {
-                            debug!("Found ICC profile in PNG: {} bytes (decompressed)", decompressed.len());
+                            debug!(
+                                "Found ICC profile in PNG: {} bytes (decompressed)",
+                                decompressed.len()
+                            );
                             return Some(decompressed);
                         }
                     }
@@ -1496,7 +1523,7 @@ mod tests {
         assert!(result.is_ok(), "Failed to process PNG: {:?}", result);
 
         let cache_path = result.unwrap();
-        
+
         // Verify it's a PNG file
         assert!(cache_path.to_string_lossy().ends_with(".png"));
 
@@ -1520,7 +1547,7 @@ mod tests {
         // For now, just test that extraction doesn't crash
         // Real PNG ICC profile testing would require creating a PNG with iCCP chunk
         let icc_profile = extract_icc_profile_from_png(&png_path);
-        
+
         // This should return None for a basic PNG without ICC profile
         assert!(icc_profile.is_none());
     }
@@ -1612,7 +1639,11 @@ mod tests {
                         // Just verify it's a valid PNG
                         let png_data = std::fs::read(&cache_path).unwrap();
                         assert!(png_data.len() >= 8);
-                        assert_eq!(&png_data[0..8], b"\x89PNG\r\n\x1a\n", "Not a valid PNG file");
+                        assert_eq!(
+                            &png_data[0..8],
+                            b"\x89PNG\r\n\x1a\n",
+                            "Not a valid PNG file"
+                        );
                     }
                 }
             }
