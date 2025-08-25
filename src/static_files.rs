@@ -10,14 +10,14 @@ use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct StaticFileHandler {
-    pub static_dir: PathBuf,
+    pub static_dirs: Vec<PathBuf>,
     file_versions: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl StaticFileHandler {
-    pub fn new(static_dir: PathBuf) -> Self {
+    pub fn new(static_dirs: Vec<PathBuf>) -> Self {
         let handler = Self {
-            static_dir,
+            static_dirs,
             file_versions: Arc::new(RwLock::new(HashMap::new())),
         };
 
@@ -31,26 +31,34 @@ impl StaticFileHandler {
     }
 
     pub async fn refresh_file_versions(&self) {
-        info!("Refreshing static file versions");
+        info!("Refreshing static file versions from {} directories", self.static_dirs.len());
         let mut versions = self.file_versions.write().await;
         versions.clear();
 
-        // Scan CSS and JS files
-        if let Ok(entries) = std::fs::read_dir(&self.static_dir) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata()
-                    && metadata.is_file()
-                {
-                    let path = entry.path();
-                    if let Some(ext) = path.extension()
-                        && (ext == "css" || ext == "js")
-                        && let Ok(modified) = metadata.modified()
-                        && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
-                        && let Some(file_name) = path.file_name()
-                        && let Some(file_name_str) = file_name.to_str()
+        // Scan CSS and JS files from all directories
+        // Files in earlier directories override files in later directories
+        for (index, static_dir) in self.static_dirs.iter().enumerate() {
+            debug!("Scanning static directory {}: {:?}", index, static_dir);
+            
+            if let Ok(entries) = std::fs::read_dir(static_dir) {
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_file()
                     {
-                        versions.insert(file_name_str.to_string(), duration.as_secs());
-                        info!("File version: {} -> {}", file_name_str, duration.as_secs());
+                        let path = entry.path();
+                        if let Some(ext) = path.extension()
+                            && (ext == "css" || ext == "js")
+                            && let Ok(modified) = metadata.modified()
+                            && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
+                            && let Some(file_name) = path.file_name()
+                            && let Some(file_name_str) = file_name.to_str()
+                        {
+                            // Only insert if not already present (earlier directories take precedence)
+                            if !versions.contains_key(file_name_str) {
+                                versions.insert(file_name_str.to_string(), duration.as_secs());
+                                info!("File version: {} -> {} (from dir {})", file_name_str, duration.as_secs(), index);
+                            }
+                        }
                     }
                 }
             }
@@ -79,19 +87,43 @@ impl StaticFileHandler {
     }
 
     pub async fn serve(&self, path: &str, has_version: bool) -> Response {
-        let file_path = self.static_dir.join(path.trim_start_matches('/'));
-
-        debug!("Attempting to serve static file: {:?}", file_path);
-
-        if !file_path.starts_with(&self.static_dir) {
-            error!("Path traversal attempt: {:?}", file_path);
-            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+        let clean_path = path.trim_start_matches('/');
+        
+        // Try each directory in order until we find the file
+        let mut found_file_path = None;
+        let mut found_metadata = None;
+        
+        for (index, static_dir) in self.static_dirs.iter().enumerate() {
+            let file_path = static_dir.join(clean_path);
+            
+            debug!("Attempting to serve static file from directory {}: {:?}", index, file_path);
+            
+            // Security check: ensure the resolved path is within the static directory
+            if !file_path.starts_with(static_dir) {
+                error!("Path traversal attempt in directory {}: {:?}", index, file_path);
+                continue;
+            }
+            
+            match tokio::fs::metadata(&file_path).await {
+                Ok(m) if m.is_file() => {
+                    found_file_path = Some(file_path);
+                    found_metadata = Some(m);
+                    debug!("Found file in directory {}", index);
+                    break;
+                }
+                Ok(_) => {
+                    debug!("Path exists but is not a file in directory {}: {:?}", index, file_path);
+                }
+                Err(e) => {
+                    debug!("File not found in directory {}: {:?} - {}", index, file_path, e);
+                }
+            }
         }
-
-        let metadata = match tokio::fs::metadata(&file_path).await {
-            Ok(m) => m,
-            Err(e) => {
-                debug!("Failed to get metadata for {:?}: {}", file_path, e);
+        
+        let (file_path, metadata) = match (found_file_path, found_metadata) {
+            (Some(path), Some(meta)) => (path, meta),
+            _ => {
+                debug!("File not found in any static directory: {}", clean_path);
                 return (StatusCode::NOT_FOUND, "File not found").into_response();
             }
         };

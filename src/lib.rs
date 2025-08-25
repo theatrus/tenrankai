@@ -55,7 +55,65 @@ pub struct TemplateConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StaticConfig {
-    pub directory: PathBuf,
+    #[serde(
+        deserialize_with = "deserialize_static_directories",
+        serialize_with = "serialize_static_directories"
+    )]
+    pub directories: Vec<PathBuf>,
+}
+
+fn deserialize_static_directories<'de, D>(deserializer: D) -> Result<Vec<PathBuf>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    
+    struct StaticDirectoriesVisitor;
+    
+    impl<'de> Visitor<'de> for StaticDirectoriesVisitor {
+        type Value = Vec<PathBuf>;
+        
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a path string or an array of path strings")
+        }
+        
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(vec![PathBuf::from(value)])
+        }
+        
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut dirs = Vec::new();
+            while let Some(dir) = seq.next_element::<String>()? {
+                dirs.push(PathBuf::from(dir));
+            }
+            Ok(dirs)
+        }
+    }
+    
+    deserializer.deserialize_any(StaticDirectoriesVisitor)
+}
+
+fn serialize_static_directories<S>(dirs: &Vec<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeSeq;
+    
+    if dirs.len() == 1 {
+        serializer.serialize_str(dirs[0].to_str().unwrap_or(""))
+    } else {
+        let mut seq = serializer.serialize_seq(Some(dirs.len()))?;
+        for dir in dirs {
+            seq.serialize_element(dir.to_str().unwrap_or(""))?;
+        }
+        seq.end()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -202,7 +260,7 @@ impl Default for Config {
                 directory: PathBuf::from("templates"),
             },
             static_files: StaticConfig {
-                directory: PathBuf::from("static"),
+                directories: vec![PathBuf::from("static")],
             },
             galleries: Some(vec![GallerySystemConfig {
                 name: "default".to_string(),
@@ -285,7 +343,7 @@ pub async fn create_app(config: Config) -> axum::Router {
     let mut template_engine = templating::TemplateEngine::new(config.templates.directory.clone());
 
     let static_handler =
-        static_files::StaticFileHandler::new(config.static_files.directory.clone());
+        static_files::StaticFileHandler::new(config.static_files.directories.clone());
 
     // Set the static handler on the template engine for cache busting
     template_engine.set_static_handler(static_handler.clone());
@@ -298,7 +356,7 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     let template_engine = Arc::new(template_engine);
 
-    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
+    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directories.clone());
 
     // Initialize galleries
     let mut galleries = HashMap::new();

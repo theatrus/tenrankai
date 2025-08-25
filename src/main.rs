@@ -230,8 +230,8 @@ async fn run_server(
     info!("Configuration loaded from: {:?}", config_path);
     info!("Template directory: {:?}", config.templates.directory);
     info!(
-        "Static files directory: {:?}",
-        config.static_files.directory
+        "Static files directories: {:?}",
+        config.static_files.directories
     );
     if let Some(galleries) = &config.galleries {
         for gallery in galleries {
