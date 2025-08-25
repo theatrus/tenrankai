@@ -57,6 +57,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             pregenerate_cache: false,
             new_threshold_days: Some(7),
             approximate_dates_for_public: false,
+            copyright_holder: None,
         },
         GallerySystemConfig {
             name: "portfolio".to_string(),
@@ -93,6 +94,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
+            copyright_holder: Some("Test Portfolio".to_string()),
         },
     ]);
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+- **Copyright Watermark Configuration**: Moved copyright holder configuration from global `[app]` section to per-gallery basis
+  - Remove `copyright_holder` from `[app]` section in config.toml
+  - Add `copyright_holder` to each `[[galleries]]` section that needs watermarking
+  - This allows different copyright holders for different galleries (e.g., personal vs. portfolio)
+  - Gallery struct no longer requires AppConfig parameter in constructor
+
 ### Added
 - **Cascading Static Directories**: Support for multiple static file directories with precedence ordering
   - Configure multiple directories in `[static_files]` section: `directories = ["static-custom", "static"]`
@@ -24,17 +31,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Biometric authentication support (fingerprint, face recognition, hardware keys)
   - Cross-device passkey synchronization
   - Fallback to email-based login when WebAuthn unavailable
+  - Multiple passkeys per user account
+
+- **User Profile Page**: New centralized account management interface at `/_login/profile`
+  - View username and email address
+  - Manage registered passkeys (remove, view creation dates)
+  - Link to enroll new passkeys
+  - Logout functionality
+  - Accessible from user menu in navigation
+
+- **Gallery Access Control**: Folder-level authentication and user restrictions
+  - `require_auth = true` in `_folder.md` TOML to require authentication
+  - `allowed_users = ["user1", "user2"]` to restrict access to specific users
+  - Hierarchical access control (parent folder restrictions apply to children)
+  - Access control applies to gallery views, previews, image viewing, and API endpoints
+  - Comprehensive checking throughout the gallery pipeline
 
 - **Enhanced Login System**: Improved user experience and security
   - Consolidated JavaScript utilities in `/static/login.js` with cache busting
   - Interstitial passkey enrollment page after email login
   - Return URL functionality to redirect users after successful login
   - Rate limiting protection against brute force attacks
+  - Fixed timing issue with asset_url filter not encoding versions
 
 - **Improved Asset Management**: Better cache busting and static file handling
   - Custom Liquid filter `asset_url` for automatic cache busting
   - Thread-safe file version caching with modification time tracking
   - Support for CSS and JS file versioning across cascading directories
+  - Fixed race condition where template engine loaded before static file versions
 
 ### Changed
 - **TOML Library Migration**: Switched from `toml` crate to `toml_edit` throughout codebase
@@ -42,15 +66,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved error handling for configuration parsing
   - Maintains formatting and comments when saving user database
 
+- **User Database Format**: Simplified TOML serialization using serde directly
+  - Removed complex JSON-to-TOML conversion code (300+ lines reduced to ~10 lines)
+  - Users stored as proper TOML tables: `[users.username]`
+  - Passkeys stored as array of tables: `[[users.username.passkeys]]`
+  - All fields properly serialized as TOML values (not JSON strings)
+  - Clean, human-readable format with proper indentation
+
 - **CSS Architecture Improvements**: Consolidated color definitions and theming
   - Moved hardcoded colors from `login.css` to CSS variables in `style.css`
   - Added comprehensive message color variables for consistent theming
   - Centralized all theme colors in root CSS variables for easier customization
+  - Improved contrast on login pages for better accessibility
+  - Added button disabled states and danger button colors
+
+- **Template Organization**: Restructured login templates for better maintainability
+  - Moved login-related templates to `templates/modules/` directory
+  - Separated inline styles and JavaScript to external files
+  - Fixed LoginUtils availability issues with proper DOMContentLoaded handling
 
 - **Database Operations**: Enhanced thread safety and async support
   - Implemented `Arc<RwLock<T>>` for thread-safe user database operations
   - Improved error handling and logging for database operations
   - Better concurrent access patterns for user management
+
+- **Build System**: Improved cross-platform build support
+  - Windows builds now use vcpkg for OpenSSL installation instead of chocolatey
+  - Re-enabled Windows and macOS builds in CI/CD workflows
+  - Added `OPENSSL_STATIC=1` for better Rust compilation support
+  - Improved build reliability across all platforms
 
 ### Technical Improvements
 - **Testing Coverage**: Added comprehensive integration tests

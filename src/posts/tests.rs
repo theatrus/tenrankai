@@ -288,7 +288,7 @@ Footnote[^1]
     #[tokio::test]
     async fn test_gallery_image_references() {
         use crate::gallery::Gallery;
-        use crate::{AppConfig, GallerySystemConfig, ImageSizeConfig, PreviewConfig};
+        use crate::{GallerySystemConfig, ImageSizeConfig, PreviewConfig};
         use std::collections::HashMap;
         use std::sync::Arc;
 
@@ -358,21 +358,10 @@ Regular markdown image (not a gallery reference):
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
-        };
-
-        let app_config = AppConfig {
-            name: "Test".to_string(),
-            log_level: "info".to_string(),
-            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
-            base_url: None,
-            user_database: None,
         };
 
-        let main_gallery = Arc::new(Gallery::new(
-            main_gallery_config.clone(),
-            app_config.clone(),
-        ));
+        let main_gallery = Arc::new(Gallery::new(main_gallery_config.clone()));
         galleries.insert("main".to_string(), main_gallery);
 
         // Create portfolio gallery
@@ -411,9 +400,10 @@ Regular markdown image (not a gallery reference):
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
+            copyright_holder: None,
         };
 
-        let portfolio_gallery = Arc::new(Gallery::new(portfolio_gallery_config, app_config));
+        let portfolio_gallery = Arc::new(Gallery::new(portfolio_gallery_config));
         galleries.insert("portfolio".to_string(), portfolio_gallery);
 
         // Create posts config

@@ -487,18 +487,10 @@ mod tests {
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
-        };
-
-        let app_config = crate::AppConfig {
-            name: "Test".to_string(),
-            log_level: "info".to_string(),
-            cookie_secret: "test-secret-for-cookies".to_string(),
             copyright_holder: None,
-            base_url: None,
-            user_database: None,
         };
 
-        let gallery = Gallery::new(gallery_config, app_config);
+        let gallery = Gallery::new(gallery_config);
 
         // Test the specific image
         let image_path = PathBuf::from("photos/landscapes/_A7C5795.jpg");

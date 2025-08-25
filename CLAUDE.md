@@ -16,7 +16,7 @@ This is especially useful for verifying startup behavior, testing API endpoints,
 - **Image Processing**: On-the-fly image resizing with caching for thumbnails, gallery, medium, and large sizes
 - **High-DPI Support**: Automatic @2x image generation for retina displays
 - **Metadata Extraction**: EXIF data parsing for camera info, GPS coordinates, and capture dates
-- **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection based on background
+- **Copyright Watermarking**: Per-gallery copyright holder configuration with intelligent watermark placement and automatic text color selection based on background
 - **Performance Optimization**: Metadata caching, image caching, and background refresh
 - **Markdown Support**: Folder descriptions and image captions via markdown files
 - **New Image Highlighting**: Automatic highlighting of recently modified images based on configurable threshold
@@ -232,6 +232,7 @@ webp_quality = 85.0                       # WebP quality (0.0-100.0)
 new_threshold_days = 7                    # Mark images modified within 7 days as "NEW"
 pregenerate_cache = false                 # Pre-generate all image sizes on startup
 approximate_dates_for_public = false      # Show only month/year to non-authenticated users
+copyright_holder = "Your Name"            # Copyright holder for watermarking medium images
 
 [galleries.thumbnail]
 width = 300
@@ -416,6 +417,40 @@ This feature is particularly helpful when implementing new features to verify th
    - Gallery folders can now use TOML front matter similar to posts
    - Folders can be marked as `hidden = true` in TOML config
    - Hidden folders are excluded from listings but remain accessible via direct URL
+
+### WebAuthn/Passkey Support (December 2025)
+1. **Modern Authentication**: Added WebAuthn/Passkey authentication
+   - Biometric authentication (fingerprint, face recognition)
+   - Hardware security key support
+   - Cross-device passkey sync via platform providers
+   - Multiple passkeys per user account
+   - Seamless fallback to email authentication
+
+2. **User Experience Improvements**:
+   - Passkey enrollment flow after email login
+   - Profile page at `/_login/profile` for managing passkeys
+   - Improved login page UI with better contrast
+   - Template reorganization into modules/ directory
+
+### Gallery Access Control (December 2025)
+1. **Folder-Level Access Control**:
+   - `require_auth = true` in _folder.md TOML to require authentication
+   - `allowed_users = ["user1", "user2"]` to restrict access to specific users
+   - Hierarchical access control (parent folder restrictions apply to children)
+   - Access control applies to gallery views, previews, and image serving
+
+### Null Email Provider (December 2025)
+1. **Development-Friendly Email Provider**:
+   - Logs emails to console instead of sending them
+   - Useful for development and testing
+   - Configure with `provider = "null"` in email config
+   - Preserves full email formatting for inspection
+
+### Build System Improvements (December 2025)
+1. **Cross-Platform Build Support**:
+   - Windows builds now use vcpkg for OpenSSL installation
+   - macOS and Windows builds re-enabled in CI/CD
+   - Improved build reliability across platforms
 
 ## Future Improvements
 

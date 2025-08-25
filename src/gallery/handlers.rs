@@ -196,7 +196,7 @@ pub async fn gallery_handler_for_named(
             }
         }).unwrap_or_else(|| "".to_string()),
         "app_name": app_state.config.app.name,
-        "copyright_holder": app_state.config.app.copyright_holder,
+        "copyright_holder": gallery.config.copyright_holder,
         "base_url": app_state.config.app.base_url,
         "og_title": folder_title.clone().unwrap_or_else(|| {
             if is_root {
@@ -374,7 +374,7 @@ pub async fn image_detail_handler_for_named(
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
         "app_name": app_state.config.app.name,
-        "copyright_holder": app_state.config.app.copyright_holder,
+        "copyright_holder": gallery.config.copyright_holder,
         "base_url": app_state.config.app.base_url,
         "og_title": image_info.name,
         "og_description": format!("Photo: {}", image_info.name),
