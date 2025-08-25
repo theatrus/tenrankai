@@ -90,12 +90,61 @@ impl UserDatabase {
     }
 
     pub async fn save_to_file(&self, path: &Path) -> Result<(), std::io::Error> {
-        // Serialize the entire database to toml_edit document
-        let value = toml_edit::ser::to_document(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        // Create a new TOML document with proper formatting
+        let mut doc = toml_edit::DocumentMut::new();
 
-        // Write to file
-        fs::write(path, value.to_string()).await?;
+        // Create the users table
+        let users_table = doc.as_table_mut();
+        users_table.insert("users", toml_edit::Item::Table(toml_edit::Table::new()));
+
+        // Get a mutable reference to the users table
+        if let Some(users) = users_table
+            .get_mut("users")
+            .and_then(|item| item.as_table_mut())
+        {
+            // Add each user as a separate table entry
+            for (username, user) in &self.users {
+                // Create a table for this user
+                let mut user_table = toml_edit::Table::new();
+                user_table.insert("email", toml_edit::value(user.email.clone()));
+
+                // Add passkeys if present
+                if !user.passkeys.is_empty() {
+                    let mut passkeys_array = toml_edit::Array::new();
+
+                    for passkey in &user.passkeys {
+                        // Create a table for the passkey
+                        let mut passkey_table = toml_edit::InlineTable::new();
+                        passkey_table.insert("id", toml_edit::Value::from(passkey.id.to_string()));
+                        passkey_table.insert("name", toml_edit::Value::from(passkey.name.clone()));
+
+                        // Serialize the credential as a JSON string since it's a complex type
+                        let credential_json = serde_json::to_string(&passkey.credential)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                        passkey_table.insert("credential", toml_edit::Value::from(credential_json));
+
+                        passkey_table
+                            .insert("created_at", toml_edit::Value::from(passkey.created_at));
+                        if let Some(last_used) = passkey.last_used_at {
+                            passkey_table.insert("last_used_at", toml_edit::Value::from(last_used));
+                        }
+
+                        passkeys_array.push(toml_edit::Value::InlineTable(passkey_table));
+                    }
+
+                    user_table.insert(
+                        "passkeys",
+                        toml_edit::Item::Value(toml_edit::Value::Array(passkeys_array)),
+                    );
+                }
+
+                // Insert the user table with proper formatting
+                users.insert(username, toml_edit::Item::Table(user_table));
+            }
+        }
+
+        // Write to file with proper formatting
+        fs::write(path, doc.to_string()).await?;
         Ok(())
     }
 
