@@ -67,23 +67,23 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::{self, Visitor};
-    
+
     struct StaticDirectoriesVisitor;
-    
+
     impl<'de> Visitor<'de> for StaticDirectoriesVisitor {
         type Value = Vec<PathBuf>;
-        
+
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
             formatter.write_str("a path string or an array of path strings")
         }
-        
+
         fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
             Ok(vec![PathBuf::from(value)])
         }
-        
+
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
         where
             A: de::SeqAccess<'de>,
@@ -95,7 +95,7 @@ where
             Ok(dirs)
         }
     }
-    
+
     deserializer.deserialize_any(StaticDirectoriesVisitor)
 }
 
@@ -104,7 +104,7 @@ where
     S: serde::Serializer,
 {
     use serde::ser::SerializeSeq;
-    
+
     if dirs.len() == 1 {
         serializer.serialize_str(dirs[0].to_str().unwrap_or(""))
     } else {
@@ -350,7 +350,7 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     // Set whether user auth is enabled
     template_engine.set_has_user_auth(config.app.user_database.is_some());
-    
+
     // Update file versions for the template engine
     template_engine.update_file_versions().await;
 

@@ -15,7 +15,11 @@ pub async fn robots_txt_handler(State(app_state): State<AppState>) -> Response {
             // Serve the custom robots.txt file
             match tokio::fs::read_to_string(&custom_robots_path).await {
                 Ok(content) => {
-                    tracing::debug!("Found robots.txt in directory {}: {:?}", index, custom_robots_path);
+                    tracing::debug!(
+                        "Found robots.txt in directory {}: {:?}",
+                        index,
+                        custom_robots_path
+                    );
                     return (
                         StatusCode::OK,
                         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
@@ -24,7 +28,11 @@ pub async fn robots_txt_handler(State(app_state): State<AppState>) -> Response {
                         .into_response();
                 }
                 Err(e) => {
-                    tracing::error!("Failed to read custom robots.txt from {:?}: {}", custom_robots_path, e);
+                    tracing::error!(
+                        "Failed to read custom robots.txt from {:?}: {}",
+                        custom_robots_path,
+                        e
+                    );
                 }
             }
         }

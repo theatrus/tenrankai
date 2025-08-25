@@ -29,8 +29,7 @@ fn get_return_url_from_cookies(headers: &HeaderMap) -> Option<String> {
                 .map(|c| c.trim())
                 .find(|c| c.starts_with("return_url="))
                 .and_then(|c| c.strip_prefix("return_url="))
-                .map(|v| urlencoding::decode(v).ok())
-                .flatten()
+                .and_then(|v| urlencoding::decode(v).ok())
                 .map(|s| s.into_owned())
         })
 }

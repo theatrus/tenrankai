@@ -56,7 +56,10 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
     // Check static files directories
     for (index, static_dir) in config.static_files.directories.iter().enumerate() {
         if !static_dir.exists() {
-            warn!("Static files directory {} does not exist: {:?}", index, static_dir);
+            warn!(
+                "Static files directory {} does not exist: {:?}",
+                index, static_dir
+            );
             if index == 0 {
                 // Only error if the first directory doesn't exist
                 errors.push(StartupCheckError::StaticDirectoryMissing);

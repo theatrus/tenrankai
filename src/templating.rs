@@ -28,9 +28,13 @@ impl std::fmt::Display for AssetUrlFilter {
 }
 
 impl Filter for AssetUrlFilter {
-    fn evaluate(&self, input: &dyn ValueView, _runtime: &dyn Runtime) -> liquid_core::Result<Value> {
+    fn evaluate(
+        &self,
+        input: &dyn ValueView,
+        _runtime: &dyn Runtime,
+    ) -> liquid_core::Result<Value> {
         let path = input.to_kstr().to_string();
-        
+
         // Normalize the path
         let normalized_path = if path.starts_with("/static/") {
             path.clone()
@@ -39,17 +43,16 @@ impl Filter for AssetUrlFilter {
         } else {
             format!("/static/{}", path)
         };
-        
+
         // Extract filename for version lookup
         let filename = normalized_path.rsplit('/').next().unwrap_or(&path);
-        
+
         // Try to get version from cached versions (blocking read)
-        if let Ok(versions) = self.file_versions.try_read() {
-            if let Some(&version) = versions.get(filename) {
+        if let Ok(versions) = self.file_versions.try_read()
+            && let Some(&version) = versions.get(filename) {
                 return Ok(Value::scalar(format!("{}?v={}", normalized_path, version)));
             }
-        }
-        
+
         // No version found, return plain URL
         Ok(Value::scalar(normalized_path))
     }
@@ -77,8 +80,11 @@ impl ParseFilter for AssetUrlFilter {
     fn reflection(&self) -> &dyn FilterReflection {
         self
     }
-    
-    fn parse(&self, _arguments: liquid_core::parser::FilterArguments) -> liquid_core::Result<Box<dyn Filter>> {
+
+    fn parse(
+        &self,
+        _arguments: liquid_core::parser::FilterArguments,
+    ) -> liquid_core::Result<Box<dyn Filter>> {
         Ok(Box::new(self.clone()))
     }
 }
@@ -111,34 +117,36 @@ impl TemplateEngine {
         debug!("Setting static handler on template engine");
         self.static_handler = Some(handler);
     }
-    
+
     pub async fn update_file_versions(&self) {
         if let Some(ref handler) = self.static_handler {
             // Get all file versions from the static handler
             let all_versions = handler.get_all_versions().await;
             let mut versions = self.file_versions.write().await;
             *versions = all_versions;
-            debug!("Updated template engine with {} file versions", versions.len());
+            debug!(
+                "Updated template engine with {} file versions",
+                versions.len()
+            );
         }
     }
 
     pub fn set_has_user_auth(&mut self, has_auth: bool) {
         self.has_user_auth = has_auth;
     }
-    
+
     fn create_parser_with_filters(
         &self,
         partials: liquid::partials::EagerCompiler<liquid::partials::InMemorySource>,
     ) -> Result<Parser, String> {
         let asset_filter = AssetUrlFilter::new(self.file_versions.clone());
-        
+
         liquid::ParserBuilder::with_stdlib()
             .partials(partials)
             .filter(asset_filter)
             .build()
             .map_err(|e| format!("Failed to create parser: {}", e))
     }
-
 
     async fn load_template(&self, path: &str) -> Result<String, String> {
         let template_path = self.template_dir.join(path);
@@ -216,7 +224,10 @@ impl TemplateEngine {
         mut globals: liquid::Object,
     ) -> Result<String, String> {
         debug!("render_template called for: {}", template_name);
-        debug!("static_handler available: {}", self.static_handler.is_some());
+        debug!(
+            "static_handler available: {}",
+            self.static_handler.is_some()
+        );
         // Add current year to globals for footer
         let current_year = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -235,7 +246,6 @@ impl TemplateEngine {
             "has_user_auth".into(),
             liquid::model::Value::scalar(self.has_user_auth),
         );
-
 
         // Load common partials first (before loading main template)
         let header_content = self
@@ -333,10 +343,11 @@ pub async fn template_with_gallery_handler(
         // Check each static directory in order
         for (index, static_dir) in app_state.static_handler.static_dirs.iter().enumerate() {
             let static_file_path = static_dir.join(check_path);
-            if static_file_path.exists()
-                && static_file_path.starts_with(static_dir)
-            {
-                debug!("Found static file for path: {} in directory {}, serving it", path, index);
+            if static_file_path.exists() && static_file_path.starts_with(static_dir) {
+                debug!(
+                    "Found static file for path: {} in directory {}, serving it",
+                    path, index
+                );
                 // Pass the path without the "static/" prefix to the serve method
                 // Templates don't have version parameters, so pass false
                 return app_state.static_handler.serve(check_path, false).await;
@@ -381,7 +392,10 @@ mod tests {
         // Test with just filename
         let input = model::Value::scalar("style.css");
         let result = filter.evaluate(&input, &runtime).unwrap();
-        assert_eq!(result, model::Value::scalar("/static/style.css?v=123456789"));
+        assert_eq!(
+            result,
+            model::Value::scalar("/static/style.css?v=123456789")
+        );
 
         // Test with static/ prefix
         let input = model::Value::scalar("static/login.js");
@@ -416,7 +430,7 @@ mod tests {
     async fn test_template_with_asset_url_filter() {
         // Create a template engine with file versions
         let mut template_engine = TemplateEngine::new(PathBuf::from("templates"));
-        
+
         // Set up file versions
         let file_versions = Arc::new(RwLock::new(HashMap::new()));
         {
@@ -427,8 +441,11 @@ mod tests {
         template_engine.file_versions = file_versions;
 
         // Create a parser with the filter
-        let partials = liquid::partials::EagerCompiler::new(liquid::partials::InMemorySource::new());
-        let parser = template_engine.create_parser_with_filters(partials).unwrap();
+        let partials =
+            liquid::partials::EagerCompiler::new(liquid::partials::InMemorySource::new());
+        let parser = template_engine
+            .create_parser_with_filters(partials)
+            .unwrap();
 
         // Test CSS filter
         let template = parser.parse("{{ 'test.css' | asset_url }}").unwrap();
@@ -441,13 +458,19 @@ mod tests {
         assert_eq!(output, "/static/test.js?v=222222222");
 
         // Test multiple filters in one template
-        let template = parser.parse(r#"<link href="{{ 'test.css' | asset_url }}">
-<script src="{{ 'test.js' | asset_url }}"></script>"#).unwrap();
+        let template = parser
+            .parse(
+                r#"<link href="{{ 'test.css' | asset_url }}">
+<script src="{{ 'test.js' | asset_url }}"></script>"#,
+            )
+            .unwrap();
         let output = template.render(&liquid::object!({})).unwrap();
-        assert_eq!(output, r#"<link href="/static/test.css?v=111111111">
-<script src="/static/test.js?v=222222222"></script>"#);
+        assert_eq!(
+            output,
+            r#"<link href="/static/test.css?v=111111111">
+<script src="/static/test.js?v=222222222"></script>"#
+        );
     }
-
 }
 
 #[cfg(test)]

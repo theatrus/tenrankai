@@ -470,7 +470,7 @@ email = "user2@example.com"
             passkeys: vec![],
         };
 
-        assert_eq!(user.has_passkeys(), false);
+        assert!(!user.has_passkeys());
 
         // We can't easily test passkey operations without mock WebAuthn types
         // but we can test the basic structure

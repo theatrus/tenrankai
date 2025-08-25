@@ -20,9 +20,7 @@ pub type DynEmailProvider = Arc<dyn EmailProvider>;
 
 pub async fn create_provider(config: &EmailProviderConfig) -> Result<DynEmailProvider, EmailError> {
     match config {
-        EmailProviderConfig::Null => Ok(Arc::new(
-            providers::null::NullProvider::new(),
-        )),
+        EmailProviderConfig::Null => Ok(Arc::new(providers::null::NullProvider::new())),
         EmailProviderConfig::Ses(ses_config) => Ok(Arc::new(
             providers::ses::SesProvider::new(ses_config).await?,
         )),

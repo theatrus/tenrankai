@@ -141,7 +141,12 @@ impl FaviconRenderer {
                     return Ok(content);
                 }
                 Err(e) => {
-                    tracing::debug!("favicon.svg not found in directory {}: {:?} - {}", index, svg_path, e);
+                    tracing::debug!(
+                        "favicon.svg not found in directory {}: {:?} - {}",
+                        index,
+                        svg_path,
+                        e
+                    );
                 }
             }
         }
