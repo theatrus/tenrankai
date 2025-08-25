@@ -31,7 +31,9 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Dark Theme Code Blocks**: Optimized code block styling for readability in dark theme
 - **Email-based Authentication**: Secure passwordless login system with email verification links
 - **User Authentication**: Optional user authentication system with rate limiting
-- **Email Provider Support**: Pluggable email provider system with Amazon SES support
+- **Email Provider Support**: Pluggable email provider system with Amazon SES and null providers
+- **Cascading Static Files**: Support for multiple static directories with file overlay precedence
+- **WebAuthn/Passkey Support**: Modern passwordless authentication with biometric login
 
 ## Installation
 
@@ -85,11 +87,20 @@ images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
 
+[templates]
+directory = "templates"
+
+[static_files]
+# Single directory (backward compatible)
+directories = "static"
+# OR multiple directories with precedence (first overrides later)
+# directories = ["static-custom", "static"]
+
 # Email configuration (required for login emails)
 [email]
 from_address = "noreply@yourdomain.com"
 from_name = "My Gallery"
-provider = "ses"
+provider = "ses"  # Options: "ses" for production, "null" for development
 region = "us-east-1"
 # Optional: specify AWS credentials (otherwise uses AWS SDK default chain)
 # access_key_id = "your-access-key"
@@ -112,15 +123,24 @@ region = "us-east-1"
 - `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")
 - `image_detail_template`: Custom template for image detail pages (default: "modules/image_detail.html.liquid")
 
+**Static Files Configuration:**
+- `directories`: Static file directories (string or array)
+  - Single directory: `directories = "static"`
+  - Multiple directories: `directories = ["static-custom", "static"]`
+  - Files in earlier directories override files in later directories
+
 **Email Configuration:**
 - `from_address`: Email address to send from (required)
 - `from_name`: Display name for the sender (optional)
 - `reply_to`: Reply-to address (optional)
-- `provider`: Email provider to use (currently only "ses" supported)
+- `provider`: Email provider to use ("ses" or "null")
 - **Amazon SES Options:**
   - `region`: AWS region where SES is configured (optional, uses SDK default)
   - `access_key_id`: AWS access key (optional, uses SDK default chain)
   - `secret_access_key`: AWS secret key (optional, uses SDK default chain)
+- **Null Provider Options:**
+  - For development/testing: logs emails instead of sending them
+  - No additional configuration required
 
 ## Usage
 
@@ -294,7 +314,7 @@ This ensures accurate color reproduction across all devices and browsers that su
 
 ## Authentication
 
-Tenrankai uses an email-based authentication system for secure access:
+Tenrankai supports both email-based and WebAuthn/Passkey authentication for secure access:
 
 1. **User Management**: Users are managed via a TOML file (`users.toml`)
    - Copy `users.toml.example` to `users.toml`
@@ -324,7 +344,36 @@ Tenrankai uses an email-based authentication system for secure access:
    cargo run -- user update --username alice --email newemail@example.com
    ```
 
-**Email Configuration**: To send login emails, configure an email provider in your `config.toml`. Without email configuration, login URLs will be logged to the server console.
+### WebAuthn/Passkey Authentication
+
+Tenrankai supports modern WebAuthn/Passkey authentication for passwordless login:
+
+**Prerequisites for WebAuthn**:
+- Configure `base_url` in your `config.toml` (required for WebAuthn to work)
+- HTTPS connection (required by WebAuthn specification, except for localhost)
+
+**Features**:
+- **Biometric Authentication**: Fingerprint, face recognition, or hardware security keys
+- **Cross-Device Sync**: Passkeys sync across devices via platform providers (iCloud, Google, etc.)
+- **Fallback Support**: Email-based login remains available when WebAuthn is unavailable
+- **Multiple Passkeys**: Users can register multiple passkeys per account
+
+**Passkey Management**:
+- After email login, users are prompted to enroll a passkey for faster future logins
+- Users can manage their passkeys at `/_login/passkeys`
+- Passkeys can be renamed and deleted through the web interface
+
+**Login Flow with WebAuthn**:
+1. User visits `/_login` and enters their username
+2. If passkeys are available, user can choose passkey authentication or email fallback
+3. For passkey login: Browser prompts for biometric/hardware authentication
+4. For email login: Traditional email link is sent
+5. After successful email login, user is offered passkey enrollment
+
+**Email Configuration**: Configure an email provider in your `config.toml`:
+- **Production**: Use `provider = "ses"` with Amazon SES for reliable email delivery
+- **Development/Testing**: Use `provider = "null"` to log emails to console instead of sending them
+- **No Configuration**: Without email configuration, login URLs will be logged to the server console
 
 ### Running Without Authentication
 
@@ -358,6 +407,21 @@ This is useful for:
 - `GET /_login/verify?token={token}` - Verify login token
 - `GET /_login/logout` - Logout and clear session
 - `GET /api/verify` - Check authentication status (JSON)
+
+### WebAuthn/Passkey Endpoints
+- `GET /_login/passkeys` - Passkey management page
+- `GET /_login/passkey-enrollment` - Passkey enrollment page (post-login)
+- `POST /api/webauthn/check-passkeys` - Check if user has registered passkeys
+- `POST /api/webauthn/register/start` - Start passkey registration
+- `POST /api/webauthn/register/finish/{reg_id}` - Complete passkey registration
+- `POST /api/webauthn/authenticate/start` - Start passkey authentication
+- `POST /api/webauthn/authenticate/finish/{auth_id}` - Complete passkey authentication
+- `GET /api/webauthn/passkeys` - List user's registered passkeys
+- `DELETE /api/webauthn/passkeys/{passkey_id}` - Delete a passkey
+- `PUT /api/webauthn/passkeys/{passkey_id}/name` - Rename a passkey
+
+### Utility Endpoints
+- `POST /api/refresh-static-versions` - Refresh static file version cache (authenticated)
 
 ## Performance
 
@@ -395,11 +459,40 @@ All templates use the Liquid templating language and support includes for reusab
 
 ## Static Files
 
-Place the following in the `static` directory:
+Tenrankai supports cascading static directories, allowing you to overlay custom files over default ones:
+
+### Configuration
+
+```toml
+[static_files]
+# Single directory (backward compatible)
+directories = "static"
+
+# OR multiple directories with precedence
+directories = ["static-custom", "static-default"]
+```
+
+### File Precedence
+
+When multiple directories are configured:
+- Files in earlier directories take precedence over files in later directories
+- If `logo.png` exists in both `static-custom` and `static-default`, the one from `static-custom` is served
+- Files unique to any directory are accessible normally
+- Useful for:
+  - Custom themes that override default assets
+  - Environment-specific configurations
+  - Gradual migrations between asset sets
+
+### Required Files
+
+Place the following in one of your static directories:
 
 - `DejaVuSans.ttf` - Required for copyright watermarking
+- `favicon.svg` - Used to generate favicon.ico and PNG variants (optional)
 - `robots.txt` - Custom robots file (optional, defaults provided)
 - Any other static assets referenced in templates
+
+The system will search all configured directories in order to find these files.
 
 ## Logging
 
@@ -413,15 +506,48 @@ cargo run -- --log-level trace
 
 ## Development
 
-Tenrankai is under active development. Some features are planned but not yet implemented:
+Tenrankai is under active development with a comprehensive codebase and documentation.
+
+### Documentation
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Development setup, code organization, and contribution guidelines
+- **[API.md](API.md)**: Complete API reference with examples
+- **[CHANGELOG.md](CHANGELOG.md)**: Detailed changelog of recent improvements
+- **[README.md](README.md)**: This file - user guide and configuration reference
+
+### Recent Major Features
+
+- ✅ **WebAuthn/Passkey Authentication**: Biometric and hardware key login support
+- ✅ **Cascading Static Directories**: Multi-directory asset management with precedence
+- ✅ **Null Email Provider**: Development-friendly email logging
+- ✅ **Enhanced Asset Management**: Cache busting with automatic versioning
+- ✅ **Improved Authentication Flow**: Return URL support and passkey enrollment
+
+### Planned Features
+
 - Additional email providers (SendGrid, SMTP, etc.)
 - Full-text search across galleries and posts
-- Video file support
-- Tag-based filtering
-- User roles and permissions
-- Two-factor authentication
+- Video file support with thumbnail generation
+- Tag-based filtering and organization
+- User roles and permissions system
+- Gallery-specific access controls
 
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+### Contributing
+
+Contributions are welcome! Please:
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
+2. Check existing issues or create new ones for bugs/features
+3. Follow the established code style and testing practices
+4. Submit pull requests with clear descriptions
+
+### Architecture Highlights
+
+- **Async Rust**: Built on Tokio with Axum web framework
+- **Thread-Safe Operations**: Arc<RwLock<T>> for concurrent access
+- **Comprehensive Testing**: 60+ unit tests and integration tests
+- **Modular Design**: Clean separation of concerns across modules
+- **Configuration-Driven**: Flexible TOML-based configuration system
 
 ## License
 

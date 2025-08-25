@@ -15,7 +15,10 @@ base_url = "https://your-domain.com"
 directory = "templates"
 
 [static_files]
-directory = "static"
+# Single directory (backward compatible)
+directories = "static"
+# OR multiple directories with precedence (first overrides later)
+# directories = ["static-custom", "static"]
 
 # Optional: Configure email provider for login emails
 # Required when user_database is enabled to send login links via email
@@ -23,9 +26,9 @@ directory = "static"
 # from_address = "noreply@your-domain.com"
 # from_name = "Tenrankai"  # Optional: Name shown in the "From" field
 # reply_to = "support@your-domain.com"  # Optional: Reply-to address
-# provider = "ses"  # Currently only "ses" is supported
+# provider = "ses"  # Options: "ses" for production, "null" for development/testing
 # 
-# # Amazon SES configuration
+# # Amazon SES configuration (when provider = "ses")
 # # Optional: AWS region where SES is configured (defaults to AWS SDK default region)
 # region = "us-east-1"
 # # Optional: Specify AWS credentials explicitly
@@ -35,6 +38,11 @@ directory = "static"
 # # 3. IAM role credentials (for EC2, ECS, Lambda, etc.)
 # # access_key_id = "your-access-key"
 # # secret_access_key = "your-secret-key"
+# 
+# # Null provider configuration (when provider = "null")
+# # - Logs email content to console instead of sending
+# # - Perfect for development and testing
+# # - No additional configuration required
 
 # Configure one or more gallery systems
 # Each gallery has its own source directory, URL prefix, and settings

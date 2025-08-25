@@ -29,6 +29,17 @@
     --bg-button-hover: #666;
     --text-white: white;
 
+    /* Message colors */
+    --message-info-bg: rgba(23, 162, 184, 0.1);
+    --message-info-color: #17a2b8;
+    --message-info-border: rgba(23, 162, 184, 0.3);
+    --message-success-bg: rgba(40, 167, 69, 0.1);
+    --message-success-color: #28a745;
+    --message-success-border: rgba(40, 167, 69, 0.3);
+    --message-error-bg: rgba(220, 53, 69, 0.1);
+    --message-error-color: #dc3545;
+    --message-error-border: rgba(220, 53, 69, 0.3);
+
     /* Code block colors */
     --code-bg: #2d2d2d;
     --code-text: #f8f8f2;
