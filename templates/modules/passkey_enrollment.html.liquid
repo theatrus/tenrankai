@@ -61,45 +61,47 @@
 </div>
 
 <script>
-// Check if WebAuthn is supported
-if (!LoginUtils.isWebAuthnSupported()) {
-    document.getElementById('setupPasskeyBtn').disabled = true;
-    document.getElementById('setupPasskeyBtn').textContent = 'Passkeys not supported';
-    document.querySelector('.setup-note').textContent = 'Your browser does not support passkeys.';
-}
-
-// Handle passkey setup
-document.getElementById('setupPasskeyBtn').addEventListener('click', async function() {
-    const button = this;
-    const redirectUrl = '{{ redirect_url | default: "/gallery" }}';
-    
-    // Hide messages
-    LoginUtils.hideError();
-    LoginUtils.hideSuccess();
-    
-    button.disabled = true;
-    button.textContent = 'Setting up...';
-    
-    try {
-        await LoginUtils.registerPasskey('Passkey');
-        
-        LoginUtils.showSuccess('Passkey set up successfully! Redirecting...');
-        
-        // Redirect after a short delay
-        setTimeout(() => {
-            window.location.href = redirectUrl;
-        }, 1500);
-        
-    } catch (error) {
-        if (error.name === 'NotAllowedError') {
-            LoginUtils.showError('Passkey setup was cancelled or timed out. Please try again.');
-        } else {
-            LoginUtils.showError(error.message || 'Failed to set up passkey. Please try again.');
-        }
-        
-        button.disabled = false;
-        button.textContent = 'Set up passkey';
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if WebAuthn is supported
+    if (!LoginUtils.isWebAuthnSupported()) {
+        document.getElementById('setupPasskeyBtn').disabled = true;
+        document.getElementById('setupPasskeyBtn').textContent = 'Passkeys not supported';
+        document.querySelector('.setup-note').textContent = 'Your browser does not support passkeys.';
     }
+
+    // Handle passkey setup
+    document.getElementById('setupPasskeyBtn').addEventListener('click', async function() {
+        const button = this;
+        const redirectUrl = '{{ redirect_url | default: "/gallery" }}';
+        
+        // Hide messages
+        LoginUtils.hideError();
+        LoginUtils.hideSuccess();
+        
+        button.disabled = true;
+        button.textContent = 'Setting up...';
+        
+        try {
+            await LoginUtils.registerPasskey('Passkey');
+            
+            LoginUtils.showSuccess('Passkey set up successfully! Redirecting...');
+            
+            // Redirect after a short delay
+            setTimeout(() => {
+                window.location.href = redirectUrl;
+            }, 1500);
+            
+        } catch (error) {
+            if (error.name === 'NotAllowedError') {
+                LoginUtils.showError('Passkey setup was cancelled or timed out. Please try again.');
+            } else {
+                LoginUtils.showError(error.message || 'Failed to set up passkey. Please try again.');
+            }
+            
+            button.disabled = false;
+            button.textContent = 'Set up passkey';
+        }
+    });
 });
 </script>
 
