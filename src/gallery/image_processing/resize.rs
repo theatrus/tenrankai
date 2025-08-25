@@ -173,6 +173,7 @@ fn extract_image_info(path: &Path) -> Result<(Option<Vec<u8>>, Option<ImageForma
     let icc_profile = match detected_format {
         Some(ImageFormat::Jpeg) => formats::jpeg::extract_icc_profile(path),
         Some(ImageFormat::Png) => formats::png::extract_icc_profile(path),
+        Some(ImageFormat::Avif) => formats::avif::extract_icc_profile(path),
         _ => None,
     };
 
@@ -239,5 +240,16 @@ fn save_image(
             formats::webp::save_with_profile(image, path, webp_quality, icc_profile)
         }
         OutputFormat::Png => formats::png::save(image, path),
+        OutputFormat::Avif => {
+            // For AVIF, preserve HDR if the source is 16-bit
+            let preserve_hdr = matches!(
+                image,
+                DynamicImage::ImageLuma16(_) | 
+                DynamicImage::ImageLumaA16(_) |
+                DynamicImage::ImageRgb16(_) |
+                DynamicImage::ImageRgba16(_)
+            );
+            formats::avif::save_with_profile(image, path, 85, 6, icc_profile, preserve_hdr)
+        }
     }
 }

@@ -15,7 +15,7 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 flate2 = "1.0"
 rexif = "0.7"
-image = "0.25"
+image = { features = ["avif", "avif-native"], version = "0.25" }
 imageproc = "0.25"
 ab_glyph = "0.2"
 resvg = "0.45"
@@ -23,6 +23,8 @@ usvg = "0.45"
 ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.13"
+libavif = { version = "0.14", features = ["codec-aom"] }
+rgb = "0.8"
 liquid = "0.26"
 liquid-core = "0.26"
 mime_guess = "2.0"

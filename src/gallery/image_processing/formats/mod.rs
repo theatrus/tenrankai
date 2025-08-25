@@ -1,3 +1,4 @@
+pub mod avif;
 pub mod jpeg;
 pub mod png;
 pub mod webp;
@@ -13,8 +14,15 @@ impl Gallery {
             return OutputFormat::Png;
         }
 
-        // For other formats, check if browser accepts WebP
-        if accept_header.contains("image/webp") {
+        // AVIF sources should output as AVIF when supported to preserve HDR
+        if source_path.to_lowercase().ends_with(".avif") && accept_header.contains("image/avif") {
+            return OutputFormat::Avif;
+        }
+
+        // For other formats, check browser support in priority order
+        if accept_header.contains("image/avif") {
+            OutputFormat::Avif
+        } else if accept_header.contains("image/webp") {
             OutputFormat::WebP
         } else {
             OutputFormat::Jpeg

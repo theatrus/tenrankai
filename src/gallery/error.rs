@@ -22,4 +22,7 @@ pub enum GalleryError {
 
     #[error("Access denied")]
     AccessDenied,
+
+    #[error("Processing error: {0}")]
+    ProcessingError(String),
 }

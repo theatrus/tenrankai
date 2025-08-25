@@ -63,6 +63,7 @@ impl Gallery {
             || lower.ends_with(".gif")
             || lower.ends_with(".webp")
             || lower.ends_with(".bmp")
+            || lower.ends_with(".avif")
     }
 
     pub fn source_directory(&self) -> &std::path::Path {
