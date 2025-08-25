@@ -157,6 +157,7 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
             let user = User {
                 username: username.clone(),
                 email: email.trim().to_string(),
+                passkeys: Vec::new(),
             };
 
             db.add_user(user);

@@ -250,6 +250,7 @@ pub struct AppState {
     pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
     pub login_state: Arc<tokio::sync::RwLock<login::LoginState>>,
     pub email_provider: Option<email::DynEmailProvider>,
+    pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub config: Config,
 }
 
@@ -370,6 +371,22 @@ pub async fn create_app(config: Config) -> axum::Router {
     } else {
         None
     };
+    
+    // Initialize WebAuthn if base_url is configured
+    let webauthn = if config.app.base_url.is_some() {
+        match login::webauthn::create_webauthn(&config) {
+            Ok(wa) => {
+                info!("WebAuthn initialized");
+                Some(wa)
+            }
+            Err(e) => {
+                error!("Failed to initialize WebAuthn: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let app_state = AppState {
         template_engine,
@@ -379,6 +396,7 @@ pub async fn create_app(config: Config) -> axum::Router {
         posts_managers: posts_managers_arc.clone(),
         login_state,
         email_provider,
+        webauthn,
         config: config.clone(),
     };
 
@@ -416,11 +434,24 @@ pub async fn create_app(config: Config) -> axum::Router {
             .route("/_login/request", axum::routing::post(login::login_request))
             .route("/_login/verify", axum::routing::get(login::verify_login))
             .route("/_login/logout", axum::routing::get(login::logout))
+            .route("/_login/passkeys", axum::routing::get(templating::template_with_gallery_handler))
             .route("/api/verify", axum::routing::get(login::check_auth_status))
             .route(
                 "/api/refresh-static-versions",
                 axum::routing::post(api::refresh_static_versions),
             );
+            
+        // Add WebAuthn routes if available
+        if app_state.webauthn.is_some() {
+            router = router
+                .route("/api/webauthn/register/start", axum::routing::post(login::webauthn::start_passkey_registration))
+                .route("/api/webauthn/register/finish/{reg_id}", axum::routing::post(login::webauthn::finish_passkey_registration))
+                .route("/api/webauthn/authenticate/start", axum::routing::post(login::webauthn::start_passkey_authentication))
+                .route("/api/webauthn/authenticate/finish/{auth_id}", axum::routing::post(login::webauthn::finish_passkey_authentication))
+                .route("/api/webauthn/passkeys", axum::routing::get(login::webauthn::list_passkeys))
+                .route("/api/webauthn/passkeys/{passkey_id}", axum::routing::delete(login::webauthn::delete_passkey))
+                .route("/api/webauthn/passkeys/{passkey_id}/name", axum::routing::put(login::webauthn::update_passkey_name));
+        }
     }
 
     // Add gallery routes dynamically based on configuration

@@ -8,7 +8,7 @@
         <h1>Login</h1>
         
         <div id="loginFormContainer">
-            <p>Enter your username or email address to receive a login link.</p>
+            <p>Enter your username or email address to sign in.</p>
             
             <form id="loginForm">
                 <div class="form-group">
@@ -16,8 +16,15 @@
                     <input type="text" id="username" name="username" placeholder="username or email@example.com" required autofocus>
                 </div>
                 
-                <button type="submit" class="btn-primary">Send Login Link</button>
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">Send Login Link</button>
+                    <button type="button" id="passkeyButton" class="btn-secondary" style="display: none;">Sign in with Passkey</button>
+                </div>
             </form>
+            
+            <div id="passkeyNotSupported" class="message info" style="display: none; margin-top: 10px;">
+                <small>Passkeys are not supported in your browser.</small>
+            </div>
         </div>
         
         <div id="successContainer" style="display: none;">
@@ -31,8 +38,109 @@
     </div>
 </div>
 
-
 <script>
+// Check WebAuthn support and if user has passkeys
+async function checkPasskeySupport() {
+    const passkeyButton = document.getElementById('passkeyButton');
+    const passkeyNotSupported = document.getElementById('passkeyNotSupported');
+    
+    // Check if WebAuthn is supported
+    if (!window.PublicKeyCredential) {
+        passkeyNotSupported.style.display = 'block';
+        return;
+    }
+    
+    // Show passkey button for all users - they can check if they have one when they click
+    passkeyButton.style.display = 'inline-block';
+}
+
+// Handle passkey authentication
+async function authenticateWithPasskey() {
+    const username = document.getElementById('username').value.trim();
+    const errorDiv = document.getElementById('errorMessage');
+    const passkeyButton = document.getElementById('passkeyButton');
+    
+    if (!username) {
+        errorDiv.textContent = 'Please enter a username or email address';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    
+    passkeyButton.disabled = true;
+    passkeyButton.textContent = 'Authenticating...';
+    errorDiv.style.display = 'none';
+    
+    try {
+        // Start passkey authentication
+        const startResponse = await fetch('/api/webauthn/authenticate/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username: username })
+        });
+        
+        if (!startResponse.ok) {
+            if (startResponse.status === 404) {
+                throw new Error('No passkeys found for this account. Please use email login or register a passkey after logging in.');
+            }
+            throw new Error('Failed to start authentication');
+        }
+        
+        const options = await startResponse.json();
+        
+        // Convert challenge from base64
+        options.challenge = base64ToArrayBuffer(options.challenge);
+        
+        // Convert allowCredentials
+        if (options.allowCredentials) {
+            options.allowCredentials = options.allowCredentials.map(cred => ({
+                ...cred,
+                id: base64ToArrayBuffer(cred.id)
+            }));
+        }
+        
+        // Get credential
+        const credential = await navigator.credentials.get({
+            publicKey: options
+        });
+        
+        // Send authentication response
+        const finishResponse = await fetch(`/api/webauthn/authenticate/finish/${options.auth_id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                id: credential.id,
+                rawId: arrayBufferToBase64(credential.rawId),
+                response: {
+                    authenticatorData: arrayBufferToBase64(credential.response.authenticatorData),
+                    clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                    signature: arrayBufferToBase64(credential.response.signature),
+                    userHandle: credential.response.userHandle ? arrayBufferToBase64(credential.response.userHandle) : null
+                },
+                type: credential.type
+            })
+        });
+        
+        if (finishResponse.ok) {
+            // Redirect to gallery on success
+            window.location.href = '/gallery';
+        } else {
+            throw new Error('Authentication failed');
+        }
+        
+    } catch (error) {
+        errorDiv.textContent = error.message || 'Passkey authentication failed. Please try email login.';
+        errorDiv.style.display = 'block';
+    } finally {
+        passkeyButton.disabled = false;
+        passkeyButton.textContent = 'Sign in with Passkey';
+    }
+}
+
+// Handle email login
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -85,6 +193,31 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         submitButton.textContent = 'Send Login Link';
     }
 });
+
+// Passkey button click handler
+document.getElementById('passkeyButton').addEventListener('click', authenticateWithPasskey);
+
+// Utility functions for base64 conversion
+function base64ToArrayBuffer(base64) {
+    const binaryString = window.atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+}
+
+// Check passkey support on page load
+checkPasskeySupport();
 </script>
 
 {% include "_footer.html.liquid" %}

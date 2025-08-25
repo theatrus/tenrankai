@@ -9,6 +9,28 @@ use tokio::sync::RwLock;
 pub struct User {
     pub username: String,
     pub email: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passkeys: Vec<crate::login::webauthn::UserPasskey>,
+}
+
+impl User {
+    pub fn add_passkey(&mut self, passkey: crate::login::webauthn::UserPasskey) {
+        self.passkeys.push(passkey);
+    }
+    
+    pub fn remove_passkey(&mut self, passkey_id: &uuid::Uuid) -> bool {
+        let len_before = self.passkeys.len();
+        self.passkeys.retain(|p| &p.id != passkey_id);
+        self.passkeys.len() < len_before
+    }
+    
+    pub fn get_passkey_mut(&mut self, passkey_id: &uuid::Uuid) -> Option<&mut crate::login::webauthn::UserPasskey> {
+        self.passkeys.iter_mut().find(|p| &p.id == passkey_id)
+    }
+    
+    pub fn has_passkeys(&self) -> bool {
+        !self.passkeys.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -29,9 +51,40 @@ impl UserDatabase {
     }
 
     pub async fn save_to_file(&self, path: &Path) -> Result<(), std::io::Error> {
-        let contents = toml::to_string_pretty(self)
+        // For new files, use regular toml serialization
+        if !path.exists() {
+            let contents = toml::to_string_pretty(self)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            fs::write(path, contents).await?;
+            return Ok(());
+        }
+        
+        // For existing files, use toml_edit to preserve formatting
+        let contents = fs::read_to_string(path).await?;
+        let mut doc = contents.parse::<toml_edit::DocumentMut>()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        fs::write(path, contents).await?;
+        
+        // Update the document with our data
+        if let Some(users_table) = doc.get_mut("users").and_then(|v| v.as_table_mut()) {
+            // Update existing users and add new ones
+            for (username, user) in &self.users {
+                let user_toml = toml::to_string(user)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let user_value: toml_edit::Item = user_toml.parse()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                users_table[username] = user_value;
+            }
+            
+            // Remove users that are no longer in the database
+            let usernames: Vec<String> = users_table.iter().map(|(k, _)| k.to_string()).collect();
+            for username in usernames {
+                if !self.users.contains_key(&username) {
+                    users_table.remove(&username);
+                }
+            }
+        }
+        
+        fs::write(path, doc.to_string()).await?;
         Ok(())
     }
 
@@ -58,6 +111,14 @@ impl UserDatabase {
     pub fn remove_user(&mut self, username: &str) -> Option<User> {
         self.users.remove(username)
     }
+    
+    pub fn get_user_mut(&mut self, username: &str) -> Option<&mut User> {
+        self.users.get_mut(username)
+    }
+    
+    pub fn update_user(&mut self, user: User) {
+        self.users.insert(user.username.clone(), user);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +138,8 @@ pub struct RateLimitEntry {
 pub struct LoginState {
     pub pending_tokens: HashMap<String, LoginToken>,
     pub rate_limits: HashMap<String, RateLimitEntry>,
+    pub pending_registrations: HashMap<String, crate::login::webauthn::PasskeyRegistrationState>,
+    pub pending_authentications: HashMap<String, crate::login::webauthn::PasskeyAuthenticationState>,
 }
 
 impl LoginState {
@@ -124,6 +187,10 @@ impl LoginState {
     pub fn cleanup_expired(&mut self) {
         let now = chrono::Utc::now().timestamp();
         self.pending_tokens.retain(|_, t| t.expires_at > now);
+        
+        // Cleanup WebAuthn states
+        self.pending_registrations.retain(|_, r| r.expires_at > now);
+        self.pending_authentications.retain(|_, a| a.expires_at > now);
 
         // Also cleanup old rate limit entries (older than 1 hour)
         let one_hour_ago = now - 3600;
