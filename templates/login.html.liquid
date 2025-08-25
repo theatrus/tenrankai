@@ -53,11 +53,10 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     const authenticatingContainer = document.getElementById('authenticatingContainer');
     
     // Hide any previous error messages
-    errorDiv.style.display = 'none';
+    LoginUtils.hideError();
     
     if (!username) {
-        errorDiv.textContent = 'Please enter a username or email address';
-        errorDiv.style.display = 'block';
+        LoginUtils.showError('Please enter a username or email address');
         return;
     }
     
@@ -66,47 +65,39 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     
     try {
         // First, check if WebAuthn is supported and if user has passkeys
-        if (window.PublicKeyCredential) {
-            const checkResponse = await fetch('/api/webauthn/check-passkeys', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username: username })
-            });
+        if (LoginUtils.isWebAuthnSupported()) {
+            const { has_passkeys } = await LoginUtils.checkUserHasPasskeys(username);
             
-            if (checkResponse.ok) {
-                const { has_passkeys } = await checkResponse.json();
+            if (has_passkeys) {
+                // User has passkeys, try to authenticate with them
+                LoginUtils.hideElement('loginFormContainer');
+                LoginUtils.showElement('authenticatingContainer');
                 
-                if (has_passkeys) {
-                    // User has passkeys, try to authenticate with them
-                    formContainer.style.display = 'none';
-                    authenticatingContainer.style.display = 'block';
+                try {
+                    await LoginUtils.authenticateWithPasskey(username);
+                    // Success - user will be redirected
+                    const returnUrl = LoginUtils.getReturnUrl();
+                    window.location.href = returnUrl || '/gallery';
+                    return;
+                } catch (passkeyError) {
+                    // Passkey auth failed, continue with email flow
+                    LoginUtils.hideElement('authenticatingContainer');
+                    LoginUtils.showElement('loginFormContainer');
                     
-                    try {
-                        await authenticateWithPasskey(username);
-                        // Success - user will be redirected
-                        return;
-                    } catch (passkeyError) {
-                        // Passkey auth failed, continue with email flow
-                        authenticatingContainer.style.display = 'none';
-                        formContainer.style.display = 'block';
-                        
-                        // Show a brief message about falling back to email
-                        errorDiv.textContent = 'Passkey authentication cancelled. Sending login email instead...';
-                        errorDiv.style.display = 'block';
-                        errorDiv.classList.add('info');
-                        
-                        // Small delay before sending email
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
+                    // Show a brief message about falling back to email
+                    errorDiv.textContent = 'Passkey authentication cancelled. Sending login email instead...';
+                    errorDiv.style.display = 'block';
+                    errorDiv.classList.add('info');
+                    
+                    // Small delay before sending email
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
             }
         }
         
         // Send email login request (either no passkeys or passkey auth failed)
         submitButton.textContent = 'Sending...';
-        errorDiv.style.display = 'none';
+        LoginUtils.hideError();
         errorDiv.classList.remove('info');
         
         const response = await fetch('/_login/request', {
@@ -121,129 +112,24 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         
         if (data.success) {
             // Hide the form and show success message
-            formContainer.style.display = 'none';
-            authenticatingContainer.style.display = 'none';
+            LoginUtils.hideElement('loginFormContainer');
+            LoginUtils.hideElement('authenticatingContainer');
             messageDiv.textContent = data.message;
-            successContainer.style.display = 'block';
+            LoginUtils.showElement('successContainer');
         } else {
             // Show error message below the form
-            errorDiv.textContent = data.message || 'Login failed';
-            errorDiv.style.display = 'block';
+            LoginUtils.showError(data.message || 'Login failed');
         }
         
     } catch (error) {
-        authenticatingContainer.style.display = 'none';
-        formContainer.style.display = 'block';
-        errorDiv.textContent = 'An error occurred. Please try again.';
-        errorDiv.style.display = 'block';
+        LoginUtils.hideElement('authenticatingContainer');
+        LoginUtils.showElement('loginFormContainer');
+        LoginUtils.showError('An error occurred. Please try again.');
     } finally {
         submitButton.disabled = false;
         submitButton.textContent = 'Continue';
     }
 });
-
-// Handle passkey authentication
-async function authenticateWithPasskey(username) {
-    // Start passkey authentication
-    const startResponse = await fetch('/api/webauthn/authenticate/start', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username: username })
-    });
-    
-    if (!startResponse.ok) {
-        throw new Error('Failed to start authentication');
-    }
-    
-    const response = await startResponse.json();
-    
-    // Extract the publicKey options and auth_id
-    const options = response.publicKey || response;
-    const authId = response.auth_id;
-    
-    // Convert challenge from base64
-    options.challenge = base64ToArrayBuffer(options.challenge);
-    
-    // Convert allowCredentials
-    if (options.allowCredentials) {
-        options.allowCredentials = options.allowCredentials.map(cred => ({
-            ...cred,
-            id: base64ToArrayBuffer(cred.id)
-        }));
-    }
-    
-    // Get credential
-    const credential = await navigator.credentials.get({
-        publicKey: options
-    });
-    
-    // Send authentication response
-    const finishResponse = await fetch(`/api/webauthn/authenticate/finish/${authId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            id: credential.id,
-            rawId: arrayBufferToBase64(credential.rawId),
-            response: {
-                authenticatorData: arrayBufferToBase64(credential.response.authenticatorData),
-                clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
-                signature: arrayBufferToBase64(credential.response.signature),
-                userHandle: credential.response.userHandle ? arrayBufferToBase64(credential.response.userHandle) : null
-            },
-            type: credential.type
-        })
-    });
-    
-    if (finishResponse.ok) {
-        // Redirect to return URL or gallery on success
-        const returnUrl = getReturnUrl();
-        window.location.href = returnUrl || '/gallery';
-    } else {
-        throw new Error('Authentication failed');
-    }
-}
-
-// Utility functions for base64 conversion
-function base64ToArrayBuffer(base64) {
-    // Handle URL-safe base64 (convert to standard base64)
-    const standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
-    // Add padding if necessary
-    const padding = standardBase64.length % 4;
-    const paddedBase64 = padding ? standardBase64 + '===='.substring(padding) : standardBase64;
-    
-    const binaryString = window.atob(paddedBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
-}
-
-function arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    // Return URL-safe base64 to match what the server expects
-    return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-// Get return URL from cookie
-function getReturnUrl() {
-    const cookies = document.cookie.split(';');
-    for (let cookie of cookies) {
-        const [name, value] = cookie.trim().split('=');
-        if (name === 'return_url' && value) {
-            return decodeURIComponent(value);
-        }
-    }
-    return null;
-}
 </script>
 
 <style>

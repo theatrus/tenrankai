@@ -50,7 +50,7 @@ impl StaticFileHandler {
                         && let Some(file_name_str) = file_name.to_str()
                     {
                         versions.insert(file_name_str.to_string(), duration.as_secs());
-                        debug!("File version: {} -> {}", file_name_str, duration.as_secs());
+                        info!("File version: {} -> {}", file_name_str, duration.as_secs());
                     }
                 }
             }

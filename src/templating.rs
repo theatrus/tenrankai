@@ -31,6 +31,7 @@ impl TemplateEngine {
     }
 
     pub fn set_static_handler(&mut self, handler: crate::static_files::StaticFileHandler) {
+        debug!("Setting static handler on template engine");
         self.static_handler = Some(handler);
     }
 
@@ -113,6 +114,8 @@ impl TemplateEngine {
         template_name: &str,
         mut globals: liquid::Object,
     ) -> Result<String, String> {
+        debug!("render_template called for: {}", template_name);
+        debug!("static_handler available: {}", self.static_handler.is_some());
         // Add current year to globals for footer
         let current_year = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -134,11 +137,13 @@ impl TemplateEngine {
 
         // Add versioned URLs for common static files
         if let Some(ref static_handler) = self.static_handler {
+            debug!("Static handler is available, processing versioned URLs");
             let style_css_url = static_handler.get_versioned_url("/static/style.css").await;
             globals.insert(
                 "style_css_url".into(),
                 liquid::model::Value::scalar(style_css_url),
             );
+            
 
             // Process page_css array if it exists
             if let Some(page_css_value) = globals.get("page_css")
@@ -166,7 +171,39 @@ impl TemplateEngine {
                     liquid::model::Value::array(versioned_css_files),
                 );
             }
+            
+            // Process page_js files
+            debug!("Checking for page_js in globals...");
+            if let Some(page_js_value) = globals.get("page_js") {
+                debug!("Found page_js in globals");
+                if let Some(js_files) = page_js_value.as_array() {
+                    debug!("Processing page_js files: {} files found", js_files.size());
+                    // First collect file names synchronously
+                    let js_file_names: Vec<String> = (0..js_files.size())
+                    .filter_map(|i| {
+                        js_files
+                            .get(i)
+                            .and_then(|v| v.as_scalar())
+                            .map(|s| format!("/static/{}", s.to_kstr()))
+                    })
+                    .collect();
+
+                // Now process them asynchronously
+                let mut versioned_js_files = Vec::new();
+                for file_path in js_file_names {
+                    let versioned_url = static_handler.get_versioned_url(&file_path).await;
+                    versioned_js_files.push(liquid::model::Value::scalar(versioned_url));
+                }
+
+                    debug!("Setting page_js_versioned with {} files", versioned_js_files.len());
+                    globals.insert(
+                        "page_js_versioned".into(),
+                        liquid::model::Value::array(versioned_js_files),
+                    );
+                }
+            }
         } else {
+            debug!("No static handler available");
             globals.insert(
                 "style_css_url".into(),
                 liquid::model::Value::scalar("/static/style.css"),
@@ -187,6 +224,24 @@ impl TemplateEngine {
                 globals.insert(
                     "page_css_versioned".into(),
                     liquid::model::Value::array(static_css_files),
+                );
+            }
+            
+            // If no static handler, just prepend /static/ to page_js files
+            if let Some(page_js_value) = globals.get("page_js")
+                && let Some(js_files) = page_js_value.as_array()
+            {
+                let static_js_files: Vec<liquid::model::Value> = (0..js_files.size())
+                    .filter_map(|i| {
+                        js_files.get(i).and_then(|v| v.as_scalar()).map(|s| {
+                            liquid::model::Value::scalar(format!("/static/{}", s.to_kstr()))
+                        })
+                    })
+                    .collect();
+
+                globals.insert(
+                    "page_js_versioned".into(),
+                    liquid::model::Value::array(static_js_files),
                 );
             }
         }

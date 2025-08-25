@@ -61,7 +61,7 @@
 
 <script>
 // Check if WebAuthn is supported
-if (!window.PublicKeyCredential) {
+if (!LoginUtils.isWebAuthnSupported()) {
     document.getElementById('setupPasskeyBtn').disabled = true;
     document.getElementById('setupPasskeyBtn').textContent = 'Passkeys not supported';
     document.querySelector('.setup-note').textContent = 'Your browser does not support passkeys.';
@@ -70,149 +70,36 @@ if (!window.PublicKeyCredential) {
 // Handle passkey setup
 document.getElementById('setupPasskeyBtn').addEventListener('click', async function() {
     const button = this;
-    const errorDiv = document.getElementById('errorMessage');
-    const successDiv = document.getElementById('successMessage');
     const redirectUrl = '{{ redirect_url | default: "/gallery" }}';
     
     // Hide messages
-    errorDiv.style.display = 'none';
-    successDiv.style.display = 'none';
+    LoginUtils.hideError();
+    LoginUtils.hideSuccess();
     
     button.disabled = true;
     button.textContent = 'Setting up...';
     
     try {
-        // Start registration
-        const startResponse = await fetch('/api/webauthn/register/start', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ name: 'Passkey' })
-        });
+        await LoginUtils.registerPasskey('Passkey');
         
-        if (!startResponse.ok) {
-            if (startResponse.status === 401) {
-                throw new Error('Your session has expired. Please sign in again.');
-            }
-            const errorText = await startResponse.text();
-            console.error('Passkey registration start failed:', startResponse.status, errorText);
-            throw new Error('Failed to start passkey setup: ' + errorText);
-        }
+        LoginUtils.showSuccess('Passkey set up successfully! Redirecting...');
         
-        const response = await startResponse.json();
-        console.log('Raw response from server:', JSON.stringify(response, null, 2));
-        
-        // Extract the publicKey options and reg_id
-        const options = response.publicKey || response;
-        const regId = response.reg_id;
-        
-        console.log('Extracted options:', JSON.stringify(options, null, 2));
-        console.log('Registration ID:', regId);
-        
-        // Convert challenge and user.id from base64
-        console.log('Challenge before conversion:', options.challenge);
-        console.log('User ID before conversion:', options.user?.id);
-        
-        options.challenge = base64ToArrayBuffer(options.challenge);
-        options.user.id = base64ToArrayBuffer(options.user.id);
-        
-        console.log('Challenge after conversion:', options.challenge);
-        console.log('User ID after conversion:', options.user.id);
-        
-        // Convert excludeCredentials if present
-        if (options.excludeCredentials) {
-            console.log('Exclude credentials before conversion:', options.excludeCredentials);
-            options.excludeCredentials = options.excludeCredentials.map(cred => ({
-                ...cred,
-                id: base64ToArrayBuffer(cred.id)
-            }));
-            console.log('Exclude credentials after conversion:', options.excludeCredentials);
-        }
-        
-        console.log('Final options being sent to navigator.credentials.create:', options);
-        
-        // Create credential
-        let credential;
-        try {
-            credential = await navigator.credentials.create({
-                publicKey: options
-            });
-        } catch (credError) {
-            console.error('navigator.credentials.create error:', credError);
-            console.error('Error name:', credError.name);
-            console.error('Error message:', credError.message);
-            console.error('Error stack:', credError.stack);
-            throw credError;
-        }
-        
-        // Send registration response
-        const finishResponse = await fetch(`/api/webauthn/register/finish/${regId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                id: credential.id,
-                rawId: arrayBufferToBase64(credential.rawId),
-                response: {
-                    attestationObject: arrayBufferToBase64(credential.response.attestationObject),
-                    clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON)
-                },
-                type: credential.type
-            })
-        });
-        
-        if (finishResponse.ok) {
-            successDiv.textContent = 'Passkey set up successfully! Redirecting...';
-            successDiv.style.display = 'block';
-            
-            // Redirect after a short delay
-            setTimeout(() => {
-                window.location.href = redirectUrl;
-            }, 1500);
-        } else {
-            throw new Error('Failed to complete passkey setup');
-        }
+        // Redirect after a short delay
+        setTimeout(() => {
+            window.location.href = redirectUrl;
+        }, 1500);
         
     } catch (error) {
         if (error.name === 'NotAllowedError') {
-            errorDiv.textContent = 'Passkey setup was cancelled or timed out. Please try again.';
+            LoginUtils.showError('Passkey setup was cancelled or timed out. Please try again.');
         } else {
-            errorDiv.textContent = error.message || 'Failed to set up passkey. Please try again.';
+            LoginUtils.showError(error.message || 'Failed to set up passkey. Please try again.');
         }
-        errorDiv.style.display = 'block';
         
         button.disabled = false;
         button.textContent = 'Set up passkey';
     }
 });
-
-// Utility functions
-function base64ToArrayBuffer(base64) {
-    // Handle URL-safe base64 (convert to standard base64)
-    const standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
-    // Add padding if necessary
-    const padding = standardBase64.length % 4;
-    const paddedBase64 = padding ? standardBase64 + '===='.substring(padding) : standardBase64;
-    
-    const binaryString = window.atob(paddedBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
-}
-
-function arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    // Return URL-safe base64 to match what the server expects
-    return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
 </script>
 
 {% include "_footer.html.liquid" %}
