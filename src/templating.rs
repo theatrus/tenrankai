@@ -49,9 +49,10 @@ impl Filter for AssetUrlFilter {
 
         // Try to get version from cached versions (blocking read)
         if let Ok(versions) = self.file_versions.try_read()
-            && let Some(&version) = versions.get(filename) {
-                return Ok(Value::scalar(format!("{}?v={}", normalized_path, version)));
-            }
+            && let Some(&version) = versions.get(filename)
+        {
+            return Ok(Value::scalar(format!("{}?v={}", normalized_path, version)));
+        }
 
         // No version found, return plain URL
         Ok(Value::scalar(normalized_path))

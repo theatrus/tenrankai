@@ -345,6 +345,9 @@ pub async fn create_app(config: Config) -> axum::Router {
     let static_handler =
         static_files::StaticFileHandler::new(config.static_files.directories.clone());
 
+    // Ensure file versions are loaded before proceeding
+    static_handler.refresh_file_versions().await;
+
     // Set the static handler on the template engine for cache busting
     template_engine.set_static_handler(static_handler.clone());
 
