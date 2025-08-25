@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub mod api;
 pub mod composite;
 pub mod copyright;
+pub mod email;
 pub mod favicon;
 pub mod gallery;
 pub mod login;
@@ -24,6 +25,8 @@ pub struct Config {
     pub galleries: Option<Vec<GallerySystemConfig>>,
     #[serde(default)]
     pub posts: Option<Vec<PostsSystemConfig>>,
+    #[serde(default)]
+    pub email: Option<email::EmailConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -222,6 +225,7 @@ impl Default for Config {
                 approximate_dates_for_public: false,
             }]),
             posts: None,
+            email: None,
         }
     }
 }
@@ -245,6 +249,7 @@ pub struct AppState {
     pub favicon_renderer: favicon::FaviconRenderer,
     pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
     pub login_state: Arc<tokio::sync::RwLock<login::LoginState>>,
+    pub email_provider: Option<email::DynEmailProvider>,
     pub config: Config,
 }
 
@@ -350,6 +355,22 @@ pub async fn create_app(config: Config) -> axum::Router {
         Arc::new(tokio::sync::RwLock::new(login::LoginState::new()))
     };
 
+    // Initialize email provider if configured
+    let email_provider = if let Some(email_config) = &config.email {
+        match email::create_provider(&email_config.provider) {
+            Ok(provider) => {
+                info!("Email provider initialized: {}", provider.name());
+                Some(provider)
+            }
+            Err(e) => {
+                error!("Failed to initialize email provider: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let app_state = AppState {
         template_engine,
         static_handler,
@@ -357,6 +378,7 @@ pub async fn create_app(config: Config) -> axum::Router {
         favicon_renderer,
         posts_managers: posts_managers_arc.clone(),
         login_state,
+        email_provider,
         config: config.clone(),
     };
 

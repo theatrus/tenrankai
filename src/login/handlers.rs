@@ -82,8 +82,49 @@ pub async fn login_request(
             .unwrap_or("http://localhost:8080");
         let login_url = format!("{}/_login/verify?token={}", base_url, token);
 
-        // For now, just log the URL instead of sending email
-        info!("Login URL for {}: {}", user.email, login_url);
+        // Send email if provider is configured, otherwise log the URL
+        if let Some(email_provider) = &app_state.email_provider {
+            if let Some(email_config) = &app_state.config.email {
+                // Create the email message
+                let mut email_message = crate::email::EmailMessage::new(
+                    &user.email,
+                    email_config.format_from(),
+                    format!("Login to {}", app_state.config.app.name),
+                );
+
+                if let Some(reply_to) = &email_config.reply_to {
+                    email_message = email_message.with_reply_to(reply_to);
+                }
+
+                email_message = email_message.with_both(
+                    format!(
+                        "Click this link to login to {}:\n\n{}\n\nThis link will expire in 10 minutes.\n\nIf you did not request this login, please ignore this email.",
+                        app_state.config.app.name, login_url
+                    ),
+                    format!(
+                        r#"<p>Click this link to login to {}:</p>
+<p><a href="{}">{}</a></p>
+<p>This link will expire in 10 minutes.</p>
+<p>If you did not request this login, please ignore this email.</p>"#,
+                        app_state.config.app.name, login_url, login_url
+                    ),
+                );
+
+                // Send the email
+                match email_provider.send_email(email_message).await {
+                    Ok(_) => {
+                        info!("Login email sent to {}", user.email);
+                    }
+                    Err(e) => {
+                        error!("Failed to send login email to {}: {}", user.email, e);
+                        // Continue anyway - user experience shouldn't reveal email failures
+                    }
+                }
+            }
+        } else {
+            // Fallback to logging if no email provider is configured
+            info!("Login URL for {}: {}", user.email, login_url);
+        }
     } else {
         // Log that no user was found, but don't reveal this to the client
         info!("Login attempt for non-existent user/email: {}", identifier);

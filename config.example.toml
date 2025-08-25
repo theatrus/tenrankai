@@ -17,6 +17,24 @@ directory = "templates"
 [static_files]
 directory = "static"
 
+# Optional: Configure email provider for login emails
+# Required when user_database is enabled to send login links via email
+# [email]
+# from_address = "noreply@your-domain.com"
+# from_name = "Tenrankai"  # Optional: Name shown in the "From" field
+# reply_to = "support@your-domain.com"  # Optional: Reply-to address
+# provider = "ses"  # Currently only "ses" is supported
+# 
+# # Amazon SES configuration
+# region = "us-east-1"  # AWS region where SES is configured
+# # Optional: Specify AWS credentials explicitly
+# # If not provided, the AWS SDK will use its default provider chain:
+# # 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+# # 2. AWS credentials file (~/.aws/credentials)
+# # 3. IAM role credentials (for EC2, ECS, Lambda, etc.)
+# access_key_id = "your-access-key"
+# secret_access_key = "your-secret-key"
+
 # Configure one or more gallery systems
 # Each gallery has its own source directory, URL prefix, and settings
 
