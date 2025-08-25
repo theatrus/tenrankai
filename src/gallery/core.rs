@@ -262,7 +262,7 @@ impl Gallery {
                 {
                     let parts: Vec<&str> = content.splitn(3, "+++").collect();
                     if parts.len() >= 3
-                        && let Ok(config) = toml::from_str::<super::FolderConfig>(parts[1])
+                        && let Ok(config) = toml_edit::de::from_str::<super::FolderConfig>(parts[1])
                         && config.hidden
                     {
                         hidden_folders.push(relative_str);
@@ -469,7 +469,7 @@ impl Gallery {
                         let toml_content = parts[1];
                         let markdown_content = parts[2].trim().to_string();
 
-                        match toml::from_str::<super::FolderConfig>(toml_content) {
+                        match toml_edit::de::from_str::<super::FolderConfig>(toml_content) {
                             Ok(config) => {
                                 return Some(super::FolderMetadata {
                                     config,

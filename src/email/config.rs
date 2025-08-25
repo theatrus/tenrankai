@@ -12,6 +12,7 @@ pub struct EmailConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "provider", rename_all = "lowercase")]
 pub enum EmailProviderConfig {
+    Null,
     Ses(SesConfig),
 }
 

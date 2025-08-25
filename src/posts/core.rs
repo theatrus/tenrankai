@@ -158,7 +158,7 @@ impl PostsManager {
             date: String,
         }
 
-        let front_matter: FrontMatter = toml::from_str(toml_content)?;
+        let front_matter: FrontMatter = toml_edit::de::from_str(toml_content)?;
 
         let date = self.parse_date(&front_matter.date)?;
 

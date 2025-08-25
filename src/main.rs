@@ -217,7 +217,7 @@ async fn run_server(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = if config_path.exists() {
         let config_content = std::fs::read_to_string(&config_path)?;
-        toml::from_str::<Config>(&config_content)?
+        toml_edit::de::from_str::<Config>(&config_content)?
     } else {
         info!("Config file not found at {:?}, using defaults", config_path);
         Config::default()
