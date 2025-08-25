@@ -21,7 +21,9 @@ pub use icc::extract_icc_profile_name;
 
 #[cfg(test)]
 mod tests {
+    mod cache_tests;
     mod composite_tests;
+    mod icc_profile_tests;
     mod jpeg_tests;
     mod png_tests;
 }

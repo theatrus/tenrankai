@@ -1,6 +1,5 @@
 use crate::GallerySystemConfig;
 use crate::gallery::Gallery;
-use axum::http::StatusCode;
 use image::{ImageBuffer, Rgba};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -103,25 +102,6 @@ async fn test_store_and_serve_composite() {
 }
 
 #[tokio::test]
-async fn test_serve_cached_image_not_found() {
-    let (gallery, _temp_dir) = create_test_gallery().await;
-
-    // Try to serve non-existent composite
-    let result = gallery
-        .serve_cached_image("non_existent.jpg", "composite", "")
-        .await;
-
-    match result {
-        Ok(response) => {
-            // Extract status from response
-            let status = response.status();
-            assert_eq!(status, StatusCode::NOT_FOUND, "Expected 404 status");
-        }
-        Err(e) => panic!("Unexpected error: {:?}", e),
-    }
-}
-
-#[tokio::test]
 async fn test_store_composite_with_complex_key() {
     let (gallery, _temp_dir) = create_test_gallery().await;
 
@@ -149,42 +129,6 @@ async fn test_store_composite_with_complex_key() {
     assert!(
         tokio::fs::metadata(&cache_path).await.is_ok(),
         "Cache file not created for complex key"
-    );
-}
-
-#[tokio::test]
-async fn test_cached_composite_mime_type() {
-    let (gallery, _temp_dir) = create_test_gallery().await;
-
-    // Create and store a test image
-    let img = ImageBuffer::from_pixel(100, 100, Rgba([0, 0, 255, 255]));
-    let dynamic_img = image::DynamicImage::ImageRgba8(img);
-    let cache_key = "test_mime_type";
-
-    // Store the composite
-    let store_result = gallery
-        .store_and_serve_composite(cache_key, dynamic_img)
-        .await;
-    assert!(store_result.is_ok());
-
-    // Get the actual cache filename that was created
-    let hash = gallery.generate_composite_cache_key_with_format(cache_key, "jpg");
-    let cache_filename = format!("{}.jpg", hash);
-
-    // Serve from cache
-    let cached_response = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
-    assert!(cached_response.is_ok());
-
-    // Check that the response has the correct MIME type
-    let response = cached_response.unwrap();
-    let content_type = response.headers().get("content-type");
-    assert!(content_type.is_some(), "Content-Type header missing");
-    assert_eq!(
-        content_type.unwrap().to_str().unwrap(),
-        "image/jpeg",
-        "Wrong MIME type for cached composite"
     );
 }
 
@@ -261,66 +205,37 @@ async fn test_composite_cache_headers() {
 }
 
 #[tokio::test]
-async fn test_serve_cached_image_mime_types() {
+async fn test_composite_mime_type_for_cached_composite() {
     let (gallery, _temp_dir) = create_test_gallery().await;
 
-    // Create test files with different extensions
-    let test_data = b"dummy image data";
+    // Create and store a test composite image
+    let img = ImageBuffer::from_pixel(100, 100, Rgba([0, 0, 255, 255]));
+    let dynamic_img = image::DynamicImage::ImageRgba8(img);
+    let cache_key = "test_composite_mime";
 
-    // Test JPEG
-    let jpeg_path = gallery.config.cache_directory.join("test.jpg");
-    tokio::fs::create_dir_all(&gallery.config.cache_directory)
-        .await
-        .unwrap();
-    tokio::fs::write(&jpeg_path, test_data).await.unwrap();
+    // Store the composite
+    let store_result = gallery
+        .store_and_serve_composite(cache_key, dynamic_img)
+        .await;
+    assert!(store_result.is_ok());
 
-    let jpeg_response = gallery
-        .serve_cached_image("test.jpg", "", "")
-        .await
-        .unwrap();
+    // Get the actual cache filename that was created
+    let hash = gallery.generate_composite_cache_key_with_format(cache_key, "jpg");
+    let cache_filename = format!("{}.jpg", hash);
+
+    // Serve the composite from cache
+    let cached_response = gallery
+        .serve_cached_image(&cache_filename, "composite", "")
+        .await;
+    assert!(cached_response.is_ok());
+
+    // Check that the response has the correct MIME type for a composite (JPEG)
+    let response = cached_response.unwrap();
+    let content_type = response.headers().get("content-type");
+    assert!(content_type.is_some(), "Content-Type header missing");
     assert_eq!(
-        jpeg_response
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "image/jpeg"
-    );
-
-    // Test WebP
-    let webp_path = gallery.config.cache_directory.join("test.webp");
-    tokio::fs::write(&webp_path, test_data).await.unwrap();
-
-    let webp_response = gallery
-        .serve_cached_image("test.webp", "", "")
-        .await
-        .unwrap();
-    assert_eq!(
-        webp_response
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "image/webp"
-    );
-
-    // Test PNG
-    let png_path = gallery.config.cache_directory.join("test.png");
-    tokio::fs::write(&png_path, test_data).await.unwrap();
-
-    let png_response = gallery
-        .serve_cached_image("test.png", "", "")
-        .await
-        .unwrap();
-    assert_eq!(
-        png_response
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "image/png"
+        content_type.unwrap().to_str().unwrap(),
+        "image/jpeg",
+        "Composite images should always be served as JPEG"
     );
 }
