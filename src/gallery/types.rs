@@ -90,6 +90,11 @@ pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
     pub title: Option<String>,
+
+    // Access control fields
+    #[serde(default)]
+    pub require_auth: bool,
+    pub allowed_users: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]

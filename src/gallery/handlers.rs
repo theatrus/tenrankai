@@ -17,6 +17,17 @@ fn has_download_permission(app_state: &AppState, headers: &HeaderMap) -> bool {
     crate::login::is_authenticated(headers, &app_state.config.app.cookie_secret)
 }
 
+fn get_authenticated_user(app_state: &AppState, headers: &HeaderMap) -> Option<String> {
+    // If no user database is configured, return None (no authentication)
+    #[allow(clippy::question_mark)]
+    if app_state.config.app.user_database.is_none() {
+        return None;
+    }
+
+    // Get authenticated user from headers
+    crate::login::get_authenticated_user(headers, &app_state.config.app.cookie_secret)
+}
+
 // Named gallery handlers for multiple gallery support
 #[axum::debug_handler]
 pub async fn gallery_root_handler_for_named(
@@ -39,7 +50,7 @@ pub async fn gallery_handler_for_named(
     State(app_state): State<AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
-    _headers: HeaderMap,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
 
@@ -51,8 +62,30 @@ pub async fn gallery_handler_for_named(
         }
     };
 
+    // Check if the user has access to this path
+    let user = get_authenticated_user(&app_state, &headers);
+    if !gallery.check_path_access(&path, user.as_deref()).await {
+        // If folder requires authentication and user is not authenticated, redirect to login
+        if user.is_none() && gallery.is_folder_access_restricted(&path).await {
+            let return_url = if path.is_empty() {
+                format!("/{}", gallery_name)
+            } else {
+                format!("/{}/{}", gallery_name, path)
+            };
+
+            let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
+            return axum::response::Redirect::temporary(&login_url).into_response();
+        } else {
+            // User is authenticated but doesn't have access, return 403
+            return (StatusCode::FORBIDDEN, "Access denied").into_response();
+        }
+    }
+
     let page = query.page.unwrap_or(0);
-    let (directories, images, total_pages) = match gallery.list_directory(&path, page).await {
+    let (directories, images, total_pages) = match gallery
+        .list_directory_with_user(&path, page, user.as_deref())
+        .await
+    {
         Ok(result) => {
             tracing::debug!(
                 "Handler received: {} directories, {} images",
@@ -231,6 +264,31 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
+    // Check if the user has access to the folder containing this image
+    let user = get_authenticated_user(&app_state, &headers);
+
+    // Extract the parent folder path from the image path
+    let parent_path = if let Some(last_slash) = path.rfind('/') {
+        &path[..last_slash]
+    } else {
+        "" // Image is in root folder
+    };
+
+    if !gallery
+        .check_path_access(parent_path, user.as_deref())
+        .await
+    {
+        // If folder requires authentication and user is not authenticated, redirect to login
+        if user.is_none() && gallery.is_folder_access_restricted(parent_path).await {
+            let return_url = format!("/{}/image/{}", gallery_name, path);
+            let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
+            return axum::response::Redirect::temporary(&login_url).into_response();
+        } else {
+            // User is authenticated but doesn't have access, return 403
+            return (StatusCode::FORBIDDEN, "Access denied").into_response();
+        }
+    }
+
     let mut image_info = match gallery.get_image_info(&path).await {
         Ok(info) => info,
         Err(e) => {
@@ -351,6 +409,24 @@ pub async fn image_handler_for_named(
             return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
         }
     };
+
+    // Check if the user has access to the folder containing this image
+    let user = get_authenticated_user(&app_state, &headers);
+
+    // Extract the parent folder path from the image path
+    let parent_path = if let Some(last_slash) = path.rfind('/') {
+        &path[..last_slash]
+    } else {
+        "" // Image is in root folder
+    };
+
+    if !gallery
+        .check_path_access(parent_path, user.as_deref())
+        .await
+    {
+        // For image serving, always return 403 instead of redirect to avoid breaking image URLs
+        return (StatusCode::FORBIDDEN, "Access denied").into_response();
+    }
 
     // Validate size parameter if provided
     if let Some(ref size) = query.size {
