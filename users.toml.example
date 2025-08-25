@@ -1,0 +1,19 @@
+# Example users database for Tenrankai
+# Copy this file to users.toml and modify as needed
+# DO NOT commit users.toml to version control
+
+# Users are defined with username as the key
+# Each user must have an email address
+
+[users.alice]
+username = "alice"
+email = "alice@example.com"
+
+[users.bob]
+username = "bob"
+email = "bob@example.com"
+
+# Admin user example
+[users.admin]
+username = "admin"
+email = "admin@example.com"

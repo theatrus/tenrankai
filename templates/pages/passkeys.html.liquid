@@ -1,0 +1,131 @@
+{% assign page_title = "Manage Passkeys" %}
+{% assign meta_description = "Manage your passkeys for secure authentication" %}
+{% assign page_css = "passkeys.css" | split: "," %}
+{% assign page_js = "login.js" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="container">
+    <div class="passkeys-container">
+        <h1>Manage Passkeys</h1>
+        
+        <div class="passkeys-intro">
+            <p>Passkeys provide a secure, passwordless way to sign in. Once registered, you can use your device's biometric authentication (fingerprint, face recognition) or PIN to sign in quickly.</p>
+        </div>
+        
+        <div class="add-passkey-section">
+            <h2>Add a New Passkey</h2>
+            <form id="addPasskeyForm">
+                <div class="form-group">
+                    <label for="passkeyName">Passkey Name:</label>
+                    <input type="text" id="passkeyName" name="name" placeholder="e.g., MacBook Pro" required>
+                    <small>Give this passkey a name to help you identify it later</small>
+                </div>
+                <button type="submit" class="btn-primary">Add Passkey</button>
+            </form>
+        </div>
+        
+        <div class="existing-passkeys-section">
+            <h2>Your Passkeys</h2>
+            <div id="passkeysList" class="passkeys-list">
+                <div class="loading">Loading passkeys...</div>
+            </div>
+        </div>
+        
+        <div id="errorMessage" class="message error" style="display: none;"></div>
+        <div id="successMessage" class="message success" style="display: none;"></div>
+    </div>
+</div>
+
+<script>
+// Load existing passkeys
+async function refreshPasskeysList() {
+    const listContainer = document.getElementById('passkeysList');
+    
+    try {
+        const passkeys = await LoginUtils.loadPasskeys();
+        
+        if (passkeys.length === 0) {
+            listContainer.innerHTML = '<p class="no-passkeys">No passkeys registered yet.</p>';
+        } else {
+            listContainer.innerHTML = passkeys.map(pk => `
+                <div class="passkey-item" data-id="${pk.id}">
+                    <div class="passkey-info">
+                        <div class="passkey-name">${LoginUtils.escapeHtml(pk.name)}</div>
+                        <div class="passkey-meta">
+                            Created: ${LoginUtils.formatDate(pk.created_at)}
+                            ${pk.last_used_at ? `• Last used: ${LoginUtils.formatDate(pk.last_used_at)}` : ''}
+                        </div>
+                    </div>
+                    <button class="btn-delete" onclick="handleDeletePasskey('${pk.id}')">Delete</button>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        listContainer.innerHTML = '<p class="error">Failed to load passkeys</p>';
+    }
+}
+
+// Delete passkey handler
+async function handleDeletePasskey(passkeyId) {
+    if (!confirm('Are you sure you want to delete this passkey?')) {
+        return;
+    }
+    
+    // Hide messages
+    LoginUtils.hideError();
+    LoginUtils.hideSuccess();
+    
+    try {
+        await LoginUtils.deletePasskey(passkeyId);
+        LoginUtils.showSuccess('Passkey deleted successfully!');
+        refreshPasskeysList(); // Reload the list
+    } catch (error) {
+        LoginUtils.showError('Failed to delete passkey. Please try again.');
+    }
+}
+
+// Add new passkey
+document.getElementById('addPasskeyForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const nameInput = document.getElementById('passkeyName');
+    const name = nameInput.value.trim();
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    
+    // Hide messages
+    LoginUtils.hideError();
+    LoginUtils.hideSuccess();
+    
+    if (!name) {
+        LoginUtils.showError('Please enter a name for the passkey');
+        return;
+    }
+    
+    submitButton.disabled = true;
+    submitButton.textContent = 'Adding...';
+    
+    try {
+        await LoginUtils.registerPasskey(name);
+        LoginUtils.showSuccess('Passkey added successfully!');
+        nameInput.value = '';
+        refreshPasskeysList(); // Reload the list
+        
+    } catch (error) {
+        LoginUtils.showError(error.message || 'Failed to add passkey. Please try again.');
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Add Passkey';
+    }
+});
+
+// Check WebAuthn support
+if (!LoginUtils.isWebAuthnSupported()) {
+    document.querySelector('.add-passkey-section').innerHTML = 
+        '<div class="message info">Your browser does not support passkeys.</div>';
+}
+
+// Load passkeys on page load
+refreshPasskeysList();
+</script>
+
+{% include "_footer.html.liquid" %}

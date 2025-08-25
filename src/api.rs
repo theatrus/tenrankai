@@ -1,30 +1,15 @@
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode, header::SET_COOKIE},
-    response::{IntoResponse, Json, Response},
+    http::{HeaderMap, StatusCode},
+    response::{Json, Response},
 };
 use base64::{Engine, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use tracing::info;
 
 type HmacSha256 = Hmac<Sha256>;
-
-#[derive(Deserialize)]
-pub struct AuthRequest {
-    pub password: String,
-}
-
-#[derive(Serialize)]
-pub struct AuthResponse {
-    success: bool,
-    message: String,
-}
-
-#[derive(Serialize)]
-pub struct VerifyResponse {
-    authorized: bool,
-}
 
 pub fn create_signed_cookie(secret: &str, value: &str) -> Result<String, String> {
     let mut mac =
@@ -46,63 +31,6 @@ pub fn verify_signed_cookie(secret: &str, signed_value: &str) -> bool {
     false
 }
 
-pub async fn authenticate_handler(
-    State(app_state): State<crate::AppState>,
-    Json(payload): Json<AuthRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    tracing::info!("Authentication attempt received");
-    let config = &app_state.config;
-
-    if payload.password == config.app.download_password {
-        tracing::info!("Authentication successful");
-        match create_signed_cookie(&config.app.download_secret, "true") {
-            Ok(signed_value) => {
-                let cookie = format!(
-                    "download_allowed={}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax",
-                    signed_value
-                );
-
-                let mut headers = HeaderMap::new();
-                headers.insert(SET_COOKIE, cookie.parse().unwrap());
-
-                let response = AuthResponse {
-                    success: true,
-                    message: "Authentication successful".to_string(),
-                };
-
-                Ok((headers, Json(response)))
-            }
-            Err(_) => {
-                let response = AuthResponse {
-                    success: false,
-                    message: "Server error".to_string(),
-                };
-                Ok((HeaderMap::new(), Json(response)))
-            }
-        }
-    } else {
-        tracing::warn!("Authentication failed - invalid password");
-        let response = AuthResponse {
-            success: false,
-            message: "Invalid password".to_string(),
-        };
-        Ok((HeaderMap::new(), Json(response)))
-    }
-}
-
-pub async fn verify_handler(
-    State(app_state): State<crate::AppState>,
-    headers: HeaderMap,
-) -> Json<VerifyResponse> {
-    let authorized = get_cookie_value(&headers, "download_allowed")
-        .map(|signed_value| {
-            verify_signed_cookie(&app_state.config.app.download_secret, &signed_value)
-        })
-        .unwrap_or(false);
-
-    Json(VerifyResponse { authorized })
-}
-
 pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get("cookie")?
@@ -121,6 +49,17 @@ pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
                 None
             }
         })
+}
+
+pub fn is_authenticated(headers: &HeaderMap, secret: &str) -> Option<String> {
+    get_cookie_value(headers, "auth").and_then(|signed_value| {
+        if verify_signed_cookie(secret, &signed_value) {
+            // Extract username from signed value
+            signed_value.split(':').next().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
 }
 
 #[derive(Deserialize)]
@@ -218,4 +157,41 @@ pub async fn gallery_composite_preview_handler_for_named(
             tracing::error!("Failed to store composite in cache: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefreshResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+pub async fn refresh_static_versions(
+    State(app_state): State<crate::AppState>,
+    headers: HeaderMap,
+) -> Result<Json<RefreshResponse>, StatusCode> {
+    // If no user database is configured, deny access
+    if app_state.config.app.user_database.is_none() {
+        return Ok(Json(RefreshResponse {
+            success: false,
+            message: "Authentication not configured".to_string(),
+        }));
+    }
+
+    // Check if user is authenticated
+    if !crate::login::is_authenticated(&headers, &app_state.config.app.cookie_secret) {
+        return Ok(Json(RefreshResponse {
+            success: false,
+            message: "Authentication required".to_string(),
+        }));
+    }
+
+    // Refresh static file versions
+    app_state.static_handler.refresh_file_versions().await;
+
+    info!("Static file versions refreshed");
+
+    Ok(Json(RefreshResponse {
+        success: true,
+        message: "Static file versions refreshed successfully".to_string(),
+    }))
 }

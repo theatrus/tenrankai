@@ -3,5 +3,12 @@
         <p>&copy; {{ current_year }} Yann Ramin. All rights reserved.</p>
         <p>Powered by <a href="https://github.com/theatrus/tenrankai">tenrankai</a></p>
     </footer>
+    
+    {% comment %} Page-specific JavaScript files {% endcomment %}
+    {% if page_js %}
+        {% for js_file in page_js %}
+        <script src="{{ js_file | asset_url }}"></script>
+        {% endfor %}
+    {% endif %}
 </body>
 </html>

@@ -58,12 +58,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="{{ 'style.css' | asset_url }}">
     
     {% comment %} Page-specific CSS files {% endcomment %}
     {% if page_css %}
         {% for css_file in page_css %}
-        <link rel="stylesheet" href="/static/{{ css_file }}">
+        <link rel="stylesheet" href="{{ css_file | asset_url }}">
         {% endfor %}
     {% endif %}
 </head>
@@ -75,6 +75,9 @@
                 <li><a href="/gallery">Gallery</a></li>
                 <li><a href="/about">About</a></li>
                 <li><a href="/contact">Contact</a></li>
+                {% if has_user_auth %}
+                    {% include "_user_menu.html.liquid" %}
+                {% endif %}
             </ul>
         </nav>
     </header>

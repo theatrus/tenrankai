@@ -492,10 +492,10 @@ mod tests {
         let app_config = crate::AppConfig {
             name: "Test".to_string(),
             log_level: "info".to_string(),
-            download_secret: "test".to_string(),
-            download_password: "test".to_string(),
+            cookie_secret: "test-secret-for-cookies".to_string(),
             copyright_holder: None,
             base_url: None,
+            user_database: None,
         };
 
         let gallery = Gallery::new(gallery_config, app_config);

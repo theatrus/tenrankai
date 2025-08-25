@@ -994,10 +994,10 @@ mod tests {
         let app_config = AppConfig {
             name: "Test".to_string(),
             log_level: "info".to_string(),
-            download_secret: "secret".to_string(),
-            download_password: "password".to_string(),
+            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
             base_url: None,
+            user_database: None,
         };
 
         let gallery = Gallery {

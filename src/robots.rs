@@ -8,22 +8,32 @@ use axum::{
 /// Handler for /robots.txt
 /// Returns a permissive robots.txt that allows all crawlers
 pub async fn robots_txt_handler(State(app_state): State<AppState>) -> Response {
-    // Check if a custom robots.txt exists in the static directory
-    let custom_robots_path = app_state.config.static_files.directory.join("robots.txt");
-
-    if custom_robots_path.exists() {
-        // Serve the custom robots.txt file
-        match tokio::fs::read_to_string(&custom_robots_path).await {
-            Ok(content) => {
-                return (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                    content,
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                tracing::error!("Failed to read custom robots.txt: {}", e);
+    // Check if a custom robots.txt exists in any static directory (in order)
+    for (index, static_dir) in app_state.config.static_files.directories.iter().enumerate() {
+        let custom_robots_path = static_dir.join("robots.txt");
+        if custom_robots_path.exists() {
+            // Serve the custom robots.txt file
+            match tokio::fs::read_to_string(&custom_robots_path).await {
+                Ok(content) => {
+                    tracing::debug!(
+                        "Found robots.txt in directory {}: {:?}",
+                        index,
+                        custom_robots_path
+                    );
+                    return (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                        content,
+                    )
+                        .into_response();
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to read custom robots.txt from {:?}: {}",
+                        custom_robots_path,
+                        e
+                    );
+                }
             }
         }
     }

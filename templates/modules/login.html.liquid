@@ -1,0 +1,173 @@
+{% assign page_title = "Login" %}
+{% assign meta_description = "Login to access the photo gallery" %}
+{% assign page_css = "login.css" | split: "," %}
+{% assign page_js = "login.js" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="container">
+    <div class="login-container">
+        <h1>Login</h1>
+        
+        <div id="loginFormContainer">
+            <p>Enter your username or email address to sign in.</p>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username or Email:</label>
+                    <input type="text" id="username" name="username" placeholder="username or email@example.com" required autofocus>
+                </div>
+                
+                <button type="submit" class="btn-primary">Continue</button>
+            </form>
+        </div>
+        
+        <div id="authenticatingContainer" style="display: none;">
+            <div class="authenticating-message">
+                <div class="spinner"></div>
+                <p>Authenticating with your passkey...</p>
+                <p class="small-text">Follow the prompts on your device</p>
+            </div>
+        </div>
+        
+        <div id="successContainer" style="display: none;">
+            <div id="message" class="message success"></div>
+            <p style="text-align: center; margin-top: 20px;">
+                <a href="/_login" class="try-again-link">Try again</a>
+            </p>
+        </div>
+        
+        <div id="errorMessage" class="message error" style="display: none;"></div>
+    </div>
+</div>
+
+<script>
+// Handle login form submission
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const username = document.getElementById('username').value.trim();
+    const messageDiv = document.getElementById('message');
+    const errorDiv = document.getElementById('errorMessage');
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    const formContainer = document.getElementById('loginFormContainer');
+    const successContainer = document.getElementById('successContainer');
+    const authenticatingContainer = document.getElementById('authenticatingContainer');
+    
+    // Hide any previous error messages
+    LoginUtils.hideError();
+    
+    if (!username) {
+        LoginUtils.showError('Please enter a username or email address');
+        return;
+    }
+    
+    submitButton.disabled = true;
+    submitButton.textContent = 'Checking...';
+    
+    try {
+        // First, check if WebAuthn is supported and if user has passkeys
+        if (LoginUtils.isWebAuthnSupported()) {
+            const { has_passkeys } = await LoginUtils.checkUserHasPasskeys(username);
+            
+            if (has_passkeys) {
+                // User has passkeys, try to authenticate with them
+                LoginUtils.hideElement('loginFormContainer');
+                LoginUtils.showElement('authenticatingContainer');
+                
+                try {
+                    await LoginUtils.authenticateWithPasskey(username);
+                    // Success - user will be redirected
+                    const returnUrl = LoginUtils.getReturnUrl();
+                    window.location.href = returnUrl || '/gallery';
+                    return;
+                } catch (passkeyError) {
+                    // Passkey auth failed, continue with email flow
+                    LoginUtils.hideElement('authenticatingContainer');
+                    LoginUtils.showElement('loginFormContainer');
+                    
+                    // Show a brief message about falling back to email
+                    errorDiv.textContent = 'Passkey authentication cancelled. Sending login email instead...';
+                    errorDiv.style.display = 'block';
+                    errorDiv.classList.add('info');
+                    
+                    // Small delay before sending email
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+        }
+        
+        // Send email login request (either no passkeys or passkey auth failed)
+        submitButton.textContent = 'Sending...';
+        LoginUtils.hideError();
+        errorDiv.classList.remove('info');
+        
+        const response = await fetch('/_login/request', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username: username })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Hide the form and show success message
+            LoginUtils.hideElement('loginFormContainer');
+            LoginUtils.hideElement('authenticatingContainer');
+            messageDiv.textContent = data.message;
+            LoginUtils.showElement('successContainer');
+        } else {
+            // Show error message below the form
+            LoginUtils.showError(data.message || 'Login failed');
+        }
+        
+    } catch (error) {
+        LoginUtils.hideElement('authenticatingContainer');
+        LoginUtils.showElement('loginFormContainer');
+        LoginUtils.showError('An error occurred. Please try again.');
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Continue';
+    }
+});
+</script>
+
+<style>
+.authenticating-message {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.authenticating-message p {
+    margin: 10px 0;
+}
+
+.authenticating-message .small-text {
+    font-size: 0.875rem;
+    color: var(--text-quaternary);
+}
+
+.spinner {
+    border: 3px solid var(--border-color);
+    border-top: 3px solid var(--link-color);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.message.info {
+    background-color: rgba(23, 162, 184, 0.1);
+    color: #17a2b8;
+    border: 1px solid rgba(23, 162, 184, 0.3);
+}
+</style>
+
+{% include "_footer.html.liquid" %}

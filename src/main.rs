@@ -1,48 +1,94 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use tenrankai::{Config, create_app, gallery::Gallery, posts, startup_checks};
+use tenrankai::{
+    Config, create_app,
+    gallery::Gallery,
+    login::{User, UserDatabase},
+    posts, startup_checks,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
-    #[arg(short, long, default_value = "config.toml")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Global options that apply to all commands
+    #[arg(short, long, default_value = "config.toml", global = true)]
     config: PathBuf,
 
-    #[arg(short, long)]
-    port: Option<u16>,
-
-    #[arg(long)]
-    host: Option<String>,
-
-    #[arg(short, long, default_value = "info")]
+    #[arg(short, long, default_value = "info", global = true)]
     log_level: String,
+}
 
-    /// Automatically quit after specified number of seconds (useful for testing)
-    #[arg(long)]
-    quit_after: Option<u64>,
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run the web server (default if no command specified)
+    Serve {
+        #[arg(short, long)]
+        port: Option<u16>,
+
+        #[arg(long)]
+        host: Option<String>,
+
+        /// Automatically quit after specified number of seconds (useful for testing)
+        #[arg(long)]
+        quit_after: Option<u64>,
+    },
+
+    /// Manage users
+    #[command(subcommand)]
+    User(UserCommands),
+}
+
+#[derive(Subcommand, Debug)]
+enum UserCommands {
+    /// List all users
+    List {
+        /// Path to users database file
+        #[arg(short, long, default_value = "users.toml")]
+        database: String,
+    },
+    /// Add a new user
+    Add {
+        /// Username (will be converted to lowercase)
+        username: String,
+        /// Email address
+        email: String,
+        /// Path to users database file
+        #[arg(short, long, default_value = "users.toml")]
+        database: String,
+    },
+    /// Remove a user
+    Remove {
+        /// Username to remove
+        username: String,
+        /// Path to users database file
+        #[arg(short, long, default_value = "users.toml")]
+        database: String,
+    },
+    /// Update a user's email
+    Update {
+        /// Username to update
+        username: String,
+        /// New email address
+        email: String,
+        /// Path to users database file
+        #[arg(short, long, default_value = "users.toml")]
+        database: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    let config = if args.config.exists() {
-        let config_content = std::fs::read_to_string(&args.config)?;
-        toml::from_str::<Config>(&config_content)?
-    } else {
-        info!("Config file not found at {:?}, using defaults", args.config);
-        Config::default()
-    };
-
-    let host = args.host.unwrap_or(config.server.host.clone());
-    let port = args.port.unwrap_or(config.server.port);
-    let log_level = args.log_level;
-
-    let level = match log_level.to_lowercase().as_str() {
+    // Set up logging first
+    let level = match cli.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
         "info" => Level::INFO,
@@ -52,15 +98,140 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
-
     tracing::subscriber::set_global_default(subscriber)?;
 
+    // Handle commands
+    match cli.command {
+        Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
+        Some(Commands::Serve {
+            port,
+            host,
+            quit_after,
+        }) => run_server(cli.config, port, host, quit_after).await,
+        None => {
+            // Default to serve command if no subcommand specified
+            run_server(cli.config, None, None, None).await
+        }
+    }
+}
+
+async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error::Error>> {
+    match cmd {
+        UserCommands::List { database } => {
+            let db_path = std::path::Path::new(&database);
+            let db = if db_path.exists() {
+                UserDatabase::load_from_file(db_path).await?
+            } else {
+                println!("No user database found at: {}", database);
+                return Ok(());
+            };
+
+            if db.users.is_empty() {
+                println!("No users in database");
+            } else {
+                println!("Users in database:");
+                for (username, user) in &db.users {
+                    println!("  {} <{}>", username, user.email);
+                }
+            }
+        }
+        UserCommands::Add {
+            username,
+            email,
+            database,
+        } => {
+            let db_path = std::path::Path::new(&database);
+            let mut db = if db_path.exists() {
+                UserDatabase::load_from_file(db_path).await?
+            } else {
+                println!("Creating new user database at: {}", database);
+                UserDatabase::new()
+            };
+
+            let username = username.trim().to_lowercase();
+            if db.get_user(&username).is_some() {
+                eprintln!("Error: User '{}' already exists", username);
+                std::process::exit(1);
+            }
+
+            let user = User {
+                email: email.trim().to_string(),
+                passkeys: Vec::new(),
+            };
+
+            db.add_user(username.clone(), user);
+            db.save_to_file(db_path).await?;
+            println!("Added user '{}' with email '{}'", username, email);
+        }
+        UserCommands::Remove { username, database } => {
+            let db_path = std::path::Path::new(&database);
+            let mut db = if db_path.exists() {
+                UserDatabase::load_from_file(db_path).await?
+            } else {
+                eprintln!("Error: No user database found at: {}", database);
+                std::process::exit(1);
+            };
+
+            let username = username.trim().to_lowercase();
+            if db.remove_user(&username).is_some() {
+                db.save_to_file(db_path).await?;
+                println!("Removed user '{}'", username);
+            } else {
+                eprintln!("Error: User '{}' not found", username);
+                std::process::exit(1);
+            }
+        }
+        UserCommands::Update {
+            username,
+            email,
+            database,
+        } => {
+            let db_path = std::path::Path::new(&database);
+            let mut db = if db_path.exists() {
+                UserDatabase::load_from_file(db_path).await?
+            } else {
+                eprintln!("Error: No user database found at: {}", database);
+                std::process::exit(1);
+            };
+
+            let username = username.trim().to_lowercase();
+            if let Some(user) = db.users.get_mut(&username) {
+                user.email = email.trim().to_string();
+                db.save_to_file(db_path).await?;
+                println!("Updated email for user '{}' to '{}'", username, email);
+            } else {
+                eprintln!("Error: User '{}' not found", username);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_server(
+    config_path: PathBuf,
+    port: Option<u16>,
+    host: Option<String>,
+    quit_after: Option<u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = if config_path.exists() {
+        let config_content = std::fs::read_to_string(&config_path)?;
+        toml_edit::de::from_str::<Config>(&config_content)?
+    } else {
+        info!("Config file not found at {:?}, using defaults", config_path);
+        Config::default()
+    };
+
+    let host = host.unwrap_or(config.server.host.clone());
+    let port = port.unwrap_or(config.server.port);
+
     info!("Starting {} server", config.app.name);
-    info!("Configuration loaded from: {:?}", args.config);
+    info!("Configuration loaded from: {:?}", config_path);
     info!("Template directory: {:?}", config.templates.directory);
     info!(
-        "Static files directory: {:?}",
-        config.static_files.directory
+        "Static files directories: {:?}",
+        config.static_files.directories
     );
     if let Some(galleries) = &config.galleries {
         for gallery in galleries {
@@ -212,9 +383,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
+    // Add ConnectInfo layer to track client IPs
+    let app = app.into_make_service_with_connect_info::<SocketAddr>();
+
     // Set up graceful shutdown
     let server = axum::serve(listener, app);
-    let graceful = server.with_graceful_shutdown(shutdown_signal(args.quit_after));
+    let graceful = server.with_graceful_shutdown(shutdown_signal(quit_after));
 
     // Start the server
     if let Err(e) = graceful.await {

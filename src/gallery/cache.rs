@@ -347,10 +347,10 @@ This folder should not appear in listings.
         let app_config = crate::AppConfig {
             name: "Test".to_string(),
             log_level: "info".to_string(),
-            download_secret: "secret".to_string(),
-            download_password: "pass".to_string(),
+            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
             base_url: None,
+            user_database: None,
         };
 
         let gallery = Gallery::new(config, app_config);
@@ -430,10 +430,10 @@ Hidden folder
         let app_config = crate::AppConfig {
             name: "Test".to_string(),
             log_level: "info".to_string(),
-            download_secret: "secret".to_string(),
-            download_password: "pass".to_string(),
+            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
             base_url: None,
+            user_database: None,
         };
 
         let gallery = Gallery::new(config, app_config);

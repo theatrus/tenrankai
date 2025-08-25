@@ -13,9 +13,9 @@ After installing tenrankai, you need to create a configuration file:
    sudo nano /etc/tenrankai/config.toml
 
 3. Important configuration items to change:
-   - download_secret: Generate a secure random key
-   - download_password: Set a secure password
+   - cookie_secret: Generate a secure random key for signing cookies
    - source_directory: Point to your image directory
+   - user_database: Optional - set path to enable user authentication
 
 4. Set proper permissions:
    sudo chown root:tenrankai /etc/tenrankai/config.toml
@@ -58,7 +58,7 @@ server {
 Security Considerations
 ----------------------
 
-- Change the default download_secret and download_password
+- Change the default cookie_secret to a secure random value
 - Consider using HTTPS in production
 - Regularly update the package for security fixes
 - Monitor /var/log/tenrankai/ for any issues

@@ -1,0 +1,296 @@
+/* ==========================================================================
+   Login Page Styles
+   Uses CSS variables from style.css for consistent theming
+   ========================================================================== */
+
+.login-container {
+    max-width: 400px;
+    margin: 100px auto;
+    padding: 30px;
+    background: var(--bg-card);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px var(--shadow-medium);
+}
+
+.login-container h1 {
+    text-align: center;
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-primary);
+}
+
+.login-container p {
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.form-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 16px;
+    box-sizing: border-box;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: border-color 0.3s, background-color 0.3s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--link-color);
+    background-color: var(--bg-primary);
+}
+
+.form-group input::placeholder {
+    color: var(--text-quaternary);
+}
+
+.btn-primary {
+    width: 100%;
+    padding: 12px;
+    background-color: var(--link-color);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.1s;
+}
+
+.btn-primary:hover {
+    background-color: var(--link-hover);
+}
+
+.btn-primary:active {
+    transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+    background-color: var(--btn-disabled-bg);
+    color: var(--btn-disabled-color);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.button-group {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.button-group button {
+    flex: 1;
+}
+
+.btn-secondary {
+    padding: 12px;
+    background-color: transparent;
+    color: var(--link-color);
+    border: 2px solid var(--link-color);
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s, color 0.3s, transform 0.1s;
+}
+
+.btn-secondary:hover {
+    background-color: var(--link-color);
+    color: var(--bg-primary);
+}
+
+.btn-secondary:active {
+    transform: translateY(1px);
+}
+
+.btn-secondary:disabled {
+    border-color: var(--btn-disabled-border);
+    color: var(--text-quaternary);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.message.info {
+    background-color: var(--message-info-bg);
+    color: var(--message-info-color);
+    border: 1px solid var(--message-info-border);
+}
+
+.message {
+    margin-top: var(--spacing-lg);
+    padding: 12px 16px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.message.success {
+    background-color: var(--message-success-bg);
+    color: var(--message-success-color);
+    border: 1px solid var(--message-success-border);
+}
+
+.message.error {
+    background-color: var(--message-error-bg);
+    color: var(--message-error-color);
+    border: 1px solid var(--message-error-border);
+}
+
+.try-again-link {
+    color: var(--link-color);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.3s;
+}
+
+.try-again-link:hover {
+    color: var(--link-hover);
+    text-decoration: underline;
+}
+
+#successContainer p {
+    margin-top: var(--spacing-lg);
+}
+
+/* Profile page styles */
+.profile-info {
+    margin-bottom: var(--spacing-xl);
+}
+
+.profile-value {
+    font-weight: normal;
+    color: var(--text-primary);
+    padding: 8px;
+    background-color: var(--bg-secondary);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.profile-actions {
+    margin-top: var(--spacing-xl);
+}
+
+.profile-actions .button-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+/* Passkey management styles */
+.passkey-management {
+    margin: var(--spacing-xl) 0;
+    padding: var(--spacing-lg);
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.passkey-management h2 {
+    margin-top: 0;
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-primary);
+    font-size: 1.2em;
+}
+
+.passkey-list {
+    margin-bottom: var(--spacing-lg);
+}
+
+.passkey-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-sm);
+}
+
+.passkey-info {
+    flex-grow: 1;
+}
+
+.passkey-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.passkey-created {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.passkey-actions {
+    margin-left: var(--spacing-md);
+}
+
+.btn-danger {
+    background-color: var(--btn-danger-bg);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.3s;
+}
+
+.btn-danger:hover {
+    background-color: var(--btn-danger-hover);
+}
+
+.loading {
+    text-align: center;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.error {
+    color: var(--message-error-color);
+    margin: var(--spacing-sm) 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .login-container {
+        margin: 50px auto;
+        padding: 20px;
+    }
+    
+    .login-container h1 {
+        font-size: 1.5rem;
+    }
+    
+    .profile-actions .button-group {
+        flex-direction: column;
+    }
+    
+    .profile-actions .button-group a,
+    .profile-actions .button-group button {
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .passkey-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .passkey-actions {
+        margin-left: 0;
+        margin-top: var(--spacing-sm);
+        align-self: flex-end;
+    }
+}

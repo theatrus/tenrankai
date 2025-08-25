@@ -5,6 +5,9 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+async-trait = "0.1"
+aws-config = "1"
+aws-sdk-sesv2 = "1"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 hmac = "0.12"
@@ -21,6 +24,7 @@ ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.13"
 liquid = "0.26"
+liquid-core = "0.26"
 mime_guess = "2.0"
 pulldown-cmark = "0.13"
 rand = "0.9"
@@ -30,13 +34,18 @@ sha2 = "0.10"
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
-toml = "0.9"
+toml_edit = { version = "0.23", features = ["serde"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
+httpdate = "1.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2.5"
 urlencoding = "2.1"
+uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 walkdir = "2.5"
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+webauthn-rs-proto = "0.5"
 
 [dev-dependencies]
 tempfile = "3.8"

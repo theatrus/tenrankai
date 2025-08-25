@@ -12,7 +12,7 @@ use tracing::error;
 
 #[derive(Clone)]
 pub struct FaviconRenderer {
-    static_dir: PathBuf,
+    static_dirs: Vec<PathBuf>,
     cache: Arc<RwLock<FaviconCache>>,
 }
 
@@ -25,9 +25,9 @@ struct FaviconCache {
 }
 
 impl FaviconRenderer {
-    pub fn new(static_dir: PathBuf) -> Self {
+    pub fn new(static_dirs: Vec<PathBuf>) -> Self {
         Self {
-            static_dir,
+            static_dirs,
             cache: Arc::new(RwLock::new(FaviconCache::default())),
         }
     }
@@ -132,10 +132,25 @@ impl FaviconRenderer {
     }
 
     async fn load_svg(&self) -> Result<String, String> {
-        let svg_path = self.static_dir.join("favicon.svg");
-        tokio::fs::read_to_string(svg_path)
-            .await
-            .map_err(|e| format!("Failed to read favicon.svg: {}", e))
+        // Try each directory in order until we find favicon.svg
+        for (index, static_dir) in self.static_dirs.iter().enumerate() {
+            let svg_path = static_dir.join("favicon.svg");
+            match tokio::fs::read_to_string(&svg_path).await {
+                Ok(content) => {
+                    tracing::debug!("Found favicon.svg in directory {}: {:?}", index, svg_path);
+                    return Ok(content);
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        "favicon.svg not found in directory {}: {:?} - {}",
+                        index,
+                        svg_path,
+                        e
+                    );
+                }
+            }
+        }
+        Err("Failed to find favicon.svg in any static directory".to_string())
     }
 
     async fn generate_png(&self, size: u32) -> Result<Vec<u8>, String> {

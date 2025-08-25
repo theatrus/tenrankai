@@ -6,7 +6,7 @@ pub enum PostsError {
     IoError(#[from] std::io::Error),
 
     #[error("TOML parsing error: {0}")]
-    TomlError(#[from] toml::de::Error),
+    TomlError(#[from] toml_edit::de::Error),
 
     #[error("Date parsing error: {0}")]
     DateParseError(String),

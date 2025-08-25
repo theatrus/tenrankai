@@ -70,16 +70,16 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         app: tenrankai::AppConfig {
             name: "TestServer".to_string(),
             log_level: "error".to_string(),
-            download_secret: "test-secret".to_string(),
-            download_password: "test-pass".to_string(),
+            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
             base_url: Some("http://localhost:3000".to_string()),
+            user_database: None,
         },
         templates: tenrankai::TemplateConfig {
             directory: templates_dir,
         },
         static_files: tenrankai::StaticConfig {
-            directory: static_dir,
+            directories: vec![static_dir],
         },
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),
@@ -118,6 +118,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             approximate_dates_for_public: false,
         }]),
         posts: None,
+        email: None,
     };
 
     let app = create_app(config).await;

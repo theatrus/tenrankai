@@ -10,6 +10,14 @@ impl Gallery {
         &self,
         relative_path: &str,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
+        self.scan_directory_with_user(relative_path, None).await
+    }
+
+    pub async fn scan_directory_with_user(
+        &self,
+        relative_path: &str,
+        user: Option<&str>,
+    ) -> Result<Vec<GalleryItem>, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
 
         debug!("Scanning directory: {:?}", full_path);
@@ -53,7 +61,9 @@ impl Gallery {
                 }
 
                 let item_count = self.count_images_in_directory(&item_path).await;
-                let preview_images = self.get_directory_preview_images(&item_path).await;
+                let preview_images = self
+                    .get_directory_preview_images_for_user(&item_path, user)
+                    .await;
                 let (display_name, description) = self.read_folder_metadata(&item_path).await;
                 items.push(GalleryItem {
                     name: file_name,
@@ -155,7 +165,17 @@ impl Gallery {
             items.iter().filter(|i| !i.is_directory).count()
         );
 
-        Ok(items)
+        // Filter items by access permissions
+        let filtered_items = self.filter_items_by_access(items, user).await;
+
+        debug!(
+            "After access filtering: {} items ({} directories, {} images)",
+            filtered_items.len(),
+            filtered_items.iter().filter(|i| i.is_directory).count(),
+            filtered_items.iter().filter(|i| !i.is_directory).count()
+        );
+
+        Ok(filtered_items)
     }
 
     pub async fn list_directory(
@@ -163,7 +183,16 @@ impl Gallery {
         path: &str,
         page: usize,
     ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
-        let items = self.scan_directory(path).await?;
+        self.list_directory_with_user(path, page, None).await
+    }
+
+    pub async fn list_directory_with_user(
+        &self,
+        path: &str,
+        page: usize,
+        user: Option<&str>,
+    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
+        let items = self.scan_directory_with_user(path, user).await?;
 
         // Separate directories and images
         let (directories, images): (Vec<_>, Vec<_>) =
@@ -262,7 +291,7 @@ impl Gallery {
                 {
                     let parts: Vec<&str> = content.splitn(3, "+++").collect();
                     if parts.len() >= 3
-                        && let Ok(config) = toml::from_str::<super::FolderConfig>(parts[1])
+                        && let Ok(config) = toml_edit::de::from_str::<super::FolderConfig>(parts[1])
                         && config.hidden
                     {
                         hidden_folders.push(relative_str);
@@ -274,7 +303,11 @@ impl Gallery {
         hidden_folders
     }
 
-    async fn get_directory_preview_images(&self, relative_path: &str) -> Vec<String> {
+    async fn get_directory_preview_images_for_user(
+        &self,
+        relative_path: &str,
+        user: Option<&str>,
+    ) -> Vec<String> {
         let full_path = self.config.source_directory.join(relative_path);
         let mut preview_images = Vec::new();
 
@@ -294,7 +327,7 @@ impl Gallery {
                 break;
             }
 
-            // Skip if in hidden directory
+            // Skip if in hidden directory or access restricted
             if let Ok(entry_relative) = entry.path().strip_prefix(&self.config.source_directory) {
                 let entry_path = entry_relative.to_string_lossy().replace('\\', "/");
                 let is_in_hidden = hidden_folders.iter().any(|hidden| {
@@ -303,6 +336,17 @@ impl Gallery {
                             || entry_path[hidden.len()..].starts_with('/'))
                 });
                 if is_in_hidden {
+                    continue;
+                }
+
+                // Check access control for the folder containing this image
+                let image_folder_path = if let Some(last_slash) = entry_path.rfind('/') {
+                    &entry_path[..last_slash]
+                } else {
+                    "" // Image is in root folder
+                };
+
+                if !self.check_path_access(image_folder_path, user).await {
                     continue;
                 }
             }
@@ -469,7 +513,7 @@ impl Gallery {
                         let toml_content = parts[1];
                         let markdown_content = parts[2].trim().to_string();
 
-                        match toml::from_str::<super::FolderConfig>(toml_content) {
+                        match toml_edit::de::from_str::<super::FolderConfig>(toml_content) {
                             Ok(config) => {
                                 return Some(super::FolderMetadata {
                                     config,
@@ -488,6 +532,8 @@ impl Gallery {
                     config: super::FolderConfig {
                         hidden: false,
                         title: None,
+                        require_auth: false,
+                        allowed_users: None,
                     },
                     description_markdown: content,
                 })
@@ -566,18 +612,27 @@ impl Gallery {
         &self,
         max_items: usize,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
+        self.get_gallery_preview_for_user(max_items, None).await
+    }
+
+    pub async fn get_gallery_preview_for_user(
+        &self,
+        max_items: usize,
+        user: Option<&str>,
+    ) -> Result<Vec<GalleryItem>, GalleryError> {
         use rand::seq::SliceRandom;
         use rand::{Rng, rng};
 
         let mut all_items = Vec::new();
 
         // Recursively collect images up to max_depth
-        self.collect_preview_items(
+        self.collect_preview_items_for_user(
             "",
             &mut all_items,
             0,
             self.config.preview.max_depth,
             self.config.preview.max_per_folder,
+            user,
         )
         .await?;
 
@@ -596,17 +651,23 @@ impl Gallery {
         Ok(all_items)
     }
 
-    fn collect_preview_items<'a>(
+    fn collect_preview_items_for_user<'a>(
         &'a self,
         path: &'a str,
         items: &'a mut Vec<GalleryItem>,
         current_depth: usize,
         max_depth: usize,
         max_per_folder: usize,
+        user: Option<&'a str>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>>
     {
         Box::pin(async move {
             if current_depth > max_depth {
+                return Ok(());
+            }
+
+            // Check access control for current folder
+            if !self.check_folder_access(path, user).await {
                 return Ok(());
             }
 
@@ -646,13 +707,19 @@ impl Gallery {
                         continue;
                     }
 
+                    // Check access control for this directory
+                    if !self.check_folder_access(&item_path, user).await {
+                        continue;
+                    }
+
                     // Recursively collect from subdirectories
-                    self.collect_preview_items(
+                    self.collect_preview_items_for_user(
                         &item_path,
                         items,
                         current_depth + 1,
                         max_depth,
                         max_per_folder,
+                        user,
                     )
                     .await?;
                 } else if self.is_image(&file_name) && folder_items.len() < max_per_folder {
@@ -756,6 +823,103 @@ impl Gallery {
         }
 
         breadcrumbs
+    }
+
+    /// Check if a folder requires authentication
+    pub(crate) async fn is_folder_access_restricted(&self, folder_path: &str) -> bool {
+        if let Some(folder_metadata) = self.read_folder_metadata_full(folder_path).await {
+            folder_metadata.config.require_auth || folder_metadata.config.allowed_users.is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Check if a user has access to a specific folder
+    pub(crate) async fn check_folder_access(&self, folder_path: &str, user: Option<&str>) -> bool {
+        // If folder doesn't have access restrictions, allow access
+        if let Some(folder_metadata) = self.read_folder_metadata_full(folder_path).await {
+            let config = &folder_metadata.config;
+
+            // If folder doesn't require auth and has no user restrictions, allow access
+            if !config.require_auth && config.allowed_users.is_none() {
+                return true;
+            }
+
+            // If user is not authenticated but folder requires auth or has user restrictions, deny
+            let user = match user {
+                Some(u) => u,
+                None => return false,
+            };
+
+            // If folder has specific allowed users, check if user is in the list
+            if let Some(allowed_users) = &config.allowed_users {
+                allowed_users.contains(&user.to_string())
+            } else if config.require_auth {
+                // Folder requires auth but no specific users listed - any authenticated user can access
+                true
+            } else {
+                // Default allow
+                true
+            }
+        } else {
+            // If we can't read metadata, default to allowing access (backward compatibility)
+            true
+        }
+    }
+
+    /// Check if a folder path or any of its parent folders have access restrictions
+    pub(crate) async fn check_path_access(&self, path: &str, user: Option<&str>) -> bool {
+        // Check the current path and all parent paths for access restrictions
+        let mut current_path = String::new();
+
+        // Always check root folder access first
+        if !self.check_folder_access("", user).await {
+            return false;
+        }
+
+        if !path.is_empty() {
+            let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+
+            for part in parts {
+                if !current_path.is_empty() {
+                    current_path.push('/');
+                }
+                current_path.push_str(part);
+
+                // Check access for this path level
+                if !self.check_folder_access(&current_path, user).await {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Filter gallery items based on user access permissions
+    pub(crate) async fn filter_items_by_access(
+        &self,
+        items: Vec<GalleryItem>,
+        user: Option<&str>,
+    ) -> Vec<GalleryItem> {
+        let mut filtered_items = Vec::new();
+
+        for item in items {
+            if item.is_directory {
+                // For directories, check if user has access
+                if self.check_folder_access(&item.path, user).await {
+                    filtered_items.push(item);
+                }
+            } else {
+                // For images, check access to the parent folder
+                let parent_path = item.parent_path.as_deref().unwrap_or("");
+                if self.check_path_access(parent_path, user).await {
+                    filtered_items.push(item);
+                }
+            }
+        }
+
+        filtered_items
     }
 }
 

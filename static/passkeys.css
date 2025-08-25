@@ -1,0 +1,187 @@
+/* ==========================================================================
+   Passkeys Management Page Styles
+   ========================================================================== */
+
+.passkeys-container {
+    max-width: 800px;
+    margin: 50px auto;
+    padding: 30px;
+}
+
+.passkeys-intro {
+    background: var(--bg-card);
+    padding: var(--spacing-lg);
+    border-radius: 8px;
+    margin-bottom: var(--spacing-xl);
+    border: 1px solid var(--border-color);
+}
+
+.passkeys-intro p {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.add-passkey-section,
+.existing-passkeys-section {
+    background: var(--bg-card);
+    padding: var(--spacing-xl);
+    border-radius: 8px;
+    margin-bottom: var(--spacing-xl);
+    border: 1px solid var(--border-color);
+}
+
+.add-passkey-section h2,
+.existing-passkeys-section h2 {
+    margin-top: 0;
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-primary);
+}
+
+.form-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.form-group input {
+    width: 100%;
+    max-width: 400px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 16px;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: border-color 0.3s, background-color 0.3s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--link-color);
+    background-color: var(--bg-primary);
+}
+
+.form-group small {
+    display: block;
+    margin-top: var(--spacing-sm);
+    color: var(--text-quaternary);
+    font-size: 0.875rem;
+}
+
+.passkeys-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.passkey-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-lg);
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    transition: border-color 0.3s;
+}
+
+.passkey-item:hover {
+    border-color: var(--link-color);
+}
+
+.passkey-info {
+    flex: 1;
+}
+
+.passkey-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.passkey-meta {
+    font-size: 0.875rem;
+    color: var(--text-quaternary);
+}
+
+.btn-delete {
+    padding: 8px 16px;
+    background-color: transparent;
+    color: #dc3545;
+    border: 1px solid #dc3545;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.btn-delete:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+.no-passkeys {
+    text-align: center;
+    color: var(--text-quaternary);
+    padding: var(--spacing-xl);
+}
+
+.loading {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: var(--spacing-xl);
+}
+
+.message {
+    margin: var(--spacing-lg) 0;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.message.success {
+    background-color: rgba(40, 167, 69, 0.1);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.message.error {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.message.info {
+    background-color: rgba(23, 162, 184, 0.1);
+    color: #17a2b8;
+    border: 1px solid rgba(23, 162, 184, 0.3);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .passkeys-container {
+        margin: 20px auto;
+        padding: 20px;
+    }
+    
+    .add-passkey-section,
+    .existing-passkeys-section {
+        padding: var(--spacing-lg);
+    }
+    
+    .passkey-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+    }
+    
+    .btn-delete {
+        align-self: flex-end;
+    }
+}

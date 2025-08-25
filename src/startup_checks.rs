@@ -53,24 +53,37 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
         }
     }
 
-    // Check static files directory
-    let static_dir = Path::new(&config.static_files.directory);
-    if !static_dir.exists() {
-        warn!("Static files directory does not exist: {:?}", static_dir);
-        errors.push(StartupCheckError::StaticDirectoryMissing);
-    } else {
-        info!("Static files directory exists: {:?}", static_dir);
-
-        // Check for required files in static directory
-        let required_files = vec!["DejaVuSans.ttf"];
-        for file in required_files {
-            let file_path = static_dir.join(file);
-            if !file_path.exists() {
-                warn!("Required file missing: {:?}", file_path);
-                errors.push(StartupCheckError::RequiredFileMissing(file.to_string()));
-            } else {
-                info!("Required file found: {:?}", file_path);
+    // Check static files directories
+    for (index, static_dir) in config.static_files.directories.iter().enumerate() {
+        if !static_dir.exists() {
+            warn!(
+                "Static files directory {} does not exist: {:?}",
+                index, static_dir
+            );
+            if index == 0 {
+                // Only error if the first directory doesn't exist
+                errors.push(StartupCheckError::StaticDirectoryMissing);
             }
+        } else {
+            info!("Static files directory {} exists: {:?}", index, static_dir);
+        }
+    }
+
+    // Check for required files across all static directories
+    let required_files = vec!["DejaVuSans.ttf"];
+    for file in required_files {
+        let mut file_found = false;
+        for static_dir in &config.static_files.directories {
+            let file_path = static_dir.join(file);
+            if file_path.exists() {
+                info!("Required file found: {:?}", file_path);
+                file_found = true;
+                break;
+            }
+        }
+        if !file_found {
+            warn!("Required file missing in all static directories: {}", file);
+            errors.push(StartupCheckError::RequiredFileMissing(file.to_string()));
         }
     }
 

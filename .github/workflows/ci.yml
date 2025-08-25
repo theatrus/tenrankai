@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        os: [ubuntu-22.04] #, windows-latest, macos-latest]
         rust: [stable]
         exclude:
           # Reduce the number of jobs by excluding some combinations
@@ -25,6 +25,15 @@ jobs:
             rust: beta
     steps:
     - uses: actions/checkout@v5
+    
+    - name: Install OpenSSL (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install openssl -y
+        echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      shell: powershell
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable

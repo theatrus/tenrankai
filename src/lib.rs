@@ -4,8 +4,10 @@ use std::path::PathBuf;
 pub mod api;
 pub mod composite;
 pub mod copyright;
+pub mod email;
 pub mod favicon;
 pub mod gallery;
+pub mod login;
 pub mod posts;
 pub mod robots;
 pub mod startup_checks;
@@ -23,6 +25,8 @@ pub struct Config {
     pub galleries: Option<Vec<GallerySystemConfig>>,
     #[serde(default)]
     pub posts: Option<Vec<PostsSystemConfig>>,
+    #[serde(default)]
+    pub email: Option<email::EmailConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -35,12 +39,13 @@ pub struct ServerConfig {
 pub struct AppConfig {
     pub name: String,
     pub log_level: String,
-    pub download_secret: String,
-    pub download_password: String,
+    pub cookie_secret: String,
     #[serde(default)]
     pub copyright_holder: Option<String>,
     #[serde(default)]
     pub base_url: Option<String>,
+    #[serde(default)]
+    pub user_database: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -50,7 +55,65 @@ pub struct TemplateConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StaticConfig {
-    pub directory: PathBuf,
+    #[serde(
+        deserialize_with = "deserialize_static_directories",
+        serialize_with = "serialize_static_directories"
+    )]
+    pub directories: Vec<PathBuf>,
+}
+
+fn deserialize_static_directories<'de, D>(deserializer: D) -> Result<Vec<PathBuf>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct StaticDirectoriesVisitor;
+
+    impl<'de> Visitor<'de> for StaticDirectoriesVisitor {
+        type Value = Vec<PathBuf>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a path string or an array of path strings")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(vec![PathBuf::from(value)])
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut dirs = Vec::new();
+            while let Some(dir) = seq.next_element::<String>()? {
+                dirs.push(PathBuf::from(dir));
+            }
+            Ok(dirs)
+        }
+    }
+
+    deserializer.deserialize_any(StaticDirectoriesVisitor)
+}
+
+fn serialize_static_directories<S>(dirs: &Vec<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeSeq;
+
+    if dirs.len() == 1 {
+        serializer.serialize_str(dirs[0].to_str().unwrap_or(""))
+    } else {
+        let mut seq = serializer.serialize_seq(Some(dirs.len()))?;
+        for dir in dirs {
+            seq.serialize_element(dir.to_str().unwrap_or(""))?;
+        }
+        seq.end()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -188,16 +251,16 @@ impl Default for Config {
             app: AppConfig {
                 name: "Tenrankai".to_string(),
                 log_level: "info".to_string(),
-                download_secret: "change-me-in-production".to_string(),
-                download_password: "password".to_string(),
+                cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
                 copyright_holder: None,
                 base_url: None,
+                user_database: None,
             },
             templates: TemplateConfig {
                 directory: PathBuf::from("templates"),
             },
             static_files: StaticConfig {
-                directory: PathBuf::from("static"),
+                directories: vec![PathBuf::from("static")],
             },
             galleries: Some(vec![GallerySystemConfig {
                 name: "default".to_string(),
@@ -220,6 +283,7 @@ impl Default for Config {
                 approximate_dates_for_public: false,
             }]),
             posts: None,
+            email: None,
         }
     }
 }
@@ -242,14 +306,21 @@ pub struct AppState {
     pub galleries: Arc<HashMap<String, gallery::SharedGallery>>,
     pub favicon_renderer: favicon::FaviconRenderer,
     pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
+    pub login_state: Arc<tokio::sync::RwLock<login::LoginState>>,
+    pub user_database_manager: Option<login::types::UserDatabaseManager>,
+    pub email_provider: Option<email::DynEmailProvider>,
+    pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub config: Config,
 }
 
 async fn static_file_handler(
     State(app_state): State<AppState>,
     Path(path): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    app_state.static_handler.serve(&path).await
+    // Check if request has version parameter
+    let has_version = params.contains_key("v");
+    app_state.static_handler.serve(&path, has_version).await
 }
 
 async fn server_header_middleware(
@@ -268,15 +339,27 @@ async fn server_header_middleware(
     response
 }
 
-pub async fn create_app(config: Config) -> Router {
-    let template_engine = Arc::new(templating::TemplateEngine::new(
-        config.templates.directory.clone(),
-    ));
+pub async fn create_app(config: Config) -> axum::Router {
+    let mut template_engine = templating::TemplateEngine::new(config.templates.directory.clone());
 
     let static_handler =
-        static_files::StaticFileHandler::new(config.static_files.directory.clone());
+        static_files::StaticFileHandler::new(config.static_files.directories.clone());
 
-    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directory.clone());
+    // Ensure file versions are loaded before proceeding
+    static_handler.refresh_file_versions().await;
+
+    // Set the static handler on the template engine for cache busting
+    template_engine.set_static_handler(static_handler.clone());
+
+    // Set whether user auth is enabled
+    template_engine.set_has_user_auth(config.app.user_database.is_some());
+
+    // Update file versions for the template engine
+    template_engine.update_file_versions().await;
+
+    let template_engine = Arc::new(template_engine);
+
+    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directories.clone());
 
     // Initialize galleries
     let mut galleries = HashMap::new();
@@ -327,12 +410,76 @@ pub async fn create_app(config: Config) -> Router {
 
     let posts_managers_arc = Arc::new(posts_managers);
 
+    // Initialize login state and user database only if user database is configured
+    let (login_state, user_database_manager) =
+        if let Some(db_path) = config.app.user_database.as_ref() {
+            let state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
+            // Start periodic cleanup for login tokens and rate limits
+            login::start_periodic_cleanup(state.clone());
+
+            // Initialize user database manager
+            let db_manager = match login::types::UserDatabaseManager::new(db_path.clone()).await {
+                Ok(manager) => {
+                    info!("User database initialized from {:?}", db_path);
+                    Some(manager)
+                }
+                Err(e) => {
+                    error!("Failed to initialize user database: {}", e);
+                    None
+                }
+            };
+
+            (state, db_manager)
+        } else {
+            // Create an empty login state for consistency
+            (
+                Arc::new(tokio::sync::RwLock::new(login::LoginState::new())),
+                None,
+            )
+        };
+
+    // Initialize email provider if configured
+    let email_provider = if let Some(email_config) = &config.email {
+        match email::create_provider(&email_config.provider).await {
+            Ok(provider) => {
+                info!("Email provider initialized: {}", provider.name());
+                Some(provider)
+            }
+            Err(e) => {
+                error!("Failed to initialize email provider: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Initialize WebAuthn if base_url is configured
+    let webauthn = if config.app.base_url.is_some() {
+        match login::webauthn::create_webauthn(&config) {
+            Ok(wa) => {
+                info!("WebAuthn initialized");
+                Some(wa)
+            }
+            Err(e) => {
+                error!("Failed to initialize WebAuthn: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let app_state = AppState {
         template_engine,
         static_handler,
         galleries: galleries_arc,
         favicon_renderer,
         posts_managers: posts_managers_arc.clone(),
+        login_state,
+        user_database_manager,
+        email_provider,
+        webauthn,
         config: config.clone(),
     };
 
@@ -341,8 +488,6 @@ pub async fn create_app(config: Config) -> Router {
             "/",
             axum::routing::get(templating::template_with_gallery_handler),
         )
-        .route("/api/auth", axum::routing::post(api::authenticate_handler))
-        .route("/api/verify", axum::routing::get(api::verify_handler))
         .route(
             "/favicon.ico",
             axum::routing::get(favicon::favicon_ico_handler),
@@ -364,6 +509,66 @@ pub async fn create_app(config: Config) -> Router {
             axum::routing::get(robots::robots_txt_handler),
         )
         .route("/static/{*path}", axum::routing::get(static_file_handler));
+
+    // Add login routes only if user database is configured
+    if config.app.user_database.is_some() {
+        router = router
+            .route("/_login", axum::routing::get(login::login_page))
+            .route("/_login/request", axum::routing::post(login::login_request))
+            .route("/_login/verify", axum::routing::get(login::verify_login))
+            .route("/_login/logout", axum::routing::get(login::logout))
+            .route(
+                "/_login/passkeys",
+                axum::routing::get(templating::template_with_gallery_handler),
+            )
+            .route(
+                "/_login/passkey-enrollment",
+                axum::routing::get(login::passkey_enrollment_page),
+            )
+            .route("/_login/profile", axum::routing::get(login::profile_page))
+            .route("/api/verify", axum::routing::get(login::check_auth_status))
+            .route(
+                "/api/refresh-static-versions",
+                axum::routing::post(api::refresh_static_versions),
+            );
+
+        // Add WebAuthn routes if available
+        if app_state.webauthn.is_some() {
+            router = router
+                .route(
+                    "/api/webauthn/check-passkeys",
+                    axum::routing::post(login::webauthn::check_user_has_passkeys),
+                )
+                .route(
+                    "/api/webauthn/register/start",
+                    axum::routing::post(login::webauthn::start_passkey_registration),
+                )
+                .route(
+                    "/api/webauthn/register/finish/{reg_id}",
+                    axum::routing::post(login::webauthn::finish_passkey_registration),
+                )
+                .route(
+                    "/api/webauthn/authenticate/start",
+                    axum::routing::post(login::webauthn::start_passkey_authentication),
+                )
+                .route(
+                    "/api/webauthn/authenticate/finish/{auth_id}",
+                    axum::routing::post(login::webauthn::finish_passkey_authentication),
+                )
+                .route(
+                    "/api/webauthn/passkeys",
+                    axum::routing::get(login::webauthn::list_passkeys),
+                )
+                .route(
+                    "/api/webauthn/passkeys/{passkey_id}",
+                    axum::routing::delete(login::webauthn::delete_passkey),
+                )
+                .route(
+                    "/api/webauthn/passkeys/{passkey_id}/name",
+                    axum::routing::put(login::webauthn::update_passkey_name),
+                );
+        }
+    }
 
     // Add gallery routes dynamically based on configuration
     if let Some(gallery_configs) = &config.galleries {

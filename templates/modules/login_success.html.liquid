@@ -1,0 +1,24 @@
+{% assign page_title = "Login Successful" %}
+{% assign meta_description = "Successfully logged in to the photo gallery" %}
+{% assign page_css = "login-success.css" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="container">
+    <div class="success-container">
+        <h1>Login Successful!</h1>
+        <p>You have been successfully logged in.</p>
+        <p>You will be redirected to the gallery in a few seconds...</p>
+        
+        <a href="/gallery" class="btn-primary">Go to Gallery</a>
+    </div>
+</div>
+
+
+<script>
+// Redirect to gallery after 3 seconds
+setTimeout(function() {
+    window.location.href = '/gallery';
+}, 3000);
+</script>
+
+{% include "_footer.html.liquid" %}

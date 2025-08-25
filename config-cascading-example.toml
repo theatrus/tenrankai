@@ -1,0 +1,25 @@
+# Example configuration demonstrating cascading static directories
+# Files in the first directory take precedence over files in later directories
+
+[server]
+host = "127.0.0.1"
+port = 3000
+
+[app]
+name = "Tenrankai with Cascading Static Directories"
+log_level = "info"
+cookie_secret = "your-secret-key-here-change-in-production"
+
+[templates]
+directory = "templates"
+
+[static_files]
+# First directory has highest precedence
+# If a file exists in both directories, the one from "static-custom" will be served
+directories = ["static-custom", "static"]
+
+[[galleries]]
+name = "photos"
+url_prefix = "/gallery"
+source_directory = "photos"
+cache_directory = "cache"
