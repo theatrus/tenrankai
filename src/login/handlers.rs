@@ -55,7 +55,7 @@ pub async fn login_page(
 
     let html = match app_state
         .template_engine
-        .render_template("login.html.liquid", globals)
+        .render_template("modules/login.html.liquid", globals)
         .await
     {
         Ok(html) => html,
@@ -275,7 +275,7 @@ pub async fn login_success(State(app_state): State<AppState>) -> Result<Html<Str
 
     match app_state
         .template_engine
-        .render_template("login_success.html.liquid", globals)
+        .render_template("modules/login_success.html.liquid", globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
@@ -337,12 +337,58 @@ pub async fn passkey_enrollment_page(
 
     match app_state
         .template_engine
-        .render_template("passkey_enrollment.html.liquid", globals)
+        .render_template("modules/passkey_enrollment.html.liquid", globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
         Err(e) => {
             error!("Failed to render passkey enrollment page: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Profile page handler - shows user information and passkey management
+pub async fn profile_page(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Html<String>, StatusCode> {
+    // Check authentication
+    let username =
+        crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    // Get user information
+    let user_info = if let Some(manager) = &app_state.user_database_manager {
+        let db = manager.database().read().await;
+        db.get_user(&username)
+            .map(|u| (u.email.clone(), u.passkeys.len()))
+    } else {
+        None
+    };
+
+    let (email, passkey_count) = user_info.unwrap_or(("Unknown".to_string(), 0));
+
+    // Check if WebAuthn is available
+    let webauthn_available = app_state.webauthn.is_some();
+
+    let globals = liquid::object!({
+        "username": username,
+        "email": email,
+        "passkey_count": passkey_count,
+        "has_passkeys": passkey_count > 0,
+        "webauthn_available": webauthn_available,
+        "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
+    });
+
+    match app_state
+        .template_engine
+        .render_template("modules/profile.html.liquid", globals)
+        .await
+    {
+        Ok(html) => Ok(Html(html)),
+        Err(e) => {
+            error!("Failed to render profile page: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

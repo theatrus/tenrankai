@@ -79,7 +79,8 @@
 }
 
 .btn-primary:disabled {
-    background-color: var(--text-quaternary);
+    background-color: var(--btn-disabled-bg);
+    color: var(--btn-disabled-color);
     cursor: not-allowed;
     transform: none;
 }
@@ -116,7 +117,7 @@
 }
 
 .btn-secondary:disabled {
-    border-color: var(--text-quaternary);
+    border-color: var(--btn-disabled-border);
     color: var(--text-quaternary);
     cursor: not-allowed;
     transform: none;
@@ -164,6 +165,104 @@
     margin-top: var(--spacing-lg);
 }
 
+/* Profile page styles */
+.profile-info {
+    margin-bottom: var(--spacing-xl);
+}
+
+.profile-value {
+    font-weight: normal;
+    color: var(--text-primary);
+    padding: 8px;
+    background-color: var(--bg-secondary);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.profile-actions {
+    margin-top: var(--spacing-xl);
+}
+
+.profile-actions .button-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+/* Passkey management styles */
+.passkey-management {
+    margin: var(--spacing-xl) 0;
+    padding: var(--spacing-lg);
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.passkey-management h2 {
+    margin-top: 0;
+    margin-bottom: var(--spacing-lg);
+    color: var(--text-primary);
+    font-size: 1.2em;
+}
+
+.passkey-list {
+    margin-bottom: var(--spacing-lg);
+}
+
+.passkey-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-sm);
+}
+
+.passkey-info {
+    flex-grow: 1;
+}
+
+.passkey-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.passkey-created {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.passkey-actions {
+    margin-left: var(--spacing-md);
+}
+
+.btn-danger {
+    background-color: var(--btn-danger-bg);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.3s;
+}
+
+.btn-danger:hover {
+    background-color: var(--btn-danger-hover);
+}
+
+.loading {
+    text-align: center;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.error {
+    color: var(--message-error-color);
+    margin: var(--spacing-sm) 0;
+}
+
 /* Responsive adjustments */
 @media (max-width: 480px) {
     .login-container {
@@ -173,5 +272,25 @@
     
     .login-container h1 {
         font-size: 1.5rem;
+    }
+    
+    .profile-actions .button-group {
+        flex-direction: column;
+    }
+    
+    .profile-actions .button-group a,
+    .profile-actions .button-group button {
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .passkey-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .passkey-actions {
+        margin-left: 0;
+        margin-top: var(--spacing-sm);
+        align-self: flex-end;
     }
 }

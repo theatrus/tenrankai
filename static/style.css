@@ -10,7 +10,7 @@
 
     /* Text colors */
     --text-primary: #e0e0e0;
-    --text-secondary: #999;
+    --text-secondary: #b8b8b8;
     --text-muted: #ccc;
 
     /* Link colors */
@@ -22,12 +22,21 @@
     --border-hover: #777;
 
     /* Additional colors */
-    --text-tertiary: #888;
-    --text-quaternary: #666;
+    --text-tertiary: #a0a0a0;
+    --text-quaternary: #8a8a8a;
     --text-light: #bbb;
     --accent-red: #ff6b6b;
     --bg-button-hover: #666;
     --text-white: white;
+    
+    /* Button disabled states */
+    --btn-disabled-bg: #6a6a6a;
+    --btn-disabled-color: #a0a0a0;
+    --btn-disabled-border: #6a6a6a;
+    
+    /* Danger button colors */
+    --btn-danger-bg: var(--message-error-color);
+    --btn-danger-hover: #c82333;
 
     /* Message colors */
     --message-info-bg: rgba(23, 162, 184, 0.1);

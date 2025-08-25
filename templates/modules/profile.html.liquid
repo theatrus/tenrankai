@@ -1,0 +1,70 @@
+{% assign page_title = "Profile" %}
+{% assign page_css = "login.css" | split: "," %}
+{% assign page_js = "login.js" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="login-container">
+    <h1>User Profile</h1>
+    
+    <div class="profile-info">
+        <div class="form-group">
+            <label>Username:</label>
+            <div class="profile-value">{{ username }}</div>
+        </div>
+        
+        <div class="form-group">
+            <label>Email:</label>
+            <div class="profile-value">{{ email }}</div>
+        </div>
+        
+        {% if webauthn_available %}
+        <div class="form-group">
+            <label>Passkeys:</label>
+            <div class="profile-value">
+                {% if has_passkeys %}
+                    {{ passkey_count }} registered
+                {% else %}
+                    None registered
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    {% if webauthn_available %}
+    <div class="passkey-management">
+        <h2>Passkey Management</h2>
+        
+        {% if has_passkeys %}
+        <div class="passkey-list" id="passkeyList">
+            <div class="loading">Loading passkeys...</div>
+        </div>
+        <div class="button-group">
+            <button type="button" class="btn-secondary" onclick="LoginUtils.enrollNewPasskey()">Add New Passkey</button>
+        </div>
+        {% else %}
+        <p>No passkeys registered. Passkeys provide a more secure and convenient way to sign in.</p>
+        <div class="button-group">
+            <button type="button" class="btn-secondary" onclick="LoginUtils.enrollNewPasskey()">Set Up Your First Passkey</button>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <div class="profile-actions">
+        <div class="button-group">
+            <a href="/_login/logout" class="btn-primary">Logout</a>
+        </div>
+    </div>
+</div>
+
+<script>
+// Initialize profile page functionality on load
+document.addEventListener('DOMContentLoaded', function() {
+    {% if webauthn_available and has_passkeys %}
+    LoginUtils.initProfilePage();
+    {% endif %}
+});
+</script>
+
+{% include "_footer.html.liquid" %}

@@ -525,6 +525,7 @@ pub async fn create_app(config: Config) -> axum::Router {
                 "/_login/passkey-enrollment",
                 axum::routing::get(login::passkey_enrollment_page),
             )
+            .route("/_login/profile", axum::routing::get(login::profile_page))
             .route("/api/verify", axum::routing::get(login::check_auth_status))
             .route(
                 "/api/refresh-static-versions",

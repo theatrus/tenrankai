@@ -273,6 +273,83 @@ function formatDate(timestamp) {
     return new Date(timestamp * 1000).toLocaleDateString();
 }
 
+// Profile page passkey management functions
+async function loadPasskeyList() {
+    const passkeyList = document.getElementById('passkeyList');
+    if (!passkeyList) return;
+    
+    try {
+        const passkeys = await loadPasskeys();
+        
+        if (passkeys.length === 0) {
+            passkeyList.innerHTML = '<div class="loading">No passkeys found</div>';
+            return;
+        }
+        
+        passkeyList.innerHTML = passkeys.map(passkey => `
+            <div class="passkey-item" data-id="${passkey.id}">
+                <div class="passkey-info">
+                    <div class="passkey-name">${escapeHtml(passkey.name || 'Unnamed Passkey')}</div>
+                    <div class="passkey-created">Created: ${formatDate(passkey.created_at)}</div>
+                </div>
+                <div class="passkey-actions">
+                    <button type="button" class="btn-danger" onclick="LoginUtils.removePasskey('${passkey.id}')">Remove</button>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading passkeys:', error);
+        passkeyList.innerHTML = '<div class="error">Failed to load passkeys</div>';
+    }
+}
+
+async function removePasskey(passkeyId) {
+    if (!confirm('Are you sure you want to remove this passkey? This action cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        await deletePasskey(passkeyId);
+        
+        // Remove the passkey item from the DOM
+        const passkeyItem = document.querySelector(`[data-id="${passkeyId}"]`);
+        if (passkeyItem) {
+            passkeyItem.remove();
+        }
+        
+        // Check if this was the last passkey
+        const remainingPasskeys = document.querySelectorAll('.passkey-item');
+        if (remainingPasskeys.length === 0) {
+            // Reload the page to show the "no passkeys" state
+            window.location.reload();
+        }
+        
+    } catch (error) {
+        console.error('Error removing passkey:', error);
+        alert('Failed to remove passkey. Please try again.');
+    }
+}
+
+async function enrollNewPasskey() {
+    try {
+        // Redirect to enrollment page
+        window.location.href = '/_login/passkey-enrollment?return=' + encodeURIComponent('/_login/profile');
+        
+    } catch (error) {
+        console.error('Error starting passkey enrollment:', error);
+        alert('Failed to start passkey enrollment. Please try again.');
+    }
+}
+
+// Initialize profile page functionality
+function initProfilePage() {
+    // Load passkeys if the passkey list element exists
+    if (document.getElementById('passkeyList')) {
+        loadPasskeyList();
+    }
+}
+
 // Export functions for use in templates
 window.LoginUtils = {
     base64ToArrayBuffer,
@@ -292,5 +369,9 @@ window.LoginUtils = {
     hideSuccess,
     loadPasskeys,
     deletePasskey,
-    formatDate
+    formatDate,
+    loadPasskeyList,
+    removePasskey,
+    enrollNewPasskey,
+    initProfilePage
 };
