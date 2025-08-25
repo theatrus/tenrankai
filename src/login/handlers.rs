@@ -212,11 +212,13 @@ pub async fn verify_login(
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, auth_cookie.parse().unwrap());
-    
+
     // Clear the return URL cookie
     headers.append(
         SET_COOKIE,
-        "return_url=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax".parse().unwrap()
+        "return_url=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+            .parse()
+            .unwrap(),
     );
 
     info!("User {} logged in successfully", username);
@@ -243,7 +245,10 @@ pub async fn verify_login(
     let redirect_url = if should_enroll {
         // If enrolling, we'll pass the return URL to the enrollment page
         if let Some(return_to) = return_url {
-            format!("/_login/passkey-enrollment?return={}", urlencoding::encode(&return_to))
+            format!(
+                "/_login/passkey-enrollment?return={}",
+                urlencoding::encode(&return_to)
+            )
         } else {
             "/_login/passkey-enrollment".to_string()
         }
@@ -251,7 +256,7 @@ pub async fn verify_login(
         // Otherwise, use the return URL or default to gallery
         return_url.unwrap_or_else(|| "/gallery".to_string())
     };
-    
+
     Ok((headers, Redirect::to(&redirect_url)))
 }
 
@@ -315,11 +320,13 @@ pub async fn passkey_enrollment_page(
     Query(query): Query<LoginQuery>,
 ) -> Result<Html<String>, StatusCode> {
     // Check if user is authenticated
-    let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let username =
+        crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
+            .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Use return URL from query parameter or default to gallery
-    let redirect_url = query.return_url
+    let redirect_url = query
+        .return_url
         .filter(|url| is_safe_return_url(url))
         .unwrap_or_else(|| "/gallery".to_string());
 
@@ -341,4 +348,3 @@ pub async fn passkey_enrollment_page(
         }
     }
 }
-

@@ -21,7 +21,7 @@ impl UserPasskey {
             last_used_at: None,
         }
     }
-    
+
     pub fn update_last_used(&mut self) {
         self.last_used_at = Some(chrono::Utc::now().timestamp());
     }

@@ -95,30 +95,59 @@ document.getElementById('setupPasskeyBtn').addEventListener('click', async funct
             if (startResponse.status === 401) {
                 throw new Error('Your session has expired. Please sign in again.');
             }
-            throw new Error('Failed to start passkey setup');
+            const errorText = await startResponse.text();
+            console.error('Passkey registration start failed:', startResponse.status, errorText);
+            throw new Error('Failed to start passkey setup: ' + errorText);
         }
         
-        const options = await startResponse.json();
+        const response = await startResponse.json();
+        console.log('Raw response from server:', JSON.stringify(response, null, 2));
+        
+        // Extract the publicKey options and reg_id
+        const options = response.publicKey || response;
+        const regId = response.reg_id;
+        
+        console.log('Extracted options:', JSON.stringify(options, null, 2));
+        console.log('Registration ID:', regId);
         
         // Convert challenge and user.id from base64
+        console.log('Challenge before conversion:', options.challenge);
+        console.log('User ID before conversion:', options.user?.id);
+        
         options.challenge = base64ToArrayBuffer(options.challenge);
         options.user.id = base64ToArrayBuffer(options.user.id);
         
+        console.log('Challenge after conversion:', options.challenge);
+        console.log('User ID after conversion:', options.user.id);
+        
         // Convert excludeCredentials if present
         if (options.excludeCredentials) {
+            console.log('Exclude credentials before conversion:', options.excludeCredentials);
             options.excludeCredentials = options.excludeCredentials.map(cred => ({
                 ...cred,
                 id: base64ToArrayBuffer(cred.id)
             }));
+            console.log('Exclude credentials after conversion:', options.excludeCredentials);
         }
         
+        console.log('Final options being sent to navigator.credentials.create:', options);
+        
         // Create credential
-        const credential = await navigator.credentials.create({
-            publicKey: options
-        });
+        let credential;
+        try {
+            credential = await navigator.credentials.create({
+                publicKey: options
+            });
+        } catch (credError) {
+            console.error('navigator.credentials.create error:', credError);
+            console.error('Error name:', credError.name);
+            console.error('Error message:', credError.message);
+            console.error('Error stack:', credError.stack);
+            throw credError;
+        }
         
         // Send registration response
-        const finishResponse = await fetch(`/api/webauthn/register/finish/${options.reg_id}`, {
+        const finishResponse = await fetch(`/api/webauthn/register/finish/${regId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -161,7 +190,13 @@ document.getElementById('setupPasskeyBtn').addEventListener('click', async funct
 
 // Utility functions
 function base64ToArrayBuffer(base64) {
-    const binaryString = window.atob(base64);
+    // Handle URL-safe base64 (convert to standard base64)
+    const standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+    // Add padding if necessary
+    const padding = standardBase64.length % 4;
+    const paddedBase64 = padding ? standardBase64 + '===='.substring(padding) : standardBase64;
+    
+    const binaryString = window.atob(paddedBase64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
@@ -175,7 +210,8 @@ function arrayBufferToBase64(buffer) {
     for (let i = 0; i < bytes.byteLength; i++) {
         binary += String.fromCharCode(bytes[i]);
     }
-    return window.btoa(binary);
+    // Return URL-safe base64 to match what the server expects
+    return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 </script>
 

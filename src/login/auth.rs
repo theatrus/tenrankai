@@ -20,7 +20,10 @@ pub fn is_authenticated(headers: &HeaderMap, secret: &str) -> bool {
 
 /// Create a login redirect URL with return path
 pub fn login_redirect_url(return_path: &str) -> String {
-    if return_path.starts_with('/') && !return_path.starts_with("//") && !return_path.contains("://") {
+    if return_path.starts_with('/')
+        && !return_path.starts_with("//")
+        && !return_path.contains("://")
+    {
         format!("/_login?return={}", urlencoding::encode(return_path))
     } else {
         "/_login".to_string()

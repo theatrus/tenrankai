@@ -347,28 +347,32 @@ pub async fn create_app(config: Config) -> axum::Router {
     let posts_managers_arc = Arc::new(posts_managers);
 
     // Initialize login state and user database only if user database is configured
-    let (login_state, user_database_manager) = if let Some(db_path) = config.app.user_database.as_ref() {
-        let state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
-        // Start periodic cleanup for login tokens and rate limits
-        login::start_periodic_cleanup(state.clone());
-        
-        // Initialize user database manager
-        let db_manager = match login::types::UserDatabaseManager::new(db_path.clone()).await {
-            Ok(manager) => {
-                info!("User database initialized from {:?}", db_path);
-                Some(manager)
-            }
-            Err(e) => {
-                error!("Failed to initialize user database: {}", e);
-                None
-            }
+    let (login_state, user_database_manager) =
+        if let Some(db_path) = config.app.user_database.as_ref() {
+            let state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
+            // Start periodic cleanup for login tokens and rate limits
+            login::start_periodic_cleanup(state.clone());
+
+            // Initialize user database manager
+            let db_manager = match login::types::UserDatabaseManager::new(db_path.clone()).await {
+                Ok(manager) => {
+                    info!("User database initialized from {:?}", db_path);
+                    Some(manager)
+                }
+                Err(e) => {
+                    error!("Failed to initialize user database: {}", e);
+                    None
+                }
+            };
+
+            (state, db_manager)
+        } else {
+            // Create an empty login state for consistency
+            (
+                Arc::new(tokio::sync::RwLock::new(login::LoginState::new())),
+                None,
+            )
         };
-        
-        (state, db_manager)
-    } else {
-        // Create an empty login state for consistency
-        (Arc::new(tokio::sync::RwLock::new(login::LoginState::new())), None)
-    };
 
     // Initialize email provider if configured
     let email_provider = if let Some(email_config) = &config.email {
@@ -385,7 +389,7 @@ pub async fn create_app(config: Config) -> axum::Router {
     } else {
         None
     };
-    
+
     // Initialize WebAuthn if base_url is configured
     let webauthn = if config.app.base_url.is_some() {
         match login::webauthn::create_webauthn(&config) {
@@ -449,25 +453,55 @@ pub async fn create_app(config: Config) -> axum::Router {
             .route("/_login/request", axum::routing::post(login::login_request))
             .route("/_login/verify", axum::routing::get(login::verify_login))
             .route("/_login/logout", axum::routing::get(login::logout))
-            .route("/_login/passkeys", axum::routing::get(templating::template_with_gallery_handler))
-            .route("/_login/passkey-enrollment", axum::routing::get(login::passkey_enrollment_page))
+            .route(
+                "/_login/passkeys",
+                axum::routing::get(templating::template_with_gallery_handler),
+            )
+            .route(
+                "/_login/passkey-enrollment",
+                axum::routing::get(login::passkey_enrollment_page),
+            )
             .route("/api/verify", axum::routing::get(login::check_auth_status))
             .route(
                 "/api/refresh-static-versions",
                 axum::routing::post(api::refresh_static_versions),
             );
-            
+
         // Add WebAuthn routes if available
         if app_state.webauthn.is_some() {
             router = router
-                .route("/api/webauthn/check-passkeys", axum::routing::post(login::webauthn::check_user_has_passkeys))
-                .route("/api/webauthn/register/start", axum::routing::post(login::webauthn::start_passkey_registration))
-                .route("/api/webauthn/register/finish/{reg_id}", axum::routing::post(login::webauthn::finish_passkey_registration))
-                .route("/api/webauthn/authenticate/start", axum::routing::post(login::webauthn::start_passkey_authentication))
-                .route("/api/webauthn/authenticate/finish/{auth_id}", axum::routing::post(login::webauthn::finish_passkey_authentication))
-                .route("/api/webauthn/passkeys", axum::routing::get(login::webauthn::list_passkeys))
-                .route("/api/webauthn/passkeys/{passkey_id}", axum::routing::delete(login::webauthn::delete_passkey))
-                .route("/api/webauthn/passkeys/{passkey_id}/name", axum::routing::put(login::webauthn::update_passkey_name));
+                .route(
+                    "/api/webauthn/check-passkeys",
+                    axum::routing::post(login::webauthn::check_user_has_passkeys),
+                )
+                .route(
+                    "/api/webauthn/register/start",
+                    axum::routing::post(login::webauthn::start_passkey_registration),
+                )
+                .route(
+                    "/api/webauthn/register/finish/{reg_id}",
+                    axum::routing::post(login::webauthn::finish_passkey_registration),
+                )
+                .route(
+                    "/api/webauthn/authenticate/start",
+                    axum::routing::post(login::webauthn::start_passkey_authentication),
+                )
+                .route(
+                    "/api/webauthn/authenticate/finish/{auth_id}",
+                    axum::routing::post(login::webauthn::finish_passkey_authentication),
+                )
+                .route(
+                    "/api/webauthn/passkeys",
+                    axum::routing::get(login::webauthn::list_passkeys),
+                )
+                .route(
+                    "/api/webauthn/passkeys/{passkey_id}",
+                    axum::routing::delete(login::webauthn::delete_passkey),
+                )
+                .route(
+                    "/api/webauthn/passkeys/{passkey_id}/name",
+                    axum::routing::put(login::webauthn::update_passkey_name),
+                );
         }
     }
 

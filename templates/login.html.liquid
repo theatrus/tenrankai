@@ -157,7 +157,11 @@ async function authenticateWithPasskey(username) {
         throw new Error('Failed to start authentication');
     }
     
-    const options = await startResponse.json();
+    const response = await startResponse.json();
+    
+    // Extract the publicKey options and auth_id
+    const options = response.publicKey || response;
+    const authId = response.auth_id;
     
     // Convert challenge from base64
     options.challenge = base64ToArrayBuffer(options.challenge);
@@ -176,7 +180,7 @@ async function authenticateWithPasskey(username) {
     });
     
     // Send authentication response
-    const finishResponse = await fetch(`/api/webauthn/authenticate/finish/${options.auth_id}`, {
+    const finishResponse = await fetch(`/api/webauthn/authenticate/finish/${authId}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -205,7 +209,13 @@ async function authenticateWithPasskey(username) {
 
 // Utility functions for base64 conversion
 function base64ToArrayBuffer(base64) {
-    const binaryString = window.atob(base64);
+    // Handle URL-safe base64 (convert to standard base64)
+    const standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+    // Add padding if necessary
+    const padding = standardBase64.length % 4;
+    const paddedBase64 = padding ? standardBase64 + '===='.substring(padding) : standardBase64;
+    
+    const binaryString = window.atob(paddedBase64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
@@ -219,7 +229,8 @@ function arrayBufferToBase64(buffer) {
     for (let i = 0; i < bytes.byteLength; i++) {
         binary += String.fromCharCode(bytes[i]);
     }
-    return window.btoa(binary);
+    // Return URL-safe base64 to match what the server expects
+    return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
 // Get return URL from cookie

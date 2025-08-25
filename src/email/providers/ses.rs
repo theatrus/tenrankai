@@ -16,7 +16,7 @@ pub struct SesProvider {
 impl SesProvider {
     pub async fn new(config: &SesConfig) -> Result<Self, EmailError> {
         let mut aws_config_builder = aws_config::defaults(BehaviorVersion::latest());
-        
+
         // Set region if provided, otherwise use default from environment
         if let Some(region) = &config.region {
             aws_config_builder = aws_config_builder.region(Region::new(region.clone()));
@@ -26,13 +26,8 @@ impl SesProvider {
         if let (Some(access_key), Some(secret_key)) =
             (&config.access_key_id, &config.secret_access_key)
         {
-            let credentials = Credentials::new(
-                access_key,
-                secret_key,
-                None,
-                None,
-                "tenrankai-ses-provider"
-            );
+            let credentials =
+                Credentials::new(access_key, secret_key, None, None, "tenrankai-ses-provider");
             aws_config_builder = aws_config_builder.credentials_provider(credentials);
         }
 
