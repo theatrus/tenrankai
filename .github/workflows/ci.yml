@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04] #, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
         rust: [stable]
         exclude:
           # Reduce the number of jobs by excluding some combinations
@@ -29,10 +29,11 @@ jobs:
     - name: Install OpenSSL (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        choco install openssl -y
-        echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        vcpkg install openssl:x64-windows-static
+        echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "OPENSSL_LIB_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "OPENSSL_INCLUDE_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "OPENSSL_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       shell: powershell
     
     - name: Install Rust
