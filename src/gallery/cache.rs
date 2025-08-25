@@ -332,7 +332,10 @@ mod tests {
 
         // Test watermark differentiation
         let key_with_watermark = gallery.generate_image_cache_key(path, size, format, true);
-        assert_ne!(key1, key_with_watermark, "Watermarked and non-watermarked keys should differ");
+        assert_ne!(
+            key1, key_with_watermark,
+            "Watermarked and non-watermarked keys should differ"
+        );
 
         // Test composite cache keys
         let comp_key1 = Gallery::generate_composite_cache_key("gallery/2024");

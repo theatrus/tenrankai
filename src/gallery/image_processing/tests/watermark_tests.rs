@@ -140,12 +140,10 @@ async fn test_cache_key_generation_with_watermark() {
     let format = "jpg";
 
     // Test cache key without watermark
-    let key_no_watermark =
-        gallery.generate_image_cache_key(path, size, format, false);
+    let key_no_watermark = gallery.generate_image_cache_key(path, size, format, false);
 
     // Test cache key with watermark
-    let key_with_watermark =
-        gallery.generate_image_cache_key(path, size, format, true);
+    let key_with_watermark = gallery.generate_image_cache_key(path, size, format, true);
 
     // Keys should be different
     assert_ne!(
@@ -154,11 +152,9 @@ async fn test_cache_key_generation_with_watermark() {
     );
 
     // Test filename generation
-    let filename_no_watermark =
-        gallery.generate_cache_filename(path, size, format, false);
+    let filename_no_watermark = gallery.generate_cache_filename(path, size, format, false);
 
-    let filename_with_watermark =
-        gallery.generate_cache_filename(path, size, format, true);
+    let filename_with_watermark = gallery.generate_cache_filename(path, size, format, true);
 
     assert_ne!(
         filename_no_watermark, filename_with_watermark,
@@ -192,8 +188,7 @@ async fn test_watermark_only_applied_to_medium_size() {
         );
 
         // Disable copyright to compare
-        let key_without_copyright =
-            gallery.generate_image_cache_key(path, size, format, false);
+        let key_without_copyright = gallery.generate_image_cache_key(path, size, format, false);
 
         if size == "medium" {
             // Medium size keys should be different when watermark is enabled
