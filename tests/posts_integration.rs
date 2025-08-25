@@ -129,7 +129,6 @@ This is the content of the second test post."#;
             name: "TestServer".to_string(),
             log_level: "error".to_string(),
             cookie_secret: "test-cookie-secret".to_string(),
-            copyright_holder: None,
             base_url: Some("http://localhost:3000".to_string()),
             user_database: None,
         },
@@ -174,6 +173,7 @@ This is the content of the second test post."#;
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
+            copyright_holder: None,
         }]),
         posts: Some(vec![PostsSystemConfig {
             name: "blog".to_string(),

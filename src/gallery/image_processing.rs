@@ -153,7 +153,7 @@ impl Gallery {
         let original_path = original_path.clone();
         let cache_path_clone = cache_path.clone();
         let is_medium = base_size == "medium";
-        let copyright_holder = self.app_config.copyright_holder.clone();
+        let copyright_holder = self.config.copyright_holder.clone();
         let static_dir = PathBuf::from("static"); // Assume static dir for font
         let format = output_format;
         let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
@@ -944,7 +944,7 @@ impl Gallery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AppConfig, GallerySystemConfig};
+    use crate::GallerySystemConfig;
     use image::{ImageBuffer, Rgba};
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -989,20 +989,11 @@ mod tests {
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
-        };
-
-        let app_config = AppConfig {
-            name: "Test".to_string(),
-            log_level: "info".to_string(),
-            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
-            base_url: None,
-            user_database: None,
         };
 
         let gallery = Gallery {
             config,
-            app_config,
             metadata_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
             cache_metadata: Arc::new(RwLock::new(super::super::CacheMetadata {
                 version: String::new(),
@@ -1404,7 +1395,7 @@ mod tests {
         let (mut gallery, _temp_dir) = create_test_gallery().await;
 
         // Enable watermarking
-        gallery.app_config.copyright_holder = Some("Test Copyright".to_string());
+        gallery.config.copyright_holder = Some("Test Copyright".to_string());
 
         // Create a test image
         let img = ImageBuffer::from_pixel(200, 200, image::Rgb([255u8, 128, 64]));

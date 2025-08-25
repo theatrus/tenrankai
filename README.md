@@ -64,7 +64,6 @@ port = 3000
 [app]
 name = "My Gallery"
 cookie_secret = "change-me-in-production-use-a-long-random-string"  # Required: Used for signing auth cookies
-copyright_holder = "Your Name"
 base_url = "https://yourdomain.com"
 user_database = "users.toml"  # Optional: Enable user authentication
 
@@ -77,6 +76,7 @@ cache_directory = "cache/main"
 images_per_page = 50
 jpeg_quality = 85
 webp_quality = 85.0
+copyright_holder = "Your Name"  # Optional: Add watermark to medium-sized images
 
 [[galleries]]
 name = "portfolio"
@@ -86,6 +86,7 @@ cache_directory = "cache/portfolio"
 images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
+copyright_holder = "Your Portfolio Name"
 
 [templates]
 directory = "templates"
@@ -122,6 +123,7 @@ region = "us-east-1"
 - `approximate_dates_for_public`: Show only month/year capture dates to non-authenticated users
 - `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")
 - `image_detail_template`: Custom template for image detail pages (default: "modules/image_detail.html.liquid")
+- `copyright_holder`: Copyright holder name for watermarking medium-sized images (optional)
 
 **Static Files Configuration:**
 - `directories`: Static file directories (string or array)
@@ -213,6 +215,8 @@ Folders can use TOML front matter in `_folder.md` files for advanced configurati
 +++
 hidden = true
 title = "Private Collection"
+require_auth = true
+allowed_users = ["alice", "bob"]
 +++
 
 # Optional Markdown Content
@@ -223,12 +227,20 @@ This folder is hidden from gallery listings but remains accessible via direct UR
 **Configuration Options:**
 - `hidden = true`: Hides the folder from gallery listings, previews, and counts (but allows direct access)
 - `title = "Custom Name"`: Override the folder display name
+- `require_auth = true`: Require user authentication to access this folder
+- `allowed_users = ["user1", "user2"]`: Restrict access to specific users (implies require_auth)
 
 **Hidden Folders:**
 - Do not appear in gallery navigation or listings
 - Are excluded from gallery preview images and image counts
 - Remain fully accessible if you know the direct URL
 - Perfect for private collections or work-in-progress galleries
+
+**Access Control:**
+- Access restrictions are hierarchical (parent folder restrictions apply to children)
+- Users must be authenticated to access folders with `require_auth = true`
+- Only listed users can access folders with `allowed_users` specified
+- Access control applies to folder browsing, image viewing, and API endpoints
 
 ## Posts System
 
@@ -360,8 +372,10 @@ Tenrankai supports modern WebAuthn/Passkey authentication for passwordless login
 
 **Passkey Management**:
 - After email login, users are prompted to enroll a passkey for faster future logins
-- Users can manage their passkeys at `/_login/passkeys`
-- Passkeys can be renamed and deleted through the web interface
+- Users can view their profile and manage passkeys at `/_login/profile`
+- Profile page shows username, email, and registered passkeys
+- Passkeys can be removed through the profile interface
+- New passkeys can be enrolled from the profile page
 
 **Login Flow with WebAuthn**:
 1. User visits `/_login` and enters their username
@@ -406,10 +420,10 @@ This is useful for:
 - `POST /_login/request` - Request login email (accepts username or email)
 - `GET /_login/verify?token={token}` - Verify login token
 - `GET /_login/logout` - Logout and clear session
+- `GET /_login/profile` - User profile and passkey management page
 - `GET /api/verify` - Check authentication status (JSON)
 
 ### WebAuthn/Passkey Endpoints
-- `GET /_login/passkeys` - Passkey management page
 - `GET /_login/passkey-enrollment` - Passkey enrollment page (post-login)
 - `POST /api/webauthn/check-passkeys` - Check if user has registered passkeys
 - `POST /api/webauthn/register/start` - Start passkey registration
@@ -518,10 +532,13 @@ Tenrankai is under active development with a comprehensive codebase and document
 ### Recent Major Features
 
 - ✅ **WebAuthn/Passkey Authentication**: Biometric and hardware key login support
+- ✅ **Gallery Access Control**: Folder-level authentication and user restrictions
+- ✅ **User Profile Page**: Centralized passkey management interface
 - ✅ **Cascading Static Directories**: Multi-directory asset management with precedence
 - ✅ **Null Email Provider**: Development-friendly email logging
 - ✅ **Enhanced Asset Management**: Cache busting with automatic versioning
 - ✅ **Improved Authentication Flow**: Return URL support and passkey enrollment
+- ✅ **Simplified TOML Database**: Clean user database format using serde
 
 ### Planned Features
 

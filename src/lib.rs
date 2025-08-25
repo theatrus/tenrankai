@@ -41,8 +41,6 @@ pub struct AppConfig {
     pub log_level: String,
     pub cookie_secret: String,
     #[serde(default)]
-    pub copyright_holder: Option<String>,
-    #[serde(default)]
     pub base_url: Option<String>,
     #[serde(default)]
     pub user_database: Option<PathBuf>,
@@ -148,6 +146,9 @@ pub struct GallerySystemConfig {
     /// When true, show only approximate capture dates (month/year) to non-authenticated users
     #[serde(default = "default_false")]
     pub approximate_dates_for_public: bool,
+    /// Copyright holder name for watermarking medium-sized images
+    #[serde(default)]
+    pub copyright_holder: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -252,7 +253,6 @@ impl Default for Config {
                 name: "Tenrankai".to_string(),
                 log_level: "info".to_string(),
                 cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
-                copyright_holder: None,
                 base_url: None,
                 user_database: None,
             },
@@ -281,6 +281,7 @@ impl Default for Config {
                 pregenerate_cache: false,
                 new_threshold_days: None,
                 approximate_dates_for_public: false,
+                copyright_holder: None,
             }]),
             posts: None,
             email: None,
@@ -365,10 +366,7 @@ pub async fn create_app(config: Config) -> axum::Router {
     let mut galleries = HashMap::new();
     if let Some(gallery_configs) = &config.galleries {
         for gallery_config in gallery_configs {
-            let gallery = Arc::new(gallery::Gallery::new(
-                gallery_config.clone(),
-                config.app.clone(),
-            ));
+            let gallery = Arc::new(gallery::Gallery::new(gallery_config.clone()));
             galleries.insert(gallery_config.name.clone(), gallery);
         }
     }

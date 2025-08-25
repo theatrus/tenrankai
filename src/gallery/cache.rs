@@ -207,10 +207,7 @@ mod tests {
     #[test]
     fn test_cache_key_consistency() {
         let default_config = crate::Config::default();
-        let gallery = Gallery::new(
-            default_config.galleries.unwrap()[0].clone(),
-            default_config.app,
-        );
+        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
 
         // Test regular image cache keys
         let path = "vacation/beach.jpg";
@@ -253,10 +250,7 @@ mod tests {
     #[test]
     fn test_cache_filename_generation() {
         let default_config = crate::Config::default();
-        let gallery = Gallery::new(
-            default_config.galleries.unwrap()[0].clone(),
-            default_config.app,
-        );
+        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
 
         let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp");
         assert!(
@@ -342,18 +336,10 @@ This folder should not appear in listings.
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
-        };
-
-        let app_config = crate::AppConfig {
-            name: "Test".to_string(),
-            log_level: "info".to_string(),
-            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
-            base_url: None,
-            user_database: None,
         };
 
-        let gallery = Gallery::new(config, app_config);
+        let gallery = Gallery::new(config);
 
         let items = gallery.scan_directory("").await.unwrap();
 
@@ -425,18 +411,10 @@ Hidden folder
             pregenerate_cache: false,
             new_threshold_days: None,
             approximate_dates_for_public: false,
-        };
-
-        let app_config = crate::AppConfig {
-            name: "Test".to_string(),
-            log_level: "info".to_string(),
-            cookie_secret: "test-cookie-secret".to_string(),
             copyright_holder: None,
-            base_url: None,
-            user_database: None,
         };
 
-        let gallery = Gallery::new(config, app_config);
+        let gallery = Gallery::new(config);
 
         // Should be able to access hidden folder directly
         let items = gallery.scan_directory("hidden").await.unwrap();

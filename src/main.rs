@@ -279,8 +279,7 @@ async fn run_server(
 
     if let Some(gallery_configs) = &config.galleries {
         for gallery_config in gallery_configs {
-            let gallery =
-                std::sync::Arc::new(Gallery::new(gallery_config.clone(), config.app.clone()));
+            let gallery = std::sync::Arc::new(Gallery::new(gallery_config.clone()));
 
             // Initialize gallery and check for version changes
             if let Err(e) = gallery.initialize_and_check_version().await {

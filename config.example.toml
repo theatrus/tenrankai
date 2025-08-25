@@ -6,7 +6,6 @@ port = 3000
 name = "Tenrankai"
 log_level = "info"
 cookie_secret = "change-me-in-production-use-a-long-random-string"
-copyright_holder = "Your Name"
 base_url = "https://your-domain.com"
 # Optional: Set user_database to enable authentication
 # user_database = "users.toml"
@@ -63,6 +62,8 @@ pregenerate_cache = false
 # Number of days to consider an image as "new" (based on file modification date)
 # Remove or comment out to disable the feature
 new_threshold_days = 7
+# Copyright holder name for watermarking medium-sized images
+copyright_holder = "Your Name"
 
 [galleries.thumbnail]
 width = 300
@@ -96,6 +97,7 @@ image_detail_template = "modules/image_detail.html.liquid"
 images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
+copyright_holder = "Your Portfolio Name"
 
 # Example: Screenshots gallery
 [[galleries]]
