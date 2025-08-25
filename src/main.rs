@@ -130,8 +130,8 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
                 println!("No users in database");
             } else {
                 println!("Users in database:");
-                for user in db.users.values() {
-                    println!("  {} <{}>", user.username, user.email);
+                for (username, user) in &db.users {
+                    println!("  {} <{}>", username, user.email);
                 }
             }
         }
@@ -155,12 +155,11 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
             }
 
             let user = User {
-                username: username.clone(),
                 email: email.trim().to_string(),
                 passkeys: Vec::new(),
             };
 
-            db.add_user(user);
+            db.add_user(username.clone(), user);
             db.save_to_file(db_path).await?;
             println!("Added user '{}' with email '{}'", username, email);
         }

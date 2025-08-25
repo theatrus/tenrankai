@@ -9,9 +9,15 @@ use webauthn_rs::prelude::*;
 
 use crate::{
     AppState,
-    login::{get_authenticated_user, UserDatabase},
+    login::get_authenticated_user,
 };
 use super::{PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest, StartAuthenticationRequest, UserPasskey};
+
+#[derive(Debug, serde::Serialize)]
+pub struct HasPasskeysResponse {
+    pub has_passkeys: bool,
+    pub count: usize,
+}
 
 pub async fn start_passkey_registration(
     State(app_state): State<AppState>,
@@ -26,15 +32,15 @@ pub async fn start_passkey_registration(
     let webauthn = app_state.webauthn.as_ref()
         .ok_or(StatusCode::NOT_IMPLEMENTED)?;
     
-    // Load user database
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
     // Get user
-    let user = user_db.get_user(&username)
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let user = {
+        let db = db_manager.database().read().await;
+        db.get_user(&username).cloned()
+    }.ok_or(StatusCode::NOT_FOUND)?;
     
     // Get existing passkeys for exclusion
     let exclude_credentials: Vec<CredentialID> = user.passkeys.iter()
@@ -113,26 +119,27 @@ pub async fn finish_passkey_registration(
             StatusCode::BAD_REQUEST
         })?;
     
-    // Load user database
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let mut user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
     // Add passkey to user
-    if let Some(user) = user_db.get_user_mut(&username) {
-        let user_passkey = UserPasskey::new("New Passkey".to_string(), passkey);
-        user.add_passkey(user_passkey);
-        
-        // Save database
-        user_db.save_to_file(db_path).await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        
-        info!("Passkey registered for user: {}", username);
-        Ok(StatusCode::OK)
-    } else {
-        Err(StatusCode::NOT_FOUND)
+    {
+        let mut db = db_manager.database().write().await;
+        if let Some(user) = db.get_user_mut(&username) {
+            let user_passkey = UserPasskey::new("New Passkey".to_string(), passkey);
+            user.add_passkey(user_passkey);
+        } else {
+            return Err(StatusCode::NOT_FOUND);
+        }
     }
+    
+    // Save database
+    db_manager.save().await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    info!("Passkey registered for user: {}", username);
+    Ok(StatusCode::OK)
 }
 
 pub async fn start_passkey_authentication(
@@ -143,25 +150,28 @@ pub async fn start_passkey_authentication(
     let webauthn = app_state.webauthn.as_ref()
         .ok_or(StatusCode::NOT_IMPLEMENTED)?;
     
-    // Load user database
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
-    // Get user
-    let user = user_db.get_user_by_username_or_email(&request.username)
-        .ok_or(StatusCode::NOT_FOUND)?;
-    
-    // Check if user has passkeys
-    if user.passkeys.is_empty() {
-        return Err(StatusCode::NOT_FOUND);
-    }
-    
-    // Get passkeys for authentication
-    let allow_credentials: Vec<Passkey> = user.passkeys.iter()
-        .map(|pk| pk.credential.clone())
-        .collect();
+    // Get user and passkeys
+    let (username, allow_credentials) = {
+        let db = db_manager.database().read().await;
+        let (username, user) = db.get_user_by_username_or_email_with_username(&request.username)
+            .ok_or(StatusCode::NOT_FOUND)?;
+        
+        // Check if user has passkeys
+        if user.passkeys.is_empty() {
+            return Err(StatusCode::NOT_FOUND);
+        }
+        
+        // Get passkeys for authentication
+        let allow_credentials: Vec<Passkey> = user.passkeys.iter()
+            .map(|pk| pk.credential.clone())
+            .collect();
+        
+        (username, allow_credentials)
+    };
     
     // Start authentication
     let (challenge, authentication_state) = webauthn
@@ -188,7 +198,7 @@ pub async fn start_passkey_authentication(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         if let Some(obj) = response.as_object_mut() {
             obj.insert("auth_id".to_string(), serde_json::Value::String(auth_id));
-            obj.insert("username".to_string(), serde_json::Value::String(user.username.clone()));
+            obj.insert("username".to_string(), serde_json::Value::String(username));
         }
         
         Ok(Json(serde_json::from_value(response).unwrap()))
@@ -219,33 +229,37 @@ pub async fn finish_passkey_authentication(
             StatusCode::UNAUTHORIZED
         })?;
     
-    // Load user database to find which user this credential belongs to
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let mut user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
-    // Find user by credential ID
-    let mut username = None;
-    for (user_name, user) in user_db.users.iter_mut() {
-        for passkey in user.passkeys.iter_mut() {
-            if passkey.credential.cred_id() == &auth_data.raw_id {
-                // Update last used time
-                passkey.update_last_used();
-                // Update the credential with counter
-                passkey.credential.update_credential(&authentication_result);
-                username = Some(user_name.clone());
+    // Find user by credential ID and update passkey
+    let username = {
+        let mut db = db_manager.database().write().await;
+        let mut found_username = None;
+        
+        for (user_name, user) in db.users.iter_mut() {
+            for passkey in user.passkeys.iter_mut() {
+                if passkey.credential.cred_id() == &auth_data.raw_id {
+                    // Update last used time
+                    passkey.update_last_used();
+                    // Update the credential with counter
+                    passkey.credential.update_credential(&authentication_result);
+                    found_username = Some(user_name.clone());
+                    break;
+                }
+            }
+            if found_username.is_some() {
                 break;
             }
         }
-        if username.is_some() {
-            break;
-        }
-    }
+        
+        found_username
+    };
     
     if let Some(username) = username {
         // Save updated database
-        user_db.save_to_file(db_path).await
+        db_manager.save().await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         
         // Create session cookie
@@ -276,25 +290,26 @@ pub async fn list_passkeys(
     let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
         .ok_or(StatusCode::UNAUTHORIZED)?;
     
-    // Load user database
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
-    // Get user
-    let user = user_db.get_user(&username)
-        .ok_or(StatusCode::NOT_FOUND)?;
-    
-    // Map passkeys to info
-    let passkey_info: Vec<PasskeyInfo> = user.passkeys.iter()
-        .map(|pk| PasskeyInfo {
-            id: pk.id,
-            name: pk.name.clone(),
-            created_at: pk.created_at,
-            last_used_at: pk.last_used_at,
-        })
-        .collect();
+    // Get user and map passkeys to info
+    let passkey_info = {
+        let db = db_manager.database().read().await;
+        let user = db.get_user(&username)
+            .ok_or(StatusCode::NOT_FOUND)?;
+        
+        // Map passkeys to info
+        user.passkeys.iter()
+            .map(|pk| PasskeyInfo {
+                id: pk.id,
+                name: pk.name.clone(),
+                created_at: pk.created_at,
+                last_used_at: pk.last_used_at,
+            })
+            .collect()
+    };
     
     Ok(Json(passkey_info))
 }
@@ -308,26 +323,53 @@ pub async fn delete_passkey(
     let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
         .ok_or(StatusCode::UNAUTHORIZED)?;
     
-    // Load user database
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let mut user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
     // Remove passkey from user
-    if let Some(user) = user_db.get_user_mut(&username) {
-        if user.remove_passkey(&passkey_id) {
-            // Save database
-            user_db.save_to_file(db_path).await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            
-            info!("Passkey {} deleted for user: {}", passkey_id, username);
-            Ok(StatusCode::OK)
+    let removed = {
+        let mut db = db_manager.database().write().await;
+        if let Some(user) = db.get_user_mut(&username) {
+            user.remove_passkey(&passkey_id)
         } else {
-            Err(StatusCode::NOT_FOUND)
+            return Err(StatusCode::NOT_FOUND);
         }
+    };
+    
+    if removed {
+        // Save database
+        db_manager.save().await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        
+        info!("Passkey {} deleted for user: {}", passkey_id, username);
+        Ok(StatusCode::OK)
     } else {
         Err(StatusCode::NOT_FOUND)
+    }
+}
+
+pub async fn check_user_has_passkeys(
+    State(app_state): State<AppState>,
+    Json(request): Json<StartAuthenticationRequest>,
+) -> Result<Json<HasPasskeysResponse>, StatusCode> {
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    // Check if user has passkeys
+    let db = db_manager.database().read().await;
+    if let Some(user) = db.get_user_by_username_or_email(&request.username) {
+        Ok(Json(HasPasskeysResponse {
+            has_passkeys: !user.passkeys.is_empty(),
+            count: user.passkeys.len(),
+        }))
+    } else {
+        // Don't reveal if user exists
+        Ok(Json(HasPasskeysResponse {
+            has_passkeys: false,
+            count: 0,
+        }))
     }
 }
 
@@ -341,26 +383,32 @@ pub async fn update_passkey_name(
     let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
         .ok_or(StatusCode::UNAUTHORIZED)?;
     
-    // Load user database
-    let db_path = app_state.config.app.user_database.as_ref()
+    // Get user database manager
+    let db_manager = app_state.user_database_manager.as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-    let mut user_db = UserDatabase::load_from_file(db_path).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
     // Update passkey name
-    if let Some(user) = user_db.get_user_mut(&username) {
-        if let Some(passkey) = user.get_passkey_mut(&passkey_id) {
-            passkey.name = name;
-            
-            // Save database
-            user_db.save_to_file(db_path).await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            
-            info!("Passkey {} name updated for user: {}", passkey_id, username);
-            Ok(StatusCode::OK)
+    let updated = {
+        let mut db = db_manager.database().write().await;
+        if let Some(user) = db.get_user_mut(&username) {
+            if let Some(passkey) = user.get_passkey_mut(&passkey_id) {
+                passkey.name = name;
+                true
+            } else {
+                false
+            }
         } else {
-            Err(StatusCode::NOT_FOUND)
+            return Err(StatusCode::NOT_FOUND);
         }
+    };
+    
+    if updated {
+        // Save database
+        db_manager.save().await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        
+        info!("Passkey {} name updated for user: {}", passkey_id, username);
+        Ok(StatusCode::OK)
     } else {
         Err(StatusCode::NOT_FOUND)
     }

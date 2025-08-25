@@ -249,6 +249,7 @@ pub struct AppState {
     pub favicon_renderer: favicon::FaviconRenderer,
     pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
     pub login_state: Arc<tokio::sync::RwLock<login::LoginState>>,
+    pub user_database_manager: Option<login::types::UserDatabaseManager>,
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub config: Config,
@@ -345,15 +346,28 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     let posts_managers_arc = Arc::new(posts_managers);
 
-    // Initialize login state only if user database is configured
-    let login_state = if config.app.user_database.is_some() {
+    // Initialize login state and user database only if user database is configured
+    let (login_state, user_database_manager) = if let Some(db_path) = config.app.user_database.as_ref() {
         let state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
         // Start periodic cleanup for login tokens and rate limits
         login::start_periodic_cleanup(state.clone());
-        state
+        
+        // Initialize user database manager
+        let db_manager = match login::types::UserDatabaseManager::new(db_path.clone()).await {
+            Ok(manager) => {
+                info!("User database initialized from {:?}", db_path);
+                Some(manager)
+            }
+            Err(e) => {
+                error!("Failed to initialize user database: {}", e);
+                None
+            }
+        };
+        
+        (state, db_manager)
     } else {
         // Create an empty login state for consistency
-        Arc::new(tokio::sync::RwLock::new(login::LoginState::new()))
+        (Arc::new(tokio::sync::RwLock::new(login::LoginState::new())), None)
     };
 
     // Initialize email provider if configured
@@ -395,6 +409,7 @@ pub async fn create_app(config: Config) -> axum::Router {
         favicon_renderer,
         posts_managers: posts_managers_arc.clone(),
         login_state,
+        user_database_manager,
         email_provider,
         webauthn,
         config: config.clone(),
@@ -435,6 +450,7 @@ pub async fn create_app(config: Config) -> axum::Router {
             .route("/_login/verify", axum::routing::get(login::verify_login))
             .route("/_login/logout", axum::routing::get(login::logout))
             .route("/_login/passkeys", axum::routing::get(templating::template_with_gallery_handler))
+            .route("/_login/passkey-enrollment", axum::routing::get(login::passkey_enrollment_page))
             .route("/api/verify", axum::routing::get(login::check_auth_status))
             .route(
                 "/api/refresh-static-versions",
@@ -444,6 +460,7 @@ pub async fn create_app(config: Config) -> axum::Router {
         // Add WebAuthn routes if available
         if app_state.webauthn.is_some() {
             router = router
+                .route("/api/webauthn/check-passkeys", axum::routing::post(login::webauthn::check_user_has_passkeys))
                 .route("/api/webauthn/register/start", axum::routing::post(login::webauthn::start_passkey_registration))
                 .route("/api/webauthn/register/finish/{reg_id}", axum::routing::post(login::webauthn::finish_passkey_registration))
                 .route("/api/webauthn/authenticate/start", axum::routing::post(login::webauthn::start_passkey_authentication))

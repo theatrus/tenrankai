@@ -1,13 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
-    pub username: String,
     pub email: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub passkeys: Vec<crate::login::webauthn::UserPasskey>,
@@ -30,6 +29,38 @@ impl User {
     
     pub fn has_passkeys(&self) -> bool {
         !self.passkeys.is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UserWithUsername<'a> {
+    pub username: &'a str,
+    pub user: &'a User,
+}
+
+impl<'a> UserWithUsername<'a> {
+    pub fn new(username: &'a str, user: &'a User) -> Self {
+        Self { username, user }
+    }
+    
+    pub fn email(&self) -> &str {
+        &self.user.email
+    }
+    
+    pub fn has_passkeys(&self) -> bool {
+        self.user.has_passkeys()
+    }
+}
+
+#[derive(Debug)]
+pub struct UserWithUsernameMut<'a> {
+    pub username: &'a str,
+    pub user: &'a mut User,
+}
+
+impl<'a> UserWithUsernameMut<'a> {
+    pub fn new(username: &'a str, user: &'a mut User) -> Self {
+        Self { username, user }
     }
 }
 
@@ -91,6 +122,10 @@ impl UserDatabase {
     pub fn get_user(&self, username: &str) -> Option<&User> {
         self.users.get(username)
     }
+    
+    pub fn get_user_with_username<'a>(&'a self, username: &'a str) -> Option<UserWithUsername<'a>> {
+        self.users.get(username).map(|user| UserWithUsername::new(username, user))
+    }
 
     pub fn get_user_by_username_or_email(&self, identifier: &str) -> Option<&User> {
         // First try direct username lookup
@@ -103,9 +138,22 @@ impl UserDatabase {
             .values()
             .find(|user| user.email.eq_ignore_ascii_case(identifier))
     }
+    
+    pub fn get_user_by_username_or_email_with_username(&self, identifier: &str) -> Option<(String, User)> {
+        // First try direct username lookup
+        if let Some(user) = self.users.get(identifier) {
+            return Some((identifier.to_string(), user.clone()));
+        }
 
-    pub fn add_user(&mut self, user: User) {
-        self.users.insert(user.username.clone(), user);
+        // Then try email lookup
+        self.users
+            .iter()
+            .find(|(_, user)| user.email.eq_ignore_ascii_case(identifier))
+            .map(|(username, user)| (username.clone(), user.clone()))
+    }
+
+    pub fn add_user(&mut self, username: String, user: User) {
+        self.users.insert(username, user);
     }
 
     pub fn remove_user(&mut self, username: &str) -> Option<User> {
@@ -116,8 +164,8 @@ impl UserDatabase {
         self.users.get_mut(username)
     }
     
-    pub fn update_user(&mut self, user: User) {
-        self.users.insert(user.username.clone(), user);
+    pub fn update_user(&mut self, username: String, user: User) {
+        self.users.insert(username, user);
     }
 }
 
@@ -239,6 +287,45 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub success: bool,
     pub message: String,
+}
+
+pub type SharedUserDatabase = Arc<RwLock<UserDatabase>>;
+
+#[derive(Debug, Clone)]
+pub struct UserDatabaseManager {
+    database: SharedUserDatabase,
+    file_path: PathBuf,
+}
+
+impl UserDatabaseManager {
+    pub async fn new(path: PathBuf) -> Result<Self, std::io::Error> {
+        let database = if path.exists() {
+            UserDatabase::load_from_file(&path).await?
+        } else {
+            UserDatabase::new()
+        };
+        
+        Ok(Self {
+            database: Arc::new(RwLock::new(database)),
+            file_path: path,
+        })
+    }
+    
+    pub fn database(&self) -> &SharedUserDatabase {
+        &self.database
+    }
+    
+    pub async fn save(&self) -> Result<(), std::io::Error> {
+        let db = self.database.read().await;
+        db.save_to_file(&self.file_path).await
+    }
+    
+    pub async fn reload(&self) -> Result<(), std::io::Error> {
+        let new_db = UserDatabase::load_from_file(&self.file_path).await?;
+        let mut db = self.database.write().await;
+        *db = new_db;
+        Ok(())
+    }
 }
 
 pub fn start_periodic_cleanup(login_state: Arc<RwLock<LoginState>>) {

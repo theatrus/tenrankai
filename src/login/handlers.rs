@@ -10,7 +10,7 @@ use tracing::{error, info};
 
 use crate::{AppState, api::create_signed_cookie};
 
-use super::{LoginError, LoginRequest, LoginResponse, UserDatabase};
+use super::{LoginError, LoginRequest, LoginResponse};
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyQuery {
@@ -54,23 +54,23 @@ pub async fn login_request(
         }
     }
 
-    // Load user database from configured path
-    let db_path = app_state
-        .config
-        .app
-        .user_database
+    // Get user database manager
+    let db_manager = app_state
+        .user_database_manager
         .as_ref()
         .ok_or_else(|| LoginError::DatabaseError("User database not configured".to_string()))?;
-    let user_db = UserDatabase::load_from_file(db_path)
-        .await
-        .map_err(|e| LoginError::DatabaseError(e.to_string()))?;
 
     // Check if user exists by username or email
-    if let Some(user) = user_db.get_user_by_username_or_email(&identifier) {
+    let user_with_username = {
+        let db = db_manager.database().read().await;
+        db.get_user_by_username_or_email_with_username(&identifier)
+    };
+
+    if let Some((username, user)) = user_with_username {
         // Create login token using the actual username
         let token = {
             let mut login_state = app_state.login_state.write().await;
-            login_state.create_token(user.username.clone())
+            login_state.create_token(username.clone())
         };
 
         // Build login URL
@@ -164,8 +164,32 @@ pub async fn verify_login(
 
     info!("User {} logged in successfully", username);
 
-    // Redirect to gallery
-    Ok((headers, Redirect::to("/gallery")))
+    // Check if WebAuthn is available and if user has passkeys
+    let should_enroll = if app_state.webauthn.is_some() {
+        // Check if user has passkeys
+        let db_manager = app_state.user_database_manager.as_ref();
+        if let Some(manager) = db_manager {
+            let db = manager.database().read().await;
+            if let Some(user) = db.get_user(&username) {
+                !user.has_passkeys()
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // Redirect to enrollment page if user has no passkeys, otherwise to gallery
+    let redirect_url = if should_enroll {
+        "/passkey-enrollment"
+    } else {
+        "/gallery"
+    };
+    
+    Ok((headers, Redirect::to(redirect_url)))
 }
 
 pub async fn logout() -> impl IntoResponse {
@@ -220,4 +244,31 @@ pub async fn check_auth_status(
         authorized: username.is_some(),
         username,
     })
+}
+
+pub async fn passkey_enrollment_page(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Html<String>, StatusCode> {
+    // Check if user is authenticated
+    let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let globals = liquid::object!({
+        "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
+        "username": username,
+        "redirect_url": "/gallery",
+    });
+
+    match app_state
+        .template_engine
+        .render_template("passkey_enrollment.html.liquid", globals)
+        .await
+    {
+        Ok(html) => Ok(Html(html)),
+        Err(e) => {
+            error!("Failed to render passkey enrollment page: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
