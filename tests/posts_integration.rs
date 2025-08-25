@@ -184,6 +184,7 @@ This is the content of the second test post."#;
             posts_per_page: 10,
             refresh_interval_minutes: None,
         }]),
+        email: None,
     };
 
     let app = create_app(config).await;

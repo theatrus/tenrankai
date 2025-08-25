@@ -3,16 +3,92 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse},
 };
-use liquid::ValueView;
+use liquid::Parser;
+use liquid_core::{Filter, FilterReflection, ParseFilter, Runtime, Value, ValueView};
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::SystemTime};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
+
+// Custom filter for asset URLs with cache busting
+#[derive(Clone, Debug)]
+struct AssetUrlFilter {
+    file_versions: Arc<RwLock<HashMap<String, u64>>>,
+}
+
+impl AssetUrlFilter {
+    fn new(file_versions: Arc<RwLock<HashMap<String, u64>>>) -> Self {
+        Self { file_versions }
+    }
+}
+
+impl std::fmt::Display for AssetUrlFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("asset_url")
+    }
+}
+
+impl Filter for AssetUrlFilter {
+    fn evaluate(&self, input: &dyn ValueView, _runtime: &dyn Runtime) -> liquid_core::Result<Value> {
+        let path = input.to_kstr().to_string();
+        
+        // Normalize the path
+        let normalized_path = if path.starts_with("/static/") {
+            path.clone()
+        } else if path.starts_with("static/") {
+            format!("/{}", path)
+        } else {
+            format!("/static/{}", path)
+        };
+        
+        // Extract filename for version lookup
+        let filename = normalized_path.rsplit('/').next().unwrap_or(&path);
+        
+        // Try to get version from cached versions (blocking read)
+        if let Ok(versions) = self.file_versions.try_read() {
+            if let Some(&version) = versions.get(filename) {
+                return Ok(Value::scalar(format!("{}?v={}", normalized_path, version)));
+            }
+        }
+        
+        // No version found, return plain URL
+        Ok(Value::scalar(normalized_path))
+    }
+}
+
+impl FilterReflection for AssetUrlFilter {
+    fn name(&self) -> &str {
+        "asset_url"
+    }
+
+    fn description(&self) -> &str {
+        "Converts an asset path to a versioned URL for cache busting"
+    }
+
+    fn positional_parameters(&self) -> &'static [liquid_core::parser::ParameterReflection] {
+        &[]
+    }
+
+    fn keyword_parameters(&self) -> &'static [liquid_core::parser::ParameterReflection] {
+        &[]
+    }
+}
+
+impl ParseFilter for AssetUrlFilter {
+    fn reflection(&self) -> &dyn FilterReflection {
+        self
+    }
+    
+    fn parse(&self, _arguments: liquid_core::parser::FilterArguments) -> liquid_core::Result<Box<dyn Filter>> {
+        Ok(Box::new(self.clone()))
+    }
+}
 
 pub struct TemplateEngine {
     pub template_dir: PathBuf,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
     static_handler: Option<crate::static_files::StaticFileHandler>,
     has_user_auth: bool,
+    file_versions: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 struct CachedTemplate {
@@ -27,6 +103,7 @@ impl TemplateEngine {
             cache: Arc::new(RwLock::new(HashMap::new())),
             static_handler: None,
             has_user_auth: false,
+            file_versions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -34,10 +111,34 @@ impl TemplateEngine {
         debug!("Setting static handler on template engine");
         self.static_handler = Some(handler);
     }
+    
+    pub async fn update_file_versions(&self) {
+        if let Some(ref handler) = self.static_handler {
+            // Get all file versions from the static handler
+            let all_versions = handler.get_all_versions().await;
+            let mut versions = self.file_versions.write().await;
+            *versions = all_versions;
+            debug!("Updated template engine with {} file versions", versions.len());
+        }
+    }
 
     pub fn set_has_user_auth(&mut self, has_auth: bool) {
         self.has_user_auth = has_auth;
     }
+    
+    fn create_parser_with_filters(
+        &self,
+        partials: liquid::partials::EagerCompiler<liquid::partials::InMemorySource>,
+    ) -> Result<Parser, String> {
+        let asset_filter = AssetUrlFilter::new(self.file_versions.clone());
+        
+        liquid::ParserBuilder::with_stdlib()
+            .partials(partials)
+            .filter(asset_filter)
+            .build()
+            .map_err(|e| format!("Failed to create parser: {}", e))
+    }
+
 
     async fn load_template(&self, path: &str) -> Result<String, String> {
         let template_path = self.template_dir.join(path);
@@ -135,116 +236,6 @@ impl TemplateEngine {
             liquid::model::Value::scalar(self.has_user_auth),
         );
 
-        // Add versioned URLs for common static files
-        if let Some(ref static_handler) = self.static_handler {
-            debug!("Static handler is available, processing versioned URLs");
-            let style_css_url = static_handler.get_versioned_url("/static/style.css").await;
-            globals.insert(
-                "style_css_url".into(),
-                liquid::model::Value::scalar(style_css_url),
-            );
-            
-
-            // Process page_css array if it exists
-            if let Some(page_css_value) = globals.get("page_css")
-                && let Some(css_files) = page_css_value.as_array()
-            {
-                // Collect the CSS file names first to avoid holding references across await
-                let css_file_names: Vec<String> = (0..css_files.size())
-                    .filter_map(|i| {
-                        css_files
-                            .get(i)
-                            .and_then(|v| v.as_scalar())
-                            .map(|s| format!("/static/{}", s.to_kstr()))
-                    })
-                    .collect();
-
-                // Now process them asynchronously
-                let mut versioned_css_files = Vec::new();
-                for file_path in css_file_names {
-                    let versioned_url = static_handler.get_versioned_url(&file_path).await;
-                    versioned_css_files.push(liquid::model::Value::scalar(versioned_url));
-                }
-
-                globals.insert(
-                    "page_css_versioned".into(),
-                    liquid::model::Value::array(versioned_css_files),
-                );
-            }
-            
-            // Process page_js files
-            debug!("Checking for page_js in globals...");
-            if let Some(page_js_value) = globals.get("page_js") {
-                debug!("Found page_js in globals");
-                if let Some(js_files) = page_js_value.as_array() {
-                    debug!("Processing page_js files: {} files found", js_files.size());
-                    // First collect file names synchronously
-                    let js_file_names: Vec<String> = (0..js_files.size())
-                    .filter_map(|i| {
-                        js_files
-                            .get(i)
-                            .and_then(|v| v.as_scalar())
-                            .map(|s| format!("/static/{}", s.to_kstr()))
-                    })
-                    .collect();
-
-                // Now process them asynchronously
-                let mut versioned_js_files = Vec::new();
-                for file_path in js_file_names {
-                    let versioned_url = static_handler.get_versioned_url(&file_path).await;
-                    versioned_js_files.push(liquid::model::Value::scalar(versioned_url));
-                }
-
-                    debug!("Setting page_js_versioned with {} files", versioned_js_files.len());
-                    globals.insert(
-                        "page_js_versioned".into(),
-                        liquid::model::Value::array(versioned_js_files),
-                    );
-                }
-            }
-        } else {
-            debug!("No static handler available");
-            globals.insert(
-                "style_css_url".into(),
-                liquid::model::Value::scalar("/static/style.css"),
-            );
-
-            // If no static handler, just prepend /static/ to page_css files
-            if let Some(page_css_value) = globals.get("page_css")
-                && let Some(css_files) = page_css_value.as_array()
-            {
-                let static_css_files: Vec<liquid::model::Value> = (0..css_files.size())
-                    .filter_map(|i| {
-                        css_files.get(i).and_then(|v| v.as_scalar()).map(|s| {
-                            liquid::model::Value::scalar(format!("/static/{}", s.to_kstr()))
-                        })
-                    })
-                    .collect();
-
-                globals.insert(
-                    "page_css_versioned".into(),
-                    liquid::model::Value::array(static_css_files),
-                );
-            }
-            
-            // If no static handler, just prepend /static/ to page_js files
-            if let Some(page_js_value) = globals.get("page_js")
-                && let Some(js_files) = page_js_value.as_array()
-            {
-                let static_js_files: Vec<liquid::model::Value> = (0..js_files.size())
-                    .filter_map(|i| {
-                        js_files.get(i).and_then(|v| v.as_scalar()).map(|s| {
-                            liquid::model::Value::scalar(format!("/static/{}", s.to_kstr()))
-                        })
-                    })
-                    .collect();
-
-                globals.insert(
-                    "page_js_versioned".into(),
-                    liquid::model::Value::array(static_js_files),
-                );
-            }
-        }
 
         // Load common partials first (before loading main template)
         let header_content = self
@@ -297,10 +288,8 @@ impl TemplateEngine {
 
         let partials = liquid::partials::EagerCompiler::new(partials_source);
 
-        let parser = liquid::ParserBuilder::with_stdlib()
-            .partials(partials)
-            .build()
-            .map_err(|e| format!("Failed to create parser: {}", e))?;
+        // Create parser with custom filters
+        let parser = self.create_parser_with_filters(partials)?;
 
         let template = parser
             .parse(&template_content)
@@ -365,6 +354,97 @@ pub async fn template_with_gallery_handler(
         Ok(html) => html.into_response(),
         Err(status) => status.into_response(),
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use liquid::model;
+
+    #[tokio::test]
+    async fn test_asset_url_filter_with_versions() {
+        // Create a mock file versions map
+        let file_versions = Arc::new(RwLock::new(HashMap::new()));
+        {
+            let mut versions = file_versions.write().await;
+            versions.insert("style.css".to_string(), 123456789);
+            versions.insert("login.js".to_string(), 987654321);
+            versions.insert("app.js".to_string(), 555555555);
+        }
+
+        let filter = AssetUrlFilter::new(file_versions);
+        let runtime = liquid_core::runtime::RuntimeBuilder::new().build();
+
+        // Test with just filename
+        let input = model::Value::scalar("style.css");
+        let result = filter.evaluate(&input, &runtime).unwrap();
+        assert_eq!(result, model::Value::scalar("/static/style.css?v=123456789"));
+
+        // Test with static/ prefix
+        let input = model::Value::scalar("static/login.js");
+        let result = filter.evaluate(&input, &runtime).unwrap();
+        assert_eq!(result, model::Value::scalar("/static/login.js?v=987654321"));
+
+        // Test with /static/ prefix
+        let input = model::Value::scalar("/static/app.js");
+        let result = filter.evaluate(&input, &runtime).unwrap();
+        assert_eq!(result, model::Value::scalar("/static/app.js?v=555555555"));
+    }
+
+    #[tokio::test]
+    async fn test_asset_url_filter_without_versions() {
+        // Create an empty file versions map
+        let file_versions = Arc::new(RwLock::new(HashMap::new()));
+        let filter = AssetUrlFilter::new(file_versions);
+        let runtime = liquid_core::runtime::RuntimeBuilder::new().build();
+
+        // Test with just filename - no version
+        let input = model::Value::scalar("unknown.css");
+        let result = filter.evaluate(&input, &runtime).unwrap();
+        assert_eq!(result, model::Value::scalar("/static/unknown.css"));
+
+        // Test with static/ prefix - no version
+        let input = model::Value::scalar("static/missing.js");
+        let result = filter.evaluate(&input, &runtime).unwrap();
+        assert_eq!(result, model::Value::scalar("/static/missing.js"));
+    }
+
+    #[tokio::test]
+    async fn test_template_with_asset_url_filter() {
+        // Create a template engine with file versions
+        let mut template_engine = TemplateEngine::new(PathBuf::from("templates"));
+        
+        // Set up file versions
+        let file_versions = Arc::new(RwLock::new(HashMap::new()));
+        {
+            let mut versions = file_versions.write().await;
+            versions.insert("test.css".to_string(), 111111111);
+            versions.insert("test.js".to_string(), 222222222);
+        }
+        template_engine.file_versions = file_versions;
+
+        // Create a parser with the filter
+        let partials = liquid::partials::EagerCompiler::new(liquid::partials::InMemorySource::new());
+        let parser = template_engine.create_parser_with_filters(partials).unwrap();
+
+        // Test CSS filter
+        let template = parser.parse("{{ 'test.css' | asset_url }}").unwrap();
+        let output = template.render(&liquid::object!({})).unwrap();
+        assert_eq!(output, "/static/test.css?v=111111111");
+
+        // Test JS filter
+        let template = parser.parse("{{ 'test.js' | asset_url }}").unwrap();
+        let output = template.render(&liquid::object!({})).unwrap();
+        assert_eq!(output, "/static/test.js?v=222222222");
+
+        // Test multiple filters in one template
+        let template = parser.parse(r#"<link href="{{ 'test.css' | asset_url }}">
+<script src="{{ 'test.js' | asset_url }}"></script>"#).unwrap();
+        let output = template.render(&liquid::object!({})).unwrap();
+        assert_eq!(output, r#"<link href="/static/test.css?v=111111111">
+<script src="/static/test.js?v=222222222"></script>"#);
+    }
+
 }
 
 #[cfg(test)]

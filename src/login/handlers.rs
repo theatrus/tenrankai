@@ -52,7 +52,6 @@ pub async fn login_page(
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
         "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
-        "page_js": vec!["login.js"],
     });
 
     let html = match app_state
@@ -335,7 +334,6 @@ pub async fn passkey_enrollment_page(
         "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
         "username": username,
         "redirect_url": redirect_url,
-        "page_js": vec!["login.js"],
     });
 
     match app_state

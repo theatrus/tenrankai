@@ -61,6 +61,11 @@ impl StaticFileHandler {
         let versions = self.file_versions.read().await;
         versions.get(filename).copied()
     }
+    
+    pub async fn get_all_versions(&self) -> HashMap<String, u64> {
+        let versions = self.file_versions.read().await;
+        versions.clone()
+    }
 
     pub async fn get_versioned_url(&self, path: &str) -> String {
         // Extract filename from path

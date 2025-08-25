@@ -118,6 +118,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             approximate_dates_for_public: false,
         }]),
         posts: None,
+        email: None,
     };
 
     let app = create_app(config).await;

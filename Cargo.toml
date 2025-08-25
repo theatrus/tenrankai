@@ -24,6 +24,7 @@ ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.13"
 liquid = "0.26"
+liquid-core = "0.26"
 mime_guess = "2.0"
 pulldown-cmark = "0.13"
 rand = "0.9"

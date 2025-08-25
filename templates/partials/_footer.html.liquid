@@ -5,14 +5,9 @@
     </footer>
     
     {% comment %} Page-specific JavaScript files {% endcomment %}
-    {% if page_js_versioned %}
-        {% for js_url in page_js_versioned %}
-        <script src="{{ js_url }}"></script>
-        {% endfor %}
-    {% elsif page_js %}
-        {% comment %} Fallback for templates that don't have versioned URLs {% endcomment %}
+    {% if page_js %}
         {% for js_file in page_js %}
-        <script src="/static/{{ js_file }}"></script>
+        <script src="{{ js_file | asset_url }}"></script>
         {% endfor %}
     {% endif %}
 </body>

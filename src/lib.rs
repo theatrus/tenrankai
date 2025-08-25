@@ -292,6 +292,9 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     // Set whether user auth is enabled
     template_engine.set_has_user_auth(config.app.user_database.is_some());
+    
+    // Update file versions for the template engine
+    template_engine.update_file_versions().await;
 
     let template_engine = Arc::new(template_engine);
 
