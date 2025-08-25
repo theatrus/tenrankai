@@ -37,8 +37,21 @@ impl Gallery {
 
         // Handle resized images
         if let Some(size) = size.as_deref() {
-            let cache_filename =
-                self.generate_cache_filename(relative_path, size, output_format.extension());
+            // Determine if this size would have a watermark
+            let (_, is_medium) = match self.parse_size(size) {
+                Ok(result) => result,
+                Err(_) => {
+                    return (StatusCode::BAD_REQUEST, "Invalid size parameter").into_response();
+                }
+            };
+            let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+
+            let cache_filename = self.generate_cache_filename(
+                relative_path,
+                size,
+                output_format.extension(),
+                apply_watermark,
+            );
             let cache_path = self.config.cache_directory.join(&cache_filename);
             let was_cached = cache_path.exists();
 

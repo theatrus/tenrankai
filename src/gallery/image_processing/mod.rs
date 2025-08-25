@@ -26,4 +26,5 @@ mod tests {
     mod icc_profile_tests;
     mod jpeg_tests;
     mod png_tests;
+    mod watermark_tests;
 }

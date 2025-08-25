@@ -46,9 +46,16 @@ impl Gallery {
     ) -> Result<PathBuf, GalleryError> {
         let (dimensions, is_medium) = self.parse_size(size)?;
 
-        // Generate consistent cache keys
-        let cache_filename =
-            self.generate_cache_filename(relative_path, size, output_format.extension());
+        // Determine if watermark will be applied
+        let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+
+        // Generate consistent cache keys that include watermark status
+        let cache_filename = self.generate_cache_filename(
+            relative_path,
+            size,
+            output_format.extension(),
+            apply_watermark,
+        );
         let cache_path = self.config.cache_directory.join(&cache_filename);
 
         // Check if cache file exists and is newer than original
@@ -62,7 +69,6 @@ impl Gallery {
         // Process image in blocking thread
         let original_path = original_path.to_path_buf();
         let cache_path_clone = cache_path.clone();
-        let apply_watermark = is_medium && self.config.copyright_holder.is_some();
         let copyright_holder = self.config.copyright_holder.clone();
         let static_dir = std::path::PathBuf::from("static"); // TODO: Make configurable
         let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);

@@ -132,15 +132,31 @@ impl Gallery {
         format!("{:x}", hasher.finalize())
     }
 
-    /// Generate a cache key for regular images with size and format
-    pub(crate) fn generate_image_cache_key(&self, path: &str, size: &str, format: &str) -> String {
-        let cache_key = format!("{}_{}", size, format);
+    /// Generate a cache key for regular images with size, format, and watermark status
+    pub(crate) fn generate_image_cache_key(
+        &self,
+        path: &str,
+        size: &str,
+        format: &str,
+        has_watermark: bool,
+    ) -> String {
+        let cache_key = if has_watermark {
+            format!("{}_{}_{}", size, format, "watermarked")
+        } else {
+            format!("{}_{}", size, format)
+        };
         self.generate_cache_key(path, &cache_key)
     }
 
-    /// Generate a cache filename for storing in filesystem
-    pub(crate) fn generate_cache_filename(&self, path: &str, size: &str, format: &str) -> String {
-        let hash = self.generate_image_cache_key(path, size, format);
+    /// Generate a cache filename for storing in filesystem with watermark status
+    pub(crate) fn generate_cache_filename(
+        &self,
+        path: &str,
+        size: &str,
+        format: &str,
+        has_watermark: bool,
+    ) -> String {
+        let hash = self.generate_image_cache_key(path, size, format, has_watermark);
         format!("{}.{}", hash, format)
     }
 
@@ -302,17 +318,21 @@ mod tests {
         let format = "webp";
 
         // These should produce consistent keys
-        let key1 = gallery.generate_image_cache_key(path, size, format);
-        let key2 = gallery.generate_image_cache_key(path, size, format);
+        let key1 = gallery.generate_image_cache_key(path, size, format, false);
+        let key2 = gallery.generate_image_cache_key(path, size, format, false);
         assert_eq!(key1, key2, "Cache keys should be identical for same inputs");
 
         // Different inputs should produce different keys
-        let key3 = gallery.generate_image_cache_key(path, "medium", format);
+        let key3 = gallery.generate_image_cache_key(path, "medium", format, false);
         assert_ne!(key1, key3, "Different sizes should produce different keys");
 
         // Test that the same inputs always produce the same hash
-        let another_key = gallery.generate_image_cache_key(path, size, format);
+        let another_key = gallery.generate_image_cache_key(path, size, format, false);
         assert_eq!(key1, another_key, "Keys should be deterministic");
+
+        // Test watermark differentiation
+        let key_with_watermark = gallery.generate_image_cache_key(path, size, format, true);
+        assert_ne!(key1, key_with_watermark, "Watermarked and non-watermarked keys should differ");
 
         // Test composite cache keys
         let comp_key1 = Gallery::generate_composite_cache_key("gallery/2024");
@@ -339,14 +359,14 @@ mod tests {
         let default_config = crate::Config::default();
         let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
 
-        let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp");
+        let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp", false);
         assert!(
             filename.ends_with(".webp"),
             "Filename should end with correct extension"
         );
 
         // Verify the hash part is consistent
-        let hash = gallery.generate_image_cache_key("test.jpg", "thumbnail", "webp");
+        let hash = gallery.generate_image_cache_key("test.jpg", "thumbnail", "webp", false);
         assert_eq!(filename, format!("{}.webp", hash));
     }
 
