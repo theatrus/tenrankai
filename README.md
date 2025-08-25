@@ -31,6 +31,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Dark Theme Code Blocks**: Optimized code block styling for readability in dark theme
 - **Email-based Authentication**: Secure passwordless login system with email verification links
 - **User Authentication**: Optional user authentication system with rate limiting
+- **Email Provider Support**: Pluggable email provider system with Amazon SES support
 
 ## Installation
 
@@ -83,6 +84,16 @@ cache_directory = "cache/portfolio"
 images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
+
+# Email configuration (required for login emails)
+[email]
+from_address = "noreply@yourdomain.com"
+from_name = "My Gallery"
+provider = "ses"
+region = "us-east-1"
+# Optional: specify AWS credentials (otherwise uses AWS SDK default chain)
+# access_key_id = "your-access-key"
+# secret_access_key = "your-secret-key"
 ```
 
 ### Key Configuration Options
@@ -100,6 +111,16 @@ webp_quality = 90.0
 - `approximate_dates_for_public`: Show only month/year capture dates to non-authenticated users
 - `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")
 - `image_detail_template`: Custom template for image detail pages (default: "modules/image_detail.html.liquid")
+
+**Email Configuration:**
+- `from_address`: Email address to send from (required)
+- `from_name`: Display name for the sender (optional)
+- `reply_to`: Reply-to address (optional)
+- `provider`: Email provider to use (currently only "ses" supported)
+- **Amazon SES Options:**
+  - `region`: AWS region where SES is configured
+  - `access_key_id`: AWS access key (optional, uses SDK default chain)
+  - `secret_access_key`: AWS secret key (optional, uses SDK default chain)
 
 ## Usage
 
@@ -283,7 +304,7 @@ Tenrankai uses an email-based authentication system for secure access:
 
 2. **Login Flow**:
    - User visits `/_login` and enters their username or email address
-   - System sends an email with a secure login link (currently logs to console)
+   - System sends an email with a secure login link
    - User clicks the link to authenticate
    - Session is maintained via secure HTTPOnly cookies
    - Rate limiting prevents brute force attacks (5 attempts per 5 minutes per IP)
@@ -303,7 +324,7 @@ Tenrankai uses an email-based authentication system for secure access:
    cargo run -- user update --username alice --email newemail@example.com
    ```
 
-**Note**: Email sending is not yet implemented. Login URLs are currently logged to the server console.
+**Email Configuration**: To send login emails, configure an email provider in your `config.toml`. Without email configuration, login URLs will be logged to the server console.
 
 ### Running Without Authentication
 
@@ -393,7 +414,7 @@ cargo run -- --log-level trace
 ## Development
 
 Tenrankai is under active development. Some features are planned but not yet implemented:
-- Email sending for authentication (currently logs to console)
+- Additional email providers (SendGrid, SMTP, etc.)
 - Full-text search across galleries and posts
 - Video file support
 - Tag-based filtering
