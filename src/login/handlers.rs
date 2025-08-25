@@ -12,27 +12,74 @@ use crate::{AppState, api::create_signed_cookie};
 
 use super::{LoginError, LoginRequest, LoginResponse};
 
+/// Validates that a return URL is safe (relative path only, no external redirects)
+fn is_safe_return_url(url: &str) -> bool {
+    // Must start with / and not be a protocol URL
+    url.starts_with('/') && !url.starts_with("//") && !url.contains("://")
+}
+
+/// Extracts the return URL from cookies
+fn get_return_url_from_cookies(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("Cookie")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|cookies| {
+            cookies
+                .split(';')
+                .map(|c| c.trim())
+                .find(|c| c.starts_with("return_url="))
+                .and_then(|c| c.strip_prefix("return_url="))
+                .map(|v| urlencoding::decode(v).ok())
+                .flatten()
+                .map(|s| s.into_owned())
+        })
+}
+
 #[derive(Debug, Deserialize)]
 pub struct VerifyQuery {
     token: String,
 }
 
-pub async fn login_page(State(app_state): State<AppState>) -> Result<Html<String>, StatusCode> {
+#[derive(Debug, Deserialize)]
+pub struct LoginQuery {
+    #[serde(rename = "return")]
+    return_url: Option<String>,
+}
+
+pub async fn login_page(
+    State(app_state): State<AppState>,
+    Query(query): Query<LoginQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
         "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
     });
 
-    match app_state
+    let html = match app_state
         .template_engine
         .render_template("login.html.liquid", globals)
         .await
     {
-        Ok(html) => Ok(Html(html)),
+        Ok(html) => html,
         Err(e) => {
             error!("Failed to render login page: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Set return URL cookie if provided
+    let mut headers = HeaderMap::new();
+    if let Some(return_url) = query.return_url {
+        // Validate the return URL to prevent open redirects
+        if is_safe_return_url(&return_url) {
+            let cookie = format!(
+                "return_url={}; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax",
+                urlencoding::encode(&return_url)
+            );
+            headers.insert(SET_COOKIE, cookie.parse().unwrap());
         }
     }
+
+    Ok((headers, Html(html)))
 }
 
 pub async fn login_request(
@@ -141,6 +188,7 @@ pub async fn login_request(
 pub async fn verify_login(
     State(app_state): State<AppState>,
     Query(query): Query<VerifyQuery>,
+    req_headers: HeaderMap,
 ) -> Result<impl IntoResponse, LoginError> {
     // Verify token
     let username = {
@@ -150,17 +198,26 @@ pub async fn verify_login(
             .ok_or(LoginError::TokenInvalid)?
     };
 
+    // Get return URL from cookie
+    let return_url = get_return_url_from_cookies(&req_headers);
+
     // Create secure session cookie
     let signed_value = create_signed_cookie(&app_state.config.app.cookie_secret, &username)
         .map_err(LoginError::InternalError)?;
 
-    let cookie = format!(
+    let auth_cookie = format!(
         "auth={}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax",
         signed_value
     );
 
     let mut headers = HeaderMap::new();
-    headers.insert(SET_COOKIE, cookie.parse().unwrap());
+    headers.insert(SET_COOKIE, auth_cookie.parse().unwrap());
+    
+    // Clear the return URL cookie
+    headers.append(
+        SET_COOKIE,
+        "return_url=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax".parse().unwrap()
+    );
 
     info!("User {} logged in successfully", username);
 
@@ -182,14 +239,20 @@ pub async fn verify_login(
         false
     };
 
-    // Redirect to enrollment page if user has no passkeys, otherwise to gallery
+    // Determine where to redirect
     let redirect_url = if should_enroll {
-        "/passkey-enrollment"
+        // If enrolling, we'll pass the return URL to the enrollment page
+        if let Some(return_to) = return_url {
+            format!("/_login/passkey-enrollment?return={}", urlencoding::encode(&return_to))
+        } else {
+            "/_login/passkey-enrollment".to_string()
+        }
     } else {
-        "/gallery"
+        // Otherwise, use the return URL or default to gallery
+        return_url.unwrap_or_else(|| "/gallery".to_string())
     };
     
-    Ok((headers, Redirect::to(redirect_url)))
+    Ok((headers, Redirect::to(&redirect_url)))
 }
 
 pub async fn logout() -> impl IntoResponse {
@@ -249,15 +312,21 @@ pub async fn check_auth_status(
 pub async fn passkey_enrollment_page(
     State(app_state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<LoginQuery>,
 ) -> Result<Html<String>, StatusCode> {
     // Check if user is authenticated
     let username = crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
+    // Use return URL from query parameter or default to gallery
+    let redirect_url = query.return_url
+        .filter(|url| is_safe_return_url(url))
+        .unwrap_or_else(|| "/gallery".to_string());
+
     let globals = liquid::object!({
         "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
         "username": username,
-        "redirect_url": "/gallery",
+        "redirect_url": redirect_url,
     });
 
     match app_state
@@ -272,3 +341,4 @@ pub async fn passkey_enrollment_page(
         }
     }
 }
+

@@ -195,8 +195,9 @@ async function authenticateWithPasskey(username) {
     });
     
     if (finishResponse.ok) {
-        // Redirect to gallery on success
-        window.location.href = '/gallery';
+        // Redirect to return URL or gallery on success
+        const returnUrl = getReturnUrl();
+        window.location.href = returnUrl || '/gallery';
     } else {
         throw new Error('Authentication failed');
     }
@@ -219,6 +220,18 @@ function arrayBufferToBase64(buffer) {
         binary += String.fromCharCode(bytes[i]);
     }
     return window.btoa(binary);
+}
+
+// Get return URL from cookie
+function getReturnUrl() {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'return_url' && value) {
+            return decodeURIComponent(value);
+        }
+    }
+    return null;
 }
 </script>
 
