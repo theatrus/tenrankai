@@ -79,23 +79,26 @@ impl UserDatabase {
 
     pub async fn load_from_file(path: &Path) -> Result<Self, std::io::Error> {
         let contents = fs::read_to_string(path).await?;
+
+        // Use toml_edit to parse while preserving formatting
         let doc = contents
             .parse::<toml_edit::DocumentMut>()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-        // Deserialize from toml_edit document
+        // Deserialize from the document using serde
         let db: UserDatabase = toml_edit::de::from_document(doc)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
         Ok(db)
     }
 
     pub async fn save_to_file(&self, path: &Path) -> Result<(), std::io::Error> {
-        // Serialize the entire database to toml_edit document
-        let value = toml_edit::ser::to_document(self)
+        // Serialize to TOML with nice formatting
+        let toml_string = toml_edit::ser::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         // Write to file
-        fs::write(path, value.to_string()).await?;
+        fs::write(path, toml_string).await?;
         Ok(())
     }
 
