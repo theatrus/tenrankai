@@ -1,0 +1,229 @@
+{% assign page_title = "Manage Passkeys" %}
+{% assign meta_description = "Manage your passkeys for secure authentication" %}
+{% assign page_css = "passkeys.css" | split: "," %}
+{% include "_header.html.liquid" %}
+
+<div class="container">
+    <div class="passkeys-container">
+        <h1>Manage Passkeys</h1>
+        
+        <div class="passkeys-intro">
+            <p>Passkeys provide a secure, passwordless way to sign in. Once registered, you can use your device's biometric authentication (fingerprint, face recognition) or PIN to sign in quickly.</p>
+        </div>
+        
+        <div class="add-passkey-section">
+            <h2>Add a New Passkey</h2>
+            <form id="addPasskeyForm">
+                <div class="form-group">
+                    <label for="passkeyName">Passkey Name:</label>
+                    <input type="text" id="passkeyName" name="name" placeholder="e.g., MacBook Pro" required>
+                    <small>Give this passkey a name to help you identify it later</small>
+                </div>
+                <button type="submit" class="btn-primary">Add Passkey</button>
+            </form>
+        </div>
+        
+        <div class="existing-passkeys-section">
+            <h2>Your Passkeys</h2>
+            <div id="passkeysList" class="passkeys-list">
+                <div class="loading">Loading passkeys...</div>
+            </div>
+        </div>
+        
+        <div id="errorMessage" class="message error" style="display: none;"></div>
+        <div id="successMessage" class="message success" style="display: none;"></div>
+    </div>
+</div>
+
+<script>
+// Load existing passkeys
+async function loadPasskeys() {
+    const listContainer = document.getElementById('passkeysList');
+    
+    try {
+        const response = await fetch('/api/webauthn/passkeys');
+        if (!response.ok) {
+            throw new Error('Failed to load passkeys');
+        }
+        
+        const passkeys = await response.json();
+        
+        if (passkeys.length === 0) {
+            listContainer.innerHTML = '<p class="no-passkeys">No passkeys registered yet.</p>';
+        } else {
+            listContainer.innerHTML = passkeys.map(pk => `
+                <div class="passkey-item" data-id="${pk.id}">
+                    <div class="passkey-info">
+                        <div class="passkey-name">${escapeHtml(pk.name)}</div>
+                        <div class="passkey-meta">
+                            Created: ${new Date(pk.created_at * 1000).toLocaleDateString()}
+                            ${pk.last_used_at ? `• Last used: ${new Date(pk.last_used_at * 1000).toLocaleDateString()}` : ''}
+                        </div>
+                    </div>
+                    <button class="btn-delete" onclick="deletePasskey('${pk.id}')">Delete</button>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        listContainer.innerHTML = '<p class="error">Failed to load passkeys</p>';
+    }
+}
+
+// Add new passkey
+document.getElementById('addPasskeyForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const nameInput = document.getElementById('passkeyName');
+    const name = nameInput.value.trim();
+    const errorDiv = document.getElementById('errorMessage');
+    const successDiv = document.getElementById('successMessage');
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    
+    // Hide messages
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+    
+    if (!name) {
+        errorDiv.textContent = 'Please enter a name for the passkey';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    
+    submitButton.disabled = true;
+    submitButton.textContent = 'Adding...';
+    
+    try {
+        // Start registration
+        const startResponse = await fetch('/api/webauthn/register/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: name })
+        });
+        
+        if (!startResponse.ok) {
+            throw new Error('Failed to start registration');
+        }
+        
+        const options = await startResponse.json();
+        
+        // Convert challenge and user.id from base64
+        options.challenge = base64ToArrayBuffer(options.challenge);
+        options.user.id = base64ToArrayBuffer(options.user.id);
+        
+        // Convert excludeCredentials if present
+        if (options.excludeCredentials) {
+            options.excludeCredentials = options.excludeCredentials.map(cred => ({
+                ...cred,
+                id: base64ToArrayBuffer(cred.id)
+            }));
+        }
+        
+        // Create credential
+        const credential = await navigator.credentials.create({
+            publicKey: options
+        });
+        
+        // Send registration response
+        const finishResponse = await fetch(`/api/webauthn/register/finish/${options.reg_id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                id: credential.id,
+                rawId: arrayBufferToBase64(credential.rawId),
+                response: {
+                    attestationObject: arrayBufferToBase64(credential.response.attestationObject),
+                    clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON)
+                },
+                type: credential.type
+            })
+        });
+        
+        if (finishResponse.ok) {
+            successDiv.textContent = 'Passkey added successfully!';
+            successDiv.style.display = 'block';
+            nameInput.value = '';
+            loadPasskeys(); // Reload the list
+        } else {
+            throw new Error('Failed to complete registration');
+        }
+        
+    } catch (error) {
+        errorDiv.textContent = error.message || 'Failed to add passkey. Please try again.';
+        errorDiv.style.display = 'block';
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Add Passkey';
+    }
+});
+
+// Delete passkey
+async function deletePasskey(passkeyId) {
+    if (!confirm('Are you sure you want to delete this passkey?')) {
+        return;
+    }
+    
+    const errorDiv = document.getElementById('errorMessage');
+    const successDiv = document.getElementById('successMessage');
+    
+    // Hide messages
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+    
+    try {
+        const response = await fetch(`/api/webauthn/passkeys/${passkeyId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            successDiv.textContent = 'Passkey deleted successfully!';
+            successDiv.style.display = 'block';
+            loadPasskeys(); // Reload the list
+        } else {
+            throw new Error('Failed to delete passkey');
+        }
+    } catch (error) {
+        errorDiv.textContent = 'Failed to delete passkey. Please try again.';
+        errorDiv.style.display = 'block';
+    }
+}
+
+// Utility functions
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function base64ToArrayBuffer(base64) {
+    const binaryString = window.atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+}
+
+// Check WebAuthn support
+if (!window.PublicKeyCredential) {
+    document.querySelector('.add-passkey-section').innerHTML = 
+        '<div class="message info">Your browser does not support passkeys.</div>';
+}
+
+// Load passkeys on page load
+loadPasskeys();
+</script>
+
+{% include "_footer.html.liquid" %}
