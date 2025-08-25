@@ -67,6 +67,8 @@ pub fn save_with_profile(
     quality: u8,
     icc_profile: Option<&[u8]>,
 ) -> Result<(), GalleryError> {
+    // JPEG doesn't support alpha channel, so convert to RGB
+    let rgb_image = image.to_rgb8();
     let output = std::fs::File::create(path)?;
 
     if let Some(profile_data) = icc_profile {
@@ -74,7 +76,12 @@ pub fn save_with_profile(
         let mut encoder = JpegEncoder::new_with_quality(output, quality);
         match encoder.set_icc_profile(profile_data.to_vec()) {
             Ok(()) => {
-                image.write_with_encoder(encoder)?;
+                encoder.write_image(
+                    &rgb_image,
+                    rgb_image.width(),
+                    rgb_image.height(),
+                    image::ExtendedColorType::Rgb8,
+                )?;
                 debug!(
                     "JPEG written with ICC profile: {} bytes",
                     profile_data.len()
@@ -86,13 +93,23 @@ pub fn save_with_profile(
                     e
                 );
                 let encoder = JpegEncoder::new_with_quality(std::fs::File::create(path)?, quality);
-                image.write_with_encoder(encoder)?;
+                encoder.write_image(
+                    &rgb_image,
+                    rgb_image.width(),
+                    rgb_image.height(),
+                    image::ExtendedColorType::Rgb8,
+                )?;
             }
         }
     } else {
         // No ICC profile, use standard encoder
         let encoder = JpegEncoder::new_with_quality(output, quality);
-        image.write_with_encoder(encoder)?;
+        encoder.write_image(
+            &rgb_image,
+            rgb_image.width(),
+            rgb_image.height(),
+            image::ExtendedColorType::Rgb8,
+        )?;
     }
 
     Ok(())
