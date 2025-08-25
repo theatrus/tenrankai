@@ -18,10 +18,10 @@ pub trait EmailProvider: Send + Sync {
 
 pub type DynEmailProvider = Arc<dyn EmailProvider>;
 
-pub fn create_provider(config: &EmailProviderConfig) -> Result<DynEmailProvider, EmailError> {
+pub async fn create_provider(config: &EmailProviderConfig) -> Result<DynEmailProvider, EmailError> {
     match config {
         EmailProviderConfig::Ses(ses_config) => {
-            Ok(Arc::new(providers::ses::SesProvider::new(ses_config)?))
+            Ok(Arc::new(providers::ses::SesProvider::new(ses_config).await?))
         }
     }
 }

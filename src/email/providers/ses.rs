@@ -14,25 +14,30 @@ pub struct SesProvider {
 }
 
 impl SesProvider {
-    pub fn new(config: &SesConfig) -> Result<Self, EmailError> {
-        let rt = tokio::runtime::Handle::current();
+    pub async fn new(config: &SesConfig) -> Result<Self, EmailError> {
+        let mut aws_config_builder = aws_config::defaults(BehaviorVersion::latest());
+        
+        // Set region if provided, otherwise use default from environment
+        if let Some(region) = &config.region {
+            aws_config_builder = aws_config_builder.region(Region::new(region.clone()));
+        }
 
-        let client = rt.block_on(async {
-            let mut aws_config_builder = aws_config::defaults(BehaviorVersion::latest())
-                .region(Region::new(config.region.clone()));
+        // If credentials are provided, use them. Otherwise, use the default provider chain
+        if let (Some(access_key), Some(secret_key)) =
+            (&config.access_key_id, &config.secret_access_key)
+        {
+            let credentials = Credentials::new(
+                access_key,
+                secret_key,
+                None,
+                None,
+                "tenrankai-ses-provider"
+            );
+            aws_config_builder = aws_config_builder.credentials_provider(credentials);
+        }
 
-            // If credentials are provided, use them. Otherwise, use the default provider chain
-            if let (Some(access_key), Some(secret_key)) =
-                (&config.access_key_id, &config.secret_access_key)
-            {
-                let credentials =
-                    Credentials::new(access_key, secret_key, None, None, "tenrankai-ses-provider");
-                aws_config_builder = aws_config_builder.credentials_provider(credentials);
-            }
-
-            let aws_config = aws_config_builder.load().await;
-            Client::new(&aws_config)
-        });
+        let aws_config = aws_config_builder.load().await;
+        let client = Client::new(&aws_config);
 
         Ok(Self { client })
     }

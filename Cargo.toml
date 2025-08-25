@@ -6,8 +6,8 @@ license = "Apache-2.0"
 
 [dependencies]
 async-trait = "0.1"
-aws-config = "1.5"
-aws-sdk-sesv2 = "1.64"
+aws-config = "1"
+aws-sdk-sesv2 = "1"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 hmac = "0.12"

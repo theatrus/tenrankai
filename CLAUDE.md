@@ -124,7 +124,7 @@ reply_to = "support@domain.com"  # optional
 provider = "ses"
 
 # Provider-specific config
-region = "us-east-1"
+region = "us-east-1"  # optional, defaults to AWS SDK default
 access_key_id = "..."  # optional
 secret_access_key = "..."  # optional
 ```

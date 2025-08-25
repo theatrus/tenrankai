@@ -118,7 +118,7 @@ region = "us-east-1"
 - `reply_to`: Reply-to address (optional)
 - `provider`: Email provider to use (currently only "ses" supported)
 - **Amazon SES Options:**
-  - `region`: AWS region where SES is configured
+  - `region`: AWS region where SES is configured (optional, uses SDK default)
   - `access_key_id`: AWS access key (optional, uses SDK default chain)
   - `secret_access_key`: AWS secret key (optional, uses SDK default chain)
 

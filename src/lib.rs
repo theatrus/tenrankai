@@ -357,7 +357,7 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     // Initialize email provider if configured
     let email_provider = if let Some(email_config) = &config.email {
-        match email::create_provider(&email_config.provider) {
+        match email::create_provider(&email_config.provider).await {
             Ok(provider) => {
                 info!("Email provider initialized: {}", provider.name());
                 Some(provider)

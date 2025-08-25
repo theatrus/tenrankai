@@ -17,7 +17,7 @@ pub enum EmailProviderConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SesConfig {
-    pub region: String,
+    pub region: Option<String>,
     pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
 }
