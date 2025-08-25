@@ -3,7 +3,7 @@ mod cache;
 mod core;
 mod error;
 mod handlers;
-mod image_processing;
+pub mod image_processing;
 mod metadata;
 mod types;
 

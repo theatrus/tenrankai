@@ -11,9 +11,15 @@ pub enum GalleryError {
     #[error("Serialization error: {0}")]
     SerdeError(#[from] serde_json::Error),
 
+    #[error("Task join error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
+
     #[error("Invalid path")]
     InvalidPath,
 
     #[error("Not found")]
     NotFound,
+
+    #[error("Access denied")]
+    AccessDenied,
 }

@@ -1,5 +1,7 @@
+use super::image_processing::OutputFormat;
 use super::{CacheMetadata, Gallery, ImageMetadata};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{debug, error, info};
 
 impl Gallery {
@@ -130,15 +132,31 @@ impl Gallery {
         format!("{:x}", hasher.finalize())
     }
 
-    /// Generate a cache key for regular images with size and format
-    pub(crate) fn generate_image_cache_key(&self, path: &str, size: &str, format: &str) -> String {
-        let cache_key = format!("{}_{}", size, format);
+    /// Generate a cache key for regular images with size, format, and watermark status
+    pub(crate) fn generate_image_cache_key(
+        &self,
+        path: &str,
+        size: &str,
+        format: &str,
+        has_watermark: bool,
+    ) -> String {
+        let cache_key = if has_watermark {
+            format!("{}_{}_{}", size, format, "watermarked")
+        } else {
+            format!("{}_{}", size, format)
+        };
         self.generate_cache_key(path, &cache_key)
     }
 
-    /// Generate a cache filename for storing in filesystem
-    pub(crate) fn generate_cache_filename(&self, path: &str, size: &str, format: &str) -> String {
-        let hash = self.generate_image_cache_key(path, size, format);
+    /// Generate a cache filename for storing in filesystem with watermark status
+    pub(crate) fn generate_cache_filename(
+        &self,
+        path: &str,
+        size: &str,
+        format: &str,
+        has_watermark: bool,
+    ) -> String {
+        let hash = self.generate_image_cache_key(path, size, format, has_watermark);
         format!("{}.{}", hash, format)
     }
 
@@ -160,6 +178,91 @@ impl Gallery {
     ) -> String {
         let composite_key = Self::generate_composite_cache_key(gallery_path);
         self.generate_cache_key(&composite_key, format)
+    }
+
+    /// Pre-generate cache for a single image
+    pub async fn pregenerate_image_cache(
+        &self,
+        relative_path: &str,
+    ) -> Result<(), super::GalleryError> {
+        if !self.is_image(relative_path) {
+            return Ok(());
+        }
+
+        let full_path = self.config.source_directory.join(relative_path);
+        if !full_path.exists() {
+            return Ok(());
+        }
+
+        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+        let formats = vec![OutputFormat::Jpeg, OutputFormat::WebP];
+
+        for size in &sizes {
+            for &format in &formats {
+                // Skip WebP for PNGs to preserve transparency
+                if format == OutputFormat::WebP && relative_path.to_lowercase().ends_with(".png") {
+                    continue;
+                }
+
+                match self
+                    .get_resized_image(&full_path, relative_path, size, format)
+                    .await
+                {
+                    Ok(_) => debug!(
+                        "Pre-generated {} {} for {}",
+                        size,
+                        format.extension(),
+                        relative_path
+                    ),
+                    Err(e) => error!(
+                        "Failed to pre-generate {} {} for {}: {}",
+                        size,
+                        format.extension(),
+                        relative_path,
+                        e
+                    ),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Pre-generate cache for all images in the gallery
+    pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
+        info!(
+            "Starting cache pre-generation for gallery '{}'",
+            self.config.name
+        );
+
+        // Get all image paths from metadata cache
+        let image_paths: Vec<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            metadata_cache.keys().cloned().collect()
+        };
+
+        let total_images = image_paths.len();
+        info!("Found {} images to pre-generate cache for", total_images);
+
+        for (index, image_path) in image_paths.into_iter().enumerate() {
+            if let Err(e) = self.pregenerate_image_cache(&image_path).await {
+                error!("Failed to pre-generate cache for {}: {}", image_path, e);
+            }
+
+            if (index + 1) % 10 == 0 || index + 1 == total_images {
+                info!(
+                    "Pre-generated cache for {}/{} images",
+                    index + 1,
+                    total_images
+                );
+            }
+        }
+
+        info!(
+            "Completed cache pre-generation for gallery '{}'",
+            self.config.name
+        );
+        Ok(())
     }
 }
 
@@ -215,17 +318,24 @@ mod tests {
         let format = "webp";
 
         // These should produce consistent keys
-        let key1 = gallery.generate_image_cache_key(path, size, format);
-        let key2 = gallery.generate_image_cache_key(path, size, format);
+        let key1 = gallery.generate_image_cache_key(path, size, format, false);
+        let key2 = gallery.generate_image_cache_key(path, size, format, false);
         assert_eq!(key1, key2, "Cache keys should be identical for same inputs");
 
         // Different inputs should produce different keys
-        let key3 = gallery.generate_image_cache_key(path, "medium", format);
+        let key3 = gallery.generate_image_cache_key(path, "medium", format, false);
         assert_ne!(key1, key3, "Different sizes should produce different keys");
 
         // Test that the same inputs always produce the same hash
-        let another_key = gallery.generate_image_cache_key(path, size, format);
+        let another_key = gallery.generate_image_cache_key(path, size, format, false);
         assert_eq!(key1, another_key, "Keys should be deterministic");
+
+        // Test watermark differentiation
+        let key_with_watermark = gallery.generate_image_cache_key(path, size, format, true);
+        assert_ne!(
+            key1, key_with_watermark,
+            "Watermarked and non-watermarked keys should differ"
+        );
 
         // Test composite cache keys
         let comp_key1 = Gallery::generate_composite_cache_key("gallery/2024");
@@ -252,14 +362,14 @@ mod tests {
         let default_config = crate::Config::default();
         let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
 
-        let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp");
+        let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp", false);
         assert!(
             filename.ends_with(".webp"),
             "Filename should end with correct extension"
         );
 
         // Verify the hash part is consistent
-        let hash = gallery.generate_image_cache_key("test.jpg", "thumbnail", "webp");
+        let hash = gallery.generate_image_cache_key("test.jpg", "thumbnail", "webp", false);
         assert_eq!(filename, format!("{}.webp", hash));
     }
 

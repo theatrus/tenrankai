@@ -376,8 +376,7 @@ impl Gallery {
         // Extract ICC profile name if present
         let color_profile = match path.extension().and_then(|s| s.to_str()) {
             Some("jpg") | Some("jpeg") => {
-                if let Some(icc_data) =
-                    super::image_processing::extract_icc_profile_from_jpeg(&path.to_path_buf())
+                if let Some(icc_data) = super::image_processing::extract_icc_profile_from_jpeg(path)
                 {
                     super::image_processing::extract_icc_profile_name(&icc_data)
                 } else {
@@ -385,8 +384,7 @@ impl Gallery {
                 }
             }
             Some("png") => {
-                if let Some(icc_data) =
-                    super::image_processing::extract_icc_profile_from_png(&path.to_path_buf())
+                if let Some(icc_data) = super::image_processing::extract_icc_profile_from_png(path)
                 {
                     super::image_processing::extract_icc_profile_name(&icc_data)
                 } else {

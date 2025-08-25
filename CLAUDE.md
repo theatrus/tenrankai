@@ -41,9 +41,19 @@ The gallery functionality was recently refactored from a single 3000-line file i
 - `types.rs` - Core data structures (GalleryItem, ImageInfo, etc.)
 - `core.rs` - Core gallery methods (directory scanning, preview generation, breadcrumbs)
 - `handlers.rs` - HTTP route handlers for gallery endpoints
-- `image_processing.rs` - Image resizing and serving
+- `image_processing/` - Image processing submodule (recently refactored)
+  - `mod.rs` - Module exports
+  - `types.rs` - OutputFormat, ImageSize types
+  - `formats/` - Format-specific modules
+    - `jpeg.rs` - JPEG handling with ICC profile support
+    - `png.rs` - PNG handling with ICC profile extraction
+    - `webp.rs` - WebP encoding with fallback support
+  - `icc.rs` - ICC profile name extraction
+  - `resize.rs` - Image resizing logic
+  - `serve.rs` - Image serving and response handling
+  - `watermark.rs` - Copyright watermark application
 - `metadata.rs` - EXIF metadata extraction and processing
-- `cache.rs` - Cache management and persistence
+- `cache.rs` - Cache management, persistence, and pregeneration
 - `error.rs` - Error type definitions
 
 ### Posts Module (`src/posts/`)
