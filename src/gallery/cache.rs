@@ -1,5 +1,7 @@
+use super::image_processing::OutputFormat;
 use super::{CacheMetadata, Gallery, ImageMetadata};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{debug, error, info};
 
 impl Gallery {
@@ -160,6 +162,91 @@ impl Gallery {
     ) -> String {
         let composite_key = Self::generate_composite_cache_key(gallery_path);
         self.generate_cache_key(&composite_key, format)
+    }
+
+    /// Pre-generate cache for a single image
+    pub async fn pregenerate_image_cache(
+        &self,
+        relative_path: &str,
+    ) -> Result<(), super::GalleryError> {
+        if !self.is_image(relative_path) {
+            return Ok(());
+        }
+
+        let full_path = self.config.source_directory.join(relative_path);
+        if !full_path.exists() {
+            return Ok(());
+        }
+
+        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+        let formats = vec![OutputFormat::Jpeg, OutputFormat::WebP];
+
+        for size in &sizes {
+            for &format in &formats {
+                // Skip WebP for PNGs to preserve transparency
+                if format == OutputFormat::WebP && relative_path.to_lowercase().ends_with(".png") {
+                    continue;
+                }
+
+                match self
+                    .get_resized_image(&full_path, relative_path, size, format)
+                    .await
+                {
+                    Ok(_) => debug!(
+                        "Pre-generated {} {} for {}",
+                        size,
+                        format.extension(),
+                        relative_path
+                    ),
+                    Err(e) => error!(
+                        "Failed to pre-generate {} {} for {}: {}",
+                        size,
+                        format.extension(),
+                        relative_path,
+                        e
+                    ),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Pre-generate cache for all images in the gallery
+    pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
+        info!(
+            "Starting cache pre-generation for gallery '{}'",
+            self.config.name
+        );
+
+        // Get all image paths from metadata cache
+        let image_paths: Vec<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            metadata_cache.keys().cloned().collect()
+        };
+
+        let total_images = image_paths.len();
+        info!("Found {} images to pre-generate cache for", total_images);
+
+        for (index, image_path) in image_paths.into_iter().enumerate() {
+            if let Err(e) = self.pregenerate_image_cache(&image_path).await {
+                error!("Failed to pre-generate cache for {}: {}", image_path, e);
+            }
+
+            if (index + 1) % 10 == 0 || index + 1 == total_images {
+                info!(
+                    "Pre-generated cache for {}/{} images",
+                    index + 1,
+                    total_images
+                );
+            }
+        }
+
+        info!(
+            "Completed cache pre-generation for gallery '{}'",
+            self.config.name
+        );
+        Ok(())
     }
 }
 

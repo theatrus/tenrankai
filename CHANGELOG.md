@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - This allows different copyright holders for different galleries (e.g., personal vs. portfolio)
   - Gallery struct no longer requires AppConfig parameter in constructor
 
+### Changed
+- **Image Processing Refactoring**: Reorganized image processing into focused submodules
+  - Created separate modules for each image format (JPEG, PNG, WebP)
+  - Extracted ICC profile handling into dedicated module
+  - Separated resize logic from serving logic
+  - Moved cache pregeneration methods to cache module where they belong
+  - Reduced method sizes and improved code organization
+
 ### Added
 - **Cascading Static Directories**: Support for multiple static file directories with precedence ordering
   - Configure multiple directories in `[static_files]` section: `directories = ["static-custom", "static"]`
