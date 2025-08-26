@@ -15,7 +15,7 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 flate2 = "1.0"
 rexif = "0.7"
-image = { features = ["avif", "avif-native"], version = "0.25" }
+image = { version = "0.25" }
 imageproc = "0.25"
 ab_glyph = "0.2"
 resvg = "0.45"
