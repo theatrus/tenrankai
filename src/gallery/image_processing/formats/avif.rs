@@ -42,6 +42,7 @@ pub struct AvifImageInfo {
     pub max_pall: u16,                      // Maximum Picture Average Light Level (cd/m²)
     pub has_gain_map: bool,                 // Whether this AVIF contains a gain map
     pub gain_map_info: Option<GainMapInfo>, // Gain map metadata if available
+    pub exif_data: Option<Vec<u8>>,         // Raw EXIF data if present
 }
 
 /// Gain map metadata information
@@ -185,6 +186,15 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         let icc_profile = if (*image).icc.size > 0 && !(*image).icc.data.is_null() {
             let icc_slice = std::slice::from_raw_parts((*image).icc.data, (*image).icc.size);
             Some(icc_slice.to_vec())
+        } else {
+            None
+        };
+
+        // Extract EXIF data if present
+        let exif_data = if (*image).exif.size > 0 && !(*image).exif.data.is_null() {
+            let exif_slice = std::slice::from_raw_parts((*image).exif.data, (*image).exif.size);
+            debug!("Found EXIF data in AVIF: {} bytes", exif_slice.len());
+            Some(exif_slice.to_vec())
         } else {
             None
         };
@@ -352,6 +362,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             max_pall: clli.maxPALL,
             has_gain_map,
             gain_map_info,
+            exif_data: exif_data.clone(),
         };
 
         // Identify color space name for debugging
@@ -1046,6 +1057,44 @@ fn find_colr_in_meta(meta_data: &[u8]) -> Option<Vec<u8>> {
     }
 
     None
+}
+
+/// Extract EXIF data from an AVIF file
+pub fn extract_exif_data(path: &Path) -> Option<Vec<u8>> {
+    let data = std::fs::read(path).ok()?;
+
+    unsafe {
+        let decoder = sys::avifDecoderCreate();
+        if decoder.is_null() {
+            return None;
+        }
+
+        let image = sys::avifImageCreateEmpty();
+        if image.is_null() {
+            sys::avifDecoderDestroy(decoder);
+            return None;
+        }
+
+        // Decode the image (we need to decode to access metadata)
+        let result = sys::avifDecoderReadMemory(decoder, image, data.as_ptr(), data.len());
+
+        let exif_data = if result == sys::AVIF_RESULT_OK {
+            if (*image).exif.size > 0 && !(*image).exif.data.is_null() {
+                let exif_slice = std::slice::from_raw_parts((*image).exif.data, (*image).exif.size);
+                debug!("Extracted EXIF data from AVIF: {} bytes", exif_slice.len());
+                Some(exif_slice.to_vec())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        sys::avifImageDestroy(image);
+        sys::avifDecoderDestroy(decoder);
+
+        exif_data
+    }
 }
 
 /// Extract dimensions from AVIF file without full decode

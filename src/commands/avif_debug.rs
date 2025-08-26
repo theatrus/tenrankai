@@ -170,6 +170,33 @@ pub async fn handle_avif_debug_command(
                 println!("  ICC profile: None");
             }
 
+            // EXIF data
+            if let Some(ref exif) = info.exif_data {
+                println!("  EXIF data: {} bytes", exif.len());
+                if verbose {
+                    // Try to parse and show basic EXIF info
+                    match rexif::parse_buffer(exif) {
+                        Ok(parsed) => {
+                            println!("    EXIF entries: {}", parsed.entries.len());
+                            for entry in &parsed.entries {
+                                match entry.tag {
+                                    rexif::ExifTag::Make => println!("    Camera Make: {}", entry.value_more_readable),
+                                    rexif::ExifTag::Model => println!("    Camera Model: {}", entry.value_more_readable),
+                                    rexif::ExifTag::LensModel => println!("    Lens Model: {}", entry.value_more_readable),
+                                    rexif::ExifTag::DateTimeOriginal => println!("    Date Taken: {}", entry.value_more_readable),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            println!("    Failed to parse EXIF: {}", e);
+                        }
+                    }
+                }
+            } else {
+                println!("  EXIF data: None");
+            }
+
             if verbose {
                 println!();
                 println!("=== Technical Details ===");

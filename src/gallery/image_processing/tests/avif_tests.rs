@@ -386,6 +386,7 @@ fn test_hdr_detection_logic_edge_cases() {
             max_pall: 0,            // No CLLI in test
             has_gain_map: false,    // No gain map in test
             gain_map_info: None,    // No gain map in test
+            exif_data: None,        // No EXIF in test
         };
 
         // Simulate the HDR detection logic from avif.rs
@@ -427,6 +428,7 @@ fn test_avif_save_preserves_hdr_properties() {
         max_pall: 0,                  // No CLLI in this test
         has_gain_map: false,
         gain_map_info: None,
+        exif_data: None,
     };
 
     // Create a 16-bit image (simulating HDR)
@@ -482,6 +484,7 @@ fn test_hdr_color_properties_preservation() {
         max_pall: 0,                  // No CLLI in this test
         has_gain_map: false,
         gain_map_info: None,
+        exif_data: None,
     };
 
     // Create a 16-bit image (simulating HDR)
@@ -557,6 +560,7 @@ fn test_non_hdr_color_properties_preservation() {
         max_pall: 0,                  // No CLLI in non-HDR
         has_gain_map: false,
         gain_map_info: None,
+        exif_data: None,
     };
 
     // Create an 8-bit image
@@ -609,6 +613,7 @@ fn test_clli_hdr_detection() {
         max_pall: 400,               // 400 cd/m² - typical HDR average
         has_gain_map: false,
         gain_map_info: None,
+        exif_data: None,
     };
 
     // Create a 16-bit image
@@ -671,4 +676,55 @@ fn create_test_srgb_profile() -> Vec<u8> {
     }
 
     profile
+}
+
+#[test]
+fn test_avif_exif_extraction() {
+    // Test EXIF extraction from real AVIF files if they exist
+    let test_path = std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A630303-HDR.avif");
+    
+    if !test_path.exists() {
+        eprintln!("Skipping EXIF extraction test: test file not found");
+        return;
+    }
+
+    // Extract EXIF data
+    let exif_data = avif::extract_exif_data(test_path);
+    assert!(exif_data.is_some(), "Should extract EXIF data from AVIF file");
+
+    let exif_bytes = exif_data.unwrap();
+    assert!(!exif_bytes.is_empty(), "EXIF data should not be empty");
+
+    // Try to parse the EXIF data
+    let parsed_exif = rexif::parse_buffer(&exif_bytes);
+    assert!(parsed_exif.is_ok(), "Should be able to parse extracted EXIF data");
+
+    let exif = parsed_exif.unwrap();
+    assert!(!exif.entries.is_empty(), "Should have EXIF entries");
+
+    // Look for common camera metadata
+    let has_camera_info = exif.entries.iter().any(|e| {
+        matches!(e.tag, rexif::ExifTag::Make | rexif::ExifTag::Model | 
+                       rexif::ExifTag::DateTimeOriginal | rexif::ExifTag::LensModel)
+    });
+    assert!(has_camera_info, "Should have camera information in EXIF");
+
+    println!("✅ Successfully extracted and parsed EXIF from AVIF");
+}
+
+#[test]
+fn test_avif_without_exif() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a simple AVIF without EXIF
+    let img = ImageBuffer::from_pixel(100, 100, Rgb([255u8, 128, 64]));
+    let dynamic_img = DynamicImage::ImageRgb8(img);
+
+    let avif_path = temp_dir.path().join("no_exif.avif");
+    let result = avif::save_with_profile(&dynamic_img, &avif_path, 90, 6, None, false);
+    assert!(result.is_ok());
+
+    // Try to extract EXIF
+    let exif_data = avif::extract_exif_data(&avif_path);
+    assert!(exif_data.is_none(), "Should not find EXIF in synthetic AVIF");
 }

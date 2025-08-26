@@ -9,16 +9,51 @@ impl Gallery {
         &self,
         image_path: &Path,
     ) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
-        match rexif::parse_file(image_path) {
-            Ok(exif_data) => {
-                let capture_date = self.extract_capture_date(&exif_data);
-                let camera_info = self.extract_camera_info(&exif_data);
-                let location_info = self.extract_location_info(&exif_data);
-                (capture_date, camera_info, location_info)
+        // Check file extension to determine extraction method
+        let extension = image_path.extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase());
+
+        match extension.as_deref() {
+            Some("avif") => {
+                // For AVIF files, extract EXIF data using libavif
+                match super::image_processing::formats::avif::extract_exif_data(image_path) {
+                    Some(exif_bytes) => {
+                        // Parse the EXIF data from bytes
+                        match rexif::parse_buffer(&exif_bytes) {
+                            Ok(exif_data) => {
+                                let capture_date = self.extract_capture_date(&exif_data);
+                                let camera_info = self.extract_camera_info(&exif_data);
+                                let location_info = self.extract_location_info(&exif_data);
+                                debug!("Successfully extracted EXIF from AVIF: {:?}", image_path);
+                                (capture_date, camera_info, location_info)
+                            }
+                            Err(e) => {
+                                trace!("Failed to parse EXIF data from AVIF {}: {}", image_path.display(), e);
+                                (None, None, None)
+                            }
+                        }
+                    }
+                    None => {
+                        trace!("No EXIF data found in AVIF: {}", image_path.display());
+                        (None, None, None)
+                    }
+                }
             }
-            Err(e) => {
-                trace!("No EXIF data for {}: {}", image_path.display(), e);
-                (None, None, None)
+            _ => {
+                // For other formats (JPEG, etc), use rexif's file parser
+                match rexif::parse_file(image_path) {
+                    Ok(exif_data) => {
+                        let capture_date = self.extract_capture_date(&exif_data);
+                        let camera_info = self.extract_camera_info(&exif_data);
+                        let location_info = self.extract_location_info(&exif_data);
+                        (capture_date, camera_info, location_info)
+                    }
+                    Err(e) => {
+                        trace!("No EXIF data for {}: {}", image_path.display(), e);
+                        (None, None, None)
+                    }
+                }
             }
         }
     }
