@@ -420,40 +420,41 @@ The command shows:
 3. Use background tasks for expensive operations
 4. Leverage browser caching with proper headers
 
-## Recent Major Changes
+## Major Features
 
-### Email Module Implementation (August 2025)
-1. **Pluggable Email Provider System**:
+### Pluggable Email Provider System
+1. **Email Module Architecture**:
    - Trait-based architecture for easy provider addition
    - Amazon SES provider implementation
+   - Null provider for development/testing
    - Support for text, HTML, or both email formats
    - Configurable from address, name, and reply-to
 
 2. **Login Integration**:
-   - Login system now sends actual emails instead of logging URLs
+   - Login system sends actual emails instead of logging URLs
    - Falls back to logging if no email provider configured
    - Professional HTML and text email templates
 
-### Library/Binary Architecture Refactoring (August 2025)
-- **Created lib.rs**: Separated library components from binary
+### Library/Binary Architecture
+- **lib.rs**: Separated library components from binary
 - **Moved Types**: All config types (Config, ServerConfig, etc.) now in lib.rs
 - **Public API**: Exposed modules and types for external use
 - **Cleaner main.rs**: Binary now just handles CLI and server startup
 - **Benefits**: Better code organization, reusable components, testability
 
-### Multi-Gallery Support (August 2025 - Updated December 2024)
-1. **Multiple Gallery Instances**: The gallery module now supports multiple independent gallery instances
+### Multi-Gallery Support
+1. **Multiple Gallery Instances**: The gallery module supports multiple independent gallery instances
    - Each gallery has its own source directory, cache directory, and URL prefix
-   - **BREAKING CHANGE (December 2024)**: Removed backward compatibility - only named galleries are supported
+   - Named galleries only (no backward compatibility mode)
 
-### Posts System Implementation (August 2025)
-1. **Multiple Blog Systems**: Added support for multiple independent markdown-based blog/posts systems
+### Posts System
+1. **Multiple Blog Systems**: Support for multiple independent markdown-based blog/posts systems
    - Each system has its own source directory, URL prefix, and configuration
    - **Gallery Image References**: Easy embedding of gallery images with automatic linking
    - **Automatic Reload on Change**: Posts are automatically reloaded when their markdown files are modified
 
-### Email-based Authentication System (December 2024)
-1. **New Login Module** (`src/login/`):
+### Email-based Authentication System
+1. **Login Module** (`src/login/`):
    - User database stored in TOML file (`users.toml`)
    - No self-registration - admin manages users via CLI tool
    - Email-based passwordless authentication
@@ -461,14 +462,14 @@ The command shows:
    - Secure token generation with 10-minute expiration
    - Periodic cleanup of expired tokens and rate limits
 
-### Hidden Gallery Folders (December 2025)
+### Hidden Gallery Folders
 1. **TOML Front Matter Support in _folder.md**:
-   - Gallery folders can now use TOML front matter similar to posts
+   - Gallery folders can use TOML front matter similar to posts
    - Folders can be marked as `hidden = true` in TOML config
    - Hidden folders are excluded from listings but remain accessible via direct URL
 
-### WebAuthn/Passkey Support (December 2025)
-1. **Modern Authentication**: Added WebAuthn/Passkey authentication
+### WebAuthn/Passkey Support
+1. **Modern Authentication**: WebAuthn/Passkey authentication
    - Biometric authentication (fingerprint, face recognition)
    - Hardware security key support
    - Cross-device passkey sync via platform providers
@@ -481,33 +482,27 @@ The command shows:
    - Improved login page UI with better contrast
    - Template reorganization into modules/ directory
 
-### Gallery Access Control (December 2025)
+### Gallery Access Control
 1. **Folder-Level Access Control**:
    - `require_auth = true` in _folder.md TOML to require authentication
    - `allowed_users = ["user1", "user2"]` to restrict access to specific users
    - Hierarchical access control (parent folder restrictions apply to children)
    - Access control applies to gallery views, previews, and image serving
 
-### Null Email Provider (December 2025)
-1. **Development-Friendly Email Provider**:
-   - Logs emails to console instead of sending them
-   - Useful for development and testing
-   - Configure with `provider = "null"` in email config
-   - Preserves full email formatting for inspection
-
-### Build System Improvements (December 2025)
+### Build System Improvements
 1. **Cross-Platform Build Support**:
-   - Windows builds now use vcpkg for OpenSSL installation
-   - macOS and Windows builds re-enabled in CI/CD
-   - Improved build reliability across platforms
+   - Windows builds use vcpkg for OpenSSL installation
+   - macOS and Windows builds enabled in CI/CD
+   - Build dependencies (nasm, ninja, meson, cmake) installed automatically
 
-### AVIF HDR Support with Gain Maps (December 2025)
+### AVIF HDR Support with Gain Maps
 1. **Advanced AVIF Support**:
    - Full HDR AVIF encoding/decoding using libavif-rs with AOM codec
    - Gain map detection and preservation for HDR/SDR tone mapping
    - Preserves HDR metadata including color primaries, transfer functions, and CLLI
    - Container-level gain map detection fallback when libavif decoding fails
    - 10-bit encoding for HDR images with proper color space preservation
+   - Browser fallback: AVIF sources served as WebP/JPEG for non-AVIF browsers (resized images only)
 
 2. **Gain Map Implementation**:
    - Detects gain maps using libavif 1.2.1+ experimental APIs
