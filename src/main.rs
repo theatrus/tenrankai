@@ -295,10 +295,16 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                     let has_pq_transfer = info.transfer_characteristics == 16;
                     let has_hlg_transfer = info.transfer_characteristics == 18;
                     let has_hdr_transfer = has_pq_transfer || has_hlg_transfer;
+                    let has_clli = info.max_cll > 0 || info.max_pall > 0;
                     
                     println!("  Wide gamut (BT.2020 or Display P3): {}", is_bt2020 || is_display_p3);
                     println!("  HDR transfer function (PQ/HLG): {}", has_hdr_transfer);
                     println!("  High bit depth (>8 bits): {}", info.bit_depth > 8);
+                    println!("  Content Light Level Info (CLLI): {}", has_clli);
+                    if has_clli {
+                        println!("    Max Content Light Level: {} cd/m²", info.max_cll);
+                        println!("    Max Picture Average Light Level: {} cd/m²", info.max_pall);
+                    }
                     println!("  Current HDR detection result: {}", info.is_hdr);
                     
                     // ICC profile
@@ -315,18 +321,21 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                         println!("  Current logic: bit_depth > 8 AND (");
                         println!("    (BT.2020 primaries AND (PQ OR HLG transfer)) OR");
                         println!("    (Display P3 primaries AND bit_depth >= 10) OR");
-                        println!("    (bit_depth > 8 AND (PQ OR HLG transfer))");
+                        println!("    (bit_depth > 8 AND (PQ OR HLG transfer)) OR");
+                        println!("    (CLLI data present)");
                         println!("  )");
                         println!();
                         
                         let traditional_hdr = is_bt2020 && has_hdr_transfer;
                         let wide_gamut_hdr = is_display_p3 && info.bit_depth >= 10;
                         let hdr_transfer_any = info.bit_depth > 8 && has_hdr_transfer;
+                        let clli_hdr = has_clli;
                         
                         println!("  Traditional HDR (BT.2020 + PQ/HLG): {}", traditional_hdr);
                         println!("  Wide gamut HDR (Display P3 + ≥10-bit): {}", wide_gamut_hdr);
                         println!("  HDR transfer + high bit depth: {}", hdr_transfer_any);
-                        println!("  Final result: {}", traditional_hdr || wide_gamut_hdr || hdr_transfer_any);
+                        println!("  CLLI metadata present: {}", clli_hdr);
+                        println!("  Final result: {}", traditional_hdr || wide_gamut_hdr || hdr_transfer_any || clli_hdr);
                     }
                 },
                 Err(e) => {
@@ -455,21 +464,21 @@ fn transfer_characteristics_name(value: u16) -> &'static str {
         1 => "BT.709",
         2 => "Unspecified", 
         3 => "Reserved(3)",
-        4 => "Gamma 2.2",
-        5 => "Gamma 2.8",
+        4 => "Gamma 2.2 (BT.470M)",
+        5 => "Gamma 2.8 (BT.470BG)",
         6 => "BT.601",
         7 => "SMPTE-240M",
         8 => "Linear",
         9 => "Log 100:1",
-        10 => "Log 316:1",
-        11 => "xvYCC",
+        10 => "Log 316:1 (Log sqrt(10))",
+        11 => "IEC 61966-2-1 (xvYCC)",
         12 => "BT.1361",
         13 => "sRGB",
-        14 => "BT.2020 (10-bit)",
-        15 => "BT.2020 (12-bit)",
-        16 => "SMPTE-2084 (PQ)",
+        14 => "BT.2020 (10-bit) **HDR**",
+        15 => "BT.2020 (12-bit) **HDR**",
+        16 => "SMPTE-2084 (PQ) **HDR**",
         17 => "SMPTE-428",
-        18 => "HLG",
+        18 => "HLG **HDR**",
         _ => "Unknown"
     }
 }

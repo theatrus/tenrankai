@@ -310,6 +310,8 @@ fn test_hdr_detection_logic_edge_cases() {
             color_primaries: primaries,
             transfer_characteristics: transfer,
             matrix_coefficients: 1, // BT.709
+            max_cll: 0,   // No CLLI in test
+            max_pall: 0,  // No CLLI in test
         };
         
         // Simulate the HDR detection logic from avif.rs
@@ -346,6 +348,8 @@ fn test_avif_save_preserves_hdr_properties() {
         color_primaries: 12, // Display P3
         transfer_characteristics: 13, // sRGB
         matrix_coefficients: 6, // BT.601
+        max_cll: 0,   // No CLLI in this test
+        max_pall: 0,  // No CLLI in this test
     };
     
     // Create a 16-bit image (simulating HDR)
@@ -387,6 +391,8 @@ fn test_hdr_color_properties_preservation() {
         color_primaries: 12, // Display P3
         transfer_characteristics: 13, // sRGB (preserve exactly as in original)
         matrix_coefficients: 6, // BT.601
+        max_cll: 0,   // No CLLI in this test
+        max_pall: 0,  // No CLLI in this test
     };
     
     // Create a 16-bit image (simulating HDR)
@@ -436,6 +442,8 @@ fn test_non_hdr_color_properties_preservation() {
         color_primaries: 1, // BT.709
         transfer_characteristics: 13, // sRGB (should NOT be upgraded)
         matrix_coefficients: 1, // BT.709
+        max_cll: 0,   // No CLLI in non-HDR
+        max_pall: 0,  // No CLLI in non-HDR
     };
     
     // Create an 8-bit image
@@ -461,6 +469,52 @@ fn test_non_hdr_color_properties_preservation() {
                  saved_info.transfer_characteristics);
     } else {
         panic!("Could not read back saved AVIF for verification");
+    }
+}
+
+#[test]
+fn test_clli_hdr_detection() {
+    let temp_dir = TempDir::new().unwrap();
+    
+    // Create a test AvifImageInfo with CLLI data (indicating HDR content)
+    let clli_info = avif::AvifImageInfo {
+        bit_depth: 10,
+        has_alpha: false,
+        is_hdr: true,  // Should be detected as HDR due to CLLI data
+        icc_profile: None,
+        color_primaries: 1, // BT.709 (not wide gamut)
+        transfer_characteristics: 1, // BT.709 (not HDR transfer)
+        matrix_coefficients: 1, // BT.709
+        max_cll: 4000,   // 4000 cd/m² - typical HDR content
+        max_pall: 400,   // 400 cd/m² - typical HDR average
+    };
+    
+    // Create a 16-bit image
+    let img = ImageBuffer::from_pixel(100, 100, Rgb([65535u16, 32768, 16384]));
+    let dynamic_img = DynamicImage::ImageRgb16(img);
+    
+    // Save with CLLI info
+    let avif_path = temp_dir.path().join("test_clli_hdr.avif");
+    let result = avif::save_with_info(&dynamic_img, &avif_path, 90, 6, Some(&clli_info));
+    
+    assert!(result.is_ok(), "Failed to save AVIF with CLLI info: {:?}", result);
+    assert!(avif_path.exists());
+    
+    // Read back and verify CLLI data preservation and HDR detection
+    if let Ok((_, saved_info)) = avif::read_avif_info(&avif_path) {
+        // CLLI data should be preserved
+        assert_eq!(saved_info.max_cll, clli_info.max_cll, "CLLI maxCLL should be preserved");
+        assert_eq!(saved_info.max_pall, clli_info.max_pall, "CLLI maxPALL should be preserved");
+        
+        // Should be detected as HDR due to CLLI presence
+        assert!(saved_info.is_hdr, "Image with CLLI data should be detected as HDR");
+        
+        println!("✅ CLLI-based HDR detection working:");
+        println!("  Max CLL: {} cd/m²", saved_info.max_cll);
+        println!("  Max PALL: {} cd/m²", saved_info.max_pall);
+        println!("  HDR detected: {}", saved_info.is_hdr);
+    } else {
+        panic!("Could not read back saved AVIF for CLLI verification");
     }
 }
 

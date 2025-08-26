@@ -41,6 +41,8 @@ pub struct AvifImageInfo {
     pub color_primaries: u16,
     pub transfer_characteristics: u16,
     pub matrix_coefficients: u16,
+    pub max_cll: u16,  // Maximum Content Light Level (cd/m²)
+    pub max_pall: u16, // Maximum Picture Average Light Level (cd/m²)
 }
 
 /// Read an AVIF file using libavif with HDR support
@@ -100,16 +102,20 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         let _has_wide_gamut = (*image).colorPrimaries == sys::AVIF_COLOR_PRIMARIES_BT2020 as u16 ||
                            (*image).colorPrimaries == 12; // Display P3
         
+        // Extract CLLI (Content Light Level Information) - HDR metadata
+        let clli = (*image).clli;
+        let has_clli = clli.maxCLL > 0 || clli.maxPALL > 0;
+        
         let is_hdr = bit_depth > 8 && (
             // Traditional HDR: BT.2020 + PQ/HLG
             ((*image).colorPrimaries == sys::AVIF_COLOR_PRIMARIES_BT2020 as u16 && has_hdr_transfer) ||
             // Wide gamut HDR: Display P3 + high bit depth (preserve as HDR)
             ((*image).colorPrimaries == 12 && bit_depth >= 10) ||
             // Any high bit depth with HDR transfer function
-            (bit_depth > 8 && has_hdr_transfer)
+            (bit_depth > 8 && has_hdr_transfer) ||
+            // Content Light Level Information indicates HDR content
+            has_clli
         );
-
-        let _gain_map = (*image).clli;
         
         // Extract ICC profile if present
         let icc_profile = if (*image).icc.size > 0 && !(*image).icc.data.is_null() {
@@ -127,6 +133,8 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             color_primaries: (*image).colorPrimaries,
             transfer_characteristics: (*image).transferCharacteristics,
             matrix_coefficients: (*image).matrixCoefficients,
+            max_cll: clli.maxCLL,
+            max_pall: clli.maxPALL,
         };
         
         // Identify color space name for debugging
@@ -323,6 +331,8 @@ fn read_with_fallback(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         color_primaries: sys::AVIF_COLOR_PRIMARIES_BT709 as u16,
         transfer_characteristics: sys::AVIF_TRANSFER_CHARACTERISTICS_SRGB as u16,
         matrix_coefficients: sys::AVIF_MATRIX_COEFFICIENTS_BT709 as u16,
+        max_cll: 0,   // No CLLI in fallback
+        max_pall: 0,  // No CLLI in fallback
     };
     
     Ok((img, info))
@@ -432,6 +442,15 @@ fn save_with_profile_and_color(
         // Set ICC profile if provided
         if let Some(icc) = icc_profile {
             sys::avifImageSetProfileICC(avif_image, icc.as_ptr(), icc.len());
+        }
+        
+        // Set CLLI data if provided in color_info
+        if let Some(info) = color_info {
+            if info.max_cll > 0 || info.max_pall > 0 {
+                (*avif_image).clli.maxCLL = info.max_cll;
+                (*avif_image).clli.maxPALL = info.max_pall;
+                debug!("Set CLLI: maxCLL={} cd/m², maxPALL={} cd/m²", info.max_cll, info.max_pall);
+            }
         }
         
         // Allocate planes
