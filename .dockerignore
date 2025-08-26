@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+Dockerfile
+.dockerignore
+
+# Development files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# User data (these should be mounted as volumes)
+photos/
+cache/
+config.toml
+users.toml
+
+# Documentation
+*.md
+LICENSE
+
+# CI/CD
+.github/
+
+# Test files
+tests/
+benches/
