@@ -167,12 +167,11 @@ pub async fn handle_avif_debug_command(
             // ICC profile
             if let Some(ref icc) = info.icc_profile {
                 println!("  ICC profile: {} bytes", icc.len());
-                if verbose {
-                    if let Some(name) =
+                if verbose
+                    && let Some(name) =
                         crate::gallery::image_processing::extract_icc_profile_name(icc)
-                    {
-                        println!("    Profile name: {}", name);
-                    }
+                {
+                    println!("    Profile name: {}", name);
                 }
             } else {
                 println!("  ICC profile: None");
@@ -244,13 +243,12 @@ pub async fn handle_avif_debug_command(
                 // Additional technical info
                 if let Some(ref gain_info) = info.gain_map_info
                     && gain_info.has_image
+                    && let Some(ref gm_img) = gain_info.gain_map_image
                 {
-                    if let Some(ref gm_img) = gain_info.gain_map_image {
-                        println!();
-                        println!("Gain Map Image Details:");
-                        println!("  Dimensions: {}x{}", gm_img.width(), gm_img.height());
-                        println!("  Format: {:?}", gm_img.color());
-                    }
+                    println!();
+                    println!("Gain Map Image Details:");
+                    println!("  Dimensions: {}x{}", gm_img.width(), gm_img.height());
+                    println!("  Format: {:?}", gm_img.color());
                 }
             }
         }
