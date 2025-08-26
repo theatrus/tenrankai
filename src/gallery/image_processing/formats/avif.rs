@@ -7,6 +7,43 @@ use tracing::debug;
 
 use super::avif_container;
 
+// Helper functions for fraction conversion
+fn signed_fraction_to_float(frac: &sys::avifSignedFraction) -> f32 {
+    if frac.d == 0 {
+        0.0
+    } else {
+        frac.n as f32 / frac.d as f32
+    }
+}
+
+fn unsigned_fraction_to_float(frac: &sys::avifUnsignedFraction) -> f32 {
+    if frac.d == 0 {
+        0.0
+    } else {
+        frac.n as f32 / frac.d as f32
+    }
+}
+
+fn float_to_signed_fraction(val: f32) -> sys::avifSignedFraction {
+    if val == 0.0 {
+        sys::avifSignedFraction { n: 0, d: 1 }
+    } else {
+        let d = 1000u32;
+        let n = (val * d as f32).round() as i32;
+        sys::avifSignedFraction { n, d }
+    }
+}
+
+fn float_to_unsigned_fraction(val: f32) -> sys::avifUnsignedFraction {
+    if val == 0.0 {
+        sys::avifUnsignedFraction { n: 0, d: 1 }
+    } else {
+        let d = 1000u32;
+        let n = (val * d as f32).round() as u32;
+        sys::avifUnsignedFraction { n, d }
+    }
+}
+
 // Common color space constants
 const DISPLAY_P3_PRIMARIES: u16 = 12; // AVIF_COLOR_PRIMARIES_SMPTE432
 
@@ -114,38 +151,11 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         if result != sys::AVIF_RESULT_OK {
             sys::avifImageDestroy(image);
             sys::avifDecoderDestroy(decoder);
-            let error_msg = match result {
-                sys::AVIF_RESULT_UNKNOWN_ERROR => "Unknown error",
-                sys::AVIF_RESULT_INVALID_FTYP => "Invalid file type",
-                sys::AVIF_RESULT_NO_CONTENT => "No content",
-                sys::AVIF_RESULT_NO_YUV_FORMAT_SELECTED => "No YUV format selected",
-                sys::AVIF_RESULT_REFORMAT_FAILED => "Reformat failed",
-                sys::AVIF_RESULT_UNSUPPORTED_DEPTH => "Unsupported bit depth",
-                sys::AVIF_RESULT_ENCODE_COLOR_FAILED => "Encode color failed",
-                sys::AVIF_RESULT_ENCODE_ALPHA_FAILED => "Encode alpha failed",
-                sys::AVIF_RESULT_BMFF_PARSE_FAILED => "BMFF parse failed",
-                sys::AVIF_RESULT_MISSING_IMAGE_ITEM => "Missing image item",
-                sys::AVIF_RESULT_DECODE_COLOR_FAILED => "Decode color failed",
-                sys::AVIF_RESULT_DECODE_ALPHA_FAILED => "Decode alpha failed",
-                sys::AVIF_RESULT_COLOR_ALPHA_SIZE_MISMATCH => "Color/alpha size mismatch",
-                sys::AVIF_RESULT_ISPE_SIZE_MISMATCH => "ISPE size mismatch",
-                sys::AVIF_RESULT_NO_CODEC_AVAILABLE => "No codec available",
-                sys::AVIF_RESULT_NO_IMAGES_REMAINING => "No images remaining",
-                sys::AVIF_RESULT_INVALID_EXIF_PAYLOAD => "Invalid EXIF payload",
-                sys::AVIF_RESULT_INVALID_IMAGE_GRID => "Invalid image grid",
-                sys::AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION => "Invalid codec specific option",
-                sys::AVIF_RESULT_TRUNCATED_DATA => "Truncated data",
-                sys::AVIF_RESULT_IO_NOT_SET => "IO not set",
-                sys::AVIF_RESULT_IO_ERROR => "IO error",
-                sys::AVIF_RESULT_WAITING_ON_IO => "Waiting on IO",
-                sys::AVIF_RESULT_INVALID_ARGUMENT => "Invalid argument",
-                sys::AVIF_RESULT_NOT_IMPLEMENTED => "Not implemented",
-                sys::AVIF_RESULT_OUT_OF_MEMORY => "Out of memory",
-                _ => "Unknown error code",
-            };
+            // For now, just report the error code. In the future we could use
+            // avifResultToString when it's available in the bindings
             return Err(GalleryError::ProcessingError(format!(
-                "Failed to decode AVIF: {} (error code {})",
-                error_msg, result
+                "Failed to decode AVIF: error code {}",
+                result
             )));
         }
 
@@ -216,23 +226,6 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             // Use libavif's gain map data if available
             let gain_map = (*image).gainMap;
             let gm = &*gain_map;
-
-            // Helper function to convert fraction to float
-            let signed_fraction_to_float = |frac: &sys::avifSignedFraction| -> f32 {
-                if frac.d == 0 {
-                    0.0
-                } else {
-                    frac.n as f32 / frac.d as f32
-                }
-            };
-
-            let unsigned_fraction_to_float = |frac: &sys::avifUnsignedFraction| -> f32 {
-                if frac.d == 0 {
-                    0.0
-                } else {
-                    frac.n as f32 / frac.d as f32
-                }
-            };
 
             // Extract gain map image if available
             let gain_map_image = if !gm.image.is_null() {
@@ -565,7 +558,7 @@ pub fn save_with_info(
     save_with_profile_and_color(image, path, quality, speed, icc_profile, preserve_hdr, info)
 }
 
-/// Save a DynamicImage as AVIF with HDR support (backward compatibility)
+/// Save a DynamicImage as AVIF with HDR support
 pub fn save_with_profile(
     image: &DynamicImage,
     path: &Path,
@@ -823,27 +816,6 @@ fn save_with_profile_and_color(
                 let gm = &mut *gain_map;
 
                 // Set gain map metadata
-                // Helper to convert float to fraction
-                let float_to_unsigned_fraction = |val: f32| -> sys::avifUnsignedFraction {
-                    if val == 0.0 {
-                        sys::avifUnsignedFraction { n: 0, d: 1 }
-                    } else {
-                        // Convert to rational approximation (simple method)
-                        let d = 1000u32; // denominator
-                        let n = (val * d as f32).round() as u32;
-                        sys::avifUnsignedFraction { n, d }
-                    }
-                };
-
-                let float_to_signed_fraction = |val: f32| -> sys::avifSignedFraction {
-                    if val == 0.0 {
-                        sys::avifSignedFraction { n: 0, d: 1 }
-                    } else {
-                        let d = 1000u32; // denominator
-                        let n = (val * d as f32).round() as i32;
-                        sys::avifSignedFraction { n, d }
-                    }
-                };
 
                 // Set metadata
                 for i in 0..3 {
@@ -1117,4 +1089,9 @@ pub fn extract_dimensions(path: &Path) -> Option<(u32, u32)> {
 
     // Parse AVIF container directly for dimensions
     avif_container::extract_dimensions(path)
+}
+
+/// Check if a browser supports AVIF based on Accept header
+pub fn browser_supports_avif(accept_header: &str) -> bool {
+    accept_header.contains("image/avif")
 }
