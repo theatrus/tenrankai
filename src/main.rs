@@ -307,6 +307,29 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                     }
                     println!("  Current HDR detection result: {}", info.is_hdr);
                     
+                    // Gain map information
+                    println!("  Gain map present: {}", info.has_gain_map);
+                    if info.has_gain_map {
+                        println!("    ✓ This AVIF contains a gain map for HDR/SDR tone mapping");
+                        println!("    ✓ Image should be treated as HDR content");
+                        if let Some(ref gain_info) = info.gain_map_info {
+                            println!("    Gain map parameters:");
+                            if let Some(gamma) = gain_info.gamma {
+                                println!("      Gamma: {}", gamma);
+                            }
+                            if let Some(min_boost) = gain_info.min_boost {
+                                println!("      Min boost: {}", min_boost);
+                            }
+                            if let Some(max_boost) = gain_info.max_boost {
+                                println!("      Max boost: {}", max_boost);
+                            }
+                            // Note: Parameters would be None with current libavif 1.0.4
+                            if gain_info.gamma.is_none() && gain_info.min_boost.is_none() {
+                                println!("      (Detailed parameters require libavif 1.1.1+ support)");
+                            }
+                        }
+                    }
+                    
                     // ICC profile
                     if let Some(ref icc) = info.icc_profile {
                         println!("  ICC profile: {} bytes", icc.len());
@@ -318,24 +341,26 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                         println!();
                         println!("=== Technical Details ===");
                         println!("HDR Detection Logic:");
-                        println!("  Current logic: bit_depth > 8 AND (");
+                        println!("  Current logic: (bit_depth > 8 AND (");
                         println!("    (BT.2020 primaries AND (PQ OR HLG transfer)) OR");
                         println!("    (Display P3 primaries AND bit_depth >= 10) OR");
                         println!("    (bit_depth > 8 AND (PQ OR HLG transfer)) OR");
                         println!("    (CLLI data present)");
-                        println!("  )");
+                        println!("  )) OR (gain map present)");
                         println!();
                         
                         let traditional_hdr = is_bt2020 && has_hdr_transfer;
                         let wide_gamut_hdr = is_display_p3 && info.bit_depth >= 10;
                         let hdr_transfer_any = info.bit_depth > 8 && has_hdr_transfer;
                         let clli_hdr = has_clli;
+                        let gain_map_hdr = info.has_gain_map;
                         
                         println!("  Traditional HDR (BT.2020 + PQ/HLG): {}", traditional_hdr);
                         println!("  Wide gamut HDR (Display P3 + ≥10-bit): {}", wide_gamut_hdr);
                         println!("  HDR transfer + high bit depth: {}", hdr_transfer_any);
                         println!("  CLLI metadata present: {}", clli_hdr);
-                        println!("  Final result: {}", traditional_hdr || wide_gamut_hdr || hdr_transfer_any || clli_hdr);
+                        println!("  Gain map present: {}", gain_map_hdr);
+                        println!("  Final result: {}", traditional_hdr || wide_gamut_hdr || hdr_transfer_any || clli_hdr || gain_map_hdr);
                     }
                 },
                 Err(e) => {
