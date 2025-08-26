@@ -26,14 +26,33 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     
-    - name: Install OpenSSL (Windows)
+    - name: Install build dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-22.04'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y nasm ninja-build meson cmake
+    
+    - name: Install build dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install nasm ninja meson cmake
+    
+    - name: Install build dependencies (Windows)
       if: matrix.os == 'windows-latest'
       run: |
+        # Install dependencies via vcpkg
         vcpkg install openssl:x64-windows-static
         echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "OPENSSL_LIB_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "OPENSSL_INCLUDE_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "OPENSSL_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # Install nasm
+        choco install nasm -y
+        # Install ninja
+        choco install ninja -y
+        # Install meson
+        pip install meson
+        # cmake is already installed on Windows runners
       shell: powershell
     
     - name: Install Rust
