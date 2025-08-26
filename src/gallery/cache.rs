@@ -124,7 +124,7 @@ impl Gallery {
         Ok(())
     }
 
-    fn generate_cache_key(&self, path: &str, size: &str) -> String {
+    pub(crate) fn generate_cache_key(&self, path: &str, size: &str) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(path);
@@ -168,16 +168,6 @@ impl Gallery {
             gallery_path.replace('/', "_")
         };
         format!("composite_{}", safe_path)
-    }
-
-    /// Generate a composite image cache key with format
-    pub(crate) fn generate_composite_cache_key_with_format(
-        &self,
-        gallery_path: &str,
-        format: &str,
-    ) -> String {
-        let composite_key = Self::generate_composite_cache_key(gallery_path);
-        self.generate_cache_key(&composite_key, format)
     }
 
     /// Pre-generate cache for a single image
@@ -346,15 +336,6 @@ mod tests {
         // Test root composite
         let root_key = Gallery::generate_composite_cache_key("");
         assert_eq!(root_key, "composite_root");
-
-        // Test composite cache key with format
-        let comp_format_key =
-            gallery.generate_composite_cache_key_with_format("gallery/2024", "jpg");
-        // Should be a hash since it goes through generate_cache_key
-        assert_ne!(
-            comp_format_key, "composite_gallery_2024_jpg",
-            "Should be hashed"
-        );
     }
 
     #[test]

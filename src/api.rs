@@ -107,8 +107,9 @@ pub async fn gallery_composite_preview_handler_for_named(
 
     // Generate a cache key for the composite
     let composite_cache_key = crate::gallery::Gallery::generate_composite_cache_key(&gallery_path);
-    
+
     // Generate the full cache filename with extension (composites are always JPEG)
+    // Note: We pass the composite_cache_key (not gallery_path) to match what store_and_serve_composite does
     let hash = gallery.generate_cache_key(&composite_cache_key, "jpg");
     let cache_filename = format!("{}.jpg", hash);
 
@@ -117,7 +118,11 @@ pub async fn gallery_composite_preview_handler_for_named(
         .serve_cached_image(&cache_filename, "composite", "")
         .await
     {
-        return Ok(cached_response);
+        // Only return if it's not a 404 (i.e., cache exists)
+        if cached_response.status() != StatusCode::NOT_FOUND {
+            return Ok(cached_response);
+        }
+        // Otherwise, fall through to generate the composite
     }
 
     // Not in cache, need to generate it

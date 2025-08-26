@@ -315,6 +315,93 @@ async fn test_gallery_preview_api() {
 }
 
 #[tokio::test]
+async fn test_composite_api_endpoint() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+
+    // Create test images in the root directory
+    for i in 0..3 {
+        let img = image::ImageBuffer::from_pixel(100, 100, image::Rgb([0u8, 255u8, 0u8]));
+        let img_path = root_dir.join(format!("root_{:03}.jpg", i));
+        img.save(&img_path).unwrap();
+    }
+
+    // Create a subdirectory with test images
+    let subdir = root_dir.join("2008-eureka");
+    std::fs::create_dir_all(&subdir).unwrap();
+
+    // Create test images in the subdirectory
+    for i in 0..5 {
+        let img = image::ImageBuffer::from_pixel(100, 100, image::Rgb([255u8, 0u8, 0u8]));
+        let img_path = subdir.join(format!("test_{:03}.jpg", i));
+        img.save(&img_path).unwrap();
+    }
+
+    let app = create_app(config).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Test composite endpoint for subdirectory
+    let response = server.get("/api/gallery/main/composite/2008-eureka").await;
+    if response.status_code() != StatusCode::OK {
+        let body = response.text();
+        println!("Error response body: {}", body);
+    }
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Composite endpoint should return OK"
+    );
+
+    // Verify content type
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "image/jpeg",
+        "Composite should return JPEG content type"
+    );
+
+    // Test root composite endpoint
+    let response = server.get("/api/gallery/main/composite/_root").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Root composite endpoint should return OK"
+    );
+
+    // Test that cached response works (second request should be served from cache)
+    let response2 = server.get("/api/gallery/main/composite/2008-eureka").await;
+    assert_eq!(
+        response2.status_code(),
+        StatusCode::OK,
+        "Cached composite should return OK"
+    );
+
+    // Verify cache headers are set for cached response
+    assert!(
+        response2.headers().contains_key("cache-control"),
+        "Cached response should have cache-control header"
+    );
+}
+
+#[tokio::test]
+async fn test_composite_api_not_found() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    let app = create_app(config).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Test composite endpoint for non-existent directory
+    let response = server.get("/api/gallery/main/composite/non-existent").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::NOT_FOUND,
+        "Non-existent directory should return 404"
+    );
+}
+
+#[tokio::test]
 async fn test_image_detail_page() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
