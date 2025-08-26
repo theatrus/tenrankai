@@ -262,8 +262,8 @@ fn test_hdr_detection_with_real_images() {
         "HDR image uses Display P3 primaries"
     );
     assert_eq!(
-        hdr_info.transfer_characteristics, 13,
-        "HDR image uses sRGB transfer"
+        hdr_info.transfer_characteristics, 16,
+        "HDR image uses PQ transfer"
     );
 
     // Verify image is 16-bit in memory (preserving high bit depth)

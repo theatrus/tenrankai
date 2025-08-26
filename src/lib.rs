@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub mod api;
+pub mod commands;
 pub mod composite;
 pub mod copyright;
 pub mod email;

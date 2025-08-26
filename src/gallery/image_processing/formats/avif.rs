@@ -1,11 +1,9 @@
 use crate::gallery::GalleryError;
-use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader};
+use image::{DynamicImage, GenericImageView, ImageBuffer};
 use libavif::{decode_rgb, is_avif};
 use libavif_sys as sys;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
-use tracing::{debug, error};
+use tracing::debug;
 
 // Common color space constants
 const DISPLAY_P3_PRIMARIES: u16 = 12; // AVIF_COLOR_PRIMARIES_SMPTE432
@@ -112,13 +110,40 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         if result != sys::AVIF_RESULT_OK {
             sys::avifImageDestroy(image);
             sys::avifDecoderDestroy(decoder);
-            error!("Failed to decode AVIF: error code {}", result);
-            // Pass the container gain map info to fallback
-            return read_with_fallback_and_gain_map(
-                path,
-                container_has_gain_map,
-                container_gain_map_info,
-            );
+            let error_msg = match result {
+                sys::AVIF_RESULT_UNKNOWN_ERROR => "Unknown error",
+                sys::AVIF_RESULT_INVALID_FTYP => "Invalid file type",
+                sys::AVIF_RESULT_NO_CONTENT => "No content",
+                sys::AVIF_RESULT_NO_YUV_FORMAT_SELECTED => "No YUV format selected",
+                sys::AVIF_RESULT_REFORMAT_FAILED => "Reformat failed",
+                sys::AVIF_RESULT_UNSUPPORTED_DEPTH => "Unsupported bit depth",
+                sys::AVIF_RESULT_ENCODE_COLOR_FAILED => "Encode color failed",
+                sys::AVIF_RESULT_ENCODE_ALPHA_FAILED => "Encode alpha failed",
+                sys::AVIF_RESULT_BMFF_PARSE_FAILED => "BMFF parse failed",
+                sys::AVIF_RESULT_MISSING_IMAGE_ITEM => "Missing image item",
+                sys::AVIF_RESULT_DECODE_COLOR_FAILED => "Decode color failed",
+                sys::AVIF_RESULT_DECODE_ALPHA_FAILED => "Decode alpha failed",
+                sys::AVIF_RESULT_COLOR_ALPHA_SIZE_MISMATCH => "Color/alpha size mismatch",
+                sys::AVIF_RESULT_ISPE_SIZE_MISMATCH => "ISPE size mismatch",
+                sys::AVIF_RESULT_NO_CODEC_AVAILABLE => "No codec available",
+                sys::AVIF_RESULT_NO_IMAGES_REMAINING => "No images remaining",
+                sys::AVIF_RESULT_INVALID_EXIF_PAYLOAD => "Invalid EXIF payload",
+                sys::AVIF_RESULT_INVALID_IMAGE_GRID => "Invalid image grid",
+                sys::AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION => "Invalid codec specific option",
+                sys::AVIF_RESULT_TRUNCATED_DATA => "Truncated data",
+                sys::AVIF_RESULT_IO_NOT_SET => "IO not set",
+                sys::AVIF_RESULT_IO_ERROR => "IO error",
+                sys::AVIF_RESULT_WAITING_ON_IO => "Waiting on IO",
+                sys::AVIF_RESULT_INVALID_ARGUMENT => "Invalid argument",
+                sys::AVIF_RESULT_NOT_IMPLEMENTED => "Not implemented",
+                sys::AVIF_RESULT_OUT_OF_MEMORY => "Out of memory",
+                _ => "Unknown error code",
+            };
+            return Err(GalleryError::ProcessingError(format!(
+                "Failed to decode AVIF: {} (error code {})", 
+                error_msg, 
+                result
+            )));
         }
 
         // Extract image properties
@@ -171,7 +196,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             libavif_has_gain_map
         );
 
-        // Use container detection as fallback if libavif didn't detect
+        // Use container detection info if libavif didn't provide gain map
         let has_gain_map = libavif_has_gain_map || container_has_gain_map;
 
         let gain_map_info = if libavif_has_gain_map {
@@ -417,18 +442,16 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                     for x in 0..width {
                         let pixel_offset =
                             y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
-                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) as *const u16 };
+                        let pixel_ptr = rgb.pixels.add(pixel_offset) as *const u16;
 
                         // Scale from bit_depth to 16-bit if needed
                         let shift = 16 - bit_depth;
-                        let pixel = unsafe {
-                            image::Rgba([
-                                *pixel_ptr << shift,
-                                *pixel_ptr.add(1) << shift,
-                                *pixel_ptr.add(2) << shift,
-                                *pixel_ptr.add(3) << shift,
-                            ])
-                        };
+                        let pixel = image::Rgba([
+                            *pixel_ptr << shift,
+                            *pixel_ptr.add(1) << shift,
+                            *pixel_ptr.add(2) << shift,
+                            *pixel_ptr.add(3) << shift,
+                        ]);
                         img.put_pixel(x, y, pixel);
                     }
                 }
@@ -441,17 +464,15 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                     for x in 0..width {
                         let pixel_offset =
                             y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
-                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) as *const u16 };
+                        let pixel_ptr = rgb.pixels.add(pixel_offset) as *const u16;
 
                         // Scale from bit_depth to 16-bit if needed
                         let shift = 16 - bit_depth;
-                        let pixel = unsafe {
-                            image::Rgb([
-                                *pixel_ptr << shift,
-                                *pixel_ptr.add(1) << shift,
-                                *pixel_ptr.add(2) << shift,
-                            ])
-                        };
+                        let pixel = image::Rgb([
+                            *pixel_ptr << shift,
+                            *pixel_ptr.add(1) << shift,
+                            *pixel_ptr.add(2) << shift,
+                        ]);
                         img.put_pixel(x, y, pixel);
                     }
                 }
@@ -467,16 +488,14 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                     for x in 0..width {
                         let pixel_offset =
                             y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
-                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) };
+                        let pixel_ptr = rgb.pixels.add(pixel_offset);
 
-                        let pixel = unsafe {
-                            image::Rgba([
-                                *pixel_ptr,
-                                *pixel_ptr.add(1),
-                                *pixel_ptr.add(2),
-                                *pixel_ptr.add(3),
-                            ])
-                        };
+                        let pixel = image::Rgba([
+                            *pixel_ptr,
+                            *pixel_ptr.add(1),
+                            *pixel_ptr.add(2),
+                            *pixel_ptr.add(3),
+                        ]);
                         img.put_pixel(x, y, pixel);
                     }
                 }
@@ -489,11 +508,9 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                     for x in 0..width {
                         let pixel_offset =
                             y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
-                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) };
+                        let pixel_ptr = rgb.pixels.add(pixel_offset);
 
-                        let pixel = unsafe {
-                            image::Rgb([*pixel_ptr, *pixel_ptr.add(1), *pixel_ptr.add(2)])
-                        };
+                        let pixel = image::Rgb([*pixel_ptr, *pixel_ptr.add(1), *pixel_ptr.add(2)]);
                         img.put_pixel(x, y, pixel);
                     }
                 }
@@ -510,40 +527,6 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
     }
 }
 
-/// Fallback function to read AVIF with image crate, preserving gain map info
-fn read_with_fallback_and_gain_map(
-    path: &Path,
-    has_gain_map: bool,
-    gain_map_info: Option<GainMapInfo>,
-) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
-    let file = File::open(path)?;
-    let reader = ImageReader::new(BufReader::new(file)).with_guessed_format()?;
-
-    let img = reader.decode()?;
-
-    let info = AvifImageInfo {
-        bit_depth: 8,
-        has_alpha: matches!(
-            &img,
-            DynamicImage::ImageLumaA8(_)
-                | DynamicImage::ImageLumaA16(_)
-                | DynamicImage::ImageRgba8(_)
-                | DynamicImage::ImageRgba16(_)
-        ),
-        is_hdr: false, // Fallback doesn't preserve HDR
-        icc_profile: None,
-        // Default to sRGB/BT.709 for fallback
-        color_primaries: sys::AVIF_COLOR_PRIMARIES_BT709 as u16,
-        transfer_characteristics: sys::AVIF_TRANSFER_CHARACTERISTICS_SRGB as u16,
-        matrix_coefficients: sys::AVIF_MATRIX_COEFFICIENTS_BT709 as u16,
-        max_cll: 0,    // No CLLI in fallback
-        max_pall: 0,   // No CLLI in fallback
-        has_gain_map,  // Use the detection from container parsing
-        gain_map_info, // Use the detection from container parsing
-    };
-
-    Ok((img, info))
-}
 
 /// Save a DynamicImage as AVIF preserving color properties
 pub fn save_with_info(
@@ -985,15 +968,14 @@ fn save_with_profile_and_color(
 
 /// Extract ICC profile from an AVIF file
 pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
+    // For performance, we'll keep the container parsing approach
+    // as it's much faster than doing a full decode just for ICC
     let data = std::fs::read(path).ok()?;
-
-    // The simple libavif API doesn't expose ICC profiles
-    // Use fallback manual extraction
-    extract_icc_profile_fallback(&data)
+    extract_icc_profile_from_container(&data)
 }
 
-/// Fallback ICC profile extraction by parsing AVIF container
-fn extract_icc_profile_fallback(data: &[u8]) -> Option<Vec<u8>> {
+/// ICC profile extraction by parsing AVIF container
+fn extract_icc_profile_from_container(data: &[u8]) -> Option<Vec<u8>> {
     // Parse AVIF boxes to find colr box
     let mut pos = 0;
     while pos + 8 <= data.len() {
@@ -1081,12 +1063,12 @@ pub fn extract_dimensions(path: &Path) -> Option<(u32, u32)> {
         return Some(dimensions);
     }
 
-    // Fallback to parsing AVIF container
-    extract_dimensions_fallback(path)
+    // Parse AVIF container directly for dimensions
+    extract_dimensions_from_container(path)
 }
 
-/// Fallback dimension extraction by parsing AVIF container
-fn extract_dimensions_fallback(path: &Path) -> Option<(u32, u32)> {
+/// Extract dimensions by parsing AVIF container directly
+fn extract_dimensions_from_container(path: &Path) -> Option<(u32, u32)> {
     let data = std::fs::read(path).ok()?;
 
     // Look for ispe (image spatial extents) box
@@ -1244,7 +1226,7 @@ pub fn detect_gain_map_in_container(data: &[u8]) -> (bool, Option<GainMapInfo>) 
     }
 
     // If we detected a gain map, create basic gain map info
-    // This is a fallback detection - actual values come from libavif API
+    // This is a container-level detection - actual values come from libavif API when available
     let gain_map_info = if has_gain_map {
         Some(GainMapInfo {
             has_image: false,       // Can't decode actual image without full API
