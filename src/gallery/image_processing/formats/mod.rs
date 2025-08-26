@@ -1,4 +1,5 @@
 pub mod avif;
+pub mod avif_container;
 pub mod jpeg;
 pub mod png;
 pub mod webp;
