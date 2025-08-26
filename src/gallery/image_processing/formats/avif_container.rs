@@ -197,7 +197,7 @@ pub fn detect_gain_map_in_container(data: &[u8]) -> (bool, Option<GainMapInfo>) 
             base_hdr_headroom: 1.0,
             alternate_hdr_headroom: 1.0,
             use_base_color_space: true,
-            gain_map_image: None,   // Can't extract without libavif API
+            gain_map_image: None, // Can't extract without libavif API
         });
         return (true, gain_map_info);
     }
@@ -257,7 +257,7 @@ pub fn detect_gain_map_in_container(data: &[u8]) -> (bool, Option<GainMapInfo>) 
             base_hdr_headroom: 1.0,
             alternate_hdr_headroom: 1.0,
             use_base_color_space: true,
-            gain_map_image: None,   // Can't extract without libavif API
+            gain_map_image: None, // Can't extract without libavif API
         })
     } else {
         None

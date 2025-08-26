@@ -88,6 +88,15 @@ async fn test_avif_output_format_selection() {
     let accept_no_avif = "image/webp,image/apng,image/*,*/*;q=0.8";
     let format = gallery.determine_output_format(accept_no_avif, "test.jpg");
     assert_eq!(format, OutputFormat::WebP);
+
+    // Test that AVIF source falls back to WebP when browser doesn't support AVIF
+    let format = gallery.determine_output_format(accept_no_avif, "test.avif");
+    assert_eq!(format, OutputFormat::WebP);
+
+    // Test that AVIF source falls back to JPEG when browser supports neither AVIF nor WebP
+    let accept_basic = "image/jpeg,image/*,*/*;q=0.8";
+    let format = gallery.determine_output_format(accept_basic, "test.avif");
+    assert_eq!(format, OutputFormat::Jpeg);
 }
 
 #[test]
@@ -345,7 +354,13 @@ fn test_hdr_detection_logic_edge_cases() {
 
     let test_cases = vec![
         // (bit_depth, color_primaries, transfer_char, expected_hdr, description)
-        (10, 12, 13, false, "Display P3 + sRGB + 10-bit (wide gamut SDR)"),
+        (
+            10,
+            12,
+            13,
+            false,
+            "Display P3 + sRGB + 10-bit (wide gamut SDR)",
+        ),
         (10, 9, 16, true, "BT.2020 + PQ + 10-bit (traditional HDR)"),
         (10, 9, 18, true, "BT.2020 + HLG + 10-bit (broadcast HDR)"),
         (
@@ -475,7 +490,7 @@ fn test_hdr_color_properties_preservation() {
     let original_info = avif::AvifImageInfo {
         bit_depth: 10,
         has_alpha: false,
-        is_hdr: true, // Detected as HDR due to Display P3 + 10-bit
+        is_hdr: false, // Display P3 + sRGB is wide gamut SDR, not HDR
         icc_profile: None,
         color_primaries: 12,          // Display P3
         transfer_characteristics: 13, // sRGB (preserve exactly as in original)
@@ -518,10 +533,10 @@ fn test_hdr_color_properties_preservation() {
             "Matrix coefficients should be preserved exactly"
         );
 
-        // Should still be detected as HDR
+        // Should still be detected as SDR (not HDR) since it uses sRGB transfer
         assert!(
-            saved_info.is_hdr,
-            "Image should still be detected as HDR after save"
+            !saved_info.is_hdr,
+            "Display P3 + sRGB should be detected as wide gamut SDR, not HDR"
         );
 
         println!("✅ All color properties preserved exactly:");
@@ -681,8 +696,9 @@ fn create_test_srgb_profile() -> Vec<u8> {
 #[test]
 fn test_avif_exif_extraction() {
     // Test EXIF extraction from real AVIF files if they exist
-    let test_path = std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A630303-HDR.avif");
-    
+    let test_path =
+        std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A630303-HDR.avif");
+
     if !test_path.exists() {
         eprintln!("Skipping EXIF extraction test: test file not found");
         return;
@@ -690,22 +706,33 @@ fn test_avif_exif_extraction() {
 
     // Extract EXIF data
     let exif_data = avif::extract_exif_data(test_path);
-    assert!(exif_data.is_some(), "Should extract EXIF data from AVIF file");
+    assert!(
+        exif_data.is_some(),
+        "Should extract EXIF data from AVIF file"
+    );
 
     let exif_bytes = exif_data.unwrap();
     assert!(!exif_bytes.is_empty(), "EXIF data should not be empty");
 
     // Try to parse the EXIF data
     let parsed_exif = rexif::parse_buffer(&exif_bytes);
-    assert!(parsed_exif.is_ok(), "Should be able to parse extracted EXIF data");
+    assert!(
+        parsed_exif.is_ok(),
+        "Should be able to parse extracted EXIF data"
+    );
 
     let exif = parsed_exif.unwrap();
     assert!(!exif.entries.is_empty(), "Should have EXIF entries");
 
     // Look for common camera metadata
     let has_camera_info = exif.entries.iter().any(|e| {
-        matches!(e.tag, rexif::ExifTag::Make | rexif::ExifTag::Model | 
-                       rexif::ExifTag::DateTimeOriginal | rexif::ExifTag::LensModel)
+        matches!(
+            e.tag,
+            rexif::ExifTag::Make
+                | rexif::ExifTag::Model
+                | rexif::ExifTag::DateTimeOriginal
+                | rexif::ExifTag::LensModel
+        )
     });
     assert!(has_camera_info, "Should have camera information in EXIF");
 
@@ -726,7 +753,10 @@ fn test_avif_without_exif() {
 
     // Try to extract EXIF
     let exif_data = avif::extract_exif_data(&avif_path);
-    assert!(exif_data.is_none(), "Should not find EXIF in synthetic AVIF");
+    assert!(
+        exif_data.is_none(),
+        "Should not find EXIF in synthetic AVIF"
+    );
 }
 
 #[test]
@@ -739,8 +769,8 @@ fn test_avif_color_space_description() {
                 has_alpha: false,
                 is_hdr: false,
                 icc_profile: None,
-                color_primaries: 1,  // BT.709
-                transfer_characteristics: 13,  // sRGB
+                color_primaries: 1,           // BT.709
+                transfer_characteristics: 13, // sRGB
                 matrix_coefficients: 1,
                 max_cll: 0,
                 max_pall: 0,
@@ -749,16 +779,16 @@ fn test_avif_color_space_description() {
                 exif_data: None,
             },
             "BT.709",
-            "Standard SDR BT.709"
+            "Standard SDR BT.709",
         ),
         (
             avif::AvifImageInfo {
                 bit_depth: 10,
                 has_alpha: false,
-                is_hdr: false,  // Not HDR with sRGB transfer
+                is_hdr: false, // Not HDR with sRGB transfer
                 icc_profile: None,
-                color_primaries: 12,  // Display P3
-                transfer_characteristics: 13,  // sRGB
+                color_primaries: 12,          // Display P3
+                transfer_characteristics: 13, // sRGB
                 matrix_coefficients: 1,
                 max_cll: 0,
                 max_pall: 0,
@@ -767,7 +797,7 @@ fn test_avif_color_space_description() {
                 exif_data: None,
             },
             "Display P3 sRGB 10-bit Wide Gamut",
-            "Display P3 sRGB 10-bit Wide Gamut (not HDR)"
+            "Display P3 sRGB 10-bit Wide Gamut (not HDR)",
         ),
         (
             avif::AvifImageInfo {
@@ -775,8 +805,8 @@ fn test_avif_color_space_description() {
                 has_alpha: false,
                 is_hdr: true,
                 icc_profile: None,
-                color_primaries: 9,  // BT.2020
-                transfer_characteristics: 16,  // PQ
+                color_primaries: 9,           // BT.2020
+                transfer_characteristics: 16, // PQ
                 matrix_coefficients: 9,
                 max_cll: 1000,
                 max_pall: 400,
@@ -785,7 +815,7 @@ fn test_avif_color_space_description() {
                 exif_data: None,
             },
             "BT.2020 PQ 10-bit HDR",
-            "BT.2020 PQ 10-bit HDR"
+            "BT.2020 PQ 10-bit HDR",
         ),
         (
             avif::AvifImageInfo {
@@ -793,8 +823,8 @@ fn test_avif_color_space_description() {
                 has_alpha: false,
                 is_hdr: true,
                 icc_profile: None,
-                color_primaries: 12,  // Display P3
-                transfer_characteristics: 16,  // PQ
+                color_primaries: 12,          // Display P3
+                transfer_characteristics: 16, // PQ
                 matrix_coefficients: 1,
                 max_cll: 4000,
                 max_pall: 1000,
@@ -803,7 +833,7 @@ fn test_avif_color_space_description() {
                 exif_data: None,
             },
             "Display P3 PQ 10-bit Gain Map HDR",
-            "Display P3 PQ 10-bit with Gain Map HDR"
+            "Display P3 PQ 10-bit with Gain Map HDR",
         ),
     ];
 

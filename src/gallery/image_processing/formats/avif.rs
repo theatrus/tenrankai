@@ -5,8 +5,7 @@ use libavif_sys as sys;
 use std::path::Path;
 use tracing::debug;
 
-mod avif_container;
-use avif_container::{detect_gain_map_in_container, extract_dimensions_from_container, extract_icc_profile_from_container};
+use super::avif_container;
 
 // Common color space constants
 const DISPLAY_P3_PRIMARIES: u16 = 12; // AVIF_COLOR_PRIMARIES_SMPTE432
@@ -77,7 +76,8 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
 
     // First do a quick gain map detection using our container parser
     // This ensures we can detect gain maps even if libavif decoding fails
-    let (container_has_gain_map, container_gain_map_info) = detect_gain_map_in_container(&data);
+    let (container_has_gain_map, container_gain_map_info) =
+        avif_container::detect_gain_map_in_container(&data);
     debug!(
         "Container gain map detection: has_gain_map={}",
         container_has_gain_map
@@ -94,7 +94,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
 
         // Set codec choice to ensure we use AOM
         (*decoder).codecChoice = sys::AVIF_CODEC_CHOICE_AOM;
-        
+
         // Enable gain map decoding - requires libavif 1.1.0+
         // Set to decode all content (color, alpha, and gain maps)
         (*decoder).imageContentToDecode = sys::AVIF_IMAGE_CONTENT_ALL;
@@ -144,9 +144,8 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                 _ => "Unknown error code",
             };
             return Err(GalleryError::ProcessingError(format!(
-                "Failed to decode AVIF: {} (error code {})", 
-                error_msg, 
-                result
+                "Failed to decode AVIF: {} (error code {})",
+                error_msg, result
             )));
         }
 
@@ -238,16 +237,19 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             // Extract gain map image if available
             let gain_map_image = if !gm.image.is_null() {
                 let gm_img = &*gm.image;
-                debug!("Gain map image found: {}x{}, depth={}", gm_img.width, gm_img.height, gm_img.depth);
+                debug!(
+                    "Gain map image found: {}x{}, depth={}",
+                    gm_img.width, gm_img.height, gm_img.depth
+                );
                 if gm_img.width > 0 && gm_img.height > 0 {
                     // Convert gain map image to DynamicImage
                     let mut gm_rgb = sys::avifRGBImage::default();
                     sys::avifRGBImageSetDefaults(&mut gm_rgb, gm.image);
-                    
+
                     // Gain maps are typically single channel (grayscale)
                     gm_rgb.format = sys::AVIF_RGB_FORMAT_RGB;
                     gm_rgb.depth = gm_img.depth;
-                    
+
                     if sys::avifRGBImageAllocatePixels(&mut gm_rgb) == sys::AVIF_RESULT_OK {
                         if sys::avifImageYUVToRGB(gm.image, &mut gm_rgb) == sys::AVIF_RESULT_OK {
                             // Convert to DynamicImage based on bit depth
@@ -255,12 +257,14 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                                 // 16-bit gain map
                                 let mut img = ImageBuffer::new(gm_img.width, gm_img.height);
                                 let bytes_per_pixel = 6; // RGB16
-                                
+
                                 for y in 0..gm_img.height {
                                     for x in 0..gm_img.width {
-                                        let pixel_offset = y as usize * gm_rgb.rowBytes as usize + x as usize * bytes_per_pixel;
-                                        let pixel_ptr = gm_rgb.pixels.add(pixel_offset) as *const u16;
-                                        
+                                        let pixel_offset = y as usize * gm_rgb.rowBytes as usize
+                                            + x as usize * bytes_per_pixel;
+                                        let pixel_ptr =
+                                            gm_rgb.pixels.add(pixel_offset) as *const u16;
+
                                         let shift = 16 - gm_img.depth;
                                         let pixel = image::Rgb([
                                             *pixel_ptr << shift,
@@ -275,19 +279,24 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                                 // 8-bit gain map
                                 let mut img = ImageBuffer::new(gm_img.width, gm_img.height);
                                 let bytes_per_pixel = 3; // RGB8
-                                
+
                                 for y in 0..gm_img.height {
                                     for x in 0..gm_img.width {
-                                        let pixel_offset = y as usize * gm_rgb.rowBytes as usize + x as usize * bytes_per_pixel;
+                                        let pixel_offset = y as usize * gm_rgb.rowBytes as usize
+                                            + x as usize * bytes_per_pixel;
                                         let pixel_ptr = gm_rgb.pixels.add(pixel_offset);
-                                        
-                                        let pixel = image::Rgb([*pixel_ptr, *pixel_ptr.add(1), *pixel_ptr.add(2)]);
+
+                                        let pixel = image::Rgb([
+                                            *pixel_ptr,
+                                            *pixel_ptr.add(1),
+                                            *pixel_ptr.add(2),
+                                        ]);
                                         img.put_pixel(x, y, pixel);
                                     }
                                 }
                                 Some(DynamicImage::ImageRgb8(img))
                             };
-                            
+
                             sys::avifRGBImageFreePixels(&mut gm_rgb);
                             gain_img
                         } else {
@@ -541,7 +550,6 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         Ok((dynamic_img, info))
     }
 }
-
 
 /// Save a DynamicImage as AVIF preserving color properties
 pub fn save_with_info(
@@ -808,12 +816,12 @@ fn save_with_profile_and_color(
             && let Some(ref gm_image) = gm_info.gain_map_image
         {
             debug!("Attaching gain map to output AVIF");
-            
+
             // Create gain map structure
             let gain_map = sys::avifGainMapCreate();
             if !gain_map.is_null() {
                 let gm = &mut *gain_map;
-                
+
                 // Set gain map metadata
                 // Helper to convert float to fraction
                 let float_to_unsigned_fraction = |val: f32| -> sys::avifUnsignedFraction {
@@ -826,7 +834,7 @@ fn save_with_profile_and_color(
                         sys::avifUnsignedFraction { n, d }
                     }
                 };
-                
+
                 let float_to_signed_fraction = |val: f32| -> sys::avifSignedFraction {
                     if val == 0.0 {
                         sys::avifSignedFraction { n: 0, d: 1 }
@@ -836,7 +844,7 @@ fn save_with_profile_and_color(
                         sys::avifSignedFraction { n, d }
                     }
                 };
-                
+
                 // Set metadata
                 for i in 0..3 {
                     gm.gainMapGamma[i] = float_to_unsigned_fraction(gm_info.gamma[i]);
@@ -846,39 +854,46 @@ fn save_with_profile_and_color(
                     gm.alternateOffset[i] = float_to_signed_fraction(gm_info.alternate_offset[i]);
                 }
                 gm.baseHdrHeadroom = float_to_unsigned_fraction(gm_info.base_hdr_headroom);
-                gm.alternateHdrHeadroom = float_to_unsigned_fraction(gm_info.alternate_hdr_headroom);
+                gm.alternateHdrHeadroom =
+                    float_to_unsigned_fraction(gm_info.alternate_hdr_headroom);
                 gm.useBaseColorSpace = if gm_info.use_base_color_space { 1 } else { 0 };
-                
+
                 // Create gain map image
                 let (gm_width, gm_height) = gm_image.dimensions();
-                let gm_bit_depth = if matches!(gm_image, DynamicImage::ImageRgb16(_) | DynamicImage::ImageRgba16(_) | DynamicImage::ImageLuma16(_) | DynamicImage::ImageLumaA16(_)) {
+                let gm_bit_depth = if matches!(
+                    gm_image,
+                    DynamicImage::ImageRgb16(_)
+                        | DynamicImage::ImageRgba16(_)
+                        | DynamicImage::ImageLuma16(_)
+                        | DynamicImage::ImageLumaA16(_)
+                ) {
                     10
                 } else {
                     8
                 };
-                
+
                 gm.image = sys::avifImageCreate(
                     gm_width,
                     gm_height,
                     gm_bit_depth,
                     sys::AVIF_PIXEL_FORMAT_YUV420,
                 );
-                
+
                 if !gm.image.is_null() {
                     // Allocate planes for gain map
                     sys::avifImageAllocatePlanes(gm.image, sys::AVIF_PLANES_YUV);
-                    
+
                     // Convert gain map image to YUV
                     let mut gm_rgb = sys::avifRGBImage::default();
                     sys::avifRGBImageSetDefaults(&mut gm_rgb, gm.image);
                     gm_rgb.depth = gm_bit_depth;
                     gm_rgb.format = sys::AVIF_RGB_FORMAT_RGB;
-                    
+
                     if sys::avifRGBImageAllocatePixels(&mut gm_rgb) == sys::AVIF_RESULT_OK {
                         // Copy gain map image data
                         let gm_pixels = gm_rgb.pixels;
                         let gm_row_bytes = gm_rgb.rowBytes as usize;
-                        
+
                         if gm_bit_depth > 8 {
                             // 16-bit gain map
                             let rgb16 = gm_image.to_rgb16();
@@ -906,7 +921,7 @@ fn save_with_profile_and_color(
                                 }
                             }
                         }
-                        
+
                         // Convert RGB to YUV for gain map
                         if sys::avifImageRGBToYUV(gm.image, &gm_rgb) == sys::AVIF_RESULT_OK {
                             // Attach gain map to main image
@@ -916,7 +931,7 @@ fn save_with_profile_and_color(
                             debug!("Failed to convert gain map RGB to YUV");
                             sys::avifGainMapDestroy(gain_map);
                         }
-                        
+
                         sys::avifRGBImageFreePixels(&mut gm_rgb);
                     } else {
                         debug!("Failed to allocate gain map RGB pixels");
@@ -986,7 +1001,6 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
     avif_container::extract_icc_profile(path)
 }
 
-
 /// Generate a descriptive color space string for an AVIF file
 pub fn get_color_space_description(info: &AvifImageInfo) -> String {
     let primaries = match info.color_primaries {
@@ -1006,16 +1020,19 @@ pub fn get_color_space_description(info: &AvifImageInfo) -> String {
         _ => "Unknown",
     };
 
-    let mut description = format!("{}", primaries);
-    
+    let mut description = primaries.to_string();
+
     // Add transfer function if it's notable (HDR transfers or if needed for clarity)
     if info.transfer_characteristics == 16 || info.transfer_characteristics == 18 {
         description.push_str(&format!(" {}", transfer));
-    } else if info.color_primaries == 12 && info.transfer_characteristics == 13 && info.bit_depth > 8 {
+    } else if info.color_primaries == 12
+        && info.transfer_characteristics == 13
+        && info.bit_depth > 8
+    {
         // For Display P3 with sRGB transfer, explicitly note it's wide gamut
         description.push_str(" sRGB");
     }
-    
+
     // Add bit depth if high
     if info.bit_depth > 8 {
         description.push_str(&format!(" {}-bit", info.bit_depth));
@@ -1100,6 +1117,4 @@ pub fn extract_dimensions(path: &Path) -> Option<(u32, u32)> {
 
     // Parse AVIF container directly for dimensions
     avif_container::extract_dimensions(path)
-}
-
 }

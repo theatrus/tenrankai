@@ -159,40 +159,38 @@ fn process_image(
 
     // Resize gain map if present
     let mut resized_avif_info = avif_info.clone();
-    if let Some(ref mut info) = resized_avif_info {
-        if let Some(ref gm_info) = info.gain_map_info {
-            if let Some(ref gm_image) = gm_info.gain_map_image {
-                // Resize gain map to match the proportion of the main image resize
-                let (orig_width, orig_height) = (img.width(), img.height());
-                let (resized_width, resized_height) = (resized.width(), resized.height());
-                
-                // Calculate scale factors
-                let scale_x = resized_width as f32 / orig_width as f32;
-                let scale_y = resized_height as f32 / orig_height as f32;
-                
-                // Apply same scale to gain map
-                let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
-                let new_gm_width = (gm_width as f32 * scale_x).round() as u32;
-                let new_gm_height = (gm_height as f32 * scale_y).round() as u32;
-                
-                // Ensure gain map is at least 1x1
-                let new_gm_width = new_gm_width.max(1);
-                let new_gm_height = new_gm_height.max(1);
-                
-                debug!("Resizing gain map from {}x{} to {}x{}", 
-                       gm_width, gm_height, new_gm_width, new_gm_height);
-                
-                let resized_gain_map = gm_image.resize_exact(
-                    new_gm_width, 
-                    new_gm_height, 
-                    FilterType::Lanczos3
-                );
-                
-                // Update the gain map info with resized image
-                if let Some(ref mut gm_info_mut) = info.gain_map_info {
-                    gm_info_mut.gain_map_image = Some(resized_gain_map);
-                }
-            }
+    if let Some(ref mut info) = resized_avif_info
+        && let Some(ref gm_info) = info.gain_map_info
+        && let Some(ref gm_image) = gm_info.gain_map_image
+    {
+        // Resize gain map to match the proportion of the main image resize
+        let (orig_width, orig_height) = (img.width(), img.height());
+        let (resized_width, resized_height) = (resized.width(), resized.height());
+
+        // Calculate scale factors
+        let scale_x = resized_width as f32 / orig_width as f32;
+        let scale_y = resized_height as f32 / orig_height as f32;
+
+        // Apply same scale to gain map
+        let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
+        let new_gm_width = (gm_width as f32 * scale_x).round() as u32;
+        let new_gm_height = (gm_height as f32 * scale_y).round() as u32;
+
+        // Ensure gain map is at least 1x1
+        let new_gm_width = new_gm_width.max(1);
+        let new_gm_height = new_gm_height.max(1);
+
+        debug!(
+            "Resizing gain map from {}x{} to {}x{}",
+            gm_width, gm_height, new_gm_width, new_gm_height
+        );
+
+        let resized_gain_map =
+            gm_image.resize_exact(new_gm_width, new_gm_height, FilterType::Lanczos3);
+
+        // Update the gain map info with resized image
+        if let Some(ref mut gm_info_mut) = info.gain_map_info {
+            gm_info_mut.gain_map_image = Some(resized_gain_map);
         }
     }
 

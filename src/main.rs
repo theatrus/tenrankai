@@ -5,8 +5,7 @@ use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use tenrankai::{
-    Config, create_app,
-    commands,
+    Config, commands, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
     posts, startup_checks,
@@ -113,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
                 .with_default_directive(level.into())
-                .from_env_lossy()
+                .from_env_lossy(),
         )
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;

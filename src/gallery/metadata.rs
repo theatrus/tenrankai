@@ -10,7 +10,8 @@ impl Gallery {
         image_path: &Path,
     ) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
         // Check file extension to determine extraction method
-        let extension = image_path.extension()
+        let extension = image_path
+            .extension()
             .and_then(|s| s.to_str())
             .map(|s| s.to_lowercase());
 
@@ -29,7 +30,11 @@ impl Gallery {
                                 (capture_date, camera_info, location_info)
                             }
                             Err(e) => {
-                                trace!("Failed to parse EXIF data from AVIF {}: {}", image_path.display(), e);
+                                trace!(
+                                    "Failed to parse EXIF data from AVIF {}: {}",
+                                    image_path.display(),
+                                    e
+                                );
                                 (None, None, None)
                             }
                         }

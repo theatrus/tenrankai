@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use crate::gallery::image_processing::formats;
 use image::DynamicImage;
+use std::path::PathBuf;
 
 pub async fn handle_avif_debug_command(
     image_path: PathBuf,
@@ -29,8 +29,10 @@ pub async fn handle_avif_debug_command(
         .map(|s| s.to_lowercase());
 
     if extension.as_deref() != Some("avif") {
-        eprintln!("Error: File is not an AVIF file (extension: {})", 
-                 extension.as_deref().unwrap_or("none"));
+        eprintln!(
+            "Error: File is not an AVIF file (extension: {})",
+            extension.as_deref().unwrap_or("none")
+        );
         std::process::exit(1);
     }
 
@@ -68,8 +70,7 @@ pub async fn handle_avif_debug_command(
             println!();
             println!("Color Space Properties:");
             let primaries_name = color_primaries_name(info.color_primaries);
-            let transfer_name =
-                transfer_characteristics_name(info.transfer_characteristics);
+            let transfer_name = transfer_characteristics_name(info.transfer_characteristics);
             let matrix_name = matrix_coefficients_name(info.matrix_coefficients);
 
             println!(
@@ -84,7 +85,7 @@ pub async fn handle_avif_debug_command(
                 "  Matrix coefficients: {} ({})",
                 info.matrix_coefficients, matrix_name
             );
-            
+
             // Show the descriptive color space string
             let color_description = formats::avif::get_color_space_description(&info);
             println!();
@@ -167,7 +168,9 @@ pub async fn handle_avif_debug_command(
             if let Some(ref icc) = info.icc_profile {
                 println!("  ICC profile: {} bytes", icc.len());
                 if verbose {
-                    if let Some(name) = crate::gallery::image_processing::extract_icc_profile_name(icc) {
+                    if let Some(name) =
+                        crate::gallery::image_processing::extract_icc_profile_name(icc)
+                    {
                         println!("    Profile name: {}", name);
                     }
                 }
@@ -185,10 +188,18 @@ pub async fn handle_avif_debug_command(
                             println!("    EXIF entries: {}", parsed.entries.len());
                             for entry in &parsed.entries {
                                 match entry.tag {
-                                    rexif::ExifTag::Make => println!("    Camera Make: {}", entry.value_more_readable),
-                                    rexif::ExifTag::Model => println!("    Camera Model: {}", entry.value_more_readable),
-                                    rexif::ExifTag::LensModel => println!("    Lens Model: {}", entry.value_more_readable),
-                                    rexif::ExifTag::DateTimeOriginal => println!("    Date Taken: {}", entry.value_more_readable),
+                                    rexif::ExifTag::Make => {
+                                        println!("    Camera Make: {}", entry.value_more_readable)
+                                    }
+                                    rexif::ExifTag::Model => {
+                                        println!("    Camera Model: {}", entry.value_more_readable)
+                                    }
+                                    rexif::ExifTag::LensModel => {
+                                        println!("    Lens Model: {}", entry.value_more_readable)
+                                    }
+                                    rexif::ExifTag::DateTimeOriginal => {
+                                        println!("    Date Taken: {}", entry.value_more_readable)
+                                    }
                                     _ => {}
                                 }
                             }
@@ -231,7 +242,9 @@ pub async fn handle_avif_debug_command(
                 println!("  Final result: {}", info.is_hdr);
 
                 // Additional technical info
-                if let Some(ref gain_info) = info.gain_map_info && gain_info.has_image {
+                if let Some(ref gain_info) = info.gain_map_info
+                    && gain_info.has_image
+                {
                     if let Some(ref gm_img) = gain_info.gain_map_image {
                         println!();
                         println!("Gain Map Image Details:");
