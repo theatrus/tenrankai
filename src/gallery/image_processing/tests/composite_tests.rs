@@ -329,3 +329,138 @@ async fn test_composite_mime_type_for_cached_composite() {
         "Composite images should always be served as JPEG"
     );
 }
+
+#[tokio::test]
+async fn test_image_crate_avif_support() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a simple AVIF image
+    let img = ImageBuffer::from_pixel(100, 100, Rgba([255u8, 0u8, 0u8, 255u8]));
+    let dynamic_img = image::DynamicImage::ImageRgba8(img);
+
+    let avif_path = temp_dir.path().join("test.avif");
+
+    // Save as AVIF using our function
+    crate::gallery::image_processing::formats::avif::save_with_profile(
+        &dynamic_img,
+        &avif_path,
+        85,
+        6,
+        None,
+        false,
+    )
+    .expect("Failed to save AVIF");
+
+    // Try to open it with image::open
+    let result = image::open(&avif_path);
+
+    println!("image::open result for AVIF: {:?}", result.is_ok());
+    if let Err(e) = &result {
+        println!("Error: {:?}", e);
+    }
+
+    // The image crate does not support AVIF directly
+    assert!(result.is_err(), "image::open should fail on AVIF files");
+}
+
+#[tokio::test]
+async fn test_composite_with_avif_images() {
+    let (_gallery, temp_dir) = create_test_gallery().await;
+
+    // Create test AVIF images with distinct colors
+    let mut images = vec![];
+    let colors = [
+        [255u8, 0u8, 0u8, 255u8],   // Red
+        [0u8, 255u8, 0u8, 255u8],   // Green
+        [0u8, 0u8, 255u8, 255u8],   // Blue
+        [255u8, 255u8, 0u8, 255u8], // Yellow
+    ];
+
+    for (i, color) in colors.iter().enumerate() {
+        let img = ImageBuffer::from_pixel(100, 100, Rgba(*color));
+        let dynamic_img = image::DynamicImage::ImageRgba8(img);
+
+        // Save as AVIF
+        let filename = format!("test_{:03}.avif", i);
+        let avif_path = temp_dir.path().join(&filename);
+
+        // Use our AVIF save function
+        crate::gallery::image_processing::formats::avif::save_with_profile(
+            &dynamic_img,
+            &avif_path,
+            85,    // quality
+            6,     // speed
+            None,  // no ICC profile
+            false, // not HDR
+        )
+        .expect("Failed to save AVIF");
+
+        images.push(crate::gallery::GalleryItem {
+            name: format!("test_{:03}", i),
+            display_name: Some(format!("Test {}", i)),
+            description: None,
+            path: filename,
+            parent_path: None,
+            is_directory: false,
+            thumbnail_url: None,
+            gallery_url: None,
+            preview_images: None,
+            item_count: None,
+            dimensions: Some((100, 100)),
+            capture_date: None,
+            is_new: false,
+        });
+    }
+
+    // Create composite
+    let result = tokio::task::spawn_blocking(move || {
+        crate::composite::create_composite_preview(temp_dir.path().to_path_buf(), images)
+    })
+    .await
+    .expect("Task failed");
+
+    assert!(result.is_ok(), "Should create composite with AVIF images");
+
+    if let Ok(composite_img) = result {
+        // Verify it's not all white (which would indicate images weren't loaded)
+        let rgb_img = composite_img.to_rgb8();
+        let (width, height) = rgb_img.dimensions();
+
+        // Sample center of each quadrant where the images should be
+        let sample_points = [
+            (width / 4, height / 4),         // Top-left - should be red
+            (3 * width / 4, height / 4),     // Top-right - should be green
+            (width / 4, 3 * height / 4),     // Bottom-left - should be blue
+            (3 * width / 4, 3 * height / 4), // Bottom-right - should be yellow
+        ];
+
+        // Count unique colors found
+        let mut unique_colors = std::collections::HashSet::new();
+        let mut non_white_pixels = 0;
+
+        for (x, y) in &sample_points {
+            let pixel = rgb_img.get_pixel(*x, *y);
+            let color = (pixel[0], pixel[1], pixel[2]);
+            unique_colors.insert(color);
+
+            if color != (255, 255, 255) && color != (200, 200, 200) {
+                // Not white or border
+                non_white_pixels += 1;
+            }
+
+            println!("Pixel at ({}, {}): {:?}", x, y, color);
+        }
+
+        assert!(
+            unique_colors.len() >= 3,
+            "Composite should show different colored images. Found {} unique colors",
+            unique_colors.len()
+        );
+
+        assert!(
+            non_white_pixels >= 3,
+            "At least 3 quadrants should have non-white colors. Found {}",
+            non_white_pixels
+        );
+    }
+}
