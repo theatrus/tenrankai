@@ -24,6 +24,7 @@ ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.13"
 libavif = { version = "0.14", features = ["codec-aom"] }
+libavif-sys = "0.17.0"
 rgb = "0.8"
 liquid = "0.26"
 liquid-core = "0.26"
@@ -52,3 +53,4 @@ webauthn-rs-proto = "0.5"
 [dev-dependencies]
 tempfile = "3.8"
 axum-test = "18.0"
+env_logger = "0.11"

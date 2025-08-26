@@ -6,6 +6,7 @@ use tracing::{debug, error};
 
 use super::formats;
 use super::types::{ImageSize, OutputFormat};
+use super::formats::avif::AvifImageInfo;
 
 impl Gallery {
     /// Parse size string and determine dimensions
@@ -132,12 +133,24 @@ fn process_image(
     // Detect format and extract ICC profile
     let (icc_profile, detected_format) = extract_image_info(original_path)?;
 
-    // Load and resize image
+    // Load and resize image - special handling for AVIF to preserve color properties
     debug!(
         "Opening image file: {:?}, detected format: {:?}",
         original_path, detected_format
     );
-    let img = image::open(original_path)?;
+    
+    let (img, avif_info) = if detected_format == Some(ImageFormat::Avif) {
+        // Use our custom AVIF reader to preserve color properties
+        match formats::avif::read_avif_info(original_path) {
+            Ok((img, info)) => (img, Some(info)),
+            Err(e) => {
+                debug!("Failed to read AVIF with custom reader: {}, falling back", e);
+                (image::open(original_path)?, None)
+            }
+        }
+    } else {
+        (image::open(original_path)?, None)
+    };
 
     let resized = resize_image(&img, dimensions)?;
 
@@ -156,6 +169,7 @@ fn process_image(
         jpeg_quality,
         webp_quality,
         icc_profile.as_deref(),
+        avif_info.as_ref(),
     )?;
 
     Ok(())
@@ -231,6 +245,7 @@ fn save_image(
     jpeg_quality: u8,
     webp_quality: f32,
     icc_profile: Option<&[u8]>,
+    avif_info: Option<&AvifImageInfo>,
 ) -> Result<(), GalleryError> {
     match format {
         OutputFormat::Jpeg => {
@@ -241,15 +256,20 @@ fn save_image(
         }
         OutputFormat::Png => formats::png::save(image, path),
         OutputFormat::Avif => {
-            // For AVIF, preserve HDR if the source is 16-bit
-            let preserve_hdr = matches!(
-                image,
-                DynamicImage::ImageLuma16(_) | 
-                DynamicImage::ImageLumaA16(_) |
-                DynamicImage::ImageRgb16(_) |
-                DynamicImage::ImageRgba16(_)
-            );
-            formats::avif::save_with_profile(image, path, 85, 6, icc_profile, preserve_hdr)
+            // Use the preserved AVIF info if available
+            if let Some(info) = avif_info {
+                formats::avif::save_with_info(image, path, 85, 6, Some(info))
+            } else {
+                // Fallback: preserve HDR if the source is 16-bit
+                let preserve_hdr = matches!(
+                    image,
+                    DynamicImage::ImageLuma16(_) | 
+                    DynamicImage::ImageLumaA16(_) |
+                    DynamicImage::ImageRgb16(_) |
+                    DynamicImage::ImageRgba16(_)
+                );
+                formats::avif::save_with_profile(image, path, 85, 6, icc_profile, preserve_hdr)
+            }
         }
     }
 }

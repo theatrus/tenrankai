@@ -1,10 +1,35 @@
 use crate::gallery::GalleryError;
 use image::{DynamicImage, ImageReader, GenericImageView, ImageBuffer};
-use libavif::{Encoder, RgbPixels, YuvFormat, decode_rgb, is_avif};
+use libavif::{decode_rgb, is_avif};
+use libavif_sys as sys;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::ptr;
 use tracing::{debug, error};
+
+// Common color space constants
+const DISPLAY_P3_PRIMARIES: u16 = 12; // AVIF_COLOR_PRIMARIES_SMPTE432
+
+impl AvifImageInfo {
+    /// Check if this is a Display P3 image
+    pub fn is_display_p3(&self) -> bool {
+        self.color_primaries == DISPLAY_P3_PRIMARIES ||
+        // Also check for unspecified with P3 ICC profile
+        (self.color_primaries == 2 && self.has_p3_icc_profile()) // AVIF_COLOR_PRIMARIES_UNSPECIFIED = 2
+    }
+    
+    /// Check if the ICC profile indicates Display P3
+    fn has_p3_icc_profile(&self) -> bool {
+        if let Some(ref icc) = self.icc_profile {
+            // Simple check for Display P3 ICC profile by size and basic markers
+            // Display P3 profiles are typically around 536-548 bytes
+            icc.len() >= 500 && icc.len() < 600
+        } else {
+            false
+        }
+    }
+}
 
 /// AVIF specific image information
 #[derive(Debug, Clone)]
@@ -13,9 +38,12 @@ pub struct AvifImageInfo {
     pub has_alpha: bool,
     pub is_hdr: bool,
     pub icc_profile: Option<Vec<u8>>,
+    pub color_primaries: u16,
+    pub transfer_characteristics: u16,
+    pub matrix_coefficients: u16,
 }
 
-/// Read an AVIF file using libavif
+/// Read an AVIF file using libavif with HDR support
 pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
     // Read the file
     let data = std::fs::read(path)?;
@@ -25,29 +53,166 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         return Err(GalleryError::ProcessingError("Not a valid AVIF file".to_string()));
     }
     
-    // Decode to RGB
-    match decode_rgb(&data) {
-        Ok(rgb_pixels) => {
-            let width = rgb_pixels.width();
-            let height = rgb_pixels.height();
+    // Use low-level API for HDR support
+    unsafe {
+        let decoder = sys::avifDecoderCreate();
+        if decoder.is_null() {
+            return Err(GalleryError::ProcessingError("Failed to create AVIF decoder".to_string()));
+        }
+        
+        // Create an empty image to decode into
+        let image = sys::avifImageCreateEmpty();
+        if image.is_null() {
+            sys::avifDecoderDestroy(decoder);
+            return Err(GalleryError::ProcessingError("Failed to create AVIF image".to_string()));
+        }
+        
+        // Decode the image
+        let result = sys::avifDecoderReadMemory(
+            decoder,
+            image,
+            data.as_ptr(),
+            data.len(),
+        );
+        
+        if result != sys::AVIF_RESULT_OK as u32 {
+            sys::avifImageDestroy(image);
+            sys::avifDecoderDestroy(decoder);
+            error!("Failed to decode AVIF: error code {}", result);
+            return read_with_fallback(path);
+        }
+        
+        // Extract image properties
+        let width = (*image).width;
+        let height = (*image).height;
+        let bit_depth = (*image).depth;
+        let has_alpha = (*image).alphaPlane != ptr::null_mut();
+        
+        // Check if it's HDR - must have HDR color space, not just 10-bit
+        let is_hdr = ((*image).colorPrimaries == sys::AVIF_COLOR_PRIMARIES_BT2020 as u16) &&
+            ((*image).transferCharacteristics == sys::AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084 as u16 ||
+             (*image).transferCharacteristics == sys::AVIF_TRANSFER_CHARACTERISTICS_HLG as u16);
+        
+        // Extract ICC profile if present
+        let icc_profile = if (*image).icc.size > 0 && !(*image).icc.data.is_null() {
+            let icc_slice = std::slice::from_raw_parts((*image).icc.data, (*image).icc.size);
+            Some(icc_slice.to_vec())
+        } else {
+            None
+        };
+        
+        let info = AvifImageInfo {
+            bit_depth: bit_depth as u8,
+            has_alpha,
+            is_hdr,
+            icc_profile: icc_profile.clone(),
+            color_primaries: (*image).colorPrimaries,
+            transfer_characteristics: (*image).transferCharacteristics,
+            matrix_coefficients: (*image).matrixCoefficients,
+        };
+        
+        // Identify color space name for debugging
+        let color_space_name = match (*image).colorPrimaries {
+            1 => "BT.709",
+            9 => "BT.2020",
+            12 => "Display P3",
+            2 => "Unspecified",
+            _ => "Unknown",
+        };
+        
+        let transfer_name = match (*image).transferCharacteristics {
+            1 => "BT.709",
+            13 => "sRGB",
+            16 => "PQ (SMPTE 2084)",
+            18 => "HLG",
+            2 => "Unspecified",
+            _ => "Unknown",
+        };
+        
+        debug!(
+            "AVIF properties: {}x{}, depth={}, has_alpha={}, is_hdr={}, colorSpace={} ({}), transfer={} ({})",
+            width, height, bit_depth, has_alpha, is_hdr, 
+            color_space_name, (*image).colorPrimaries,
+            transfer_name, (*image).transferCharacteristics
+        );
+        
+        // Convert to RGB
+        let mut rgb = sys::avifRGBImage::default();
+        sys::avifRGBImageSetDefaults(&mut rgb, image);
+        
+        // For HDR images, preserve bit depth
+        if bit_depth > 8 {
+            rgb.depth = bit_depth;
+        }
+        
+        // Allocate RGB pixels
+        if sys::avifRGBImageAllocatePixels(&mut rgb) != sys::AVIF_RESULT_OK as u32 {
+            sys::avifImageDestroy(image);
+            sys::avifDecoderDestroy(decoder);
+            return Err(GalleryError::ProcessingError("Failed to allocate RGB pixels".to_string()));
+        }
+        
+        // Convert YUV to RGB
+        if sys::avifImageYUVToRGB(image, &mut rgb) != sys::AVIF_RESULT_OK as u32 {
+            sys::avifRGBImageFreePixels(&mut rgb);
+            sys::avifImageDestroy(image);
+            sys::avifDecoderDestroy(decoder);
+            return Err(GalleryError::ProcessingError("Failed to convert YUV to RGB".to_string()));
+        }
+        
+        // Create DynamicImage based on bit depth
+        let dynamic_img = if bit_depth > 8 {
+            // HDR image - convert to 16-bit
+            let pixels = std::slice::from_raw_parts(
+                rgb.pixels as *const u16,
+                (rgb.rowBytes * height) as usize / 2
+            );
             
-            // For now, we'll decode as 8-bit RGB/RGBA
-            // The libavif crate's simple API doesn't expose bit depth info directly
-            let pixels = rgb_pixels.as_slice();
-            let has_alpha = pixels.len() == (width * height * 4) as usize;
-            
-            let info = AvifImageInfo {
-                bit_depth: 8, // libavif simple API defaults to 8-bit
-                has_alpha,
-                is_hdr: false, // Can't determine from simple API
-                icc_profile: None, // Not exposed in simple API
-            };
-            
-            let dynamic_img = if has_alpha {
+            if has_alpha {
                 let mut img = ImageBuffer::new(width, height);
                 for y in 0..height {
                     for x in 0..width {
-                        let idx = ((y * width + x) * 4) as usize;
+                        let idx = (y * rgb.rowBytes / 8 + x * 4) as usize;
+                        if idx + 3 < pixels.len() {
+                            // Scale from bit_depth to 16-bit if needed
+                            let shift = 16 - bit_depth;
+                            img.put_pixel(x, y, image::Rgba([
+                                pixels[idx] << shift,
+                                pixels[idx + 1] << shift,
+                                pixels[idx + 2] << shift,
+                                pixels[idx + 3] << shift,
+                            ]));
+                        }
+                    }
+                }
+                DynamicImage::ImageRgba16(img)
+            } else {
+                let mut img = ImageBuffer::new(width, height);
+                for y in 0..height {
+                    for x in 0..width {
+                        let idx = (y * rgb.rowBytes / 6 + x * 3) as usize;
+                        if idx + 2 < pixels.len() {
+                            // Scale from bit_depth to 16-bit if needed
+                            let shift = 16 - bit_depth;
+                            img.put_pixel(x, y, image::Rgb([
+                                pixels[idx] << shift,
+                                pixels[idx + 1] << shift,
+                                pixels[idx + 2] << shift,
+                            ]));
+                        }
+                    }
+                }
+                DynamicImage::ImageRgb16(img)
+            }
+        } else {
+            // 8-bit image
+            let pixels = std::slice::from_raw_parts(rgb.pixels, (rgb.rowBytes * height) as usize);
+            
+            if has_alpha {
+                let mut img = ImageBuffer::new(width, height);
+                for y in 0..height {
+                    for x in 0..width {
+                        let idx = (y * rgb.rowBytes + x * 4) as usize;
                         if idx + 3 < pixels.len() {
                             img.put_pixel(x, y, image::Rgba([
                                 pixels[idx],
@@ -63,7 +228,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                 let mut img = ImageBuffer::new(width, height);
                 for y in 0..height {
                     for x in 0..width {
-                        let idx = ((y * width + x) * 3) as usize;
+                        let idx = (y * rgb.rowBytes + x * 3) as usize;
                         if idx + 2 < pixels.len() {
                             img.put_pixel(x, y, image::Rgb([
                                 pixels[idx],
@@ -74,57 +239,81 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
                     }
                 }
                 DynamicImage::ImageRgb8(img)
-            };
-            
-            debug!(
-                "Successfully decoded AVIF: {}x{}, has_alpha={}",
-                width, height, has_alpha
-            );
-            
-            Ok((dynamic_img, info))
-        }
-        Err(e) => {
-            error!("Failed to decode AVIF with libavif: {}", e);
-            
-            // Fallback to image crate
-            let file = File::open(path)?;
-            let reader = ImageReader::new(BufReader::new(file))
-                .with_guessed_format()?;
-            
-            let img = reader.decode()?;
-            
-            let info = AvifImageInfo {
-                bit_depth: 8,
-                has_alpha: matches!(
-                    &img, 
-                    DynamicImage::ImageLumaA8(_) | 
-                    DynamicImage::ImageLumaA16(_) | 
-                    DynamicImage::ImageRgba8(_) | 
-                    DynamicImage::ImageRgba16(_)
-                ),
-                is_hdr: matches!(
-                    &img,
-                    DynamicImage::ImageLuma16(_) | 
-                    DynamicImage::ImageLumaA16(_) |
-                    DynamicImage::ImageRgb16(_) |
-                    DynamicImage::ImageRgba16(_)
-                ),
-                icc_profile: None,
-            };
-            
-            Ok((img, info))
-        }
+            }
+        };
+        
+        // Clean up
+        sys::avifRGBImageFreePixels(&mut rgb);
+        sys::avifImageDestroy(image);
+        sys::avifDecoderDestroy(decoder);
+        
+        Ok((dynamic_img, info))
     }
 }
 
-/// Save a DynamicImage as AVIF with HDR support
+/// Fallback function to read AVIF with image crate
+fn read_with_fallback(path: &Path) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
+    let file = File::open(path)?;
+    let reader = ImageReader::new(BufReader::new(file))
+        .with_guessed_format()?;
+    
+    let img = reader.decode()?;
+    
+    let info = AvifImageInfo {
+        bit_depth: 8,
+        has_alpha: matches!(
+            &img, 
+            DynamicImage::ImageLumaA8(_) | 
+            DynamicImage::ImageLumaA16(_) | 
+            DynamicImage::ImageRgba8(_) | 
+            DynamicImage::ImageRgba16(_)
+        ),
+        is_hdr: false, // Fallback doesn't preserve HDR
+        icc_profile: None,
+        // Default to sRGB/BT.709 for fallback
+        color_primaries: sys::AVIF_COLOR_PRIMARIES_BT709 as u16,
+        transfer_characteristics: sys::AVIF_TRANSFER_CHARACTERISTICS_SRGB as u16,
+        matrix_coefficients: sys::AVIF_MATRIX_COEFFICIENTS_BT709 as u16,
+    };
+    
+    Ok((img, info))
+}
+
+/// Save a DynamicImage as AVIF preserving color properties
+pub fn save_with_info(
+    image: &DynamicImage,
+    path: &Path,
+    quality: u8,
+    speed: u8,
+    info: Option<&AvifImageInfo>,
+) -> Result<(), GalleryError> {
+    // For backward compatibility
+    let icc_profile = info.and_then(|i| i.icc_profile.as_deref());
+    let preserve_hdr = info.map(|i| i.is_hdr).unwrap_or(false);
+    save_with_profile_and_color(image, path, quality, speed, icc_profile, preserve_hdr, info)
+}
+
+/// Save a DynamicImage as AVIF with HDR support (backward compatibility)
 pub fn save_with_profile(
     image: &DynamicImage,
     path: &Path,
     quality: u8,
     speed: u8,
-    _icc_profile: Option<&[u8]>,
+    icc_profile: Option<&[u8]>,
     preserve_hdr: bool,
+) -> Result<(), GalleryError> {
+    save_with_profile_and_color(image, path, quality, speed, icc_profile, preserve_hdr, None)
+}
+
+/// Internal save function with full color property support
+fn save_with_profile_and_color(
+    image: &DynamicImage,
+    path: &Path,
+    quality: u8,
+    speed: u8,
+    icc_profile: Option<&[u8]>,
+    preserve_hdr: bool,
+    color_info: Option<&AvifImageInfo>,
 ) -> Result<(), GalleryError> {
     let (width, height) = image.dimensions();
     
@@ -145,46 +334,232 @@ pub fn save_with_profile(
         DynamicImage::ImageRgba16(_)
     );
     
-    debug!("Encoding AVIF: {}x{}, quality={}, speed={}, is_16bit={}, has_alpha={}, preserve_hdr={}", 
-           width, height, quality, speed, is_16bit, has_alpha, preserve_hdr);
+    // Decide bit depth based on input and preserve_hdr flag
+    let bit_depth = if is_16bit && preserve_hdr { 10 } else { 8 };
     
-    // Convert to RGB bytes
-    let rgb_data = if has_alpha {
-        let rgba = image.to_rgba8();
-        rgba.as_raw().to_vec()
-    } else {
-        let rgb = image.to_rgb8();
-        rgb.as_raw().to_vec()
-    };
+    debug!("Encoding AVIF: {}x{}, quality={}, speed={}, bit_depth={}, has_alpha={}, preserve_hdr={}", 
+           width, height, quality, speed, bit_depth, has_alpha, preserve_hdr);
     
-    // Create RGB pixels
-    let rgb_pixels = RgbPixels::new(width, height, &rgb_data)
-        .map_err(|e| GalleryError::ProcessingError(format!("Failed to create RGB pixels: {:?}", e)))?;
-    
-    // Convert to YUV image
-    let yuv_image = rgb_pixels.to_image(YuvFormat::Yuv444);
-    
-    // Create encoder with settings
-    let mut encoder = Encoder::new();
-    encoder
-        .set_quality(quality.min(100))
-        .set_speed(speed.min(10));
-    
-    // For HDR support, we would need to use the low-level API
-    // The high-level API only supports 8-bit encoding
-    if is_16bit && preserve_hdr {
-        debug!("Warning: HDR preservation not yet supported with current libavif API");
+    unsafe {
+        // Create AVIF image with appropriate bit depth
+        let avif_image = sys::avifImageCreate(
+            width,
+            height,
+            bit_depth,
+            if has_alpha { sys::AVIF_PIXEL_FORMAT_YUV444 as u32 } else { sys::AVIF_PIXEL_FORMAT_YUV420 as u32 }
+        );
+        
+        if avif_image.is_null() {
+            return Err(GalleryError::ProcessingError("Failed to create AVIF image".to_string()));
+        }
+        
+        // Set color properties - preserve original if provided
+        if let Some(info) = color_info {
+            // Use the original color properties
+            (*avif_image).colorPrimaries = info.color_primaries;
+            (*avif_image).transferCharacteristics = info.transfer_characteristics;
+            (*avif_image).matrixCoefficients = info.matrix_coefficients;
+            (*avif_image).yuvRange = sys::AVIF_RANGE_FULL as u32;
+            
+            debug!(
+                "Using provided color properties: primaries={}, transfer={}, matrix={}",
+                info.color_primaries, info.transfer_characteristics, info.matrix_coefficients
+            );
+        } else {
+            // Fallback to defaults based on whether we're preserving HDR
+            if is_16bit && preserve_hdr {
+                (*avif_image).colorPrimaries = sys::AVIF_COLOR_PRIMARIES_BT2020 as u16;
+                (*avif_image).transferCharacteristics = sys::AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084 as u16; // PQ
+                (*avif_image).matrixCoefficients = sys::AVIF_MATRIX_COEFFICIENTS_BT2020_NCL as u16;
+                (*avif_image).yuvRange = sys::AVIF_RANGE_FULL as u32;
+            } else {
+                (*avif_image).colorPrimaries = sys::AVIF_COLOR_PRIMARIES_BT709 as u16;
+                (*avif_image).transferCharacteristics = sys::AVIF_TRANSFER_CHARACTERISTICS_SRGB as u16;
+                (*avif_image).matrixCoefficients = sys::AVIF_MATRIX_COEFFICIENTS_BT709 as u16;
+                (*avif_image).yuvRange = sys::AVIF_RANGE_FULL as u32;
+            }
+        }
+        
+        // Set ICC profile if provided
+        if let Some(icc) = icc_profile {
+            sys::avifImageSetProfileICC(avif_image, icc.as_ptr(), icc.len());
+        }
+        
+        // Allocate planes
+        sys::avifImageAllocatePlanes(avif_image, sys::AVIF_PLANES_YUV as u32);
+        if has_alpha {
+            sys::avifImageAllocatePlanes(avif_image, sys::AVIF_PLANES_A as u32);
+        }
+        
+        // Create RGB image for conversion
+        let mut rgb = sys::avifRGBImage::default();
+        sys::avifRGBImageSetDefaults(&mut rgb, avif_image);
+        rgb.depth = bit_depth;
+        rgb.format = if has_alpha { sys::AVIF_RGB_FORMAT_RGBA as u32 } else { sys::AVIF_RGB_FORMAT_RGB as u32 };
+        
+        // Allocate RGB pixels
+        if sys::avifRGBImageAllocatePixels(&mut rgb) != sys::AVIF_RESULT_OK as u32 {
+            sys::avifImageDestroy(avif_image);
+            return Err(GalleryError::ProcessingError("Failed to allocate RGB pixels".to_string()));
+        }
+        
+        // Copy image data to RGB buffer
+        if bit_depth > 8 && is_16bit {
+            // HDR path - copy 16-bit data
+            let pixels = rgb.pixels as *mut u16;
+            let row_bytes = rgb.rowBytes as usize;
+            
+            match image {
+                DynamicImage::ImageRgb16(img) => {
+                    for y in 0..height {
+                        for x in 0..width {
+                            let src_pixel = img.get_pixel(x, y);
+                            let dst_idx = y as usize * row_bytes / 2 + x as usize * 3;
+                            // Scale from 16-bit to target bit depth
+                            let shift = 16 - bit_depth;
+                            unsafe {
+                                *pixels.add(dst_idx) = src_pixel[0] >> shift;
+                                *pixels.add(dst_idx + 1) = src_pixel[1] >> shift;
+                                *pixels.add(dst_idx + 2) = src_pixel[2] >> shift;
+                            }
+                        }
+                    }
+                },
+                DynamicImage::ImageRgba16(img) => {
+                    for y in 0..height {
+                        for x in 0..width {
+                            let src_pixel = img.get_pixel(x, y);
+                            let dst_idx = y as usize * row_bytes / 2 + x as usize * 4;
+                            // Scale from 16-bit to target bit depth
+                            let shift = 16 - bit_depth;
+                            unsafe {
+                                *pixels.add(dst_idx) = src_pixel[0] >> shift;
+                                *pixels.add(dst_idx + 1) = src_pixel[1] >> shift;
+                                *pixels.add(dst_idx + 2) = src_pixel[2] >> shift;
+                                *pixels.add(dst_idx + 3) = src_pixel[3] >> shift;
+                            }
+                        }
+                    }
+                },
+                _ => {
+                    // Convert to 16-bit first
+                    if has_alpha {
+                        let rgba16 = image.to_rgba16();
+                        for y in 0..height {
+                            for x in 0..width {
+                                let src_pixel = rgba16.get_pixel(x, y);
+                                let dst_idx = y as usize * row_bytes / 2 + x as usize * 4;
+                                let shift = 16 - bit_depth;
+                                unsafe {
+                                    *pixels.add(dst_idx) = src_pixel[0] >> shift;
+                                    *pixels.add(dst_idx + 1) = src_pixel[1] >> shift;
+                                    *pixels.add(dst_idx + 2) = src_pixel[2] >> shift;
+                                    *pixels.add(dst_idx + 3) = src_pixel[3] >> shift;
+                                }
+                            }
+                        }
+                    } else {
+                        let rgb16 = image.to_rgb16();
+                        for y in 0..height {
+                            for x in 0..width {
+                                let src_pixel = rgb16.get_pixel(x, y);
+                                let dst_idx = y as usize * row_bytes / 2 + x as usize * 3;
+                                let shift = 16 - bit_depth;
+                                unsafe {
+                                    *pixels.add(dst_idx) = src_pixel[0] >> shift;
+                                    *pixels.add(dst_idx + 1) = src_pixel[1] >> shift;
+                                    *pixels.add(dst_idx + 2) = src_pixel[2] >> shift;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // 8-bit path
+            let pixels = rgb.pixels;
+            let row_bytes = rgb.rowBytes as usize;
+            
+            if has_alpha {
+                let rgba = image.to_rgba8();
+                for y in 0..height {
+                    for x in 0..width {
+                        let src_pixel = rgba.get_pixel(x, y);
+                        let dst_idx = y as usize * row_bytes + x as usize * 4;
+                        unsafe {
+                            *pixels.add(dst_idx) = src_pixel[0];
+                            *pixels.add(dst_idx + 1) = src_pixel[1];
+                            *pixels.add(dst_idx + 2) = src_pixel[2];
+                            *pixels.add(dst_idx + 3) = src_pixel[3];
+                        }
+                    }
+                }
+            } else {
+                let rgb_img = image.to_rgb8();
+                for y in 0..height {
+                    for x in 0..width {
+                        let src_pixel = rgb_img.get_pixel(x, y);
+                        let dst_idx = y as usize * row_bytes + x as usize * 3;
+                        unsafe {
+                            *pixels.add(dst_idx) = src_pixel[0];
+                            *pixels.add(dst_idx + 1) = src_pixel[1];
+                            *pixels.add(dst_idx + 2) = src_pixel[2];
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Convert RGB to YUV
+        if sys::avifImageRGBToYUV(avif_image, &rgb) != sys::AVIF_RESULT_OK as u32 {
+            sys::avifRGBImageFreePixels(&mut rgb);
+            sys::avifImageDestroy(avif_image);
+            return Err(GalleryError::ProcessingError("Failed to convert RGB to YUV".to_string()));
+        }
+        
+        sys::avifRGBImageFreePixels(&mut rgb);
+        
+        // Create encoder
+        let encoder = sys::avifEncoderCreate();
+        if encoder.is_null() {
+            sys::avifImageDestroy(avif_image);
+            return Err(GalleryError::ProcessingError("Failed to create encoder".to_string()));
+        }
+        
+        // Set encoder options
+        (*encoder).quality = quality as i32;
+        (*encoder).qualityAlpha = quality as i32;
+        (*encoder).speed = speed as i32;
+        (*encoder).maxThreads = 1;
+        
+        // For HDR, ensure we use appropriate settings
+        if bit_depth > 8 {
+            (*encoder).minQuantizer = 0;
+            (*encoder).maxQuantizer = 63; // Allow full quality range for HDR
+        }
+        
+        // Encode the image
+        let mut output = sys::avifRWData::default();
+        let result = sys::avifEncoderWrite(encoder, avif_image, &mut output);
+        
+        if result != sys::AVIF_RESULT_OK as u32 {
+            sys::avifEncoderDestroy(encoder);
+            sys::avifImageDestroy(avif_image);
+            return Err(GalleryError::ProcessingError(format!("Failed to encode AVIF: error {}", result)));
+        }
+        
+        // Write to file
+        let data = std::slice::from_raw_parts(output.data, output.size);
+        std::fs::write(path, data)?;
+        
+        // Clean up
+        sys::avifRWDataFree(&mut output);
+        sys::avifEncoderDestroy(encoder);
+        sys::avifImageDestroy(avif_image);
+        
+        debug!("Successfully saved {} AVIF to {:?}", if bit_depth > 8 { "HDR" } else { "SDR" }, path);
+        Ok(())
     }
-    
-    // Encode the image
-    let encoded = encoder.encode(&yuv_image)
-        .map_err(|e| GalleryError::ProcessingError(format!("Failed to encode AVIF: {:?}", e)))?;
-    
-    // Write to file
-    std::fs::write(path, &*encoded)?;
-    
-    debug!("Successfully saved AVIF to {:?}", path);
-    Ok(())
 }
 
 /// Extract ICC profile from an AVIF file
