@@ -25,6 +25,40 @@ This is especially useful for verifying startup behavior, testing API endpoints,
 - **Email-based Authentication**: Secure passwordless login system with email verification links
 - **Email Provider Support**: Pluggable email provider system with Amazon SES support
 
+## AVIF Feature Flag
+
+The project includes optional AVIF (AV1 Image File Format) support that can be disabled for easier builds on platforms where AVIF dependencies are difficult to compile (particularly Windows).
+
+### Building with AVIF Support (Default)
+```bash
+cargo build                    # Uses default features including AVIF
+cargo build --features avif    # Explicitly enable AVIF
+```
+
+**Features with AVIF enabled:**
+- Full HDR AVIF encoding/decoding with gain map support
+- 10-bit encoding for HDR images with proper color space preservation
+- AVIF files can be processed, served, and used in composite images
+- `avif-debug` CLI command available for analyzing AVIF metadata
+- ICC profile preservation through AVIF processing pipeline
+
+### Building without AVIF Support
+```bash
+cargo build --no-default-features    # Disables AVIF and related dependencies
+```
+
+**Behavior without AVIF:**
+- AVIF files are completely ignored by the system
+- Smaller binary size and no complex AVIF build dependencies
+- Faster builds, especially on Windows
+- `avif-debug` CLI command not available
+- System gracefully falls back for any AVIF-related operations
+
+### Platform-Specific Defaults
+- **Linux/macOS**: AVIF enabled by default (full feature set)
+- **Windows CI**: AVIF disabled by default for easier builds
+- **Local Development**: Use `--no-default-features` on Windows if build issues occur
+
 ## Project Structure
 
 ### Core Modules
@@ -307,8 +341,17 @@ webp_quality = 90.0
 
 ### Building and Running
 ```bash
+# Default build (includes AVIF support)
 cargo build
+
+# Build without AVIF (for Windows or when AVIF dependencies are problematic)
+cargo build --no-default-features
+
+# Run the server
 cargo run -- --host 0.0.0.0 --port 8080
+
+# Run without AVIF support
+cargo run --no-default-features -- --host 0.0.0.0 --port 8080
 ```
 
 ### Testing with Auto-Shutdown
@@ -334,9 +377,13 @@ This feature is particularly helpful when implementing new features to verify th
 - Run with debug logging: `RUST_LOG=debug cargo run`
 - Test startup and shutdown: `cargo run -- --quit-after 5`
 - Run linters: `cargo clippy -- -D warnings`
+- Run linters (no AVIF): `cargo clippy --no-default-features -- -D warnings`
 - Check formatting: `cargo fmt --check`
 - Build for production: `cargo build --release`
+- Build for production (no AVIF): `cargo build --release --no-default-features`
 - Check dependencies: `cargo outdated` and `cargo audit`
+- Test all features: `cargo test --all-features`
+- Test without AVIF: `cargo test --no-default-features`
 
 ### Testing URLs
 - Gallery root: `http://localhost:8080/gallery` (for main gallery)
@@ -489,11 +536,18 @@ The command shows:
    - Hierarchical access control (parent folder restrictions apply to children)
    - Access control applies to gallery views, previews, and image serving
 
-### Build System Improvements
+### Build System Improvements (December 2025)
 1. **Cross-Platform Build Support**:
-   - Windows builds use vcpkg for OpenSSL installation
-   - macOS and Windows builds enabled in CI/CD
-   - Build dependencies (nasm, ninja, meson, cmake) installed automatically
+   - **Ubuntu/macOS**: Full builds with AVIF support and complete dependencies
+   - **Windows CI**: Builds with `--no-default-features` (no AVIF) for easier compilation
+   - Windows uses simplified vcpkg setup (only OpenSSL, no AVIF build tools)
+   - Improved build reliability across all platforms
+
+2. **AVIF Feature Flag System**:
+   - Optional AVIF compilation controlled by cargo features
+   - Conditional compilation guards throughout codebase
+   - Graceful fallbacks when AVIF support is disabled
+   - Platform-specific CI configurations for optimal builds
 
 ### AVIF HDR Support with Gain Maps
 1. **Advanced AVIF Support**:

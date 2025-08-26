@@ -9,19 +9,27 @@ fn load_image_with_avif_support(
     match image::open(path) {
         Ok(img) => Ok(img),
         Err(e) => {
-            // If it fails, check if it's an AVIF file
-            if path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("avif"))
-                .unwrap_or(false)
+            #[cfg(feature = "avif")]
             {
-                // Try to load as AVIF
-                let (img, _info) =
-                    crate::gallery::image_processing::formats::avif::read_avif_info(path)?;
-                Ok(img)
-            } else {
-                // Not an AVIF file, return the original error
+                // If it fails, check if it's an AVIF file
+                if path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("avif"))
+                    .unwrap_or(false)
+                {
+                    // Try to load as AVIF
+                    let (img, _info) =
+                        crate::gallery::image_processing::formats::avif::read_avif_info(path)?;
+                    Ok(img)
+                } else {
+                    // Not an AVIF file, return the original error
+                    Err(Box::new(e))
+                }
+            }
+            #[cfg(not(feature = "avif"))]
+            {
+                // AVIF feature not enabled, return the original error
                 Err(Box::new(e))
             }
         }

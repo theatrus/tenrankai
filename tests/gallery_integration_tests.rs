@@ -401,6 +401,7 @@ async fn test_composite_api_not_found() {
     );
 }
 
+#[cfg(feature = "avif")]
 #[tokio::test]
 async fn test_composite_api_with_avif_images() {
     let temp_dir = TempDir::new().unwrap();

@@ -5,11 +5,14 @@ use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use tenrankai::{
-    Config, commands, create_app,
+    Config, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
     posts, startup_checks,
 };
+
+#[cfg(feature = "avif")]
+use tenrankai::commands;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -45,6 +48,7 @@ enum Commands {
     User(UserCommands),
 
     /// Debug AVIF image metadata and color properties
+    #[cfg(feature = "avif")]
     AvifDebug {
         /// Path to the AVIF file to analyze
         image_path: PathBuf,
@@ -120,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
+        #[cfg(feature = "avif")]
         Some(Commands::AvifDebug {
             image_path,
             verbose,

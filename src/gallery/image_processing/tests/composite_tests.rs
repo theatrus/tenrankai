@@ -330,6 +330,7 @@ async fn test_composite_mime_type_for_cached_composite() {
     );
 }
 
+#[cfg(feature = "avif")]
 #[tokio::test]
 async fn test_image_crate_avif_support() {
     let temp_dir = TempDir::new().unwrap();
@@ -363,6 +364,7 @@ async fn test_image_crate_avif_support() {
     assert!(result.is_err(), "image::open should fail on AVIF files");
 }
 
+#[cfg(feature = "avif")]
 #[tokio::test]
 async fn test_composite_with_avif_images() {
     let (_gallery, temp_dir) = create_test_gallery().await;

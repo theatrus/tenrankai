@@ -10,8 +10,10 @@ mod watermark;
 pub use types::OutputFormat;
 
 // Re-export format-specific ICC profile extraction functions
+#[cfg(feature = "avif")]
+pub use formats::avif::extract_icc_profile as extract_icc_profile_from_avif;
+
 pub use formats::{
-    avif::extract_icc_profile as extract_icc_profile_from_avif,
     jpeg::extract_icc_profile as extract_icc_profile_from_jpeg,
     png::extract_icc_profile as extract_icc_profile_from_png,
 };
@@ -22,6 +24,7 @@ pub use icc::extract_icc_profile_name;
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "avif")]
     mod avif_tests;
     mod cache_tests;
     mod composite_tests;

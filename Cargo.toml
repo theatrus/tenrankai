@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
+[features]
+default = ["avif"]
+# AVIF support - can be disabled on platforms where it's hard to build
+# To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
+avif = ["dep:libavif", "dep:libavif-sys"]
+
 [dependencies]
 async-trait = "0.1"
 aws-config = "1"
@@ -23,8 +29,8 @@ usvg = "0.45"
 ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.13"
-libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"] }
-libavif-sys = { git = "https://github.com/theatrus/libavif-rs",  branch = "new-libavif", features = ["codec-aom"] }
+libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"], optional = true }
+libavif-sys = { git = "https://github.com/theatrus/libavif-rs",  branch = "new-libavif", features = ["codec-aom"], optional = true }
 rgb = "0.8"
 liquid = "0.26"
 liquid-core = "0.26"

@@ -1,4 +1,8 @@
 name: CI
+# 
+# Platform-specific build configuration:
+# - Ubuntu/macOS: Full build with AVIF support (default features)
+# - Windows: Build without AVIF support (--no-default-features) for easier builds
 
 on:
   push:
@@ -14,8 +18,9 @@ jobs:
     name: Test
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # Don't cancel other jobs if one fails
       matrix:
-        os: [ubuntu-22.04] #, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
         rust: [stable]
         exclude:
           # Reduce the number of jobs by excluding some combinations
@@ -37,25 +42,17 @@ jobs:
       run: |
         brew install nasm ninja meson cmake
     
-    - name: Install build dependencies (Windows)
+    - name: Install build dependencies (Windows - no AVIF)
       if: matrix.os == 'windows-latest'
       run: |
-        # Install all dependencies via vcpkg where possible
-        vcpkg install openssl:x64-windows-static nasm:x64-windows ninja:x64-windows cmake:x64-windows
+        # Install OpenSSL via vcpkg (AVIF-related tools not needed since we build with --no-default-features)
+        vcpkg install openssl:x64-windows-static
         
         # Set up OpenSSL environment variables
         echo "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "OPENSSL_LIB_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "OPENSSL_INCLUDE_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "OPENSSL_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        
-        # Add vcpkg tools to PATH
-        echo "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\nasm" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        echo "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        echo "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\tools\cmake" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        
-        # Install meson via pip (not available in vcpkg)
-        pip install meson
       shell: powershell
     
     - name: Install Rust
@@ -93,18 +90,37 @@ jobs:
       run: cargo fmt -- --check
       if: matrix.rust == 'stable'
     
-    - name: Run clippy
+    - name: Run clippy (Ubuntu/macOS)
       run: cargo clippy -- -D warnings
-      if: matrix.rust == 'stable'
+      if: matrix.rust == 'stable' && matrix.os != 'windows-latest'
+      
+    - name: Run clippy (Windows - no AVIF)
+      run: cargo clippy --no-default-features -- -D warnings
+      if: matrix.rust == 'stable' && matrix.os == 'windows-latest'
     
-    - name: Build
+    - name: Build (Ubuntu/macOS)
+      if: matrix.os != 'windows-latest'
       run: cargo build --verbose
+      
+    - name: Build (Windows - no AVIF)
+      if: matrix.os == 'windows-latest'
+      run: cargo build --verbose --no-default-features
     
-    - name: Run tests
+    - name: Run tests (Ubuntu/macOS)
+      if: matrix.os != 'windows-latest'
       run: cargo test --verbose
+      
+    - name: Run tests (Windows - no AVIF)
+      if: matrix.os == 'windows-latest'
+      run: cargo test --verbose --no-default-features
     
-    - name: Build release
+    - name: Build release (Ubuntu/macOS)
+      if: matrix.os != 'windows-latest'
       run: cargo build --release --verbose
+      
+    - name: Build release (Windows - no AVIF)
+      if: matrix.os == 'windows-latest'
+      run: cargo build --release --verbose --no-default-features
 
   # Security audit
   security-audit:

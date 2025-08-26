@@ -21,8 +21,8 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **High-DPI Support**: Automatic @2x image generation for retina displays
 - **Metadata Extraction**: EXIF data parsing including camera info, GPS coordinates, and capture dates
 - **Smart Caching**: Persistent metadata caching and image cache with background refresh
-- **Multiple Format Support**: Automatic WebP and AVIF delivery for supported browsers with JPEG fallback, PNG support with transparency preservation
-- **Advanced AVIF Support**: Full HDR AVIF encoding/decoding with gain map preservation for HDR tone mapping
+- **Multiple Format Support**: Automatic WebP delivery for supported browsers with JPEG fallback, PNG support with transparency preservation
+- **Optional AVIF Support**: Full HDR AVIF encoding/decoding with gain map preservation for HDR tone mapping (when built with AVIF feature)
 - **Color Profile Preservation**: Full ICC profile support for JPEG, PNG, WebP, and AVIF, including Display P3
 - **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection
 - **Markdown Support**: Folder descriptions and image captions via markdown files
@@ -48,10 +48,26 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 ```bash
 git clone https://github.com/yourusername/tenrankai.git
 cd tenrankai
+
+# Default build with AVIF support
 cargo build --release
+
+# Build without AVIF for easier compilation (especially on Windows)
+cargo build --release --no-default-features
 ```
 
 The project includes a `rust-toolchain.toml` file that will automatically download and use Rust 1.89.0 when you run cargo commands. This ensures consistent builds across all development environments.
+
+### Build Options
+
+**AVIF Feature Flag**: Tenrankai includes optional AVIF support that can be disabled for easier builds on platforms where AVIF dependencies are difficult to compile.
+
+- **With AVIF (Default)**: Full HDR AVIF support including gain maps, ICC profiles, and advanced color management
+- **Without AVIF**: AVIF files are ignored, resulting in smaller binaries and simpler dependency requirements
+
+**Platform Recommendations**:
+- **Linux/macOS**: Use default build with AVIF support
+- **Windows**: Consider using `--no-default-features` if you encounter build issues with AVIF dependencies
 
 ## Configuration
 
@@ -150,8 +166,11 @@ region = "us-east-1"
 ### Running the Server
 
 ```bash
-# Using default config.toml
+# Using default config.toml with AVIF support
 cargo run --release
+
+# Run without AVIF support (faster builds, especially on Windows)
+cargo run --release --no-default-features
 
 # With custom configuration
 cargo run --release -- --config /path/to/config.toml
@@ -176,6 +195,8 @@ cargo run --release -- --log-level debug
 #### AVIF Debug Command
 
 Analyze AVIF files to inspect their HDR properties, color spaces, and gain maps:
+
+**Note**: This command is only available when building with AVIF support (default build).
 
 ```bash
 # Basic analysis
@@ -343,7 +364,7 @@ Tenrankai preserves ICC color profiles and HDR metadata throughout the image pro
 - **JPEG**: Extracts and preserves ICC profiles from source images
 - **PNG**: Extracts ICC profiles from iCCP chunks and preserves transparency
 - **WebP**: Embeds ICC profiles using libwebp-sys WebPMux API
-- **AVIF**: Full HDR support with advanced features:
+- **AVIF** (when built with AVIF feature): Full HDR support with advanced features:
   - Preserves ICC profiles and HDR metadata (color primaries, transfer characteristics, CLLI)
   - Supports gain maps for HDR/SDR tone mapping
   - Automatically detects and preserves HDR content (BT.2020, Display P3, PQ/HLG)
@@ -592,9 +613,12 @@ Contributions are welcome! Please:
 
 - **Async Rust**: Built on Tokio with Axum web framework
 - **Thread-Safe Operations**: Arc<RwLock<T>> for concurrent access
-- **Comprehensive Testing**: 60+ unit tests and integration tests
+- **Comprehensive Testing**: 95+ unit tests and integration tests (with AVIF), 76+ without AVIF
 - **Modular Design**: Clean separation of concerns across modules
 - **Configuration-Driven**: Flexible TOML-based configuration system
+- **Cross-Platform CI**: Automated testing on Ubuntu, macOS, and Windows
+  - **Ubuntu/macOS**: Full feature builds with AVIF support
+  - **Windows**: Builds without AVIF for easier compilation
 
 ## License
 
