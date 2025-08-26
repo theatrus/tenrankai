@@ -1,5 +1,32 @@
 use image::{DynamicImage, ImageBuffer, Rgba};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Load an image from a path, with AVIF support
+fn load_image_with_avif_support(
+    path: &Path,
+) -> Result<DynamicImage, Box<dyn std::error::Error + Send + Sync>> {
+    // First try the standard image::open
+    match image::open(path) {
+        Ok(img) => Ok(img),
+        Err(e) => {
+            // If it fails, check if it's an AVIF file
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("avif"))
+                .unwrap_or(false)
+            {
+                // Try to load as AVIF
+                let (img, _info) =
+                    crate::gallery::image_processing::formats::avif::read_avif_info(path)?;
+                Ok(img)
+            } else {
+                // Not an AVIF file, return the original error
+                Err(Box::new(e))
+            }
+        }
+    }
+}
 
 /// Creates a composite preview image from multiple gallery items in a 2x2 grid
 pub fn create_composite_preview(
@@ -21,9 +48,9 @@ pub fn create_composite_preview(
             break;
         }
 
-        // Load the thumbnail
+        // Load the thumbnail (with AVIF support)
         let image_path = source_directory.join(&image_item.path);
-        if let Ok(img) = image::open(&image_path) {
+        if let Ok(img) = load_image_with_avif_support(&image_path) {
             // Calculate position in grid
             let row = idx / grid_size;
             let col = idx % grid_size;

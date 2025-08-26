@@ -174,8 +174,9 @@ impl Gallery {
 
         // Always use JPEG for composites
         let output_format = super::types::OutputFormat::Jpeg;
-        let hash =
-            self.generate_composite_cache_key_with_format(cache_key, output_format.extension());
+        // Note: cache_key is already the composite key (e.g., "composite_2008-eureka")
+        // so we use generate_cache_key directly, not generate_composite_cache_key_with_format
+        let hash = self.generate_cache_key(cache_key, output_format.extension());
         let cache_filename = format!("{}.{}", hash, output_format.extension());
         let cache_path = self.config.cache_directory.join(&cache_filename);
 

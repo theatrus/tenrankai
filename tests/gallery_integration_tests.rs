@@ -315,6 +315,153 @@ async fn test_gallery_preview_api() {
 }
 
 #[tokio::test]
+async fn test_composite_api_endpoint() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+
+    // Create test images in the root directory
+    for i in 0..3 {
+        let img = image::ImageBuffer::from_pixel(100, 100, image::Rgb([0u8, 255u8, 0u8]));
+        let img_path = root_dir.join(format!("root_{:03}.jpg", i));
+        img.save(&img_path).unwrap();
+    }
+
+    // Create a subdirectory with test images
+    let subdir = root_dir.join("2008-eureka");
+    std::fs::create_dir_all(&subdir).unwrap();
+
+    // Create test images in the subdirectory
+    for i in 0..5 {
+        let img = image::ImageBuffer::from_pixel(100, 100, image::Rgb([255u8, 0u8, 0u8]));
+        let img_path = subdir.join(format!("test_{:03}.jpg", i));
+        img.save(&img_path).unwrap();
+    }
+
+    let app = create_app(config).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Test composite endpoint for subdirectory
+    let response = server.get("/api/gallery/main/composite/2008-eureka").await;
+    if response.status_code() != StatusCode::OK {
+        let body = response.text();
+        println!("Error response body: {}", body);
+    }
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Composite endpoint should return OK"
+    );
+
+    // Verify content type
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "image/jpeg",
+        "Composite should return JPEG content type"
+    );
+
+    // Test root composite endpoint
+    let response = server.get("/api/gallery/main/composite/_root").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Root composite endpoint should return OK"
+    );
+
+    // Test that cached response works (second request should be served from cache)
+    let response2 = server.get("/api/gallery/main/composite/2008-eureka").await;
+    assert_eq!(
+        response2.status_code(),
+        StatusCode::OK,
+        "Cached composite should return OK"
+    );
+
+    // Verify cache headers are set for cached response
+    assert!(
+        response2.headers().contains_key("cache-control"),
+        "Cached response should have cache-control header"
+    );
+}
+
+#[tokio::test]
+async fn test_composite_api_not_found() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    let app = create_app(config).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Test composite endpoint for non-existent directory
+    let response = server.get("/api/gallery/main/composite/non-existent").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::NOT_FOUND,
+        "Non-existent directory should return 404"
+    );
+}
+
+#[tokio::test]
+async fn test_composite_api_with_avif_images() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+
+    // Create AVIF images in a subdirectory
+    let subdir = root_dir.join("avif-test");
+    std::fs::create_dir_all(&subdir).unwrap();
+
+    // Create test AVIF images
+    for i in 0..4 {
+        let img = image::ImageBuffer::from_pixel(
+            100,
+            100,
+            image::Rgba([(i * 60) as u8, (i * 80) as u8, (i * 40) as u8, 255u8]),
+        );
+        let dynamic_img = image::DynamicImage::ImageRgba8(img);
+
+        let avif_path = subdir.join(format!("test_{:03}.avif", i));
+
+        // Save as AVIF
+        tenrankai::gallery::image_processing::formats::avif::save_with_profile(
+            &dynamic_img,
+            &avif_path,
+            85,
+            6,
+            None,
+            false,
+        )
+        .expect("Failed to save AVIF");
+    }
+
+    let app = create_app(config).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Test composite endpoint for AVIF directory
+    let response = server.get("/api/gallery/main/composite/avif-test").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Composite endpoint should work with AVIF images"
+    );
+
+    // Verify content type
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "image/jpeg",
+        "Composite should return JPEG content type"
+    );
+
+    // Verify the image data is not empty
+    let body = response.as_bytes();
+    assert!(
+        body.len() > 1000,
+        "Composite image should have substantial data"
+    );
+}
+
+#[tokio::test]
 async fn test_image_detail_page() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
