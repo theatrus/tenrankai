@@ -295,14 +295,14 @@ fn test_hdr_detection_with_real_images() {
 
     let (non_hdr_image, non_hdr_info) = non_hdr_result.unwrap();
 
-    // Verify non-HDR image properties (should have identical technical properties)
+    // Verify non-HDR image properties
     assert_eq!(
         non_hdr_info.bit_depth, 10,
         "Non-HDR image should also be 10-bit"
     );
     assert!(
-        non_hdr_info.is_hdr,
-        "Non-HDR image will also be detected as HDR due to Display P3 + 10-bit"
+        !non_hdr_info.is_hdr,
+        "Display P3 + sRGB transfer should NOT be detected as HDR"
     );
     assert_eq!(
         non_hdr_info.color_primaries, 12,
@@ -310,7 +310,7 @@ fn test_hdr_detection_with_real_images() {
     );
     assert_eq!(
         non_hdr_info.transfer_characteristics, 13,
-        "Non-HDR image also uses sRGB transfer"
+        "Non-HDR image uses sRGB transfer"
     );
 
     // Both images should be loaded as 16-bit since they have high bit depth
@@ -345,7 +345,7 @@ fn test_hdr_detection_logic_edge_cases() {
 
     let test_cases = vec![
         // (bit_depth, color_primaries, transfer_char, expected_hdr, description)
-        (10, 12, 13, true, "Display P3 + sRGB + 10-bit (camera HDR)"),
+        (10, 12, 13, false, "Display P3 + sRGB + 10-bit (wide gamut SDR)"),
         (10, 9, 16, true, "BT.2020 + PQ + 10-bit (traditional HDR)"),
         (10, 9, 18, true, "BT.2020 + HLG + 10-bit (broadcast HDR)"),
         (
@@ -368,8 +368,15 @@ fn test_hdr_detection_logic_edge_cases() {
             16,
             12,
             13,
+            false,
+            "Display P3 + sRGB + 16-bit (wide gamut SDR, not HDR)",
+        ),
+        (
+            10,
+            12,
+            16,
             true,
-            "Display P3 + sRGB + 16-bit (high bit depth wide gamut)",
+            "Display P3 + PQ + 10-bit (true HDR with PQ transfer)",
         ),
     ];
 
@@ -389,17 +396,10 @@ fn test_hdr_detection_logic_edge_cases() {
             exif_data: None,        // No EXIF in test
         };
 
-        // Simulate the HDR detection logic from avif.rs
+        // Simulate the updated HDR detection logic from avif.rs
         let has_hdr_transfer = transfer == 16 || transfer == 18; // PQ or HLG
-        let detected_hdr = bit_depth > 8
-            && (
-                // Traditional HDR: BT.2020 + PQ/HLG
-                (primaries == 9 && has_hdr_transfer) ||
-            // Wide gamut HDR: Display P3 + high bit depth
-            (primaries == 12 && bit_depth >= 10) ||
-            // Any high bit depth with HDR transfer function
-            (bit_depth > 8 && has_hdr_transfer)
-            );
+        let has_clli = false; // No CLLI in test
+        let detected_hdr = bit_depth > 8 && (has_hdr_transfer || has_clli);
 
         assert_eq!(
             detected_hdr, expected_hdr,
@@ -727,4 +727,89 @@ fn test_avif_without_exif() {
     // Try to extract EXIF
     let exif_data = avif::extract_exif_data(&avif_path);
     assert!(exif_data.is_none(), "Should not find EXIF in synthetic AVIF");
+}
+
+#[test]
+fn test_avif_color_space_description() {
+    // Test various color space combinations
+    let test_cases = vec![
+        (
+            avif::AvifImageInfo {
+                bit_depth: 8,
+                has_alpha: false,
+                is_hdr: false,
+                icc_profile: None,
+                color_primaries: 1,  // BT.709
+                transfer_characteristics: 13,  // sRGB
+                matrix_coefficients: 1,
+                max_cll: 0,
+                max_pall: 0,
+                has_gain_map: false,
+                gain_map_info: None,
+                exif_data: None,
+            },
+            "BT.709",
+            "Standard SDR BT.709"
+        ),
+        (
+            avif::AvifImageInfo {
+                bit_depth: 10,
+                has_alpha: false,
+                is_hdr: false,  // Not HDR with sRGB transfer
+                icc_profile: None,
+                color_primaries: 12,  // Display P3
+                transfer_characteristics: 13,  // sRGB
+                matrix_coefficients: 1,
+                max_cll: 0,
+                max_pall: 0,
+                has_gain_map: false,
+                gain_map_info: None,
+                exif_data: None,
+            },
+            "Display P3 sRGB 10-bit Wide Gamut",
+            "Display P3 sRGB 10-bit Wide Gamut (not HDR)"
+        ),
+        (
+            avif::AvifImageInfo {
+                bit_depth: 10,
+                has_alpha: false,
+                is_hdr: true,
+                icc_profile: None,
+                color_primaries: 9,  // BT.2020
+                transfer_characteristics: 16,  // PQ
+                matrix_coefficients: 9,
+                max_cll: 1000,
+                max_pall: 400,
+                has_gain_map: false,
+                gain_map_info: None,
+                exif_data: None,
+            },
+            "BT.2020 PQ 10-bit HDR",
+            "BT.2020 PQ 10-bit HDR"
+        ),
+        (
+            avif::AvifImageInfo {
+                bit_depth: 10,
+                has_alpha: false,
+                is_hdr: true,
+                icc_profile: None,
+                color_primaries: 12,  // Display P3
+                transfer_characteristics: 16,  // PQ
+                matrix_coefficients: 1,
+                max_cll: 4000,
+                max_pall: 1000,
+                has_gain_map: true,
+                gain_map_info: None,
+                exif_data: None,
+            },
+            "Display P3 PQ 10-bit Gain Map HDR",
+            "Display P3 PQ 10-bit with Gain Map HDR"
+        ),
+    ];
+
+    for (info, expected, description) in test_cases {
+        let color_desc = avif::get_color_space_description(&info);
+        assert_eq!(color_desc, expected, "Failed for {}", description);
+        println!("✅ {}: {}", description, color_desc);
+    }
 }

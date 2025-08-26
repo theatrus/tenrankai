@@ -169,17 +169,18 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         let clli = (*image).clli;
         let has_clli = clli.maxCLL > 0 || clli.maxPALL > 0;
 
-        // Simpler HDR detection logic
+        // More accurate HDR detection logic
+        // Wide gamut alone doesn't make an image HDR - it needs HDR signaling
         let is_hdr = if bit_depth <= 8 {
             false
         } else {
             // High bit depth (>8) AND any of:
-            // 1. Any HDR transfer function (PQ/HLG)
-            // 2. Display P3 + 10-bit or higher
-            // 3. CLLI metadata present
-            has_hdr_transfer
-                || ((*image).colorPrimaries == 12 && bit_depth >= 10)
-                || has_clli
+            // 1. HDR transfer function (PQ/HLG)
+            // 2. BT.2020 with HDR transfer
+            // 3. CLLI metadata present (indicates HDR mastering)
+            // 4. Display P3 with PQ/HLG transfer
+            // Note: Display P3 + sRGB transfer is wide gamut SDR, not HDR
+            has_hdr_transfer || has_clli
         };
 
         // Extract ICC profile if present
@@ -1057,6 +1058,64 @@ fn find_colr_in_meta(meta_data: &[u8]) -> Option<Vec<u8>> {
     }
 
     None
+}
+
+/// Generate a descriptive color space string for an AVIF file
+pub fn get_color_space_description(info: &AvifImageInfo) -> String {
+    let primaries = match info.color_primaries {
+        1 => "BT.709",
+        9 => "BT.2020",
+        12 => "Display P3",
+        2 => "Unspecified",
+        _ => "Unknown",
+    };
+
+    let transfer = match info.transfer_characteristics {
+        1 => "BT.709",
+        13 => "sRGB",
+        16 => "PQ",
+        18 => "HLG",
+        2 => "Unspecified",
+        _ => "Unknown",
+    };
+
+    let mut description = format!("{}", primaries);
+    
+    // Add transfer function if it's notable (HDR transfers or if needed for clarity)
+    if info.transfer_characteristics == 16 || info.transfer_characteristics == 18 {
+        description.push_str(&format!(" {}", transfer));
+    } else if info.color_primaries == 12 && info.transfer_characteristics == 13 && info.bit_depth > 8 {
+        // For Display P3 with sRGB transfer, explicitly note it's wide gamut
+        description.push_str(" sRGB");
+    }
+    
+    // Add bit depth if high
+    if info.bit_depth > 8 {
+        description.push_str(&format!(" {}-bit", info.bit_depth));
+    }
+
+    // Add gain map indicator
+    if info.has_gain_map {
+        description.push_str(" Gain Map");
+    }
+
+    // Add HDR indicator only if truly HDR
+    if info.is_hdr {
+        description.push_str(" HDR");
+    } else if info.color_primaries == 12 && info.bit_depth > 8 {
+        // Explicitly note wide gamut for clarity
+        description.push_str(" Wide Gamut");
+    }
+
+    description
+}
+
+/// Extract color space description from an AVIF file
+pub fn extract_color_description(path: &Path) -> Option<String> {
+    match read_avif_info(path) {
+        Ok((_, info)) => Some(get_color_space_description(&info)),
+        Err(_) => None,
+    }
 }
 
 /// Extract EXIF data from an AVIF file

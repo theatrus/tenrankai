@@ -439,13 +439,8 @@ impl Gallery {
                 }
             }
             Some("avif") => {
-                if let Some(icc_data) =
-                    super::image_processing::formats::avif::extract_icc_profile(path)
-                {
-                    super::image_processing::extract_icc_profile_name(&icc_data)
-                } else {
-                    None
-                }
+                // For AVIF files, generate a descriptive color space string
+                super::image_processing::formats::avif::extract_color_description(path)
             }
             _ => None,
         };

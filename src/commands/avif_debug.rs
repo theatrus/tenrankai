@@ -84,6 +84,11 @@ pub async fn handle_avif_debug_command(
                 "  Matrix coefficients: {} ({})",
                 info.matrix_coefficients, matrix_name
             );
+            
+            // Show the descriptive color space string
+            let color_description = formats::avif::get_color_space_description(&info);
+            println!();
+            println!("Color Profile Description: {}", color_description);
 
             // HDR analysis
             println!();
