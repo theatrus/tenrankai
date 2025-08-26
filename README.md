@@ -58,6 +58,60 @@ cargo build --release --no-default-features
 
 The project includes a `rust-toolchain.toml` file that will automatically download and use Rust 1.89.0 when you run cargo commands. This ensures consistent builds across all development environments.
 
+### Docker
+
+Tenrankai includes production-ready Docker support with optimized multi-stage builds.
+
+#### Quick Start
+
+```bash
+# Pull from GitHub Container Registry (when available)
+docker pull ghcr.io/theatrus/tenrankai:latest
+
+# Or build locally
+docker build -t tenrankai:latest .
+
+# Run the container
+docker run -d \
+  --name tenrankai \
+  -p 8080:8080 \
+  -v ./config.toml:/app/config.toml:ro \
+  -v ./photos:/app/photos:ro \
+  -v ./cache:/app/cache \
+  tenrankai:latest
+```
+
+#### Docker Image
+
+The Docker image (~168 MB) includes full AVIF support with HDR and gain maps, using an optimized release build with a ~45 MB binary. The container runs as a non-root user for security.
+
+#### Volume Mounts
+
+The container expects these volumes:
+- `/app/config.toml` - Main configuration file (read-only recommended)
+- `/app/photos` - Photo directories (read-only recommended) 
+- `/app/cache` - Image cache directory (read-write)
+- `/app/users.toml` - Optional: User database for authentication
+- `/app/static` - Optional: Custom static assets
+- `/app/templates` - Optional: Custom templates
+
+#### Environment Variables
+
+```bash
+# Set custom log level
+docker run -e RUST_LOG=debug ...
+
+# Override configuration
+docker run -e TENRANKAI_HOST=0.0.0.0 -e TENRANKAI_PORT=3000 ...
+```
+
+#### Security Considerations
+
+- Container runs as non-root user (UID 1001)
+- Mount config and photos as read-only (`:ro`)
+- Never include secrets in the image
+- Use environment variables or mounted files for sensitive data
+
 ### Build Options
 
 **AVIF Feature Flag**: Tenrankai includes optional AVIF support that can be disabled for easier builds on platforms where AVIF dependencies are difficult to compile.
