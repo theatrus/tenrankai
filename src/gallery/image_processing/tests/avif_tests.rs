@@ -1,7 +1,7 @@
+use crate::GallerySystemConfig;
 use crate::gallery::Gallery;
 use crate::gallery::image_processing::OutputFormat;
 use crate::gallery::image_processing::formats::avif;
-use crate::GallerySystemConfig;
 use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -66,7 +66,7 @@ async fn create_test_gallery() -> (Gallery, TempDir) {
 #[tokio::test]
 async fn test_avif_format_detection() {
     let (_gallery, _temp_dir) = create_test_gallery().await;
-    
+
     assert_eq!(OutputFormat::Avif.extension(), "avif");
     assert_eq!(OutputFormat::Avif.mime_type(), "image/avif");
 }
@@ -74,16 +74,16 @@ async fn test_avif_format_detection() {
 #[tokio::test]
 async fn test_avif_output_format_selection() {
     let (gallery, _temp_dir) = create_test_gallery().await;
-    
+
     // Test that AVIF is selected when browser supports it
     let accept_avif = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8";
     let format = gallery.determine_output_format(accept_avif, "test.jpg");
     assert_eq!(format, OutputFormat::Avif);
-    
+
     // Test that AVIF source outputs as AVIF when supported
     let format = gallery.determine_output_format(accept_avif, "test.avif");
     assert_eq!(format, OutputFormat::Avif);
-    
+
     // Test fallback when AVIF not supported
     let accept_no_avif = "image/webp,image/apng,image/*,*/*;q=0.8";
     let format = gallery.determine_output_format(accept_no_avif, "test.jpg");
@@ -93,18 +93,18 @@ async fn test_avif_output_format_selection() {
 #[test]
 fn test_avif_8bit_encoding() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create an 8-bit RGB image
     let img = ImageBuffer::from_pixel(100, 100, Rgb([255u8, 128, 64]));
     let dynamic_img = DynamicImage::ImageRgb8(img);
-    
+
     // Save as AVIF
     let avif_path = temp_dir.path().join("test_8bit.avif");
     let result = avif::save_with_profile(&dynamic_img, &avif_path, 90, 6, None, false);
-    
+
     assert!(result.is_ok(), "Failed to save 8-bit AVIF: {:?}", result);
     assert!(avif_path.exists());
-    
+
     // Test dimensions extraction
     let dims = avif::extract_dimensions(&avif_path);
     assert_eq!(dims, Some((100, 100)));
@@ -113,31 +113,35 @@ fn test_avif_8bit_encoding() {
 #[test]
 fn test_avif_with_alpha() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create an RGBA image with transparency
     let img = ImageBuffer::from_pixel(100, 100, Rgba([255u8, 128, 64, 200]));
     let dynamic_img = DynamicImage::ImageRgba8(img);
-    
+
     // Save as AVIF
     let avif_path = temp_dir.path().join("test_alpha.avif");
     let result = avif::save_with_profile(&dynamic_img, &avif_path, 90, 6, None, false);
-    
-    assert!(result.is_ok(), "Failed to save AVIF with alpha: {:?}", result);
+
+    assert!(
+        result.is_ok(),
+        "Failed to save AVIF with alpha: {:?}",
+        result
+    );
     assert!(avif_path.exists());
 }
 
 #[test]
 fn test_avif_16bit_hdr() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a 16-bit HDR image
     let img = ImageBuffer::from_pixel(100, 100, Rgb([65535u16, 32768, 16384]));
     let dynamic_img = DynamicImage::ImageRgb16(img);
-    
+
     // Save as AVIF with HDR preservation
     let avif_path = temp_dir.path().join("test_hdr.avif");
     let result = avif::save_with_profile(&dynamic_img, &avif_path, 90, 6, None, true);
-    
+
     assert!(result.is_ok(), "Failed to save HDR AVIF: {:?}", result);
     assert!(avif_path.exists());
 }
@@ -145,21 +149,21 @@ fn test_avif_16bit_hdr() {
 #[test]
 fn test_avif_icc_profile() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test ICC profile
     let test_icc = create_test_srgb_profile();
-    
+
     // Create an image
     let img = ImageBuffer::from_pixel(100, 100, Rgb([255u8, 128, 64]));
     let dynamic_img = DynamicImage::ImageRgb8(img);
-    
+
     // Save with ICC profile
     let avif_path = temp_dir.path().join("test_icc.avif");
     let result = avif::save_with_profile(&dynamic_img, &avif_path, 90, 6, Some(&test_icc), false);
-    
+
     assert!(result.is_ok(), "Failed to save AVIF with ICC: {:?}", result);
     assert!(avif_path.exists());
-    
+
     // Extract ICC profile
     let extracted_icc = avif::extract_icc_profile(&avif_path);
     // Note: Current libavif simple API doesn't support ICC profiles
@@ -172,23 +176,27 @@ fn test_avif_icc_profile() {
 #[test]
 fn test_avif_dimension_extraction() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create images of various sizes
     let test_sizes = vec![(200, 150), (1920, 1080), (50, 50)];
-    
+
     for (width, height) in test_sizes {
         let img = ImageBuffer::from_pixel(width, height, Rgb([255u8, 128, 64]));
         let dynamic_img = DynamicImage::ImageRgb8(img);
-        
-        let avif_path = temp_dir.path().join(format!("test_{}x{}.avif", width, height));
+
+        let avif_path = temp_dir
+            .path()
+            .join(format!("test_{}x{}.avif", width, height));
         avif::save_with_profile(&dynamic_img, &avif_path, 90, 6, None, false).unwrap();
-        
+
         // Test dimension extraction
         let dims = avif::extract_dimensions(&avif_path);
         assert_eq!(
             dims,
             Some((width, height)),
-            "Dimension extraction failed for {}x{}", width, height
+            "Dimension extraction failed for {}x{}",
+            width,
+            height
         );
     }
 }
@@ -196,88 +204,134 @@ fn test_avif_dimension_extraction() {
 #[tokio::test]
 async fn test_avif_in_gallery_pipeline() {
     let (gallery, temp_dir) = create_test_gallery().await;
-    
+
     // Create a test image
     let img = ImageBuffer::from_pixel(200, 200, Rgb([255u8, 128, 64]));
     let source_path = temp_dir.path().join("test.jpg");
     img.save(&source_path).unwrap();
-    
+
     // Process to AVIF
     let relative_path = "test.jpg";
     let result = gallery
-        .get_resized_image(
-            &source_path,
-            relative_path,
-            "thumbnail",
-            OutputFormat::Avif,
-        )
+        .get_resized_image(&source_path, relative_path, "thumbnail", OutputFormat::Avif)
         .await;
-    
-    assert!(result.is_ok(), "Failed to create AVIF thumbnail: {:?}", result);
-    
+
+    assert!(
+        result.is_ok(),
+        "Failed to create AVIF thumbnail: {:?}",
+        result
+    );
+
     let cache_path = result.unwrap();
     assert!(cache_path.exists());
     assert!(cache_path.to_str().unwrap().ends_with(".avif"));
 }
 
-#[test] 
+#[test]
 fn test_hdr_detection_with_real_images() {
     // Test our HDR detection logic with the actual AVIF files from the photos folder
-    let hdr_path = std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A630303-HDR.avif");
-    let non_hdr_path = std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A639941.avif");
-    
+    let hdr_path =
+        std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A630303-HDR.avif");
+    let non_hdr_path =
+        std::path::Path::new("/Users/atrus/repos/tenrankai/photos/vacation/_A639941.avif");
+
     // Skip test if files don't exist (e.g., in CI)
     if !hdr_path.exists() || !non_hdr_path.exists() {
         eprintln!("Skipping HDR detection test: test images not found");
         return;
     }
-    
+
     // Test the HDR image (should be detected as HDR with new logic)
     let hdr_result = avif::read_avif_info(hdr_path);
-    assert!(hdr_result.is_ok(), "Failed to read HDR AVIF: {:?}", hdr_result);
-    
+    assert!(
+        hdr_result.is_ok(),
+        "Failed to read HDR AVIF: {:?}",
+        hdr_result
+    );
+
     let (hdr_image, hdr_info) = hdr_result.unwrap();
-    
+
     // Verify HDR image properties
     assert_eq!(hdr_info.bit_depth, 10, "HDR image should be 10-bit");
-    assert!(hdr_info.is_hdr, "HDR image should be detected as HDR with new logic");
-    assert_eq!(hdr_info.color_primaries, 12, "HDR image uses Display P3 primaries");
-    assert_eq!(hdr_info.transfer_characteristics, 13, "HDR image uses sRGB transfer");
-    
+    assert!(
+        hdr_info.is_hdr,
+        "HDR image should be detected as HDR with new logic"
+    );
+    assert_eq!(
+        hdr_info.color_primaries, 12,
+        "HDR image uses Display P3 primaries"
+    );
+    assert_eq!(
+        hdr_info.transfer_characteristics, 13,
+        "HDR image uses sRGB transfer"
+    );
+
     // Verify image is 16-bit in memory (preserving high bit depth)
     match hdr_image {
         DynamicImage::ImageRgb16(_) => {
             // Expected: HDR images should be loaded as 16-bit
-        },
-        _ => panic!("HDR image should be loaded as ImageRgb16, got: {:?}", hdr_image.color()),
+        }
+        _ => panic!(
+            "HDR image should be loaded as ImageRgb16, got: {:?}",
+            hdr_image.color()
+        ),
     }
-    
-    println!("✅ HDR image correctly detected: {}x{}, {}-bit, HDR={}", 
-             hdr_image.width(), hdr_image.height(), hdr_info.bit_depth, hdr_info.is_hdr);
-    
+
+    println!(
+        "✅ HDR image correctly detected: {}x{}, {}-bit, HDR={}",
+        hdr_image.width(),
+        hdr_image.height(),
+        hdr_info.bit_depth,
+        hdr_info.is_hdr
+    );
+
     // Test the non-HDR image (has same properties but different intent)
     let non_hdr_result = avif::read_avif_info(non_hdr_path);
-    assert!(non_hdr_result.is_ok(), "Failed to read non-HDR AVIF: {:?}", non_hdr_result);
-    
+    assert!(
+        non_hdr_result.is_ok(),
+        "Failed to read non-HDR AVIF: {:?}",
+        non_hdr_result
+    );
+
     let (non_hdr_image, non_hdr_info) = non_hdr_result.unwrap();
-    
+
     // Verify non-HDR image properties (should have identical technical properties)
-    assert_eq!(non_hdr_info.bit_depth, 10, "Non-HDR image should also be 10-bit");
-    assert!(non_hdr_info.is_hdr, "Non-HDR image will also be detected as HDR due to Display P3 + 10-bit");
-    assert_eq!(non_hdr_info.color_primaries, 12, "Non-HDR image also uses Display P3 primaries");
-    assert_eq!(non_hdr_info.transfer_characteristics, 13, "Non-HDR image also uses sRGB transfer");
-    
+    assert_eq!(
+        non_hdr_info.bit_depth, 10,
+        "Non-HDR image should also be 10-bit"
+    );
+    assert!(
+        non_hdr_info.is_hdr,
+        "Non-HDR image will also be detected as HDR due to Display P3 + 10-bit"
+    );
+    assert_eq!(
+        non_hdr_info.color_primaries, 12,
+        "Non-HDR image also uses Display P3 primaries"
+    );
+    assert_eq!(
+        non_hdr_info.transfer_characteristics, 13,
+        "Non-HDR image also uses sRGB transfer"
+    );
+
     // Both images should be loaded as 16-bit since they have high bit depth
     match non_hdr_image {
         DynamicImage::ImageRgb16(_) => {
             // Expected: High bit depth images should be loaded as 16-bit
-        },
-        _ => panic!("Non-HDR image should be loaded as ImageRgb16, got: {:?}", non_hdr_image.color()),
+        }
+        _ => panic!(
+            "Non-HDR image should be loaded as ImageRgb16, got: {:?}",
+            non_hdr_image.color()
+        ),
     }
-    
-    println!("✅ Non-HDR image processed: {}x{}, {}-bit, HDR={}", 
-             non_hdr_image.width(), non_hdr_image.height(), non_hdr_info.bit_depth, non_hdr_info.is_hdr);
-    
+
+    println!(
+        "✅ Non-HDR image processed: {}x{}, {}-bit, HDR={}",
+        non_hdr_image.width(),
+        non_hdr_image.height(),
+        non_hdr_info.bit_depth,
+        non_hdr_info.is_hdr
+    );
+
     // Note: Both images will be treated as HDR due to Display P3 + 10-bit combination
     // This is correct behavior since both are wide gamut high bit depth images
     println!("📝 Note: Both images are treated as HDR due to Display P3 + 10-bit combination");
@@ -288,19 +342,37 @@ fn test_hdr_detection_with_real_images() {
 fn test_hdr_detection_logic_edge_cases() {
     // Test various HDR detection scenarios to ensure our logic is robust
     use crate::gallery::image_processing::formats::avif::AvifImageInfo;
-    
+
     let test_cases = vec![
         // (bit_depth, color_primaries, transfer_char, expected_hdr, description)
         (10, 12, 13, true, "Display P3 + sRGB + 10-bit (camera HDR)"),
         (10, 9, 16, true, "BT.2020 + PQ + 10-bit (traditional HDR)"),
         (10, 9, 18, true, "BT.2020 + HLG + 10-bit (broadcast HDR)"),
-        (8, 12, 13, false, "Display P3 + sRGB + 8-bit (should NOT be HDR)"),
+        (
+            8,
+            12,
+            13,
+            false,
+            "Display P3 + sRGB + 8-bit (should NOT be HDR)",
+        ),
         (8, 1, 13, false, "BT.709 + sRGB + 8-bit (standard SDR)"),
         (12, 2, 16, true, "Unspecified + PQ + 12-bit (HDR transfer)"),
-        (10, 1, 13, false, "BT.709 + sRGB + 10-bit (high bit depth but not wide gamut)"),
-        (16, 12, 13, true, "Display P3 + sRGB + 16-bit (high bit depth wide gamut)"),
+        (
+            10,
+            1,
+            13,
+            false,
+            "BT.709 + sRGB + 10-bit (high bit depth but not wide gamut)",
+        ),
+        (
+            16,
+            12,
+            13,
+            true,
+            "Display P3 + sRGB + 16-bit (high bit depth wide gamut)",
+        ),
     ];
-    
+
     for (bit_depth, primaries, transfer, expected_hdr, description) in test_cases {
         let _info = AvifImageInfo {
             bit_depth,
@@ -310,27 +382,28 @@ fn test_hdr_detection_logic_edge_cases() {
             color_primaries: primaries,
             transfer_characteristics: transfer,
             matrix_coefficients: 1, // BT.709
-            max_cll: 0,   // No CLLI in test
-            max_pall: 0,  // No CLLI in test
+            max_cll: 0,             // No CLLI in test
+            max_pall: 0,            // No CLLI in test
         };
-        
+
         // Simulate the HDR detection logic from avif.rs
         let has_hdr_transfer = transfer == 16 || transfer == 18; // PQ or HLG
-        let detected_hdr = bit_depth > 8 && (
-            // Traditional HDR: BT.2020 + PQ/HLG
-            (primaries == 9 && has_hdr_transfer) ||
+        let detected_hdr = bit_depth > 8
+            && (
+                // Traditional HDR: BT.2020 + PQ/HLG
+                (primaries == 9 && has_hdr_transfer) ||
             // Wide gamut HDR: Display P3 + high bit depth
             (primaries == 12 && bit_depth >= 10) ||
             // Any high bit depth with HDR transfer function
             (bit_depth > 8 && has_hdr_transfer)
-        );
-        
+            );
+
         assert_eq!(
             detected_hdr, expected_hdr,
             "HDR detection failed for {}: got {}, expected {}",
             description, detected_hdr, expected_hdr
         );
-        
+
         println!("✅ {}: HDR={}", description, detected_hdr);
     }
 }
@@ -338,40 +411,50 @@ fn test_hdr_detection_logic_edge_cases() {
 #[test]
 fn test_avif_save_preserves_hdr_properties() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test AvifImageInfo with HDR properties
     let hdr_info = avif::AvifImageInfo {
         bit_depth: 10,
         has_alpha: false,
         is_hdr: true,
         icc_profile: None,
-        color_primaries: 12, // Display P3
+        color_primaries: 12,          // Display P3
         transfer_characteristics: 13, // sRGB
-        matrix_coefficients: 6, // BT.601
-        max_cll: 0,   // No CLLI in this test
-        max_pall: 0,  // No CLLI in this test
+        matrix_coefficients: 6,       // BT.601
+        max_cll: 0,                   // No CLLI in this test
+        max_pall: 0,                  // No CLLI in this test
     };
-    
+
     // Create a 16-bit image (simulating HDR)
     let img = ImageBuffer::from_pixel(100, 100, Rgb([65535u16, 32768, 16384]));
     let dynamic_img = DynamicImage::ImageRgb16(img);
-    
+
     // Save with HDR info preservation
     let avif_path = temp_dir.path().join("test_hdr_preserve.avif");
     let result = avif::save_with_info(&dynamic_img, &avif_path, 90, 6, Some(&hdr_info));
-    
-    assert!(result.is_ok(), "Failed to save AVIF with HDR info: {:?}", result);
+
+    assert!(
+        result.is_ok(),
+        "Failed to save AVIF with HDR info: {:?}",
+        result
+    );
     assert!(avif_path.exists());
-    
+
     // Read back and verify properties are preserved
     if let Ok((_, read_info)) = avif::read_avif_info(&avif_path) {
-        assert_eq!(read_info.color_primaries, hdr_info.color_primaries, 
-                   "Color primaries not preserved");
-        assert_eq!(read_info.transfer_characteristics, hdr_info.transfer_characteristics,
-                   "Transfer characteristics not preserved");
-        assert_eq!(read_info.matrix_coefficients, hdr_info.matrix_coefficients,
-                   "Matrix coefficients not preserved");
-        
+        assert_eq!(
+            read_info.color_primaries, hdr_info.color_primaries,
+            "Color primaries not preserved"
+        );
+        assert_eq!(
+            read_info.transfer_characteristics, hdr_info.transfer_characteristics,
+            "Transfer characteristics not preserved"
+        );
+        assert_eq!(
+            read_info.matrix_coefficients, hdr_info.matrix_coefficients,
+            "Matrix coefficients not preserved"
+        );
+
         println!("✅ HDR properties preserved in round-trip save/load");
     } else {
         println!("⚠️  Could not read back saved AVIF for property verification");
@@ -381,48 +464,70 @@ fn test_avif_save_preserves_hdr_properties() {
 #[test]
 fn test_hdr_color_properties_preservation() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test AvifImageInfo simulating Display P3 + sRGB + 10-bit (like real camera output)
     let original_info = avif::AvifImageInfo {
         bit_depth: 10,
         has_alpha: false,
-        is_hdr: true,  // Detected as HDR due to Display P3 + 10-bit
+        is_hdr: true, // Detected as HDR due to Display P3 + 10-bit
         icc_profile: None,
-        color_primaries: 12, // Display P3
+        color_primaries: 12,          // Display P3
         transfer_characteristics: 13, // sRGB (preserve exactly as in original)
-        matrix_coefficients: 6, // BT.601
-        max_cll: 0,   // No CLLI in this test
-        max_pall: 0,  // No CLLI in this test
+        matrix_coefficients: 6,       // BT.601
+        max_cll: 0,                   // No CLLI in this test
+        max_pall: 0,                  // No CLLI in this test
     };
-    
+
     // Create a 16-bit image (simulating HDR)
     let img = ImageBuffer::from_pixel(100, 100, Rgb([65535u16, 32768, 16384]));
     let dynamic_img = DynamicImage::ImageRgb16(img);
-    
+
     // Save with HDR info - this should preserve all color properties exactly
     let avif_path = temp_dir.path().join("test_color_preservation.avif");
     let result = avif::save_with_info(&dynamic_img, &avif_path, 90, 6, Some(&original_info));
-    
-    assert!(result.is_ok(), "Failed to save AVIF with HDR info: {:?}", result);
+
+    assert!(
+        result.is_ok(),
+        "Failed to save AVIF with HDR info: {:?}",
+        result
+    );
     assert!(avif_path.exists());
-    
+
     // Read back and verify all color properties are preserved exactly
     if let Ok((_, saved_info)) = avif::read_avif_info(&avif_path) {
         // All color properties should be preserved exactly
-        assert_eq!(saved_info.color_primaries, original_info.color_primaries, 
-                   "Color primaries should be preserved exactly");
-        assert_eq!(saved_info.transfer_characteristics, original_info.transfer_characteristics,
-                   "Transfer characteristics should be preserved exactly (no upgrade)");
-        assert_eq!(saved_info.matrix_coefficients, original_info.matrix_coefficients,
-                   "Matrix coefficients should be preserved exactly");
-        
+        assert_eq!(
+            saved_info.color_primaries, original_info.color_primaries,
+            "Color primaries should be preserved exactly"
+        );
+        assert_eq!(
+            saved_info.transfer_characteristics, original_info.transfer_characteristics,
+            "Transfer characteristics should be preserved exactly (no upgrade)"
+        );
+        assert_eq!(
+            saved_info.matrix_coefficients, original_info.matrix_coefficients,
+            "Matrix coefficients should be preserved exactly"
+        );
+
         // Should still be detected as HDR
-        assert!(saved_info.is_hdr, "Image should still be detected as HDR after save");
-        
+        assert!(
+            saved_info.is_hdr,
+            "Image should still be detected as HDR after save"
+        );
+
         println!("✅ All color properties preserved exactly:");
-        println!("  Primaries: {} -> {}", original_info.color_primaries, saved_info.color_primaries);
-        println!("  Transfer: {} -> {}", original_info.transfer_characteristics, saved_info.transfer_characteristics);
-        println!("  Matrix: {} -> {}", original_info.matrix_coefficients, saved_info.matrix_coefficients);
+        println!(
+            "  Primaries: {} -> {}",
+            original_info.color_primaries, saved_info.color_primaries
+        );
+        println!(
+            "  Transfer: {} -> {}",
+            original_info.transfer_characteristics, saved_info.transfer_characteristics
+        );
+        println!(
+            "  Matrix: {} -> {}",
+            original_info.matrix_coefficients, saved_info.matrix_coefficients
+        );
         println!("✅ No unwanted modifications to original color space");
     } else {
         panic!("Could not read back saved AVIF for color property verification");
@@ -432,41 +537,48 @@ fn test_hdr_color_properties_preservation() {
 #[test]
 fn test_non_hdr_color_properties_preservation() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test AvifImageInfo simulating standard 8-bit image (should NOT be upgraded)
     let original_info = avif::AvifImageInfo {
         bit_depth: 8,
         has_alpha: false,
-        is_hdr: false,  // Not HDR
+        is_hdr: false, // Not HDR
         icc_profile: None,
-        color_primaries: 1, // BT.709
+        color_primaries: 1,           // BT.709
         transfer_characteristics: 13, // sRGB (should NOT be upgraded)
-        matrix_coefficients: 1, // BT.709
-        max_cll: 0,   // No CLLI in non-HDR
-        max_pall: 0,  // No CLLI in non-HDR
+        matrix_coefficients: 1,       // BT.709
+        max_cll: 0,                   // No CLLI in non-HDR
+        max_pall: 0,                  // No CLLI in non-HDR
     };
-    
+
     // Create an 8-bit image
     let img = ImageBuffer::from_pixel(100, 100, Rgb([255u8, 128, 64]));
     let dynamic_img = DynamicImage::ImageRgb8(img);
-    
+
     // Save with info - transfer function should NOT be upgraded for non-HDR
     let avif_path = temp_dir.path().join("test_transfer_preserve.avif");
     let result = avif::save_with_info(&dynamic_img, &avif_path, 90, 6, Some(&original_info));
-    
+
     assert!(result.is_ok(), "Failed to save AVIF: {:?}", result);
     assert!(avif_path.exists());
-    
+
     // Read back and verify transfer function was NOT changed
     if let Ok((_, saved_info)) = avif::read_avif_info(&avif_path) {
-        assert_eq!(saved_info.transfer_characteristics, 13, 
-                   "Transfer function should be preserved as sRGB (13) for non-HDR, got {}", 
-                   saved_info.transfer_characteristics);
-        
-        assert!(!saved_info.is_hdr, "Non-HDR image should not be detected as HDR");
-        
-        println!("✅ Transfer function preserved: {} (no upgrade for non-HDR)", 
-                 saved_info.transfer_characteristics);
+        assert_eq!(
+            saved_info.transfer_characteristics, 13,
+            "Transfer function should be preserved as sRGB (13) for non-HDR, got {}",
+            saved_info.transfer_characteristics
+        );
+
+        assert!(
+            !saved_info.is_hdr,
+            "Non-HDR image should not be detected as HDR"
+        );
+
+        println!(
+            "✅ Transfer function preserved: {} (no upgrade for non-HDR)",
+            saved_info.transfer_characteristics
+        );
     } else {
         panic!("Could not read back saved AVIF for verification");
     }
@@ -475,40 +587,53 @@ fn test_non_hdr_color_properties_preservation() {
 #[test]
 fn test_clli_hdr_detection() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Create a test AvifImageInfo with CLLI data (indicating HDR content)
     let clli_info = avif::AvifImageInfo {
         bit_depth: 10,
         has_alpha: false,
-        is_hdr: true,  // Should be detected as HDR due to CLLI data
+        is_hdr: true, // Should be detected as HDR due to CLLI data
         icc_profile: None,
-        color_primaries: 1, // BT.709 (not wide gamut)
+        color_primaries: 1,          // BT.709 (not wide gamut)
         transfer_characteristics: 1, // BT.709 (not HDR transfer)
-        matrix_coefficients: 1, // BT.709
-        max_cll: 4000,   // 4000 cd/m² - typical HDR content
-        max_pall: 400,   // 400 cd/m² - typical HDR average
+        matrix_coefficients: 1,      // BT.709
+        max_cll: 4000,               // 4000 cd/m² - typical HDR content
+        max_pall: 400,               // 400 cd/m² - typical HDR average
     };
-    
+
     // Create a 16-bit image
     let img = ImageBuffer::from_pixel(100, 100, Rgb([65535u16, 32768, 16384]));
     let dynamic_img = DynamicImage::ImageRgb16(img);
-    
+
     // Save with CLLI info
     let avif_path = temp_dir.path().join("test_clli_hdr.avif");
     let result = avif::save_with_info(&dynamic_img, &avif_path, 90, 6, Some(&clli_info));
-    
-    assert!(result.is_ok(), "Failed to save AVIF with CLLI info: {:?}", result);
+
+    assert!(
+        result.is_ok(),
+        "Failed to save AVIF with CLLI info: {:?}",
+        result
+    );
     assert!(avif_path.exists());
-    
+
     // Read back and verify CLLI data preservation and HDR detection
     if let Ok((_, saved_info)) = avif::read_avif_info(&avif_path) {
         // CLLI data should be preserved
-        assert_eq!(saved_info.max_cll, clli_info.max_cll, "CLLI maxCLL should be preserved");
-        assert_eq!(saved_info.max_pall, clli_info.max_pall, "CLLI maxPALL should be preserved");
-        
+        assert_eq!(
+            saved_info.max_cll, clli_info.max_cll,
+            "CLLI maxCLL should be preserved"
+        );
+        assert_eq!(
+            saved_info.max_pall, clli_info.max_pall,
+            "CLLI maxPALL should be preserved"
+        );
+
         // Should be detected as HDR due to CLLI presence
-        assert!(saved_info.is_hdr, "Image with CLLI data should be detected as HDR");
-        
+        assert!(
+            saved_info.is_hdr,
+            "Image with CLLI data should be detected as HDR"
+        );
+
         println!("✅ CLLI-based HDR detection working:");
         println!("  Max CLL: {} cd/m²", saved_info.max_cll);
         println!("  Max PALL: {} cd/m²", saved_info.max_pall);
@@ -521,7 +646,7 @@ fn test_clli_hdr_detection() {
 fn create_test_srgb_profile() -> Vec<u8> {
     // Minimal sRGB ICC profile for testing
     let mut profile = Vec::new();
-    
+
     // ICC profile header
     profile.extend_from_slice(&[0x00, 0x00, 0x02, 0x00]); // Profile size
     profile.extend_from_slice(b"APPL"); // Preferred CMM
@@ -529,11 +654,11 @@ fn create_test_srgb_profile() -> Vec<u8> {
     profile.extend_from_slice(b"mntr"); // Display device
     profile.extend_from_slice(b"RGB "); // Color space
     profile.extend_from_slice(b"XYZ "); // PCS
-    
+
     // Pad to reasonable size
     while profile.len() < 512 {
         profile.push(0);
     }
-    
+
     profile
 }

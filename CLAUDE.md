@@ -158,12 +158,19 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Automatic WebP delivery**: Serves WebP format to browsers that support it (based on Accept header)
 - **JPEG fallback**: Falls back to JPEG for browsers without WebP support
 - **PNG support**: PNG images are always served as PNG to preserve transparency
-- **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
-- **Cache separation**: Different cache files for JPEG, WebP, and PNG versions
+- **AVIF support**: Full HDR AVIF encoding/decoding with gain map detection
+  - Uses libavif-rs with AOM codec for high quality AVIF support
+  - HDR preservation with 10-bit encoding for HDR images
+  - Gain map detection for proper HDR/SDR tone mapping
+  - Automatic HDR detection based on color primaries, transfer functions, and CLLI metadata
+  - Fallback container parsing for gain map detection when libavif decoding fails
+- **Quality settings**: Configurable quality for JPEG (default: 85), WebP (default: 85.0), and AVIF
+- **Cache separation**: Different cache files for JPEG, WebP, PNG, and AVIF versions
 - **Content negotiation**: Automatic format selection based on browser capabilities and source format
-- **ICC Profile Preservation**: Full support for color profiles in JPEG, PNG, and WebP formats
+- **ICC Profile Preservation**: Full support for color profiles in JPEG, PNG, WebP, and AVIF formats
   - JPEG: ICC profiles extracted from source and preserved in output
   - WebP: ICC profiles embedded using libwebp-sys (v0.13+) WebPMux API
+  - AVIF: ICC profiles preserved through libavif with full HDR metadata support
   - Display P3 and other wide gamut color spaces fully supported
   - Profiles preserved through entire processing pipeline including watermarking
 
@@ -461,6 +468,20 @@ This feature is particularly helpful when implementing new features to verify th
    - Windows builds now use vcpkg for OpenSSL installation
    - macOS and Windows builds re-enabled in CI/CD
    - Improved build reliability across platforms
+
+### AVIF HDR Support with Gain Maps (December 2025)
+1. **Advanced AVIF Support**:
+   - Full HDR AVIF encoding/decoding using libavif-rs with AOM codec
+   - Gain map detection for HDR/SDR tone mapping support
+   - Preserves HDR metadata including color primaries, transfer functions, and CLLI
+   - Container-level gain map detection fallback when libavif decoding fails
+   - 10-bit encoding for HDR images with proper color space preservation
+
+2. **Gain Map Implementation**:
+   - Detects gain maps using libavif 1.2.1+ APIs when available
+   - Fallback container parsing for 'tmap' boxes
+   - Treats images with gain maps as HDR content
+   - Debug command shows detailed gain map parameters
 
 ## Future Improvements
 

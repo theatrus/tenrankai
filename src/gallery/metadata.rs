@@ -359,7 +359,10 @@ impl Gallery {
         path: &Path,
     ) -> Result<ImageMetadata, super::GalleryError> {
         // Get image dimensions
-        let ext = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase());
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase());
         let dimensions = match image::image_dimensions(path) {
             Ok((w, h)) => (w, h),
             Err(_) => {
@@ -401,7 +404,8 @@ impl Gallery {
                 }
             }
             Some("avif") => {
-                if let Some(icc_data) = super::image_processing::formats::avif::extract_icc_profile(path)
+                if let Some(icc_data) =
+                    super::image_processing::formats::avif::extract_icc_profile(path)
                 {
                     super::image_processing::extract_icc_profile_name(&icc_data)
                 } else {

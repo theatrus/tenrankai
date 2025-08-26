@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::{Level, info};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
 use tenrankai::{
     Config, create_app,
@@ -43,12 +43,12 @@ enum Commands {
     /// Manage users
     #[command(subcommand)]
     User(UserCommands),
-    
+
     /// Debug image metadata and color properties
     Debug {
         /// Path to the image file to analyze
         image_path: PathBuf,
-        
+
         /// Show detailed technical information
         #[arg(short, long)]
         verbose: bool,
@@ -107,13 +107,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => Level::INFO,
     };
 
-    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(level)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(level.into())
+                .from_env_lossy()
+        )
+        .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
-        Some(Commands::Debug { image_path, verbose }) => handle_debug_command(image_path, verbose).await,
+        Some(Commands::Debug {
+            image_path,
+            verbose,
+        }) => handle_debug_command(image_path, verbose).await,
         Some(Commands::Serve {
             port,
             host,
@@ -220,73 +230,91 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_debug_command(
+    image_path: PathBuf,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     use tenrankai::gallery::image_processing::formats;
-    
+
     if !image_path.exists() {
         eprintln!("Error: Image file not found: {:?}", image_path);
         std::process::exit(1);
     }
-    
+
     println!("=== Image Debug Information ===");
     println!("File: {:?}", image_path);
-    
+
     // Get file size
     let metadata = std::fs::metadata(&image_path)?;
-    println!("Size: {} bytes ({:.2} MB)", metadata.len(), metadata.len() as f64 / 1_048_576.0);
-    
+    println!(
+        "Size: {} bytes ({:.2} MB)",
+        metadata.len(),
+        metadata.len() as f64 / 1_048_576.0
+    );
+
     // Detect file type by extension
-    let extension = image_path.extension()
+    let extension = image_path
+        .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_lowercase());
-    
+
     println!("Extension: {}", extension.as_deref().unwrap_or("unknown"));
-    
+
     // Try to get basic dimensions using image crate first
     match image::image_dimensions(&image_path) {
         Ok((width, height)) => {
             println!("Dimensions (image crate): {}x{}", width, height);
-        },
+        }
         Err(e) => {
             println!("Dimensions (image crate): Failed - {}", e);
         }
     }
-    
+
     println!();
-    
+
     // Handle different formats
     match extension.as_deref() {
         Some("avif") => {
             println!("=== AVIF Analysis ===");
-            
+
             // Try our custom AVIF reader
             match formats::avif::read_avif_info(&image_path) {
                 Ok((image, info)) => {
                     println!("✓ Successfully decoded with custom AVIF reader");
                     println!();
-                    
+
                     println!("Image Properties:");
                     println!("  Dimensions: {}x{}", image.width(), image.height());
                     println!("  Color type: {:?}", image.color());
                     println!("  In-memory format: {}", format_description(&image));
                     println!();
-                    
+
                     println!("AVIF Metadata:");
                     println!("  Bit depth: {} bits", info.bit_depth);
                     println!("  Has alpha: {}", info.has_alpha);
                     println!("  Detected as HDR: {}", info.is_hdr);
-                    
+
                     // Color space details
                     println!();
                     println!("Color Space Properties:");
                     let primaries_name = color_primaries_name(info.color_primaries);
-                    let transfer_name = transfer_characteristics_name(info.transfer_characteristics);
+                    let transfer_name =
+                        transfer_characteristics_name(info.transfer_characteristics);
                     let matrix_name = matrix_coefficients_name(info.matrix_coefficients);
-                    
-                    println!("  Color primaries: {} ({})", info.color_primaries, primaries_name);
-                    println!("  Transfer characteristics: {} ({})", info.transfer_characteristics, transfer_name);
-                    println!("  Matrix coefficients: {} ({})", info.matrix_coefficients, matrix_name);
-                    
+
+                    println!(
+                        "  Color primaries: {} ({})",
+                        info.color_primaries, primaries_name
+                    );
+                    println!(
+                        "  Transfer characteristics: {} ({})",
+                        info.transfer_characteristics, transfer_name
+                    );
+                    println!(
+                        "  Matrix coefficients: {} ({})",
+                        info.matrix_coefficients, matrix_name
+                    );
+
                     // HDR analysis
                     println!();
                     println!("HDR Analysis:");
@@ -296,17 +324,23 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                     let has_hlg_transfer = info.transfer_characteristics == 18;
                     let has_hdr_transfer = has_pq_transfer || has_hlg_transfer;
                     let has_clli = info.max_cll > 0 || info.max_pall > 0;
-                    
-                    println!("  Wide gamut (BT.2020 or Display P3): {}", is_bt2020 || is_display_p3);
+
+                    println!(
+                        "  Wide gamut (BT.2020 or Display P3): {}",
+                        is_bt2020 || is_display_p3
+                    );
                     println!("  HDR transfer function (PQ/HLG): {}", has_hdr_transfer);
                     println!("  High bit depth (>8 bits): {}", info.bit_depth > 8);
                     println!("  Content Light Level Info (CLLI): {}", has_clli);
                     if has_clli {
                         println!("    Max Content Light Level: {} cd/m²", info.max_cll);
-                        println!("    Max Picture Average Light Level: {} cd/m²", info.max_pall);
+                        println!(
+                            "    Max Picture Average Light Level: {} cd/m²",
+                            info.max_pall
+                        );
                     }
                     println!("  Current HDR detection result: {}", info.is_hdr);
-                    
+
                     // Gain map information
                     println!("  Gain map present: {}", info.has_gain_map);
                     if info.has_gain_map {
@@ -314,29 +348,53 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                         println!("    ✓ Image should be treated as HDR content");
                         if let Some(ref gain_info) = info.gain_map_info {
                             println!("    Gain map parameters:");
-                            if let Some(gamma) = gain_info.gamma {
-                                println!("      Gamma: {}", gamma);
-                            }
-                            if let Some(min_boost) = gain_info.min_boost {
-                                println!("      Min boost: {}", min_boost);
-                            }
-                            if let Some(max_boost) = gain_info.max_boost {
-                                println!("      Max boost: {}", max_boost);
-                            }
-                            // Note: Parameters would be None with current libavif 1.0.4
-                            if gain_info.gamma.is_none() && gain_info.min_boost.is_none() {
-                                println!("      (Detailed parameters require libavif 1.1.1+ support)");
-                            }
+                            println!("      Has gain map image: {}", gain_info.has_image);
+                            println!(
+                                "      Gamma (R,G,B): {:.3}, {:.3}, {:.3}",
+                                gain_info.gamma[0], gain_info.gamma[1], gain_info.gamma[2]
+                            );
+                            println!(
+                                "      Min values (R,G,B): {:.3}, {:.3}, {:.3}",
+                                gain_info.min[0], gain_info.min[1], gain_info.min[2]
+                            );
+                            println!(
+                                "      Max values (R,G,B): {:.3}, {:.3}, {:.3}",
+                                gain_info.max[0], gain_info.max[1], gain_info.max[2]
+                            );
+                            println!(
+                                "      Base offset (R,G,B): {:.3}, {:.3}, {:.3}",
+                                gain_info.base_offset[0],
+                                gain_info.base_offset[1],
+                                gain_info.base_offset[2]
+                            );
+                            println!(
+                                "      Alternate offset (R,G,B): {:.3}, {:.3}, {:.3}",
+                                gain_info.alternate_offset[0],
+                                gain_info.alternate_offset[1],
+                                gain_info.alternate_offset[2]
+                            );
+                            println!(
+                                "      Base HDR headroom: {:.3}",
+                                gain_info.base_hdr_headroom
+                            );
+                            println!(
+                                "      Alternate HDR headroom: {:.3}",
+                                gain_info.alternate_hdr_headroom
+                            );
+                            println!(
+                                "      Use base color space: {}",
+                                gain_info.use_base_color_space
+                            );
                         }
                     }
-                    
+
                     // ICC profile
                     if let Some(ref icc) = info.icc_profile {
                         println!("  ICC profile: {} bytes", icc.len());
                     } else {
                         println!("  ICC profile: None");
                     }
-                    
+
                     if verbose {
                         println!();
                         println!("=== Technical Details ===");
@@ -348,24 +406,34 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                         println!("    (CLLI data present)");
                         println!("  )) OR (gain map present)");
                         println!();
-                        
+
                         let traditional_hdr = is_bt2020 && has_hdr_transfer;
                         let wide_gamut_hdr = is_display_p3 && info.bit_depth >= 10;
                         let hdr_transfer_any = info.bit_depth > 8 && has_hdr_transfer;
                         let clli_hdr = has_clli;
                         let gain_map_hdr = info.has_gain_map;
-                        
+
                         println!("  Traditional HDR (BT.2020 + PQ/HLG): {}", traditional_hdr);
-                        println!("  Wide gamut HDR (Display P3 + ≥10-bit): {}", wide_gamut_hdr);
+                        println!(
+                            "  Wide gamut HDR (Display P3 + ≥10-bit): {}",
+                            wide_gamut_hdr
+                        );
                         println!("  HDR transfer + high bit depth: {}", hdr_transfer_any);
                         println!("  CLLI metadata present: {}", clli_hdr);
                         println!("  Gain map present: {}", gain_map_hdr);
-                        println!("  Final result: {}", traditional_hdr || wide_gamut_hdr || hdr_transfer_any || clli_hdr || gain_map_hdr);
+                        println!(
+                            "  Final result: {}",
+                            traditional_hdr
+                                || wide_gamut_hdr
+                                || hdr_transfer_any
+                                || clli_hdr
+                                || gain_map_hdr
+                        );
                     }
-                },
+                }
                 Err(e) => {
                     println!("✗ Failed to decode with custom AVIF reader: {}", e);
-                    
+
                     // Try fallback with image crate
                     match image::open(&image_path) {
                         Ok(img) => {
@@ -373,15 +441,17 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                             println!("  Dimensions: {}x{}", img.width(), img.height());
                             println!("  Color type: {:?}", img.color());
                             println!("  Format: {}", format_description(&img));
-                            println!("  Note: HDR and color space information not available with fallback");
-                        },
+                            println!(
+                                "  Note: HDR and color space information not available with fallback"
+                            );
+                        }
                         Err(e2) => {
                             println!("✗ Also failed with image crate: {}", e2);
                         }
                     }
                 }
             }
-        },
+        }
         Some("jpg") | Some("jpeg") => {
             println!("=== JPEG Analysis ===");
             if let Some(icc) = formats::jpeg::extract_icc_profile(&image_path) {
@@ -389,17 +459,17 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
             } else {
                 println!("ICC profile: None");
             }
-            
+
             match image::open(&image_path) {
                 Ok(img) => {
                     println!("Decoded successfully");
                     println!("  Dimensions: {}x{}", img.width(), img.height());
                     println!("  Color type: {:?}", img.color());
                     println!("  Format: {}", format_description(&img));
-                },
+                }
                 Err(e) => println!("Decode error: {}", e),
             }
-        },
+        }
         Some("png") => {
             println!("=== PNG Analysis ===");
             if let Some(icc) = formats::png::extract_icc_profile(&image_path) {
@@ -407,17 +477,17 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
             } else {
                 println!("ICC profile: None");
             }
-            
+
             match image::open(&image_path) {
                 Ok(img) => {
                     println!("Decoded successfully");
                     println!("  Dimensions: {}x{}", img.width(), img.height());
                     println!("  Color type: {:?}", img.color());
                     println!("  Format: {}", format_description(&img));
-                },
+                }
                 Err(e) => println!("Decode error: {}", e),
             }
-        },
+        }
         Some("webp") => {
             println!("=== WebP Analysis ===");
             match image::open(&image_path) {
@@ -426,10 +496,10 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                     println!("  Dimensions: {}x{}", img.width(), img.height());
                     println!("  Color type: {:?}", img.color());
                     println!("  Format: {}", format_description(&img));
-                },
+                }
                 Err(e) => println!("Decode error: {}", e),
             }
-        },
+        }
         _ => {
             println!("=== Generic Image Analysis ===");
             match image::open(&image_path) {
@@ -438,12 +508,12 @@ async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), 
                     println!("  Dimensions: {}x{}", img.width(), img.height());
                     println!("  Color type: {:?}", img.color());
                     println!("  Format: {}", format_description(&img));
-                },
+                }
                 Err(e) => println!("Decode error: {}", e),
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -468,9 +538,9 @@ fn color_primaries_name(value: u16) -> &'static str {
         0 => "Reserved(0)",
         1 => "BT.709",
         2 => "Unspecified",
-        3 => "Reserved(3)", 
+        3 => "Reserved(3)",
         4 => "BT.470M",
-        5 => "BT.470BG", 
+        5 => "BT.470BG",
         6 => "BT.601",
         7 => "SMPTE-240M",
         8 => "Generic film",
@@ -479,7 +549,7 @@ fn color_primaries_name(value: u16) -> &'static str {
         11 => "SMPTE-431",
         12 => "SMPTE-432 (Display P3)",
         22 => "EBU Tech 3213-E",
-        _ => "Unknown"
+        _ => "Unknown",
     }
 }
 
@@ -487,7 +557,7 @@ fn transfer_characteristics_name(value: u16) -> &'static str {
     match value {
         0 => "Reserved(0)",
         1 => "BT.709",
-        2 => "Unspecified", 
+        2 => "Unspecified",
         3 => "Reserved(3)",
         4 => "Gamma 2.2 (BT.470M)",
         5 => "Gamma 2.8 (BT.470BG)",
@@ -504,7 +574,7 @@ fn transfer_characteristics_name(value: u16) -> &'static str {
         16 => "SMPTE-2084 (PQ) **HDR**",
         17 => "SMPTE-428",
         18 => "HLG **HDR**",
-        _ => "Unknown"
+        _ => "Unknown",
     }
 }
 
@@ -525,7 +595,7 @@ fn matrix_coefficients_name(value: u16) -> &'static str {
         12 => "Chroma NCL",
         13 => "Chroma CL",
         14 => "ICtCp",
-        _ => "Unknown"
+        _ => "Unknown",
     }
 }
 

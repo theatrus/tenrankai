@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
+[[bin]]
+name = "test_gain_map"
+path = "src/bin/test_gain_map.rs"
+
 [dependencies]
 async-trait = "0.1"
 aws-config = "1"
@@ -23,8 +27,8 @@ usvg = "0.45"
 ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.13"
-libavif = { git = "https://github.com/theatrus/libavif-rs", features = ["codec-aom"] }
-libavif-sys = { git = "https://github.com/theatrus/libavif-rs",  features = ["codec-aom"] }
+libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"] }
+libavif-sys = { git = "https://github.com/theatrus/libavif-rs",  branch = "new-libavif", features = ["codec-aom"] }
 rgb = "0.8"
 liquid = "0.26"
 liquid-core = "0.26"
@@ -49,8 +53,8 @@ uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 walkdir = "2.5"
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 webauthn-rs-proto = "0.5"
+env_logger = "0.11"
 
 [dev-dependencies]
 tempfile = "3.8"
 axum-test = "18.0"
-env_logger = "0.11"
