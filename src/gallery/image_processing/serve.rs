@@ -152,6 +152,8 @@ impl Gallery {
             "image/webp"
         } else if cache_key.ends_with(".png") {
             "image/png"
+        } else if cache_key.ends_with(".avif") {
+            "image/avif"
         } else {
             "image/jpeg"
         };

@@ -11,6 +11,7 @@ pub use types::OutputFormat;
 
 // Re-export format-specific ICC profile extraction functions
 pub use formats::{
+    avif::extract_icc_profile as extract_icc_profile_from_avif,
     jpeg::extract_icc_profile as extract_icc_profile_from_jpeg,
     png::extract_icc_profile as extract_icc_profile_from_png,
 };
@@ -21,6 +22,7 @@ pub use icc::extract_icc_profile_name;
 
 #[cfg(test)]
 mod tests {
+    mod avif_tests;
     mod cache_tests;
     mod composite_tests;
     mod icc_profile_tests;

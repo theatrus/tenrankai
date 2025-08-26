@@ -5,7 +5,7 @@ use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use tenrankai::{
-    Config, create_app,
+    Config, commands, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
     posts, startup_checks,
@@ -43,6 +43,16 @@ enum Commands {
     /// Manage users
     #[command(subcommand)]
     User(UserCommands),
+
+    /// Debug AVIF image metadata and color properties
+    AvifDebug {
+        /// Path to the AVIF file to analyze
+        image_path: PathBuf,
+
+        /// Show detailed technical information
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -97,12 +107,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => Level::INFO,
     };
 
-    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(level)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(level.into())
+                .from_env_lossy(),
+        )
+        .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
+        Some(Commands::AvifDebug {
+            image_path,
+            verbose,
+        }) => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
         Some(Commands::Serve {
             port,
             host,

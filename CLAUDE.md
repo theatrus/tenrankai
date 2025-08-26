@@ -45,6 +45,7 @@ The gallery functionality was recently refactored from a single 3000-line file i
   - `mod.rs` - Module exports
   - `types.rs` - OutputFormat, ImageSize types
   - `formats/` - Format-specific modules
+    - `avif.rs` - AVIF handling with HDR and gain map support
     - `jpeg.rs` - JPEG handling with ICC profile support
     - `png.rs` - PNG handling with ICC profile extraction
     - `webp.rs` - WebP encoding with fallback support
@@ -55,6 +56,10 @@ The gallery functionality was recently refactored from a single 3000-line file i
 - `metadata.rs` - EXIF metadata extraction and processing
 - `cache.rs` - Cache management, persistence, and pregeneration
 - `error.rs` - Error type definitions
+
+### Commands Module (`src/commands/`)
+Utility commands for development and debugging:
+- `avif_debug.rs` - AVIF file analysis tool for inspecting HDR properties, color spaces, and gain maps
 
 ### Posts Module (`src/posts/`)
 A flexible markdown-based posts/blog system supporting multiple independent collections:
@@ -158,12 +163,28 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Automatic WebP delivery**: Serves WebP format to browsers that support it (based on Accept header)
 - **JPEG fallback**: Falls back to JPEG for browsers without WebP support
 - **PNG support**: PNG images are always served as PNG to preserve transparency
-- **Quality settings**: Configurable quality for both JPEG (default: 85) and WebP (default: 85.0)
-- **Cache separation**: Different cache files for JPEG, WebP, and PNG versions
+- **AVIF support**: Full HDR AVIF encoding/decoding with gain map preservation
+  - Uses libavif-rs with AOM codec for high quality AVIF support
+  - HDR preservation with 10-bit encoding for HDR images
+  - Gain map support for HDR/SDR tone mapping:
+    - Detects gain maps using libavif 1.2.1+ experimental APIs
+    - Preserves gain map parameters (gamma, min/max, offsets, HDR headroom)
+    - Resizes gain maps proportionally with main image
+    - Attaches gain maps to output AVIF files
+  - Automatic HDR detection based on:
+    - Color primaries (BT.2020, Display P3)
+    - Transfer characteristics (PQ/HLG)
+    - Bit depth (>8 bits)
+    - CLLI metadata presence
+    - Gain map presence
+  - Container-level parsing for gain map detection when libavif decoding fails
+- **Quality settings**: Configurable quality for JPEG (default: 85), WebP (default: 85.0), and AVIF
+- **Cache separation**: Different cache files for JPEG, WebP, PNG, and AVIF versions
 - **Content negotiation**: Automatic format selection based on browser capabilities and source format
-- **ICC Profile Preservation**: Full support for color profiles in JPEG, PNG, and WebP formats
+- **ICC Profile Preservation**: Full support for color profiles in JPEG, PNG, WebP, and AVIF formats
   - JPEG: ICC profiles extracted from source and preserved in output
   - WebP: ICC profiles embedded using libwebp-sys (v0.13+) WebPMux API
+  - AVIF: ICC profiles preserved through libavif with full HDR metadata support
   - Display P3 and other wide gamut color spaces fully supported
   - Profiles preserved through entire processing pipeline including watermarking
 
@@ -325,6 +346,24 @@ This feature is particularly helpful when implementing new features to verify th
 - Gallery preview API: `http://localhost:8080/api/gallery/main/preview?count=12`
 - Composite image: `http://localhost:8080/api/gallery/main/composite/_root`
 
+### AVIF Debug Command
+Test AVIF HDR and gain map support:
+```bash
+# Analyze an AVIF file
+cargo run -- avif-debug photos/vacation/_A630303-HDR.avif
+
+# Get detailed technical information
+cargo run -- avif-debug photos/vacation/_A630303-HDR.avif --verbose
+```
+
+The command shows:
+- Image dimensions and file size
+- Color space properties (primaries, transfer, matrix)
+- HDR detection (based on bit depth, color space, CLLI, gain maps)
+- Gain map presence and parameters
+- ICC profile information
+- Detailed HDR detection logic (with --verbose)
+
 ### AWS SES Testing
 - Use SES sandbox for development (verify sender/recipient emails)
 - Monitor AWS CloudWatch for delivery metrics
@@ -381,40 +420,41 @@ This feature is particularly helpful when implementing new features to verify th
 3. Use background tasks for expensive operations
 4. Leverage browser caching with proper headers
 
-## Recent Major Changes
+## Major Features
 
-### Email Module Implementation (August 2025)
-1. **Pluggable Email Provider System**:
+### Pluggable Email Provider System
+1. **Email Module Architecture**:
    - Trait-based architecture for easy provider addition
    - Amazon SES provider implementation
+   - Null provider for development/testing
    - Support for text, HTML, or both email formats
    - Configurable from address, name, and reply-to
 
 2. **Login Integration**:
-   - Login system now sends actual emails instead of logging URLs
+   - Login system sends actual emails instead of logging URLs
    - Falls back to logging if no email provider configured
    - Professional HTML and text email templates
 
-### Library/Binary Architecture Refactoring (August 2025)
-- **Created lib.rs**: Separated library components from binary
+### Library/Binary Architecture
+- **lib.rs**: Separated library components from binary
 - **Moved Types**: All config types (Config, ServerConfig, etc.) now in lib.rs
 - **Public API**: Exposed modules and types for external use
 - **Cleaner main.rs**: Binary now just handles CLI and server startup
 - **Benefits**: Better code organization, reusable components, testability
 
-### Multi-Gallery Support (August 2025 - Updated December 2024)
-1. **Multiple Gallery Instances**: The gallery module now supports multiple independent gallery instances
+### Multi-Gallery Support
+1. **Multiple Gallery Instances**: The gallery module supports multiple independent gallery instances
    - Each gallery has its own source directory, cache directory, and URL prefix
-   - **BREAKING CHANGE (December 2024)**: Removed backward compatibility - only named galleries are supported
+   - Named galleries only (no backward compatibility mode)
 
-### Posts System Implementation (August 2025)
-1. **Multiple Blog Systems**: Added support for multiple independent markdown-based blog/posts systems
+### Posts System
+1. **Multiple Blog Systems**: Support for multiple independent markdown-based blog/posts systems
    - Each system has its own source directory, URL prefix, and configuration
    - **Gallery Image References**: Easy embedding of gallery images with automatic linking
    - **Automatic Reload on Change**: Posts are automatically reloaded when their markdown files are modified
 
-### Email-based Authentication System (December 2024)
-1. **New Login Module** (`src/login/`):
+### Email-based Authentication System
+1. **Login Module** (`src/login/`):
    - User database stored in TOML file (`users.toml`)
    - No self-registration - admin manages users via CLI tool
    - Email-based passwordless authentication
@@ -422,14 +462,14 @@ This feature is particularly helpful when implementing new features to verify th
    - Secure token generation with 10-minute expiration
    - Periodic cleanup of expired tokens and rate limits
 
-### Hidden Gallery Folders (December 2025)
+### Hidden Gallery Folders
 1. **TOML Front Matter Support in _folder.md**:
-   - Gallery folders can now use TOML front matter similar to posts
+   - Gallery folders can use TOML front matter similar to posts
    - Folders can be marked as `hidden = true` in TOML config
    - Hidden folders are excluded from listings but remain accessible via direct URL
 
-### WebAuthn/Passkey Support (December 2025)
-1. **Modern Authentication**: Added WebAuthn/Passkey authentication
+### WebAuthn/Passkey Support
+1. **Modern Authentication**: WebAuthn/Passkey authentication
    - Biometric authentication (fingerprint, face recognition)
    - Hardware security key support
    - Cross-device passkey sync via platform providers
@@ -442,25 +482,52 @@ This feature is particularly helpful when implementing new features to verify th
    - Improved login page UI with better contrast
    - Template reorganization into modules/ directory
 
-### Gallery Access Control (December 2025)
+### Gallery Access Control
 1. **Folder-Level Access Control**:
    - `require_auth = true` in _folder.md TOML to require authentication
    - `allowed_users = ["user1", "user2"]` to restrict access to specific users
    - Hierarchical access control (parent folder restrictions apply to children)
    - Access control applies to gallery views, previews, and image serving
 
-### Null Email Provider (December 2025)
-1. **Development-Friendly Email Provider**:
-   - Logs emails to console instead of sending them
-   - Useful for development and testing
-   - Configure with `provider = "null"` in email config
-   - Preserves full email formatting for inspection
-
-### Build System Improvements (December 2025)
+### Build System Improvements
 1. **Cross-Platform Build Support**:
-   - Windows builds now use vcpkg for OpenSSL installation
-   - macOS and Windows builds re-enabled in CI/CD
-   - Improved build reliability across platforms
+   - Windows builds use vcpkg for OpenSSL installation
+   - macOS and Windows builds enabled in CI/CD
+   - Build dependencies (nasm, ninja, meson, cmake) installed automatically
+
+### AVIF HDR Support with Gain Maps
+1. **Advanced AVIF Support**:
+   - Full HDR AVIF encoding/decoding using libavif-rs with AOM codec
+   - Gain map detection and preservation for HDR/SDR tone mapping
+   - Preserves HDR metadata including color primaries, transfer functions, and CLLI
+   - Container-level gain map detection fallback when libavif decoding fails
+   - 10-bit encoding for HDR images with proper color space preservation
+   - Browser fallback: AVIF sources served as WebP/JPEG for non-AVIF browsers (resized images only)
+
+2. **Gain Map Implementation**:
+   - Detects gain maps using libavif 1.2.1+ experimental APIs
+   - Extracts gain map image data by setting `imageContentToDecode = AVIF_IMAGE_CONTENT_ALL`
+   - Preserves gain map parameters:
+     - Gamma values for R,G,B channels
+     - Min/max values for tone mapping
+     - Base and alternate offsets
+     - HDR headroom values
+   - Resizes gain maps proportionally with main image during processing
+   - Attaches gain maps to output AVIF files maintaining HDR/SDR compatibility
+
+3. **HDR Detection Logic**:
+   - Detects HDR content based on multiple criteria:
+     - BT.2020 color primaries with PQ/HLG transfer
+     - Display P3 primaries with ≥10-bit depth
+     - Any >8-bit image with PQ/HLG transfer
+     - Presence of CLLI (Content Light Level Info)
+     - Presence of gain map
+   - Preserves exact color space properties without unwanted modifications
+
+4. **Testing and Debug Tools**:
+   - `avif-debug` command for analyzing AVIF files
+   - Integration tests for gain map preservation
+   - Epsilon comparisons for floating-point metadata
 
 ## Future Improvements
 

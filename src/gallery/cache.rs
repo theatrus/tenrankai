@@ -195,7 +195,7 @@ impl Gallery {
         }
 
         let sizes = vec!["thumbnail", "gallery", "medium", "large"];
-        let formats = vec![OutputFormat::Jpeg, OutputFormat::WebP];
+        let formats = vec![OutputFormat::Jpeg, OutputFormat::WebP, OutputFormat::Avif];
 
         for size in &sizes {
             for &format in &formats {

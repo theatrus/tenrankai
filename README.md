@@ -21,8 +21,9 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **High-DPI Support**: Automatic @2x image generation for retina displays
 - **Metadata Extraction**: EXIF data parsing including camera info, GPS coordinates, and capture dates
 - **Smart Caching**: Persistent metadata caching and image cache with background refresh
-- **Multiple Format Support**: Automatic WebP delivery for supported browsers with JPEG fallback, PNG support with transparency preservation
-- **Color Profile Preservation**: Full ICC profile support for JPEG, PNG, and WebP, including Display P3
+- **Multiple Format Support**: Automatic WebP and AVIF delivery for supported browsers with JPEG fallback, PNG support with transparency preservation
+- **Advanced AVIF Support**: Full HDR AVIF encoding/decoding with gain map preservation for HDR tone mapping
+- **Color Profile Preservation**: Full ICC profile support for JPEG, PNG, WebP, and AVIF, including Display P3
 - **Copyright Watermarking**: Intelligent watermark placement with automatic text color selection
 - **Markdown Support**: Folder descriptions and image captions via markdown files
 - **Hidden Folders**: Hide folders from listings while keeping them accessible via direct URL
@@ -170,6 +171,29 @@ cargo run --release -- --log-level debug
 - `--log-level <level>`: Set logging level (trace, debug, info, warn, error)
 - `--quit-after <seconds>`: Auto-shutdown after specified seconds (useful for testing)
 
+### Utility Commands
+
+#### AVIF Debug Command
+
+Analyze AVIF files to inspect their HDR properties, color spaces, and gain maps:
+
+```bash
+# Basic analysis
+cargo run -- avif-debug path/to/image.avif
+
+# Detailed technical information
+cargo run -- avif-debug path/to/image.avif --verbose
+```
+
+This command displays:
+- Image dimensions and file size
+- Color space properties (primaries, transfer characteristics, matrix coefficients)
+- HDR detection results
+- Gain map presence and parameters
+- CLLI (Content Light Level Information) data
+- ICC profile information
+- Detailed HDR detection logic (with --verbose)
+
 ## Gallery Features
 
 ### Multiple Galleries
@@ -312,15 +336,21 @@ Tenrankai automatically generates multiple sizes for each image:
 
 All sizes support @2x variants for high-DPI displays.
 
-### Color Profile Support
+### Color Profile and HDR Support
 
-Tenrankai preserves ICC color profiles throughout the image processing pipeline:
+Tenrankai preserves ICC color profiles and HDR metadata throughout the image processing pipeline:
 
 - **JPEG**: Extracts and preserves ICC profiles from source images
 - **PNG**: Extracts ICC profiles from iCCP chunks and preserves transparency
 - **WebP**: Embeds ICC profiles using libwebp-sys WebPMux API
-- **Wide Gamut**: Full support for Display P3, Adobe RGB, and other color spaces
-- **Watermarking**: Color profiles maintained even when adding copyright notices
+- **AVIF**: Full HDR support with advanced features:
+  - Preserves ICC profiles and HDR metadata (color primaries, transfer characteristics, CLLI)
+  - Supports gain maps for HDR/SDR tone mapping
+  - Automatically detects and preserves HDR content (BT.2020, Display P3, PQ/HLG)
+  - 10-bit encoding for HDR images
+  - Gain map preservation during image resizing
+- **Wide Gamut**: Full support for Display P3, Adobe RGB, BT.2020, and other color spaces
+- **Watermarking**: Color profiles and HDR metadata maintained even when adding copyright notices
 
 This ensures accurate color reproduction across all devices and browsers that support color management. PNG images are always served as PNG to preserve transparency and avoid quality loss.
 

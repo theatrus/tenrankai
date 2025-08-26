@@ -228,6 +228,13 @@ async fn test_icc_profile_preservation_across_formats() {
                         "Not a valid PNG file"
                     );
                 }
+                crate::gallery::image_processing::OutputFormat::Avif => {
+                    // For AVIF, ICC profile support is not yet implemented with simple API
+                    // Just verify it's a valid AVIF
+                    let avif_data = std::fs::read(&cache_path).unwrap();
+                    assert!(avif_data.len() >= 12);
+                    assert_eq!(&avif_data[4..8], b"ftyp", "Not a valid AVIF file");
+                }
             }
         }
     }

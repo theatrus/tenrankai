@@ -5,6 +5,7 @@ pub enum OutputFormat {
     Jpeg,
     WebP,
     Png,
+    Avif,
 }
 
 impl OutputFormat {
@@ -13,6 +14,7 @@ impl OutputFormat {
             OutputFormat::Jpeg => "jpg",
             OutputFormat::WebP => "webp",
             OutputFormat::Png => "png",
+            OutputFormat::Avif => "avif",
         }
     }
 
@@ -22,6 +24,7 @@ impl OutputFormat {
             OutputFormat::Jpeg => ImageFormat::Jpeg,
             OutputFormat::WebP => ImageFormat::WebP,
             OutputFormat::Png => ImageFormat::Png,
+            OutputFormat::Avif => ImageFormat::Avif,
         }
     }
 
@@ -30,6 +33,7 @@ impl OutputFormat {
             OutputFormat::Jpeg => "image/jpeg",
             OutputFormat::WebP => "image/webp",
             OutputFormat::Png => "image/png",
+            OutputFormat::Avif => "image/avif",
         }
     }
 }

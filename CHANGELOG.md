@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **AVIF Browser Fallback**: AVIF sources can now be served as WebP or JPEG for browsers without AVIF support
+  - Original AVIF images are always served as AVIF (preserving HDR and gain maps)
+  - Resized images fall back to WebP or JPEG when browser doesn't support AVIF
+  - Automatic format negotiation based on Accept headers
+  - Helps ensure compatibility while maintaining AVIF as primary format
+
+- **AVIF Container Parsing Module**: Refactored AVIF container parsing into separate module
+  - New `avif_container.rs` module for ISOBMFF box parsing
+  - Cleaner separation of concerns between decoding and container inspection
+  - Support for extracting ICC profiles and dimensions without full decode
+
+- **Build Dependencies**: CI/CD now installs required AVIF build dependencies
+  - nasm, ninja, meson, and cmake installed on all platforms
+  - Ensures reliable builds across Ubuntu, macOS, and Windows
+
+### Changed
+- **AVIF Code Simplifications**: Streamlined AVIF implementation
+  - Simplified error handling by removing verbose error code mapping
+  - Extracted helper functions for fraction conversions
+  - Added `browser_supports_avif()` utility function
+  - Improved code organization and reduced duplication
+
 ### Breaking Changes
 - **Copyright Watermark Configuration**: Moved copyright holder configuration from global `[app]` section to per-gallery basis
   - Remove `copyright_holder` from `[app]` section in config.toml

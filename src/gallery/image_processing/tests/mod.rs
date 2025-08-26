@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod avif_tests;
+#[cfg(test)]
 mod jpeg_tests;
 #[cfg(test)]
 mod png_tests;
@@ -10,3 +12,5 @@ mod cache_tests;
 mod icc_profile_tests;
 #[cfg(test)]
 mod watermark_tests;
+#[cfg(test)]
+mod real_avif_tests;

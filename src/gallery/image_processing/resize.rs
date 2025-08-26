@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, error};
 
 use super::formats;
+use super::formats::avif::AvifImageInfo;
 use super::types::{ImageSize, OutputFormat};
 
 impl Gallery {
@@ -132,14 +133,66 @@ fn process_image(
     // Detect format and extract ICC profile
     let (icc_profile, detected_format) = extract_image_info(original_path)?;
 
-    // Load and resize image
+    // Load and resize image - special handling for AVIF to preserve color properties
     debug!(
         "Opening image file: {:?}, detected format: {:?}",
         original_path, detected_format
     );
-    let img = image::open(original_path)?;
+
+    let (img, avif_info) = if detected_format == Some(ImageFormat::Avif) {
+        // Use our custom AVIF reader to preserve color properties
+        match formats::avif::read_avif_info(original_path) {
+            Ok((img, info)) => (img, Some(info)),
+            Err(e) => {
+                debug!(
+                    "Failed to read AVIF with custom reader: {}, falling back",
+                    e
+                );
+                (image::open(original_path)?, None)
+            }
+        }
+    } else {
+        (image::open(original_path)?, None)
+    };
 
     let resized = resize_image(&img, dimensions)?;
+
+    // Resize gain map if present
+    let mut resized_avif_info = avif_info.clone();
+    if let Some(ref mut info) = resized_avif_info
+        && let Some(ref gm_info) = info.gain_map_info
+        && let Some(ref gm_image) = gm_info.gain_map_image
+    {
+        // Resize gain map to match the proportion of the main image resize
+        let (orig_width, orig_height) = (img.width(), img.height());
+        let (resized_width, resized_height) = (resized.width(), resized.height());
+
+        // Calculate scale factors
+        let scale_x = resized_width as f32 / orig_width as f32;
+        let scale_y = resized_height as f32 / orig_height as f32;
+
+        // Apply same scale to gain map
+        let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
+        let new_gm_width = (gm_width as f32 * scale_x).round() as u32;
+        let new_gm_height = (gm_height as f32 * scale_y).round() as u32;
+
+        // Ensure gain map is at least 1x1
+        let new_gm_width = new_gm_width.max(1);
+        let new_gm_height = new_gm_height.max(1);
+
+        debug!(
+            "Resizing gain map from {}x{} to {}x{}",
+            gm_width, gm_height, new_gm_width, new_gm_height
+        );
+
+        let resized_gain_map =
+            gm_image.resize_exact(new_gm_width, new_gm_height, FilterType::Lanczos3);
+
+        // Update the gain map info with resized image
+        if let Some(ref mut gm_info_mut) = info.gain_map_info {
+            gm_info_mut.gain_map_image = Some(resized_gain_map);
+        }
+    }
 
     // Apply watermark if needed
     let final_image = if apply_watermark && copyright_holder.is_some() {
@@ -156,6 +209,7 @@ fn process_image(
         jpeg_quality,
         webp_quality,
         icc_profile.as_deref(),
+        resized_avif_info.as_ref(),
     )?;
 
     Ok(())
@@ -173,6 +227,7 @@ fn extract_image_info(path: &Path) -> Result<(Option<Vec<u8>>, Option<ImageForma
     let icc_profile = match detected_format {
         Some(ImageFormat::Jpeg) => formats::jpeg::extract_icc_profile(path),
         Some(ImageFormat::Png) => formats::png::extract_icc_profile(path),
+        Some(ImageFormat::Avif) => formats::avif::extract_icc_profile(path),
         _ => None,
     };
 
@@ -230,6 +285,7 @@ fn save_image(
     jpeg_quality: u8,
     webp_quality: f32,
     icc_profile: Option<&[u8]>,
+    avif_info: Option<&AvifImageInfo>,
 ) -> Result<(), GalleryError> {
     match format {
         OutputFormat::Jpeg => {
@@ -239,5 +295,21 @@ fn save_image(
             formats::webp::save_with_profile(image, path, webp_quality, icc_profile)
         }
         OutputFormat::Png => formats::png::save(image, path),
+        OutputFormat::Avif => {
+            // Use the preserved AVIF info if available
+            if let Some(info) = avif_info {
+                formats::avif::save_with_info(image, path, 85, 6, Some(info))
+            } else {
+                // Fallback: preserve HDR if the source is 16-bit
+                let preserve_hdr = matches!(
+                    image,
+                    DynamicImage::ImageLuma16(_)
+                        | DynamicImage::ImageLumaA16(_)
+                        | DynamicImage::ImageRgb16(_)
+                        | DynamicImage::ImageRgba16(_)
+                );
+                formats::avif::save_with_profile(image, path, 85, 6, icc_profile, preserve_hdr)
+            }
+        }
     }
 }
