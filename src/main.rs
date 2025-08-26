@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::{Level, info};
-use tracing_subscriber::{FmtSubscriber, EnvFilter};
+use tracing_subscriber::FmtSubscriber;
 
 use tenrankai::{
     Config, create_app,

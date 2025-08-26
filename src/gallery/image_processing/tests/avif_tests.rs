@@ -384,6 +384,8 @@ fn test_hdr_detection_logic_edge_cases() {
             matrix_coefficients: 1, // BT.709
             max_cll: 0,             // No CLLI in test
             max_pall: 0,            // No CLLI in test
+            has_gain_map: false,    // No gain map in test
+            gain_map_info: None,    // No gain map in test
         };
 
         // Simulate the HDR detection logic from avif.rs
@@ -423,6 +425,8 @@ fn test_avif_save_preserves_hdr_properties() {
         matrix_coefficients: 6,       // BT.601
         max_cll: 0,                   // No CLLI in this test
         max_pall: 0,                  // No CLLI in this test
+        has_gain_map: false,
+        gain_map_info: None,
     };
 
     // Create a 16-bit image (simulating HDR)
@@ -476,6 +480,8 @@ fn test_hdr_color_properties_preservation() {
         matrix_coefficients: 6,       // BT.601
         max_cll: 0,                   // No CLLI in this test
         max_pall: 0,                  // No CLLI in this test
+        has_gain_map: false,
+        gain_map_info: None,
     };
 
     // Create a 16-bit image (simulating HDR)
@@ -549,6 +555,8 @@ fn test_non_hdr_color_properties_preservation() {
         matrix_coefficients: 1,       // BT.709
         max_cll: 0,                   // No CLLI in non-HDR
         max_pall: 0,                  // No CLLI in non-HDR
+        has_gain_map: false,
+        gain_map_info: None,
     };
 
     // Create an 8-bit image
@@ -599,6 +607,8 @@ fn test_clli_hdr_detection() {
         matrix_coefficients: 1,      // BT.709
         max_cll: 4000,               // 4000 cd/m² - typical HDR content
         max_pall: 400,               // 400 cd/m² - typical HDR average
+        has_gain_map: false,
+        gain_map_info: None,
     };
 
     // Create a 16-bit image
