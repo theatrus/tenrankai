@@ -88,10 +88,25 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         let bit_depth = (*image).depth;
         let has_alpha = (*image).alphaPlane != ptr::null_mut();
         
-        // Check if it's HDR - must have HDR color space, not just 10-bit
-        let is_hdr = ((*image).colorPrimaries == sys::AVIF_COLOR_PRIMARIES_BT2020 as u16) &&
-            ((*image).transferCharacteristics == sys::AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084 as u16 ||
-             (*image).transferCharacteristics == sys::AVIF_TRANSFER_CHARACTERISTICS_HLG as u16);
+        // Check if it's HDR - use more flexible logic
+        // HDR can be indicated by:
+        // 1. Traditional HDR: BT.2020 + PQ/HLG 
+        // 2. Wide gamut HDR: Display P3 + high bit depth (common in camera output)
+        // 3. Any high bit depth with HDR transfer function
+        let has_hdr_transfer = (*image).transferCharacteristics == sys::AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084 as u16 ||
+                              (*image).transferCharacteristics == sys::AVIF_TRANSFER_CHARACTERISTICS_HLG as u16;
+        
+        let _has_wide_gamut = (*image).colorPrimaries == sys::AVIF_COLOR_PRIMARIES_BT2020 as u16 ||
+                           (*image).colorPrimaries == 12; // Display P3
+        
+        let is_hdr = bit_depth > 8 && (
+            // Traditional HDR: BT.2020 + PQ/HLG
+            ((*image).colorPrimaries == sys::AVIF_COLOR_PRIMARIES_BT2020 as u16 && has_hdr_transfer) ||
+            // Wide gamut HDR: Display P3 + high bit depth (preserve as HDR)
+            ((*image).colorPrimaries == 12 && bit_depth >= 10) ||
+            // Any high bit depth with HDR transfer function
+            (bit_depth > 8 && has_hdr_transfer)
+        );
         
         // Extract ICC profile if present
         let icc_profile = if (*image).icc.size > 0 && !(*image).icc.data.is_null() {
