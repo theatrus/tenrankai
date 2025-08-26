@@ -2273,7 +2273,7 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 [[package]]
 name = "libaom-sys"
 version = "0.17.2+libaom.3.11.0"
-source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#49eeba69b2cf07996b5324929b1e7e43fd7f94b7"
+source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#97c3e9c550ca9b001b91f71003f5d3a14cfd7603"
 dependencies = [
  "cmake",
 ]
@@ -2281,7 +2281,7 @@ dependencies = [
 [[package]]
 name = "libavif"
 version = "0.14.0"
-source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#49eeba69b2cf07996b5324929b1e7e43fd7f94b7"
+source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#97c3e9c550ca9b001b91f71003f5d3a14cfd7603"
 dependencies = [
  "libavif-sys",
 ]
@@ -2289,7 +2289,7 @@ dependencies = [
 [[package]]
 name = "libavif-sys"
 version = "0.17.0+libavif.1.2.1"
-source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#49eeba69b2cf07996b5324929b1e7e43fd7f94b7"
+source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#97c3e9c550ca9b001b91f71003f5d3a14cfd7603"
 dependencies = [
  "cmake",
  "libaom-sys",
@@ -2307,7 +2307,7 @@ checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
 [[package]]
 name = "libdav1d-sys"
 version = "0.7.1+libdav1d.1.4.3"
-source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#49eeba69b2cf07996b5324929b1e7e43fd7f94b7"
+source = "git+https://github.com/theatrus/libavif-rs?branch=new-libavif#97c3e9c550ca9b001b91f71003f5d3a14cfd7603"
 dependencies = [
  "libc",
 ]
