@@ -43,6 +43,16 @@ enum Commands {
     /// Manage users
     #[command(subcommand)]
     User(UserCommands),
+    
+    /// Debug image metadata and color properties
+    Debug {
+        /// Path to the image file to analyze
+        image_path: PathBuf,
+        
+        /// Show detailed technical information
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -103,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
+        Some(Commands::Debug { image_path, verbose }) => handle_debug_command(image_path, verbose).await,
         Some(Commands::Serve {
             port,
             host,
@@ -207,6 +218,281 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
     }
 
     Ok(())
+}
+
+async fn handle_debug_command(image_path: PathBuf, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use tenrankai::gallery::image_processing::formats;
+    
+    if !image_path.exists() {
+        eprintln!("Error: Image file not found: {:?}", image_path);
+        std::process::exit(1);
+    }
+    
+    println!("=== Image Debug Information ===");
+    println!("File: {:?}", image_path);
+    
+    // Get file size
+    let metadata = std::fs::metadata(&image_path)?;
+    println!("Size: {} bytes ({:.2} MB)", metadata.len(), metadata.len() as f64 / 1_048_576.0);
+    
+    // Detect file type by extension
+    let extension = image_path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase());
+    
+    println!("Extension: {}", extension.as_deref().unwrap_or("unknown"));
+    
+    // Try to get basic dimensions using image crate first
+    match image::image_dimensions(&image_path) {
+        Ok((width, height)) => {
+            println!("Dimensions (image crate): {}x{}", width, height);
+        },
+        Err(e) => {
+            println!("Dimensions (image crate): Failed - {}", e);
+        }
+    }
+    
+    println!();
+    
+    // Handle different formats
+    match extension.as_deref() {
+        Some("avif") => {
+            println!("=== AVIF Analysis ===");
+            
+            // Try our custom AVIF reader
+            match formats::avif::read_avif_info(&image_path) {
+                Ok((image, info)) => {
+                    println!("✓ Successfully decoded with custom AVIF reader");
+                    println!();
+                    
+                    println!("Image Properties:");
+                    println!("  Dimensions: {}x{}", image.width(), image.height());
+                    println!("  Color type: {:?}", image.color());
+                    println!("  In-memory format: {}", format_description(&image));
+                    println!();
+                    
+                    println!("AVIF Metadata:");
+                    println!("  Bit depth: {} bits", info.bit_depth);
+                    println!("  Has alpha: {}", info.has_alpha);
+                    println!("  Detected as HDR: {}", info.is_hdr);
+                    
+                    // Color space details
+                    println!();
+                    println!("Color Space Properties:");
+                    let primaries_name = color_primaries_name(info.color_primaries);
+                    let transfer_name = transfer_characteristics_name(info.transfer_characteristics);
+                    let matrix_name = matrix_coefficients_name(info.matrix_coefficients);
+                    
+                    println!("  Color primaries: {} ({})", info.color_primaries, primaries_name);
+                    println!("  Transfer characteristics: {} ({})", info.transfer_characteristics, transfer_name);
+                    println!("  Matrix coefficients: {} ({})", info.matrix_coefficients, matrix_name);
+                    
+                    // HDR analysis
+                    println!();
+                    println!("HDR Analysis:");
+                    let is_display_p3 = info.color_primaries == 12;
+                    let is_bt2020 = info.color_primaries == 9;
+                    let has_pq_transfer = info.transfer_characteristics == 16;
+                    let has_hlg_transfer = info.transfer_characteristics == 18;
+                    let has_hdr_transfer = has_pq_transfer || has_hlg_transfer;
+                    
+                    println!("  Wide gamut (BT.2020 or Display P3): {}", is_bt2020 || is_display_p3);
+                    println!("  HDR transfer function (PQ/HLG): {}", has_hdr_transfer);
+                    println!("  High bit depth (>8 bits): {}", info.bit_depth > 8);
+                    println!("  Current HDR detection result: {}", info.is_hdr);
+                    
+                    // ICC profile
+                    if let Some(ref icc) = info.icc_profile {
+                        println!("  ICC profile: {} bytes", icc.len());
+                    } else {
+                        println!("  ICC profile: None");
+                    }
+                    
+                    if verbose {
+                        println!();
+                        println!("=== Technical Details ===");
+                        println!("HDR Detection Logic:");
+                        println!("  Current logic: bit_depth > 8 AND (");
+                        println!("    (BT.2020 primaries AND (PQ OR HLG transfer)) OR");
+                        println!("    (Display P3 primaries AND bit_depth >= 10) OR");
+                        println!("    (bit_depth > 8 AND (PQ OR HLG transfer))");
+                        println!("  )");
+                        println!();
+                        
+                        let traditional_hdr = is_bt2020 && has_hdr_transfer;
+                        let wide_gamut_hdr = is_display_p3 && info.bit_depth >= 10;
+                        let hdr_transfer_any = info.bit_depth > 8 && has_hdr_transfer;
+                        
+                        println!("  Traditional HDR (BT.2020 + PQ/HLG): {}", traditional_hdr);
+                        println!("  Wide gamut HDR (Display P3 + ≥10-bit): {}", wide_gamut_hdr);
+                        println!("  HDR transfer + high bit depth: {}", hdr_transfer_any);
+                        println!("  Final result: {}", traditional_hdr || wide_gamut_hdr || hdr_transfer_any);
+                    }
+                },
+                Err(e) => {
+                    println!("✗ Failed to decode with custom AVIF reader: {}", e);
+                    
+                    // Try fallback with image crate
+                    match image::open(&image_path) {
+                        Ok(img) => {
+                            println!("✓ Decoded with image crate fallback");
+                            println!("  Dimensions: {}x{}", img.width(), img.height());
+                            println!("  Color type: {:?}", img.color());
+                            println!("  Format: {}", format_description(&img));
+                            println!("  Note: HDR and color space information not available with fallback");
+                        },
+                        Err(e2) => {
+                            println!("✗ Also failed with image crate: {}", e2);
+                        }
+                    }
+                }
+            }
+        },
+        Some("jpg") | Some("jpeg") => {
+            println!("=== JPEG Analysis ===");
+            if let Some(icc) = formats::jpeg::extract_icc_profile(&image_path) {
+                println!("ICC profile: {} bytes", icc.len());
+            } else {
+                println!("ICC profile: None");
+            }
+            
+            match image::open(&image_path) {
+                Ok(img) => {
+                    println!("Decoded successfully");
+                    println!("  Dimensions: {}x{}", img.width(), img.height());
+                    println!("  Color type: {:?}", img.color());
+                    println!("  Format: {}", format_description(&img));
+                },
+                Err(e) => println!("Decode error: {}", e),
+            }
+        },
+        Some("png") => {
+            println!("=== PNG Analysis ===");
+            if let Some(icc) = formats::png::extract_icc_profile(&image_path) {
+                println!("ICC profile: {} bytes", icc.len());
+            } else {
+                println!("ICC profile: None");
+            }
+            
+            match image::open(&image_path) {
+                Ok(img) => {
+                    println!("Decoded successfully");
+                    println!("  Dimensions: {}x{}", img.width(), img.height());
+                    println!("  Color type: {:?}", img.color());
+                    println!("  Format: {}", format_description(&img));
+                },
+                Err(e) => println!("Decode error: {}", e),
+            }
+        },
+        Some("webp") => {
+            println!("=== WebP Analysis ===");
+            match image::open(&image_path) {
+                Ok(img) => {
+                    println!("Decoded successfully");
+                    println!("  Dimensions: {}x{}", img.width(), img.height());
+                    println!("  Color type: {:?}", img.color());
+                    println!("  Format: {}", format_description(&img));
+                },
+                Err(e) => println!("Decode error: {}", e),
+            }
+        },
+        _ => {
+            println!("=== Generic Image Analysis ===");
+            match image::open(&image_path) {
+                Ok(img) => {
+                    println!("Decoded successfully");
+                    println!("  Dimensions: {}x{}", img.width(), img.height());
+                    println!("  Color type: {:?}", img.color());
+                    println!("  Format: {}", format_description(&img));
+                },
+                Err(e) => println!("Decode error: {}", e),
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+fn format_description(img: &image::DynamicImage) -> &'static str {
+    match img {
+        image::DynamicImage::ImageLuma8(_) => "8-bit Grayscale",
+        image::DynamicImage::ImageLumaA8(_) => "8-bit Grayscale + Alpha",
+        image::DynamicImage::ImageRgb8(_) => "8-bit RGB",
+        image::DynamicImage::ImageRgba8(_) => "8-bit RGBA",
+        image::DynamicImage::ImageLuma16(_) => "16-bit Grayscale",
+        image::DynamicImage::ImageLumaA16(_) => "16-bit Grayscale + Alpha",
+        image::DynamicImage::ImageRgb16(_) => "16-bit RGB (HDR)",
+        image::DynamicImage::ImageRgba16(_) => "16-bit RGBA (HDR)",
+        image::DynamicImage::ImageRgb32F(_) => "32-bit Float RGB",
+        image::DynamicImage::ImageRgba32F(_) => "32-bit Float RGBA",
+        _ => "Unknown format",
+    }
+}
+
+fn color_primaries_name(value: u16) -> &'static str {
+    match value {
+        0 => "Reserved(0)",
+        1 => "BT.709",
+        2 => "Unspecified",
+        3 => "Reserved(3)", 
+        4 => "BT.470M",
+        5 => "BT.470BG", 
+        6 => "BT.601",
+        7 => "SMPTE-240M",
+        8 => "Generic film",
+        9 => "BT.2020",
+        10 => "SMPTE-428",
+        11 => "SMPTE-431",
+        12 => "SMPTE-432 (Display P3)",
+        22 => "EBU Tech 3213-E",
+        _ => "Unknown"
+    }
+}
+
+fn transfer_characteristics_name(value: u16) -> &'static str {
+    match value {
+        0 => "Reserved(0)",
+        1 => "BT.709",
+        2 => "Unspecified", 
+        3 => "Reserved(3)",
+        4 => "Gamma 2.2",
+        5 => "Gamma 2.8",
+        6 => "BT.601",
+        7 => "SMPTE-240M",
+        8 => "Linear",
+        9 => "Log 100:1",
+        10 => "Log 316:1",
+        11 => "xvYCC",
+        12 => "BT.1361",
+        13 => "sRGB",
+        14 => "BT.2020 (10-bit)",
+        15 => "BT.2020 (12-bit)",
+        16 => "SMPTE-2084 (PQ)",
+        17 => "SMPTE-428",
+        18 => "HLG",
+        _ => "Unknown"
+    }
+}
+
+fn matrix_coefficients_name(value: u16) -> &'static str {
+    match value {
+        0 => "Identity",
+        1 => "BT.709",
+        2 => "Unspecified",
+        3 => "Reserved(3)",
+        4 => "FCC",
+        5 => "BT.470BG",
+        6 => "BT.601",
+        7 => "SMPTE-240M",
+        8 => "YCgCo",
+        9 => "BT.2020 NCL",
+        10 => "BT.2020 CL",
+        11 => "SMPTE-2085",
+        12 => "Chroma NCL",
+        13 => "Chroma CL",
+        14 => "ICtCp",
+        _ => "Unknown"
+    }
 }
 
 async fn run_server(

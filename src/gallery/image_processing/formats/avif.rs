@@ -75,6 +75,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             data.len(),
         );
         
+        
         if result != sys::AVIF_RESULT_OK as u32 {
             sys::avifImageDestroy(image);
             sys::avifDecoderDestroy(decoder);
@@ -107,6 +108,8 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             // Any high bit depth with HDR transfer function
             (bit_depth > 8 && has_hdr_transfer)
         );
+
+        let _gain_map = (*image).clli;
         
         // Extract ICC profile if present
         let icc_profile = if (*image).icc.size > 0 && !(*image).icc.data.is_null() {
@@ -399,16 +402,16 @@ fn save_with_profile_and_color(
             return Err(GalleryError::ProcessingError("Failed to create AVIF image".to_string()));
         }
         
-        // Set color properties - preserve original if provided
+        // Set color properties - preserve original exactly
         if let Some(info) = color_info {
-            // Use the original color properties
+            // Preserve the original color properties exactly as they were
             (*avif_image).colorPrimaries = info.color_primaries;
             (*avif_image).transferCharacteristics = info.transfer_characteristics;
             (*avif_image).matrixCoefficients = info.matrix_coefficients;
             (*avif_image).yuvRange = sys::AVIF_RANGE_FULL as u32;
             
             debug!(
-                "Using provided color properties: primaries={}, transfer={}, matrix={}",
+                "Preserving original color properties: primaries={}, transfer={}, matrix={}",
                 info.color_primaries, info.transfer_characteristics, info.matrix_coefficients
             );
         } else {
