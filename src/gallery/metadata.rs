@@ -16,6 +16,7 @@ impl Gallery {
             .map(|s| s.to_lowercase());
 
         match extension.as_deref() {
+            #[cfg(feature = "avif")]
             Some("avif") => {
                 // For AVIF files, extract EXIF data using libavif
                 match super::image_processing::formats::avif::extract_exif_data(image_path) {
@@ -399,6 +400,7 @@ impl Gallery {
         path: &Path,
     ) -> Result<ImageMetadata, super::GalleryError> {
         // Get image dimensions
+        #[allow(unused_variables)] // ext is used conditionally based on features
         let ext = path
             .extension()
             .and_then(|s| s.to_str())
@@ -407,10 +409,15 @@ impl Gallery {
             Ok((w, h)) => (w, h),
             Err(_) => {
                 // For AVIF, try our custom dimension extraction
+                #[cfg(feature = "avif")]
                 if ext.as_deref() == Some("avif") {
                     super::image_processing::formats::avif::extract_dimensions(path)
                         .unwrap_or((0, 0))
                 } else {
+                    (0, 0)
+                }
+                #[cfg(not(feature = "avif"))]
+                {
                     (0, 0)
                 }
             }
@@ -443,6 +450,7 @@ impl Gallery {
                     None
                 }
             }
+            #[cfg(feature = "avif")]
             Some("avif") => {
                 // For AVIF files, generate a descriptive color space string
                 super::image_processing::formats::avif::extract_color_description(path)

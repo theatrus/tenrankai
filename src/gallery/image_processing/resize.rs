@@ -5,8 +5,16 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, error};
 
 use super::formats;
+#[cfg(feature = "avif")]
 use super::formats::avif::AvifImageInfo;
 use super::types::{ImageSize, OutputFormat};
+
+// Type alias for AVIF info that works with or without the feature
+#[cfg(feature = "avif")]
+#[allow(dead_code)] // Used conditionally
+type AvifInfoOption = Option<AvifImageInfo>;
+#[cfg(not(feature = "avif"))]
+type AvifInfoOption = Option<()>;
 
 impl Gallery {
     /// Parse size string and determine dimensions
@@ -139,26 +147,40 @@ fn process_image(
         original_path, detected_format
     );
 
-    let (img, avif_info) = if detected_format == Some(ImageFormat::Avif) {
-        // Use our custom AVIF reader to preserve color properties
-        match formats::avif::read_avif_info(original_path) {
-            Ok((img, info)) => (img, Some(info)),
-            Err(e) => {
-                debug!(
-                    "Failed to read AVIF with custom reader: {}, falling back",
-                    e
-                );
+    let (img, _avif_info) = {
+        #[cfg(feature = "avif")]
+        {
+            if detected_format == Some(ImageFormat::Avif) {
+                // Use our custom AVIF reader to preserve color properties
+                match formats::avif::read_avif_info(original_path) {
+                    Ok((img, info)) => (img, Some(info)),
+                    Err(e) => {
+                        debug!(
+                            "Failed to read AVIF with custom reader: {}, falling back",
+                            e
+                        );
+                        (image::open(original_path)?, None)
+                    }
+                }
+            } else {
                 (image::open(original_path)?, None)
             }
         }
-    } else {
-        (image::open(original_path)?, None)
+        #[cfg(not(feature = "avif"))]
+        {
+            (image::open(original_path)?, None::<()>)
+        }
     };
 
     let resized = resize_image(&img, dimensions)?;
 
     // Resize gain map if present
-    let mut resized_avif_info = avif_info.clone();
+    #[cfg(feature = "avif")]
+    let mut resized_avif_info = _avif_info.clone();
+    #[cfg(not(feature = "avif"))]
+    let _resized_avif_info: AvifInfoOption = None;
+
+    #[cfg(feature = "avif")]
     if let Some(ref mut info) = resized_avif_info
         && let Some(ref gm_info) = info.gain_map_info
         && let Some(ref gm_image) = gm_info.gain_map_image
@@ -209,7 +231,10 @@ fn process_image(
         jpeg_quality,
         webp_quality,
         icc_profile.as_deref(),
+        #[cfg(feature = "avif")]
         resized_avif_info.as_ref(),
+        #[cfg(not(feature = "avif"))]
+        None,
     )?;
 
     Ok(())
@@ -227,6 +252,7 @@ fn extract_image_info(path: &Path) -> Result<(Option<Vec<u8>>, Option<ImageForma
     let icc_profile = match detected_format {
         Some(ImageFormat::Jpeg) => formats::jpeg::extract_icc_profile(path),
         Some(ImageFormat::Png) => formats::png::extract_icc_profile(path),
+        #[cfg(feature = "avif")]
         Some(ImageFormat::Avif) => formats::avif::extract_icc_profile(path),
         _ => None,
     };
@@ -285,7 +311,8 @@ fn save_image(
     jpeg_quality: u8,
     webp_quality: f32,
     icc_profile: Option<&[u8]>,
-    avif_info: Option<&AvifImageInfo>,
+    #[cfg(feature = "avif")] avif_info: Option<&AvifImageInfo>,
+    #[cfg(not(feature = "avif"))] _avif_info: Option<()>,
 ) -> Result<(), GalleryError> {
     match format {
         OutputFormat::Jpeg => {
@@ -295,6 +322,7 @@ fn save_image(
             formats::webp::save_with_profile(image, path, webp_quality, icc_profile)
         }
         OutputFormat::Png => formats::png::save(image, path),
+        #[cfg(feature = "avif")]
         OutputFormat::Avif => {
             // Use the preserved AVIF info if available
             if let Some(info) = avif_info {

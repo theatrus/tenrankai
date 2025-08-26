@@ -1,3 +1,5 @@
+#![cfg(feature = "avif")]
+
 use image::imageops::FilterType;
 use std::path::Path;
 use tempfile::TempDir;

@@ -5,6 +5,7 @@ pub enum OutputFormat {
     Jpeg,
     WebP,
     Png,
+    #[cfg(feature = "avif")]
     Avif,
 }
 
@@ -14,6 +15,7 @@ impl OutputFormat {
             OutputFormat::Jpeg => "jpg",
             OutputFormat::WebP => "webp",
             OutputFormat::Png => "png",
+            #[cfg(feature = "avif")]
             OutputFormat::Avif => "avif",
         }
     }
@@ -24,6 +26,7 @@ impl OutputFormat {
             OutputFormat::Jpeg => ImageFormat::Jpeg,
             OutputFormat::WebP => ImageFormat::WebP,
             OutputFormat::Png => ImageFormat::Png,
+            #[cfg(feature = "avif")]
             OutputFormat::Avif => ImageFormat::Avif,
         }
     }
@@ -33,6 +36,7 @@ impl OutputFormat {
             OutputFormat::Jpeg => "image/jpeg",
             OutputFormat::WebP => "image/webp",
             OutputFormat::Png => "image/png",
+            #[cfg(feature = "avif")]
             OutputFormat::Avif => "image/avif",
         }
     }

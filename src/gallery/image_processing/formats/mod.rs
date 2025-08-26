@@ -1,4 +1,6 @@
+#[cfg(feature = "avif")]
 pub mod avif;
+#[cfg(feature = "avif")]
 pub mod avif_container;
 pub mod jpeg;
 pub mod png;
@@ -19,9 +21,12 @@ impl Gallery {
 
         // For all sources (including AVIF), check browser support in priority order
         // This allows AVIF sources to be served as WebP/JPEG when browser doesn't support AVIF
+        #[cfg(feature = "avif")]
         if accept_header.contains("image/avif") {
-            OutputFormat::Avif
-        } else if accept_header.contains("image/webp") {
+            return OutputFormat::Avif;
+        }
+
+        if accept_header.contains("image/webp") {
             OutputFormat::WebP
         } else {
             OutputFormat::Jpeg
