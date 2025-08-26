@@ -140,10 +140,22 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         let mut rgb = sys::avifRGBImage::default();
         sys::avifRGBImageSetDefaults(&mut rgb, image);
         
+        // Set format explicitly
+        rgb.format = if has_alpha { 
+            sys::AVIF_RGB_FORMAT_RGBA as u32 
+        } else { 
+            sys::AVIF_RGB_FORMAT_RGB as u32 
+        };
+        
         // For HDR images, preserve bit depth
         if bit_depth > 8 {
             rgb.depth = bit_depth;
         }
+        
+        debug!(
+            "RGB conversion settings: format={}, depth={}, rowBytes will be calculated by libavif",
+            rgb.format, rgb.depth
+        );
         
         // Allocate RGB pixels
         if sys::avifRGBImageAllocatePixels(&mut rgb) != sys::AVIF_RESULT_OK as u32 {
@@ -151,6 +163,12 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
             sys::avifDecoderDestroy(decoder);
             return Err(GalleryError::ProcessingError("Failed to allocate RGB pixels".to_string()));
         }
+        
+        debug!(
+            "RGB allocated: rowBytes={}, expected bytes per pixel={}",
+            rgb.rowBytes,
+            if has_alpha { 4 } else { 3 } * if bit_depth > 8 { 2 } else { 1 }
+        );
         
         // Convert YUV to RGB
         if sys::avifImageYUVToRGB(image, &mut rgb) != sys::AVIF_RESULT_OK as u32 {
@@ -163,79 +181,92 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
         // Create DynamicImage based on bit depth
         let dynamic_img = if bit_depth > 8 {
             // HDR image - convert to 16-bit
-            let pixels = std::slice::from_raw_parts(
-                rgb.pixels as *const u16,
-                (rgb.rowBytes * height) as usize / 2
-            );
-            
             if has_alpha {
                 let mut img = ImageBuffer::new(width, height);
+                let bytes_per_pixel = 8; // 4 channels * 2 bytes
+                
                 for y in 0..height {
                     for x in 0..width {
-                        let idx = (y * rgb.rowBytes / 8 + x * 4) as usize;
-                        if idx + 3 < pixels.len() {
-                            // Scale from bit_depth to 16-bit if needed
-                            let shift = 16 - bit_depth;
-                            img.put_pixel(x, y, image::Rgba([
-                                pixels[idx] << shift,
-                                pixels[idx + 1] << shift,
-                                pixels[idx + 2] << shift,
-                                pixels[idx + 3] << shift,
-                            ]));
-                        }
+                        let pixel_offset = y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
+                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) as *const u16 };
+                        
+                        // Scale from bit_depth to 16-bit if needed
+                        let shift = 16 - bit_depth;
+                        let pixel = unsafe {
+                            image::Rgba([
+                                *pixel_ptr << shift,
+                                *pixel_ptr.add(1) << shift,
+                                *pixel_ptr.add(2) << shift,
+                                *pixel_ptr.add(3) << shift,
+                            ])
+                        };
+                        img.put_pixel(x, y, pixel);
                     }
                 }
                 DynamicImage::ImageRgba16(img)
             } else {
                 let mut img = ImageBuffer::new(width, height);
+                let bytes_per_pixel = 6; // 3 channels * 2 bytes
+                
                 for y in 0..height {
                     for x in 0..width {
-                        let idx = (y * rgb.rowBytes / 6 + x * 3) as usize;
-                        if idx + 2 < pixels.len() {
-                            // Scale from bit_depth to 16-bit if needed
-                            let shift = 16 - bit_depth;
-                            img.put_pixel(x, y, image::Rgb([
-                                pixels[idx] << shift,
-                                pixels[idx + 1] << shift,
-                                pixels[idx + 2] << shift,
-                            ]));
-                        }
+                        let pixel_offset = y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
+                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) as *const u16 };
+                        
+                        // Scale from bit_depth to 16-bit if needed
+                        let shift = 16 - bit_depth;
+                        let pixel = unsafe {
+                            image::Rgb([
+                                *pixel_ptr << shift,
+                                *pixel_ptr.add(1) << shift,
+                                *pixel_ptr.add(2) << shift,
+                            ])
+                        };
+                        img.put_pixel(x, y, pixel);
                     }
                 }
                 DynamicImage::ImageRgb16(img)
             }
         } else {
             // 8-bit image
-            let pixels = std::slice::from_raw_parts(rgb.pixels, (rgb.rowBytes * height) as usize);
-            
             if has_alpha {
                 let mut img = ImageBuffer::new(width, height);
+                let bytes_per_pixel = 4; // RGBA
+                
                 for y in 0..height {
                     for x in 0..width {
-                        let idx = (y * rgb.rowBytes + x * 4) as usize;
-                        if idx + 3 < pixels.len() {
-                            img.put_pixel(x, y, image::Rgba([
-                                pixels[idx],
-                                pixels[idx + 1],
-                                pixels[idx + 2],
-                                pixels[idx + 3],
-                            ]));
-                        }
+                        let pixel_offset = y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
+                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) };
+                        
+                        let pixel = unsafe {
+                            image::Rgba([
+                                *pixel_ptr,
+                                *pixel_ptr.add(1),
+                                *pixel_ptr.add(2),
+                                *pixel_ptr.add(3),
+                            ])
+                        };
+                        img.put_pixel(x, y, pixel);
                     }
                 }
                 DynamicImage::ImageRgba8(img)
             } else {
                 let mut img = ImageBuffer::new(width, height);
+                let bytes_per_pixel = 3; // RGB
+                
                 for y in 0..height {
                     for x in 0..width {
-                        let idx = (y * rgb.rowBytes + x * 3) as usize;
-                        if idx + 2 < pixels.len() {
-                            img.put_pixel(x, y, image::Rgb([
-                                pixels[idx],
-                                pixels[idx + 1],
-                                pixels[idx + 2],
-                            ]));
-                        }
+                        let pixel_offset = y as usize * rgb.rowBytes as usize + x as usize * bytes_per_pixel;
+                        let pixel_ptr = unsafe { rgb.pixels.add(pixel_offset) };
+                        
+                        let pixel = unsafe {
+                            image::Rgb([
+                                *pixel_ptr,
+                                *pixel_ptr.add(1),
+                                *pixel_ptr.add(2),
+                            ])
+                        };
+                        img.put_pixel(x, y, pixel);
                     }
                 }
                 DynamicImage::ImageRgb8(img)
