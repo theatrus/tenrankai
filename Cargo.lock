@@ -2365,8 +2365,7 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 [[package]]
 name = "libaom-sys"
 version = "0.17.2+libaom.3.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c4fce8aaf0c2d8534529b0698ed98ec1da8d35319588d20b0d79ce6446e4194"
+source = "git+https://github.com/theatrus/libavif-rs#18304417e422120835c358cdd0721ee43e4c6d7c"
 dependencies = [
  "cmake",
 ]
@@ -2374,8 +2373,7 @@ dependencies = [
 [[package]]
 name = "libavif"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b710faf0de92da0e32a9a9c89bbf849e37277fd447b4f17b0f0f798796ae1f2"
+source = "git+https://github.com/theatrus/libavif-rs#18304417e422120835c358cdd0721ee43e4c6d7c"
 dependencies = [
  "libavif-sys",
 ]
@@ -2383,8 +2381,7 @@ dependencies = [
 [[package]]
 name = "libavif-sys"
 version = "0.17.0+libavif.1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "490ca74b61e773140bebb086c81facb23273a99364a9ab0c92ab1532b90ade35"
+source = "git+https://github.com/theatrus/libavif-rs#18304417e422120835c358cdd0721ee43e4c6d7c"
 dependencies = [
  "cmake",
  "libaom-sys",
@@ -2402,8 +2399,7 @@ checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
 [[package]]
 name = "libdav1d-sys"
 version = "0.7.1+libdav1d.1.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d875e9669d116a603412a126de599b7bf47789a365b79fcf461fbf9c18d141f"
+source = "git+https://github.com/theatrus/libavif-rs#18304417e422120835c358cdd0721ee43e4c6d7c"
 dependencies = [
  "libc",
 ]
