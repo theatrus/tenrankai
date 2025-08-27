@@ -254,7 +254,7 @@ async fn run_server(
 
     info!("Starting {} server", config.app.name);
     info!("Configuration loaded from: {:?}", config_path);
-    info!("Template directory: {:?}", config.templates.directory);
+    info!("Template directories: {:?}", config.templates.directories);
     info!(
         "Static files directories: {:?}",
         config.static_files.directories

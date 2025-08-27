@@ -79,6 +79,10 @@ docker run -d \
   -v ./photos:/app/photos:ro \
   -v ./cache:/app/cache \
   tenrankai:latest
+
+# Or use docker-compose (recommended for complex setups)
+# See docker-compose.example.yml for a complete example with all options
+docker-compose up -d
 ```
 
 #### Docker Image
@@ -93,7 +97,7 @@ The container expects these volumes:
 - `/app/cache` - Image cache directory (read-write)
 - `/app/users.toml` - Optional: User database for authentication
 - `/app/static` - Optional: Custom static assets
-- `/app/templates` - Optional: Custom templates
+- `/app/templates` - Optional: Custom templates (see below for override examples)
 
 #### Environment Variables
 
@@ -111,6 +115,82 @@ docker run -e TENRANKAI_HOST=0.0.0.0 -e TENRANKAI_PORT=3000 ...
 - Mount config and photos as read-only (`:ro`)
 - Never include secrets in the image
 - Use environment variables or mounted files for sensitive data
+
+#### Template Overrides
+
+Tenrankai supports multiple template directories with a precedence system, allowing you to override specific templates while using the built-in defaults.
+
+**Basic Override Example:**
+```bash
+# Create custom templates directory
+mkdir -p custom-templates/partials
+
+# Create a custom header
+cat > custom-templates/partials/_header.html.liquid << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Custom Gallery</title>
+    <style>
+        header { background-color: #2c3e50; color: white; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>My Photography Portfolio</h1>
+    </header>
+    <main>
+EOF
+
+# Update config.toml to use both directories
+cat > config.toml << 'EOF'
+[templates]
+# Custom templates override built-in ones
+directories = ["custom-templates", "templates"]
+EOF
+
+# Run with Docker
+docker run -d \
+  -p 3000:3000 \
+  -v ./config.toml:/app/config.toml:ro \
+  -v ./custom-templates:/app/custom-templates:ro \
+  -v ./photos:/app/photos:ro \
+  -v ./cache:/app/cache \
+  tenrankai:latest
+```
+
+**Advanced Theme Example:**
+```bash
+# Create a complete theme override
+mkdir -p themes/dark/{partials,pages,modules}
+
+# Run with theme
+docker run -d \
+  -p 3000:3000 \
+  -v ./config-with-theme.toml:/app/config.toml:ro \
+  -v ./themes:/app/themes:ro \
+  -v ./photos:/app/photos:ro \
+  -v ./cache:/app/cache \
+  tenrankai:latest
+```
+
+Where `config-with-theme.toml` contains:
+```toml
+[templates]
+directories = ["themes/dark", "templates"]
+```
+
+**How It Works:**
+- Templates are searched in order - first match wins
+- You only need to override the specific templates you want to customize
+- Missing templates fall back to the next directory
+- Partials follow the same rules, allowing mix-and-match
+
+**Common Override Patterns:**
+- **Brand customization**: Override `_header.html.liquid` and `_footer.html.liquid`
+- **Layout changes**: Override `modules/gallery.html.liquid`
+- **Style updates**: Override partials while keeping page structure
+- **A/B testing**: Switch between template sets via config
 
 ### Build Options
 

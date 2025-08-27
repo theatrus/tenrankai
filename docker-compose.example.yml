@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  tenrankai:
+    image: tenrankai:latest
+    # Or use GitHub Container Registry when available:
+    # image: ghcr.io/theatrus/tenrankai:latest
+    
+    ports:
+      - "3000:3000"
+    
+    volumes:
+      # Main configuration - REQUIRED
+      - ./config.toml:/app/config.toml:ro
+      
+      # Photo directories - REQUIRED
+      - ./photos:/app/photos:ro
+      
+      # Cache directory - REQUIRED (read-write)
+      - ./cache:/app/cache
+      
+      # Optional: User database for authentication
+      # - ./users.toml:/app/users.toml:ro
+      
+      # Optional: Custom static assets
+      # - ./static-custom:/app/static-custom:ro
+      
+      # Optional: Custom templates that override built-ins
+      # - ./templates-custom:/app/templates-custom:ro
+      
+      # Optional: Complete theme override
+      # - ./themes:/app/themes:ro
+    
+    environment:
+      # Log level: trace, debug, info, warn, error
+      - RUST_LOG=info
+      
+      # Override server settings if needed
+      # - TENRANKAI_HOST=0.0.0.0
+      # - TENRANKAI_PORT=3000
+    
+    restart: unless-stopped
+    
+    # Security: Run as non-root user
+    user: "1001:1001"
+
+# Example with template overrides:
+# 
+# 1. Create custom templates:
+#    mkdir -p templates-custom/partials
+#    # Add your custom _header.html.liquid, etc.
+# 
+# 2. Update config.toml:
+#    [templates]
+#    directories = ["templates-custom", "templates"]
+# 
+# 3. Uncomment the templates-custom volume mount above
+# 
+# 4. Run: docker-compose up -d

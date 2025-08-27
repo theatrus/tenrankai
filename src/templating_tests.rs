@@ -106,7 +106,7 @@ mod tests {
         )
         .unwrap();
 
-        let template_engine = TemplateEngine::new(template_path.to_path_buf());
+        let template_engine = TemplateEngine::new(vec![template_path.to_path_buf()]);
 
         (temp_dir, template_engine)
     }
@@ -208,7 +208,7 @@ mod tests {
         let bad_content = r#"{% include "_missing.html.liquid" %}"#;
         fs::write(template_path.join("pages/bad.html.liquid"), bad_content).unwrap();
 
-        let engine = TemplateEngine::new(template_path.to_path_buf());
+        let engine = TemplateEngine::new(vec![template_path.to_path_buf()]);
         let globals = liquid::object!({});
 
         let result = engine
