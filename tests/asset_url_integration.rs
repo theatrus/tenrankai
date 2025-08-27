@@ -36,7 +36,7 @@ async fn test_asset_url_filter_in_templates() {
         .unwrap();
 
     // Create template engine and static handler
-    let mut template_engine = tenrankai::templating::TemplateEngine::new(template_dir);
+    let mut template_engine = tenrankai::templating::TemplateEngine::new(vec![template_dir]);
     let static_handler = tenrankai::static_files::StaticFileHandler::new(vec![static_dir]);
 
     // Refresh file versions to pick up our test files
@@ -103,7 +103,7 @@ async fn test_asset_url_filter_with_page_css_and_js() {
         .unwrap();
 
     // Create template engine and static handler
-    let mut template_engine = tenrankai::templating::TemplateEngine::new(template_dir);
+    let mut template_engine = tenrankai::templating::TemplateEngine::new(vec![template_dir]);
     let static_handler = tenrankai::static_files::StaticFileHandler::new(vec![static_dir]);
 
     // Refresh file versions

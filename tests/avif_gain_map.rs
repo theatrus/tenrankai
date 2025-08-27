@@ -74,19 +74,19 @@ fn test_avif_gain_map_preservation() {
 
     // Resize gain map proportionally
     let mut resized_avif_info = avif_info.clone();
-    if let Some(ref mut gm_info) = resized_avif_info.gain_map_info {
-        if let Some(ref gm_image) = gm_info.gain_map_image {
-            let new_gm_width = (gm_image.width() as f32 * scale_x).round() as u32;
-            let new_gm_height = (gm_image.height() as f32 * scale_y).round() as u32;
+    if let Some(ref mut gm_info) = resized_avif_info.gain_map_info
+        && let Some(ref gm_image) = gm_info.gain_map_image
+    {
+        let new_gm_width = (gm_image.width() as f32 * scale_x).round() as u32;
+        let new_gm_height = (gm_image.height() as f32 * scale_y).round() as u32;
 
-            let resized_gain_map = gm_image.resize_exact(
-                new_gm_width.max(1),
-                new_gm_height.max(1),
-                FilterType::Lanczos3,
-            );
+        let resized_gain_map = gm_image.resize_exact(
+            new_gm_width.max(1),
+            new_gm_height.max(1),
+            FilterType::Lanczos3,
+        );
 
-            gm_info.gain_map_image = Some(resized_gain_map);
-        }
+        gm_info.gain_map_image = Some(resized_gain_map);
     }
 
     // Save with gain map

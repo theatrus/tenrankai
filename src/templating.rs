@@ -91,7 +91,7 @@ impl ParseFilter for AssetUrlFilter {
 }
 
 pub struct TemplateEngine {
-    pub template_dir: PathBuf,
+    pub template_dirs: Vec<PathBuf>,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
     static_handler: Option<crate::static_files::StaticFileHandler>,
     has_user_auth: bool,
@@ -104,9 +104,9 @@ struct CachedTemplate {
 }
 
 impl TemplateEngine {
-    pub fn new(template_dir: PathBuf) -> Self {
+    pub fn new(template_dirs: Vec<PathBuf>) -> Self {
         Self {
-            template_dir,
+            template_dirs,
             cache: Arc::new(RwLock::new(HashMap::new())),
             static_handler: None,
             has_user_auth: false,
@@ -150,40 +150,53 @@ impl TemplateEngine {
     }
 
     async fn load_template(&self, path: &str) -> Result<String, String> {
-        let template_path = self.template_dir.join(path);
+        // Try to find the template in each directory, returning the first match
+        for template_dir in &self.template_dirs {
+            let template_path = template_dir.join(path);
 
-        let metadata = tokio::fs::metadata(&template_path)
-            .await
-            .map_err(|e| format!("Failed to get metadata for {}: {}", path, e))?;
+            // Check if file exists in this directory
+            match tokio::fs::metadata(&template_path).await {
+                Ok(metadata) => {
+                    let modified = metadata
+                        .modified()
+                        .map_err(|e| format!("Failed to get modified time: {}", e))?;
 
-        let modified = metadata
-            .modified()
-            .map_err(|e| format!("Failed to get modified time: {}", e))?;
+                    let mut cache = self.cache.write().await;
 
-        let mut cache = self.cache.write().await;
+                    if let Some(cached) = cache.get(path)
+                        && cached.modified >= modified
+                    {
+                        debug!("Using cached template for {}", path);
+                        return Ok(cached.content.clone());
+                    }
 
-        if let Some(cached) = cache.get(path)
-            && cached.modified >= modified
-        {
-            debug!("Using cached template for {}", path);
-            return Ok(cached.content.clone());
+                    info!("Loading template: {} from {:?}", path, template_dir);
+
+                    let content = tokio::fs::read_to_string(&template_path)
+                        .await
+                        .map_err(|e| format!("Failed to read template {}: {}", path, e))?;
+
+                    cache.insert(
+                        path.to_string(),
+                        CachedTemplate {
+                            content: content.clone(),
+                            modified,
+                        },
+                    );
+
+                    return Ok(content);
+                }
+                Err(_) => {
+                    // File doesn't exist in this directory, try the next one
+                    continue;
+                }
+            }
         }
 
-        info!("Loading template: {}", path);
-
-        let content = tokio::fs::read_to_string(&template_path)
-            .await
-            .map_err(|e| format!("Failed to read template {}: {}", path, e))?;
-
-        cache.insert(
-            path.to_string(),
-            CachedTemplate {
-                content: content.clone(),
-                modified,
-            },
-        );
-
-        Ok(content)
+        Err(format!(
+            "Template {} not found in any of the configured directories: {:?}",
+            path, self.template_dirs
+        ))
     }
 
     pub async fn render_with_gallery(&self, path: &str) -> Result<Html<String>, StatusCode> {
@@ -326,8 +339,17 @@ pub async fn template_with_gallery_handler(
         &format!("pages/{}.html.liquid", path.trim_start_matches('/'))
     };
 
-    let template_file_path = app_state.template_engine.template_dir.join(template_path);
-    if !template_file_path.exists() {
+    // Check if template exists in any of the template directories
+    let mut template_exists = false;
+    for template_dir in &app_state.template_engine.template_dirs {
+        let template_file_path = template_dir.join(template_path);
+        if template_file_path.exists() {
+            template_exists = true;
+            break;
+        }
+    }
+
+    if !template_exists {
         debug!(
             "Template not found: {}, checking for static file",
             template_path
@@ -430,7 +452,7 @@ mod tests {
     #[tokio::test]
     async fn test_template_with_asset_url_filter() {
         // Create a template engine with file versions
-        let mut template_engine = TemplateEngine::new(PathBuf::from("templates"));
+        let mut template_engine = TemplateEngine::new(vec![PathBuf::from("templates")]);
 
         // Set up file versions
         let file_versions = Arc::new(RwLock::new(HashMap::new()));
@@ -477,3 +499,7 @@ mod tests {
 #[cfg(test)]
 #[path = "templating_tests.rs"]
 mod templating_tests;
+
+#[cfg(test)]
+#[path = "templating_multi_dir_tests.rs"]
+mod templating_multi_dir_tests;

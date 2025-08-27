@@ -75,7 +75,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             user_database: None,
         },
         templates: tenrankai::TemplateConfig {
-            directory: templates_dir,
+            directories: vec![templates_dir],
         },
         static_files: tenrankai::StaticConfig {
             directories: vec![static_dir],

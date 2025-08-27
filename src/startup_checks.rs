@@ -125,13 +125,19 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
         }
     }
 
-    // Check templates directory
-    let templates_dir = Path::new(&config.templates.directory);
-    if !templates_dir.exists() {
-        warn!("Templates directory does not exist: {:?}", templates_dir);
-        warn!("This may cause issues with page rendering");
-    } else {
-        info!("Templates directory exists: {:?}", templates_dir);
+    // Check templates directories
+    for (index, templates_dir) in config.templates.directories.iter().enumerate() {
+        if !templates_dir.exists() {
+            warn!(
+                "Templates directory {} does not exist: {:?}",
+                index, templates_dir
+            );
+            if index == 0 {
+                warn!("This may cause issues with page rendering");
+            }
+        } else {
+            info!("Templates directory {} exists: {:?}", index, templates_dir);
+        }
     }
 
     if errors.is_empty() {

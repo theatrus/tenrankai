@@ -71,7 +71,7 @@ async fn test_complete_template_with_asset_filter() {
         .unwrap();
 
     // Create and configure template engine
-    let mut template_engine = tenrankai::templating::TemplateEngine::new(template_dir);
+    let mut template_engine = tenrankai::templating::TemplateEngine::new(vec![template_dir]);
     let static_handler = tenrankai::static_files::StaticFileHandler::new(vec![static_dir]);
 
     static_handler.refresh_file_versions().await;

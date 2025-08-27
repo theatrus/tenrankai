@@ -40,7 +40,7 @@ async fn test_cascading_static_directories() {
     // Configure with cascading directories (static_dir1 has precedence)
     let mut config = tenrankai::Config::default();
     config.static_files.directories = vec![static_dir1, static_dir2];
-    config.templates.directory = templates_dir;
+    config.templates.directories = vec![templates_dir];
 
     // Create the app
     let app = tenrankai::create_app(config).await;
@@ -104,7 +104,7 @@ async fn test_favicon_cascading_directories() {
     // Configure with cascading directories
     let mut config = tenrankai::Config::default();
     config.static_files.directories = vec![static_dir1, static_dir2];
-    config.templates.directory = templates_dir;
+    config.templates.directories = vec![templates_dir];
 
     // Create the app
     let app = tenrankai::create_app(config).await;

@@ -134,6 +134,25 @@ All templates use the Liquid templating language. When loading templates:
 - Partial templates are referenced as `partials/_partial_name.html.liquid`
 - Partials are automatically loaded and made available to all templates
 
+#### Multi-Directory Template Loading
+Tenrankai supports loading templates from multiple directories with a precedence system:
+
+```toml
+[templates]
+# Single directory (backward compatible)
+directories = "templates"
+
+# OR multiple directories (first match wins)
+directories = ["templates-custom", "templates"]
+```
+
+This allows flexible customization:
+- Override specific templates while keeping defaults
+- Templates and partials are searched in directory order
+- First matching file is used
+- Mix templates and partials from different directories
+- Perfect for themes, branding, or A/B testing
+
 ## Email Module Architecture
 
 The email module provides a pluggable architecture for sending emails:
@@ -574,6 +593,24 @@ The command shows:
    - `allowed_users = ["user1", "user2"]` to restrict access to specific users
    - Hierarchical access control (parent folder restrictions apply to children)
    - Access control applies to gallery views, previews, and image serving
+
+### Multi-Directory Template System (December 2025)
+1. **Template Override Support**:
+   - Multiple template directories with precedence-based loading
+   - First matching template/partial wins
+   - Allows partial overrides while keeping defaults
+   - Perfect for themes, custom branding, A/B testing
+   - Docker-friendly for mounting custom templates
+
+2. **Configuration**:
+   ```toml
+   [templates]
+   # Single directory
+   directories = "templates"
+   
+   # Multiple directories (first match wins)
+   directories = ["themes/dark", "templates"]
+   ```
 
 ### Build System Improvements (December 2025)
 1. **Cross-Platform Build Support**:

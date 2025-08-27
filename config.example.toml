@@ -11,7 +11,10 @@ base_url = "https://your-domain.com"
 # user_database = "users.toml"
 
 [templates]
-directory = "templates"
+# Single directory (backward compatible)
+directories = "templates"
+# OR multiple directories with precedence (first overrides later)
+# directories = ["templates-custom", "templates"]
 
 [static_files]
 # Single directory (backward compatible)
