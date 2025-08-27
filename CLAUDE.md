@@ -372,6 +372,45 @@ curl http://localhost:3000/api/health
 
 This feature is particularly helpful when implementing new features to verify the server starts correctly without needing to manually terminate the process.
 
+### Docker Support
+
+The project includes production-ready Dockerfiles with multi-stage builds:
+
+#### Available Dockerfiles
+- **`Dockerfile`** - Full build with AVIF support
+  - Includes all features including HDR AVIF with gain maps
+  - Uses Rust 1.89 with release builds
+  - Final image: ~168 MB (release mode)
+  
+- **`Dockerfile.no-avif`** - Build without AVIF support  
+  - Faster builds, smaller image
+  - No complex AVIF dependencies
+  - Final image: ~130 MB (release mode)
+
+#### Building Docker Images
+```bash
+# Build with full AVIF support (recommended)
+docker build -t tenrankai:latest .
+
+# Build without AVIF support (faster builds)
+docker build -f Dockerfile.no-avif -t tenrankai:no-avif .
+
+# Using podman
+podman build -t tenrankai:latest .
+```
+
+#### Docker Features
+- **Production-optimized**: Uses `cargo build --release` for optimal performance
+- **Multi-stage builds**: Minimal final image with only runtime dependencies
+- **Security**: Runs as non-root user (appuser, UID 1001)
+- **Full AVIF support**: Includes HDR and gain map preservation
+- **GitHub Actions**: Automated builds and publishing to ghcr.io
+- **Multi-architecture**: Supports both linux/amd64 and linux/arm64
+- **Size comparison**:
+  - Debug builds: ~700 MB image, 585 MB binary
+  - Release builds: ~168 MB image, 45 MB binary
+  - 93% smaller binary, ~75% smaller image with release mode
+
 ### Common Commands
 - Check warnings: `cargo build 2>&1 | grep warning`
 - Run with debug logging: `RUST_LOG=debug cargo run`
