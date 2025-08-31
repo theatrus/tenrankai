@@ -501,7 +501,16 @@ impl Gallery {
         &self,
     ) -> Result<HashMap<(String, String), Vec<OutputFormat>>, super::GalleryError> {
         let mut missing_formats = HashMap::new();
-        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+        let sizes = vec![
+            "thumbnail",
+            "thumbnail@2x",
+            "gallery",
+            "gallery@2x",
+            "medium",
+            "medium@2x",
+            "large",
+            "large@2x",
+        ];
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
@@ -552,7 +561,16 @@ impl Gallery {
         );
 
         let missing_formats_map = self.analyze_missing_formats().await?;
-        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+        let sizes = vec![
+            "thumbnail",
+            "thumbnail@2x",
+            "gallery",
+            "gallery@2x",
+            "medium",
+            "medium@2x",
+            "large",
+            "large@2x",
+        ];
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
