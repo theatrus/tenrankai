@@ -66,7 +66,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y nasm ninja-build meson cmake
+        sudo apt-get install -y nasm ninja-build meson
 
     - name: Install build dependencies (macOS)
       if: matrix.os == 'macos-latest'
