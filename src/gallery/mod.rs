@@ -96,16 +96,30 @@ impl Gallery {
         // First refresh metadata
         self.clone().refresh_all_metadata().await?;
 
-        // Then optionally pre-generate cache in background
-        if pregenerate {
-            info!("Spawning background task for cache pre-generation");
+        // Generate any missing formats (especially AVIF) after metadata refresh
+        // This runs regardless of pregenerate setting to ensure format completeness
+        {
             let gallery_clone = self.clone();
             tokio::spawn(async move {
-                info!("Starting cache pre-generation in background after metadata refresh");
+                info!("Starting missing format generation in background after metadata refresh");
+                if let Err(e) = gallery_clone.generate_all_missing_formats().await {
+                    error!("Failed to generate missing formats: {}", e);
+                } else {
+                    info!("Background missing format generation completed successfully");
+                }
+            });
+        }
+
+        // Then optionally pre-generate cache in background (full regeneration)
+        if pregenerate {
+            info!("Spawning background task for full cache pre-generation");
+            let gallery_clone = self.clone();
+            tokio::spawn(async move {
+                info!("Starting full cache pre-generation in background after metadata refresh");
                 if let Err(e) = gallery_clone.pregenerate_all_images_cache().await {
                     error!("Failed to pre-generate image cache: {}", e);
                 } else {
-                    info!("Background cache pre-generation completed successfully");
+                    info!("Background full cache pre-generation completed successfully");
                 }
             });
         }
