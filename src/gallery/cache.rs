@@ -250,7 +250,16 @@ impl Gallery {
             return Ok(());
         }
 
-        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+        let sizes = vec![
+            "thumbnail",
+            "thumbnail@2x",
+            "gallery",
+            "gallery@2x",
+            "medium",
+            "medium@2x",
+            "large",
+            "large@2x",
+        ];
         let mut total_generated = 0;
 
         for size in &sizes {
@@ -453,7 +462,7 @@ impl Gallery {
             }
 
             // Determine if watermark applies (only for medium + copyright holder)
-            let is_medium = size == "medium";
+            let is_medium = size == "medium" || size == "medium@2x";
             let apply_watermark = is_medium && self.config.copyright_holder.is_some();
 
             let cache_filename = self.generate_cache_filename(
