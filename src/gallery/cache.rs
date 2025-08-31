@@ -1,8 +1,64 @@
 use super::image_processing::OutputFormat;
 use super::{CacheMetadata, Gallery, ImageMetadata};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info};
+
+/// Tracks which formats are available for a specific image and size
+#[derive(Debug, Clone, Default)]
+pub struct FormatCoverage {
+    pub has_jpeg: bool,
+    pub has_webp: bool,
+    pub has_png: bool,
+    #[cfg(feature = "avif")]
+    pub has_avif: bool,
+}
+
+impl FormatCoverage {
+    /// Get all expected formats for a given source image path
+    fn expected_formats(source_path: &str) -> Vec<OutputFormat> {
+        let mut formats = vec![OutputFormat::Jpeg];
+
+        // Skip WebP for PNG sources to preserve transparency
+        if !source_path.to_lowercase().ends_with(".png") {
+            formats.push(OutputFormat::WebP);
+        }
+
+        #[cfg(feature = "avif")]
+        formats.push(OutputFormat::Avif);
+
+        formats
+    }
+
+    /// Check if this coverage has all expected formats for the source
+    pub fn is_complete(&self, source_path: &str) -> bool {
+        let expected = Self::expected_formats(source_path);
+
+        expected.iter().all(|format| match format {
+            OutputFormat::Jpeg => self.has_jpeg,
+            OutputFormat::WebP => self.has_webp,
+            OutputFormat::Png => self.has_png,
+            #[cfg(feature = "avif")]
+            OutputFormat::Avif => self.has_avif,
+        })
+    }
+
+    /// Get missing formats for this coverage
+    pub fn missing_formats(&self, source_path: &str) -> Vec<OutputFormat> {
+        let expected = Self::expected_formats(source_path);
+
+        expected
+            .into_iter()
+            .filter(|format| match format {
+                OutputFormat::Jpeg => !self.has_jpeg,
+                OutputFormat::WebP => !self.has_webp,
+                OutputFormat::Png => !self.has_png,
+                #[cfg(feature = "avif")]
+                OutputFormat::Avif => !self.has_avif,
+            })
+            .collect()
+    }
+}
 
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
@@ -175,6 +231,16 @@ impl Gallery {
         &self,
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
+        self.pregenerate_image_cache_selective(relative_path, false)
+            .await
+    }
+
+    /// Pre-generate cache for a single image with option to only generate missing formats
+    pub async fn pregenerate_image_cache_selective(
+        &self,
+        relative_path: &str,
+        only_missing: bool,
+    ) -> Result<(), super::GalleryError> {
         if !self.is_image(relative_path) {
             return Ok(());
         }
@@ -185,39 +251,80 @@ impl Gallery {
         }
 
         let sizes = vec!["thumbnail", "gallery", "medium", "large"];
-        let formats = vec![
-            OutputFormat::Jpeg,
-            OutputFormat::WebP,
-            #[cfg(feature = "avif")]
-            OutputFormat::Avif,
-        ];
+        let mut total_generated = 0;
 
         for size in &sizes {
-            for &format in &formats {
-                // Skip WebP for PNGs to preserve transparency
-                if format == OutputFormat::WebP && relative_path.to_lowercase().ends_with(".png") {
-                    continue;
+            let formats_to_generate = if only_missing {
+                // Only generate missing formats
+                match self.check_format_coverage(relative_path, size).await {
+                    Ok(coverage) => coverage.missing_formats(relative_path),
+                    Err(e) => {
+                        debug!(
+                            "Failed to check format coverage for {} {}: {}",
+                            relative_path, size, e
+                        );
+                        continue;
+                    }
+                }
+            } else {
+                // Generate all expected formats
+                let mut formats = vec![OutputFormat::Jpeg];
+
+                // Skip WebP for PNG sources to preserve transparency
+                if !relative_path.to_lowercase().ends_with(".png") {
+                    formats.push(OutputFormat::WebP);
                 }
 
+                #[cfg(feature = "avif")]
+                formats.push(OutputFormat::Avif);
+
+                formats
+            };
+
+            for format in formats_to_generate {
                 match self
                     .get_resized_image(&full_path, relative_path, size, format)
                     .await
                 {
-                    Ok(_) => debug!(
-                        "Pre-generated {} {} for {}",
-                        size,
-                        format.extension(),
-                        relative_path
-                    ),
-                    Err(e) => error!(
-                        "Failed to pre-generate {} {} for {}: {}",
-                        size,
-                        format.extension(),
-                        relative_path,
-                        e
-                    ),
+                    Ok(_) => {
+                        let action = if only_missing {
+                            "Generated missing"
+                        } else {
+                            "Pre-generated"
+                        };
+                        debug!(
+                            "{} {} {} for {}",
+                            action,
+                            size,
+                            format.extension(),
+                            relative_path
+                        );
+                        total_generated += 1;
+                    }
+                    Err(e) => {
+                        let action = if only_missing {
+                            "generate missing"
+                        } else {
+                            "pre-generate"
+                        };
+                        error!(
+                            "Failed to {} {} {} for {}: {}",
+                            action,
+                            size,
+                            format.extension(),
+                            relative_path,
+                            e
+                        );
+                    }
                 }
             }
+        }
+
+        if only_missing && total_generated > 0 {
+            info!(
+                "Generated {} missing format variants for {}",
+                total_generated, relative_path
+            );
         }
 
         Ok(())
@@ -257,6 +364,295 @@ impl Gallery {
             "Completed cache pre-generation for gallery '{}'",
             self.config.name
         );
+        Ok(())
+    }
+
+    /// Generate missing formats for all images in the gallery
+    pub async fn generate_all_missing_formats(self: Arc<Self>) -> Result<(), super::GalleryError> {
+        info!(
+            "Starting missing format generation for gallery '{}'",
+            self.config.name
+        );
+
+        // First, report current format coverage
+        if let Err(e) = self.report_format_coverage().await {
+            debug!("Failed to report format coverage: {}", e);
+        }
+
+        // Then analyze what formats are missing
+        let missing_formats_map = self.analyze_missing_formats().await?;
+        let total_missing_variants = missing_formats_map.len();
+
+        if total_missing_variants == 0 {
+            info!("No missing formats found in gallery '{}'", self.config.name);
+            return Ok(());
+        }
+
+        info!(
+            "Found {} missing format variants to generate",
+            total_missing_variants
+        );
+
+        // Get unique image paths that have missing formats
+        let mut unique_images: HashSet<String> = HashSet::new();
+        for (image_path, _) in missing_formats_map.keys() {
+            unique_images.insert(image_path.clone());
+        }
+
+        let unique_image_count = unique_images.len();
+        let mut processed_count = 0;
+
+        for image_path in unique_images {
+            if let Err(e) = self
+                .pregenerate_image_cache_selective(&image_path, true)
+                .await
+            {
+                error!(
+                    "Failed to generate missing formats for {}: {}",
+                    image_path, e
+                );
+            }
+
+            processed_count += 1;
+            if processed_count % 10 == 0 || processed_count == unique_image_count {
+                info!(
+                    "Generated missing formats for {}/{} images",
+                    processed_count, unique_image_count
+                );
+            }
+        }
+
+        info!(
+            "Completed missing format generation for gallery '{}'",
+            self.config.name
+        );
+        Ok(())
+    }
+
+    /// Check what formats are available for a specific image and size in cache
+    pub async fn check_format_coverage(
+        &self,
+        relative_path: &str,
+        size: &str,
+    ) -> Result<FormatCoverage, super::GalleryError> {
+        let mut coverage = FormatCoverage::default();
+
+        let formats_to_check = vec![
+            (OutputFormat::Jpeg, &mut coverage.has_jpeg),
+            (OutputFormat::WebP, &mut coverage.has_webp),
+            (OutputFormat::Png, &mut coverage.has_png),
+            #[cfg(feature = "avif")]
+            (OutputFormat::Avif, &mut coverage.has_avif),
+        ];
+
+        for (format, has_format) in formats_to_check {
+            // Skip WebP for PNG sources
+            if format == OutputFormat::WebP && relative_path.to_lowercase().ends_with(".png") {
+                *has_format = true; // Mark as "has" since we don't expect it
+                continue;
+            }
+
+            // Determine if watermark applies (only for medium + copyright holder)
+            let is_medium = size == "medium";
+            let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+
+            let cache_filename = self.generate_cache_filename(
+                relative_path,
+                size,
+                format.extension(),
+                apply_watermark,
+            );
+            let cache_path = self.config.cache_directory.join(&cache_filename);
+            let source_path = self.config.source_directory.join(relative_path);
+
+            // Check if cache file exists and is newer than source
+            *has_format = if cache_path.exists() {
+                match (
+                    tokio::fs::metadata(&cache_path).await,
+                    tokio::fs::metadata(&source_path).await,
+                ) {
+                    (Ok(cache_meta), Ok(source_meta)) => {
+                        match (cache_meta.modified(), source_meta.modified()) {
+                            (Ok(cache_time), Ok(source_time)) => cache_time >= source_time,
+                            _ => false,
+                        }
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            };
+        }
+
+        Ok(coverage)
+    }
+
+    /// Get missing formats for all images and sizes
+    pub async fn analyze_missing_formats(
+        &self,
+    ) -> Result<HashMap<(String, String), Vec<OutputFormat>>, super::GalleryError> {
+        let mut missing_formats = HashMap::new();
+        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+
+        // Get all image paths from metadata cache
+        let image_paths: Vec<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            metadata_cache.keys().cloned().collect()
+        };
+
+        for image_path in image_paths {
+            if !self.is_image(&image_path) {
+                continue;
+            }
+
+            for size in &sizes {
+                match self.check_format_coverage(&image_path, size).await {
+                    Ok(coverage) => {
+                        let missing = coverage.missing_formats(&image_path);
+                        if !missing.is_empty() {
+                            missing_formats.insert((image_path.clone(), size.to_string()), missing);
+                        }
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Failed to check format coverage for {} {}: {}",
+                            image_path, size, e
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(missing_formats)
+    }
+
+    /// Generate only missing formats for a specific image
+    pub async fn generate_missing_formats(
+        &self,
+        relative_path: &str,
+    ) -> Result<(), super::GalleryError> {
+        self.pregenerate_image_cache_selective(relative_path, true)
+            .await
+    }
+
+    /// Analyze and report format coverage statistics for the gallery
+    pub async fn report_format_coverage(&self) -> Result<(), super::GalleryError> {
+        info!(
+            "Analyzing format coverage for gallery '{}'",
+            self.config.name
+        );
+
+        let missing_formats_map = self.analyze_missing_formats().await?;
+        let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+
+        // Get all image paths from metadata cache
+        let image_paths: Vec<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            metadata_cache.keys().cloned().collect()
+        };
+
+        let total_images = image_paths.len();
+        if total_images == 0 {
+            info!("No images found in gallery '{}'", self.config.name);
+            return Ok(());
+        }
+
+        // Count format coverage for each size
+        let mut coverage_stats = HashMap::new();
+        for size in &sizes {
+            let mut format_counts = HashMap::new();
+
+            // Initialize counters
+            format_counts.insert("jpeg", 0);
+            format_counts.insert("webp", 0);
+            format_counts.insert("png", 0);
+            #[cfg(feature = "avif")]
+            format_counts.insert("avif", 0);
+
+            for image_path in &image_paths {
+                if !self.is_image(image_path) {
+                    continue;
+                }
+
+                match self.check_format_coverage(image_path, size).await {
+                    Ok(coverage) => {
+                        if coverage.has_jpeg {
+                            *format_counts.get_mut("jpeg").unwrap() += 1;
+                        }
+                        if coverage.has_webp || image_path.to_lowercase().ends_with(".png") {
+                            *format_counts.get_mut("webp").unwrap() += 1;
+                        }
+                        if coverage.has_png {
+                            *format_counts.get_mut("png").unwrap() += 1;
+                        }
+                        #[cfg(feature = "avif")]
+                        if coverage.has_avif {
+                            *format_counts.get_mut("avif").unwrap() += 1;
+                        }
+                    }
+                    Err(e) => debug!(
+                        "Failed to check format coverage for {} {}: {}",
+                        image_path, size, e
+                    ),
+                }
+            }
+
+            coverage_stats.insert(size, format_counts);
+        }
+
+        // Report statistics
+        info!(
+            "=== Format Coverage Report for Gallery '{}' ===",
+            self.config.name
+        );
+        info!("Total images: {}", total_images);
+
+        for size in &sizes {
+            if let Some(format_counts) = coverage_stats.get(size) {
+                info!("Size '{}' coverage:", size);
+
+                for (format, &count) in format_counts {
+                    let percentage = if total_images > 0 {
+                        (count as f64 / total_images as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+
+                    info!(
+                        "  {}: {}/{} ({:.1}%)",
+                        format.to_uppercase(),
+                        count,
+                        total_images,
+                        percentage
+                    );
+                }
+            }
+        }
+
+        let total_missing = missing_formats_map.len();
+        if total_missing > 0 {
+            info!(
+                "Found {} missing format variants across all sizes",
+                total_missing
+            );
+
+            // Count missing by format type
+            let mut missing_by_format = HashMap::new();
+            for (_, formats) in missing_formats_map {
+                for format in formats {
+                    *missing_by_format.entry(format.extension()).or_insert(0) += 1;
+                }
+            }
+
+            info!("Missing formats breakdown:");
+            for (format, count) in missing_by_format {
+                info!("  {}: {} missing", format.to_uppercase(), count);
+            }
+        } else {
+            info!("✓ All expected formats are available for all images");
+        }
+
+        info!("=== End Format Coverage Report ===");
         Ok(())
     }
 }
