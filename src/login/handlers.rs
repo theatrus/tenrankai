@@ -106,16 +106,14 @@ pub async fn login_request(
         .as_ref()
         .ok_or_else(|| LoginError::DatabaseError("User database not configured".to_string()))?;
 
-    // Ensure database is up to date before checking user
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a read transaction (automatically checks for reload)
+    let transaction = db_manager.read_transaction().await.map_err(|e| {
+        error!("Failed to begin read transaction: {}", e);
+        LoginError::DatabaseError(format!("Failed to access user database: {}", e))
+    })?;
 
     // Check if user exists by username or email
-    let user_with_username = {
-        let db = db_manager.database().read().await;
-        db.get_user_by_username_or_email_with_username(&identifier)
-    };
+    let user_with_username = transaction.get_user_by_username_or_email_with_username(&identifier);
 
     if let Some((username, user)) = user_with_username {
         // Create login token using the actual username
@@ -232,16 +230,19 @@ pub async fn verify_login(
         // Check if user has passkeys
         let db_manager = app_state.user_database_manager.as_ref();
         if let Some(manager) = db_manager {
-            // Ensure database is up to date
-            if let Err(e) = manager.check_and_reload().await {
-                error!("Failed to check/reload user database: {}", e);
-            }
-
-            let db = manager.database().read().await;
-            if let Some(user) = db.get_user(&username) {
-                !user.has_passkeys()
-            } else {
-                false
+            // Begin a read transaction (automatically checks for reload)
+            match manager.read_transaction().await {
+                Ok(transaction) => {
+                    if let Some(user) = transaction.get_user(&username) {
+                        !user.has_passkeys()
+                    } else {
+                        false
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to begin read transaction: {}", e);
+                    false
+                }
             }
         } else {
             false
@@ -370,14 +371,16 @@ pub async fn profile_page(
 
     // Get user information
     let user_info = if let Some(manager) = &app_state.user_database_manager {
-        // Ensure database is up to date
-        if let Err(e) = manager.check_and_reload().await {
-            error!("Failed to check/reload user database: {}", e);
+        // Begin a read transaction (automatically checks for reload)
+        match manager.read_transaction().await {
+            Ok(transaction) => transaction
+                .get_user(&username)
+                .map(|u| (u.email.clone(), u.passkeys.len())),
+            Err(e) => {
+                error!("Failed to begin read transaction: {}", e);
+                None
+            }
         }
-
-        let db = manager.database().read().await;
-        db.get_user(&username)
-            .map(|u| (u.email.clone(), u.passkeys.len()))
     } else {
         None
     };

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::fs;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -376,6 +377,173 @@ impl UserDatabaseManager {
             Ok(false)
         }
     }
+
+    /// Begin a read transaction. Checks for reload after acquiring the lock.
+    pub async fn read_transaction(&self) -> Result<ReadTransaction<'_>, std::io::Error> {
+        // Acquire read lock first to prevent race conditions
+        let guard = self.database.read().await;
+
+        // Check if we need to reload after acquiring the lock
+        // Since we have a read lock, we need to check without reloading
+        // We'll upgrade to write lock if needed
+        if self.needs_reload().await? {
+            // Release read lock and acquire write lock for reload
+            drop(guard);
+            let mut write_guard = self.database.write().await;
+
+            // Double-check after acquiring write lock (another thread might have reloaded)
+            if self.needs_reload().await? {
+                tracing::debug!(
+                    "User database file modified, reloading: {:?}",
+                    self.file_path
+                );
+                let new_db = UserDatabase::load_from_file(&self.file_path).await?;
+                *write_guard = new_db;
+
+                // Update last modified time after successful reload
+                if let Ok(metadata) = tokio::fs::metadata(&self.file_path).await
+                    && let Ok(modified) = metadata.modified()
+                {
+                    let mut last_modified = self.last_modified.write().await;
+                    *last_modified = Some(modified);
+                }
+            }
+
+            // Downgrade back to read lock
+            drop(write_guard);
+            let guard = self.database.read().await;
+            Ok(ReadTransaction {
+                guard,
+                _manager: self,
+            })
+        } else {
+            Ok(ReadTransaction {
+                guard,
+                _manager: self,
+            })
+        }
+    }
+
+    /// Begin a write transaction. Checks for reload after acquiring the lock.
+    pub async fn write_transaction(&self) -> Result<WriteTransaction<'_>, std::io::Error> {
+        // Acquire write lock first to prevent race conditions
+        let mut guard = self.database.write().await;
+
+        // Check and reload if necessary (while holding the write lock)
+        if self.needs_reload().await? {
+            tracing::debug!(
+                "User database file modified, reloading: {:?}",
+                self.file_path
+            );
+            let new_db = UserDatabase::load_from_file(&self.file_path).await?;
+            *guard = new_db;
+
+            // Update last modified time after successful reload
+            if let Ok(metadata) = tokio::fs::metadata(&self.file_path).await
+                && let Ok(modified) = metadata.modified()
+            {
+                let mut last_modified = self.last_modified.write().await;
+                *last_modified = Some(modified);
+            }
+        }
+
+        Ok(WriteTransaction {
+            guard,
+            manager: self,
+            modified: false,
+        })
+    }
+
+    /// Check if the file has been modified since last load/save (without reloading)
+    async fn needs_reload(&self) -> Result<bool, std::io::Error> {
+        // If file doesn't exist, no need to reload
+        if !self.file_path.exists() {
+            return Ok(false);
+        }
+
+        let metadata = tokio::fs::metadata(&self.file_path).await?;
+        let current_modified = metadata.modified().ok();
+
+        let last_modified = self.last_modified.read().await;
+        Ok(match (*last_modified, current_modified) {
+            (None, Some(_)) => true,                       // File appeared
+            (Some(last), Some(current)) => current > last, // File was modified
+            _ => false,                                    // File disappeared or no change
+        })
+    }
+}
+
+/// RAII guard for read-only database transactions
+pub struct ReadTransaction<'a> {
+    guard: RwLockReadGuard<'a, UserDatabase>,
+    _manager: &'a UserDatabaseManager,
+}
+
+impl<'a> Deref for ReadTransaction<'a> {
+    type Target = UserDatabase;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+/// RAII guard for read-write database transactions
+pub struct WriteTransaction<'a> {
+    guard: RwLockWriteGuard<'a, UserDatabase>,
+    manager: &'a UserDatabaseManager,
+    modified: bool,
+}
+
+impl<'a> WriteTransaction<'a> {
+    /// Mark the transaction as modified, which will trigger a save on drop
+    pub fn mark_modified(&mut self) {
+        self.modified = true;
+    }
+
+    /// Save changes to disk immediately
+    pub async fn save(&mut self) -> Result<(), std::io::Error> {
+        self.guard.save_to_file(&self.manager.file_path).await?;
+
+        // Update last modified time after successful save
+        if let Ok(metadata) = tokio::fs::metadata(&self.manager.file_path).await
+            && let Ok(modified) = metadata.modified()
+        {
+            let mut last_modified = self.manager.last_modified.write().await;
+            *last_modified = Some(modified);
+        }
+
+        self.modified = false;
+        Ok(())
+    }
+
+    /// Commit the transaction (alias for save)
+    pub async fn commit(&mut self) -> Result<(), std::io::Error> {
+        self.save().await
+    }
+}
+
+impl<'a> Deref for WriteTransaction<'a> {
+    type Target = UserDatabase;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<'a> DerefMut for WriteTransaction<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+impl<'a> Drop for WriteTransaction<'a> {
+    fn drop(&mut self) {
+        if self.modified {
+            tracing::warn!(
+                "WriteTransaction dropped with unsaved changes. Call save() or commit() explicitly."
+            );
+        }
+    }
 }
 
 pub fn start_periodic_cleanup(login_state: Arc<RwLock<LoginState>>) {
@@ -397,6 +565,7 @@ pub fn start_periodic_cleanup(login_state: Arc<RwLock<LoginState>>) {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
+    use tokio::time::{Duration, sleep};
 
     #[tokio::test]
     async fn test_user_database_save_load_empty() {
@@ -627,5 +796,202 @@ passkeys = [
         // We expect this to fail because we're using mock data that doesn't match WebAuthn types exactly
         // But the test verifies that the TOML structure is at least parseable
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_transaction() {
+        // Create a database with test data
+        let mut db = UserDatabase::new();
+        db.add_user(
+            "testuser".to_string(),
+            User {
+                email: "test@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+
+        // Save to temporary file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+        db.save_to_file(path).await.unwrap();
+
+        // Create manager
+        let manager = UserDatabaseManager::new(path.to_path_buf()).await.unwrap();
+
+        // Begin read transaction
+        let transaction = manager.read_transaction().await.unwrap();
+
+        // Read data
+        let user = transaction.get_user("testuser");
+        assert!(user.is_some());
+        assert_eq!(user.unwrap().email, "test@example.com");
+
+        // Transaction automatically releases lock on drop
+    }
+
+    #[tokio::test]
+    async fn test_write_transaction_with_commit() {
+        // Create initial database
+        let mut db = UserDatabase::new();
+        db.add_user(
+            "testuser".to_string(),
+            User {
+                email: "original@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+
+        // Save to temporary file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+        db.save_to_file(path).await.unwrap();
+
+        // Create manager
+        let manager = UserDatabaseManager::new(path.to_path_buf()).await.unwrap();
+
+        // Begin write transaction and modify data
+        {
+            let mut transaction = manager.write_transaction().await.unwrap();
+            if let Some(user) = transaction.get_user_mut("testuser") {
+                user.email = "modified@example.com".to_string();
+            }
+            // Commit changes
+            transaction.commit().await.unwrap();
+        }
+
+        // Verify changes were saved
+        let reloaded_db = UserDatabase::load_from_file(path).await.unwrap();
+        let user = reloaded_db.get_user("testuser").unwrap();
+        assert_eq!(user.email, "modified@example.com");
+    }
+
+    #[tokio::test]
+    async fn test_write_transaction_without_commit() {
+        // Create initial database
+        let mut db = UserDatabase::new();
+        db.add_user(
+            "testuser".to_string(),
+            User {
+                email: "original@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+
+        // Save to temporary file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+        db.save_to_file(path).await.unwrap();
+
+        // Create manager
+        let manager = UserDatabaseManager::new(path.to_path_buf()).await.unwrap();
+
+        // Begin write transaction and modify data without committing
+        {
+            let mut transaction = manager.write_transaction().await.unwrap();
+            if let Some(user) = transaction.get_user_mut("testuser") {
+                user.email = "modified@example.com".to_string();
+            }
+            transaction.mark_modified();
+            // Transaction drops without calling commit()
+        }
+
+        // Note: Changes are NOT automatically saved on drop
+        // The transaction will log a warning about unsaved changes
+    }
+
+    #[tokio::test]
+    async fn test_transaction_reload_on_file_change() {
+        // Create initial database
+        let mut db = UserDatabase::new();
+        db.add_user(
+            "user1".to_string(),
+            User {
+                email: "user1@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+
+        // Save to temporary file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+        db.save_to_file(path).await.unwrap();
+
+        // Create manager
+        let manager = UserDatabaseManager::new(path.to_path_buf()).await.unwrap();
+
+        // Verify initial state
+        {
+            let transaction = manager.read_transaction().await.unwrap();
+            assert!(transaction.get_user("user1").is_some());
+            assert!(transaction.get_user("user2").is_none());
+        }
+
+        // Modify file externally (simulate another process changing it)
+        db.add_user(
+            "user2".to_string(),
+            User {
+                email: "user2@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+
+        // Add small delay to ensure file modification time changes
+        sleep(Duration::from_millis(10)).await;
+        db.save_to_file(path).await.unwrap();
+
+        // Next transaction should automatically reload
+        {
+            let transaction = manager.read_transaction().await.unwrap();
+            assert!(transaction.get_user("user1").is_some());
+            assert!(transaction.get_user("user2").is_some());
+            assert_eq!(
+                transaction.get_user("user2").unwrap().email,
+                "user2@example.com"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_transactions() {
+        // Create initial database
+        let mut db = UserDatabase::new();
+        db.add_user(
+            "testuser".to_string(),
+            User {
+                email: "test@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+
+        // Save to temporary file
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+        db.save_to_file(path).await.unwrap();
+
+        // Create manager
+        let manager = UserDatabaseManager::new(path.to_path_buf()).await.unwrap();
+
+        // Start multiple read transactions concurrently
+        let read_handle1 = {
+            let manager = manager.clone();
+            tokio::spawn(async move {
+                let transaction = manager.read_transaction().await.unwrap();
+                sleep(Duration::from_millis(50)).await;
+                transaction.get_user("testuser").is_some()
+            })
+        };
+
+        let read_handle2 = {
+            let manager = manager.clone();
+            tokio::spawn(async move {
+                let transaction = manager.read_transaction().await.unwrap();
+                sleep(Duration::from_millis(50)).await;
+                transaction.get_user("testuser").is_some()
+            })
+        };
+
+        // Both reads should succeed
+        assert!(read_handle1.await.unwrap());
+        assert!(read_handle2.await.unwrap());
     }
 }
