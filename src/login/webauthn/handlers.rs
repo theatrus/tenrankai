@@ -47,17 +47,17 @@ pub async fn start_passkey_registration(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a read transaction (automatically checks for reload)
+    let transaction = db_manager.read_transaction().await.map_err(|e| {
+        error!("Failed to begin read transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Get user
-    let user = {
-        let db = db_manager.database().read().await;
-        db.get_user(&username).cloned()
-    }
-    .ok_or(StatusCode::NOT_FOUND)?;
+    let user = transaction
+        .get_user(&username)
+        .cloned()
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     // Get existing passkeys for exclusion
     let exclude_credentials: Vec<CredentialID> = user
@@ -198,31 +198,29 @@ pub async fn finish_passkey_registration(
 
     info!("Adding passkey to user database");
 
-    // Ensure database is up to date before write
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a write transaction (automatically checks for reload)
+    let mut transaction = db_manager.write_transaction().await.map_err(|e| {
+        error!("Failed to begin write transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Add passkey to user
-    {
-        let mut db = db_manager.database().write().await;
-        if let Some(user) = db.get_user_mut(&username) {
-            let user_passkey = UserPasskey::new("New Passkey".to_string(), passkey);
-            info!(
-                "Adding passkey with ID: {} for user: {}",
-                user_passkey.id, username
-            );
-            user.add_passkey(user_passkey);
-        } else {
-            error!("User not found in database: {}", username);
-            return Err(StatusCode::NOT_FOUND);
-        }
+    if let Some(user) = transaction.get_user_mut(&username) {
+        let user_passkey = UserPasskey::new("New Passkey".to_string(), passkey);
+        info!(
+            "Adding passkey with ID: {} for user: {}",
+            user_passkey.id, username
+        );
+        user.add_passkey(user_passkey);
+    } else {
+        error!("User not found in database: {}", username);
+        return Err(StatusCode::NOT_FOUND);
     }
 
     info!("Saving database changes");
 
-    // Save database
-    db_manager.save().await.map_err(|e| {
+    // Commit the transaction
+    transaction.commit().await.map_err(|e| {
         error!("Failed to save database: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -247,32 +245,28 @@ pub async fn start_passkey_authentication(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a read transaction (automatically checks for reload)
+    let transaction = db_manager.read_transaction().await.map_err(|e| {
+        error!("Failed to begin read transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Get user and passkeys
-    let (username, allow_credentials) = {
-        let db = db_manager.database().read().await;
-        let (username, user) = db
-            .get_user_by_username_or_email_with_username(&request.username)
-            .ok_or(StatusCode::NOT_FOUND)?;
+    let (username, user) = transaction
+        .get_user_by_username_or_email_with_username(&request.username)
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-        // Check if user has passkeys
-        if user.passkeys.is_empty() {
-            return Err(StatusCode::NOT_FOUND);
-        }
+    // Check if user has passkeys
+    if user.passkeys.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
 
-        // Get passkeys for authentication
-        let allow_credentials: Vec<Passkey> = user
-            .passkeys
-            .iter()
-            .map(|pk| pk.credential.clone())
-            .collect();
-
-        (username, allow_credentials)
-    };
+    // Get passkeys for authentication
+    let allow_credentials: Vec<Passkey> = user
+        .passkeys
+        .iter()
+        .map(|pk| pk.credential.clone())
+        .collect();
 
     // Start authentication
     let (challenge, authentication_state) = webauthn
@@ -343,39 +337,35 @@ pub async fn finish_passkey_authentication(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date before write
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a write transaction (automatically checks for reload)
+    let mut transaction = db_manager.write_transaction().await.map_err(|e| {
+        error!("Failed to begin write transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Find user by credential ID and update passkey
-    let username = {
-        let mut db = db_manager.database().write().await;
-        let mut found_username = None;
+    let mut found_username = None;
 
-        for (user_name, user) in db.users.iter_mut() {
-            for passkey in user.passkeys.iter_mut() {
-                if passkey.credential.cred_id() == &auth_data.raw_id {
-                    // Update last used time
-                    passkey.update_last_used();
-                    // Update the credential with counter
-                    passkey.credential.update_credential(&authentication_result);
-                    found_username = Some(user_name.clone());
-                    break;
-                }
-            }
-            if found_username.is_some() {
+    for (user_name, user) in transaction.users.iter_mut() {
+        for passkey in user.passkeys.iter_mut() {
+            if passkey.credential.cred_id() == &auth_data.raw_id {
+                // Update last used time
+                passkey.update_last_used();
+                // Update the credential with counter
+                passkey.credential.update_credential(&authentication_result);
+                found_username = Some(user_name.clone());
                 break;
             }
         }
+        if found_username.is_some() {
+            break;
+        }
+    }
 
-        found_username
-    };
-
-    if let Some(username) = username {
-        // Save updated database
-        db_manager
-            .save()
+    if let Some(username) = found_username {
+        // Commit the transaction
+        transaction
+            .commit()
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -414,27 +404,28 @@ pub async fn list_passkeys(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a read transaction (automatically checks for reload)
+    let transaction = db_manager.read_transaction().await.map_err(|e| {
+        error!("Failed to begin read transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Get user and map passkeys to info
-    let passkey_info = {
-        let db = db_manager.database().read().await;
-        let user = db.get_user(&username).ok_or(StatusCode::NOT_FOUND)?;
+    let user = transaction
+        .get_user(&username)
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-        // Map passkeys to info
-        user.passkeys
-            .iter()
-            .map(|pk| PasskeyInfo {
-                id: pk.id,
-                name: pk.name.clone(),
-                created_at: pk.created_at,
-                last_used_at: pk.last_used_at,
-            })
-            .collect()
-    };
+    // Map passkeys to info
+    let passkey_info: Vec<PasskeyInfo> = user
+        .passkeys
+        .iter()
+        .map(|pk| PasskeyInfo {
+            id: pk.id,
+            name: pk.name.clone(),
+            created_at: pk.created_at,
+            last_used_at: pk.last_used_at,
+        })
+        .collect();
 
     Ok(Json(passkey_info))
 }
@@ -454,25 +445,23 @@ pub async fn delete_passkey(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date before write
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a write transaction (automatically checks for reload)
+    let mut transaction = db_manager.write_transaction().await.map_err(|e| {
+        error!("Failed to begin write transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Remove passkey from user
-    let removed = {
-        let mut db = db_manager.database().write().await;
-        if let Some(user) = db.get_user_mut(&username) {
-            user.remove_passkey(&passkey_id)
-        } else {
-            return Err(StatusCode::NOT_FOUND);
-        }
+    let removed = if let Some(user) = transaction.get_user_mut(&username) {
+        user.remove_passkey(&passkey_id)
+    } else {
+        return Err(StatusCode::NOT_FOUND);
     };
 
     if removed {
-        // Save database
-        db_manager
-            .save()
+        // Commit the transaction
+        transaction
+            .commit()
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -493,14 +482,14 @@ pub async fn check_user_has_passkeys(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a read transaction (automatically checks for reload)
+    let transaction = db_manager.read_transaction().await.map_err(|e| {
+        error!("Failed to begin read transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Check if user has passkeys
-    let db = db_manager.database().read().await;
-    if let Some(user) = db.get_user_by_username_or_email(&request.username) {
+    if let Some(user) = transaction.get_user_by_username_or_email(&request.username) {
         Ok(Json(HasPasskeysResponse {
             has_passkeys: !user.passkeys.is_empty(),
             count: user.passkeys.len(),
@@ -530,30 +519,28 @@ pub async fn update_passkey_name(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Ensure database is up to date before write
-    if let Err(e) = db_manager.check_and_reload().await {
-        error!("Failed to check/reload user database: {}", e);
-    }
+    // Begin a write transaction (automatically checks for reload)
+    let mut transaction = db_manager.write_transaction().await.map_err(|e| {
+        error!("Failed to begin write transaction: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Update passkey name
-    let updated = {
-        let mut db = db_manager.database().write().await;
-        if let Some(user) = db.get_user_mut(&username) {
-            if let Some(passkey) = user.get_passkey_mut(&passkey_id) {
-                passkey.name = name;
-                true
-            } else {
-                false
-            }
+    let updated = if let Some(user) = transaction.get_user_mut(&username) {
+        if let Some(passkey) = user.get_passkey_mut(&passkey_id) {
+            passkey.name = name;
+            true
         } else {
-            return Err(StatusCode::NOT_FOUND);
+            false
         }
+    } else {
+        return Err(StatusCode::NOT_FOUND);
     };
 
     if updated {
-        // Save database
-        db_manager
-            .save()
+        // Commit the transaction
+        transaction
+            .commit()
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
