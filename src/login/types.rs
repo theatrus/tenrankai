@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::fs;
 use tokio::sync::RwLock;
 
@@ -285,6 +286,7 @@ pub type SharedUserDatabase = Arc<RwLock<UserDatabase>>;
 pub struct UserDatabaseManager {
     database: SharedUserDatabase,
     file_path: PathBuf,
+    last_modified: Arc<RwLock<Option<SystemTime>>>,
 }
 
 impl UserDatabaseManager {
@@ -295,9 +297,17 @@ impl UserDatabaseManager {
             UserDatabase::new()
         };
 
+        // Get initial file modification time
+        let last_modified = if path.exists() {
+            tokio::fs::metadata(&path).await?.modified().ok()
+        } else {
+            None
+        };
+
         Ok(Self {
             database: Arc::new(RwLock::new(database)),
             file_path: path,
+            last_modified: Arc::new(RwLock::new(last_modified)),
         })
     }
 
@@ -307,14 +317,64 @@ impl UserDatabaseManager {
 
     pub async fn save(&self) -> Result<(), std::io::Error> {
         let db = self.database.read().await;
-        db.save_to_file(&self.file_path).await
+        db.save_to_file(&self.file_path).await?;
+
+        // Update last modified time after successful save
+        if let Ok(metadata) = tokio::fs::metadata(&self.file_path).await
+            && let Ok(modified) = metadata.modified()
+        {
+            let mut last_modified = self.last_modified.write().await;
+            *last_modified = Some(modified);
+        }
+
+        Ok(())
     }
 
     pub async fn reload(&self) -> Result<(), std::io::Error> {
         let new_db = UserDatabase::load_from_file(&self.file_path).await?;
         let mut db = self.database.write().await;
         *db = new_db;
+
+        // Update last modified time after successful reload
+        if let Ok(metadata) = tokio::fs::metadata(&self.file_path).await
+            && let Ok(modified) = metadata.modified()
+        {
+            let mut last_modified = self.last_modified.write().await;
+            *last_modified = Some(modified);
+        }
+
         Ok(())
+    }
+
+    /// Check if the file has been modified since last load/save and reload if necessary
+    pub async fn check_and_reload(&self) -> Result<bool, std::io::Error> {
+        // If file doesn't exist, no need to reload
+        if !self.file_path.exists() {
+            return Ok(false);
+        }
+
+        let metadata = tokio::fs::metadata(&self.file_path).await?;
+        let current_modified = metadata.modified().ok();
+
+        let needs_reload = {
+            let last_modified = self.last_modified.read().await;
+            match (*last_modified, current_modified) {
+                (None, Some(_)) => true,                       // File appeared
+                (Some(last), Some(current)) => current > last, // File was modified
+                _ => false,                                    // File disappeared or no change
+            }
+        };
+
+        if needs_reload {
+            tracing::debug!(
+                "User database file modified, reloading: {:?}",
+                self.file_path
+            );
+            self.reload().await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

@@ -47,6 +47,11 @@ pub async fn start_passkey_registration(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Ensure database is up to date
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
+
     // Get user
     let user = {
         let db = db_manager.database().read().await;
@@ -193,6 +198,11 @@ pub async fn finish_passkey_registration(
 
     info!("Adding passkey to user database");
 
+    // Ensure database is up to date before write
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
+
     // Add passkey to user
     {
         let mut db = db_manager.database().write().await;
@@ -236,6 +246,11 @@ pub async fn start_passkey_authentication(
         .user_database_manager
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Ensure database is up to date
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
 
     // Get user and passkeys
     let (username, allow_credentials) = {
@@ -328,6 +343,11 @@ pub async fn finish_passkey_authentication(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Ensure database is up to date before write
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
+
     // Find user by credential ID and update passkey
     let username = {
         let mut db = db_manager.database().write().await;
@@ -394,6 +414,11 @@ pub async fn list_passkeys(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Ensure database is up to date
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
+
     // Get user and map passkeys to info
     let passkey_info = {
         let db = db_manager.database().read().await;
@@ -429,6 +454,11 @@ pub async fn delete_passkey(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Ensure database is up to date before write
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
+
     // Remove passkey from user
     let removed = {
         let mut db = db_manager.database().write().await;
@@ -463,6 +493,11 @@ pub async fn check_user_has_passkeys(
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Ensure database is up to date
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
+
     // Check if user has passkeys
     let db = db_manager.database().read().await;
     if let Some(user) = db.get_user_by_username_or_email(&request.username) {
@@ -494,6 +529,11 @@ pub async fn update_passkey_name(
         .user_database_manager
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Ensure database is up to date before write
+    if let Err(e) = db_manager.check_and_reload().await {
+        error!("Failed to check/reload user database: {}", e);
+    }
 
     // Update passkey name
     let updated = {
