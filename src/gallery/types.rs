@@ -21,6 +21,7 @@ pub struct GalleryItem {
 #[derive(Debug, Clone, Serialize)]
 pub struct ImageInfo {
     pub name: String,
+    pub title: Option<String>,
     pub path: String,
     pub url: String,
     pub thumbnail_url: String,

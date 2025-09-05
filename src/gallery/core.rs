@@ -384,6 +384,15 @@ impl Gallery {
         let file_size = cached_metadata.file_size;
         let dimensions = cached_metadata.dimensions;
 
+        // Extract title and description from markdown
+        let raw_markdown = self.read_sidecar_markdown_raw(relative_path).await;
+        let title = raw_markdown.as_ref().and_then(|content| {
+            content
+                .lines()
+                .find(|line| line.trim().starts_with("# "))
+                .map(|line| line.trim_start_matches("# ").trim().to_string())
+        });
+
         let description = self.read_sidecar_markdown(relative_path).await;
 
         let encoded_path = urlencoding::encode(relative_path);
@@ -410,6 +419,7 @@ impl Gallery {
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string(),
+            title,
             path: relative_path.to_string(),
             url: format!(
                 "/{}/image/{}",
@@ -542,7 +552,7 @@ impl Gallery {
         }
     }
 
-    async fn read_sidecar_markdown(&self, image_path: &str) -> Option<String> {
+    async fn read_sidecar_markdown_raw(&self, image_path: &str) -> Option<String> {
         let path = StdPath::new(image_path);
         let stem = path.file_stem()?;
         let parent = path.parent()?;
@@ -551,14 +561,36 @@ impl Gallery {
         let md_path = self.config.source_directory.join(parent).join(md_filename);
 
         match tokio::fs::read_to_string(&md_path).await {
-            Ok(content) => {
-                let parser = Parser::new(&content);
-                let mut html_output = String::new();
-                html::push_html(&mut html_output, parser);
-                Some(html_output)
-            }
+            Ok(content) => Some(content),
             Err(_) => None,
         }
+    }
+
+    async fn read_sidecar_markdown(&self, image_path: &str) -> Option<String> {
+        let raw_content = self.read_sidecar_markdown_raw(image_path).await?;
+
+        // Extract title if present and remove it from the content
+        let _title_line = raw_content
+            .lines()
+            .find(|line| line.trim().starts_with("# "))?;
+
+        let content_without_title = raw_content
+            .lines()
+            .skip_while(|line| !line.trim().starts_with("# "))
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let content_to_process = if content_without_title.trim().is_empty() {
+            raw_content
+        } else {
+            content_without_title
+        };
+
+        let parser = Parser::new(&content_to_process);
+        let mut html_output = String::new();
+        html::push_html(&mut html_output, parser);
+        Some(html_output)
     }
 
     pub(crate) async fn get_image_metadata_cached(

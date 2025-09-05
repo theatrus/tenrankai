@@ -9,6 +9,16 @@ body {
     background-color: var(--bg-primary);
 }
 
+.image-detail-container .gallery-nav {
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+.image-detail-container .nav-current {
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
 .image-detail-content {
     display: grid;
     grid-template-columns: 1fr 320px;

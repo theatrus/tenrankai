@@ -34,7 +34,7 @@
             {% endif %}
         {% endfor %}
         <span class="nav-separator">→</span>
-        <span class="nav-current">{{ image.name }}</span>
+        <span class="nav-current">{{ image.title | default: image.name }}</span>
     </nav>
 
     <div class="image-detail-content">
