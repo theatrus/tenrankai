@@ -113,11 +113,8 @@
         </div>
         
         <div class="image-info">
-            <h2>{{ image.name }}</h2>
-            
             {% if image.description %}
                 <div class="image-description">
-                    <h3>Description</h3>
                     {{ image.description }}
                 </div>
             {% endif %}
@@ -125,6 +122,9 @@
             <div class="image-metadata card">
                 <h3>Image Information</h3>
                 <dl>
+                    <dt>Filename</dt>
+                    <dd>{{ image.name }}</dd>
+                    
                     {% if image.capture_date %}
                         <dt>Capture Date</dt>
                         <dd>{{ image.capture_date }}</dd>

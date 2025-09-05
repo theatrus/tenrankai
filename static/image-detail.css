@@ -11,12 +11,19 @@ body {
 
 .image-detail-content {
     display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: var(--spacing-xxl);
+    grid-template-columns: 1fr 320px;
+    gap: var(--spacing-xl);
     align-items: start;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
+    .image-detail-content {
+        grid-template-columns: 1fr 300px;
+        gap: var(--spacing-lg);
+    }
+}
+
+@media (max-width: 1024px) {
     .image-detail-content {
         grid-template-columns: 1fr;
     }
@@ -29,7 +36,7 @@ body {
 .image-container {
     display: inline-block;
     width: 100%;
-    max-width: 1200px;
+    max-width: none;
     position: relative;
     background-color: var(--bg-secondary);
     border-radius: 0;
@@ -204,12 +211,34 @@ body {
     color: var(--text-primary);
 }
 
-.image-description,
+.image-description {
+    margin-bottom: var(--spacing-xl);
+    padding: var(--spacing-lg);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.image-description h1:first-child,
+.image-description h2:first-child,
+.image-description h3:first-child {
+    margin-top: 0;
+}
+
 .image-metadata,
 .camera-info,
 .location-info {
-    margin-bottom: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
     /* Uses .card styles from utilities */
+}
+
+.image-info .card {
+    padding: var(--spacing-md);
+}
+
+.image-info h3 {
+    font-size: 1rem;
+    margin-bottom: var(--spacing-sm);
 }
 
 .image-description h3,
@@ -222,19 +251,20 @@ body {
 dl {
     margin: 0;
     display: grid;
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: minmax(80px, 1fr) 2fr;
     gap: var(--spacing-sm) var(--spacing-md);
 }
 
 dt {
     font-weight: 600;
     color: var(--text-muted);
-    font-size: 0.875rem;
+    font-size: 0.8rem;
 }
 
 dd {
     margin: 0;
     color: var(--text-primary);
+    font-size: 0.85rem;
     word-break: break-word;
 }
 
