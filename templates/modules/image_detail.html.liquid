@@ -113,6 +113,10 @@
         </div>
         
         <div class="image-info">
+            {% if image.title %}
+                <h2 class="image-title">{{ image.title }}</h2>
+            {% endif %}
+            
             {% if image.description %}
                 <div class="image-description">
                     {{ image.description }}
