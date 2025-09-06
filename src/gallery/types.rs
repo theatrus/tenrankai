@@ -1,6 +1,143 @@
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
+/// Image size variants with high-DPI support
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImageSize {
+    Thumbnail,
+    ThumbnailRetina,
+    Gallery,
+    GalleryRetina,
+    Medium,
+    MediumRetina,
+    Large,
+    LargeRetina,
+}
+
+impl ImageSize {
+    /// All supported image sizes
+    pub const ALL: &'static [ImageSize] = &[
+        ImageSize::Thumbnail,
+        ImageSize::ThumbnailRetina,
+        ImageSize::Gallery,
+        ImageSize::GalleryRetina,
+        ImageSize::Medium,
+        ImageSize::MediumRetina,
+        ImageSize::Large,
+        ImageSize::LargeRetina,
+    ];
+
+    /// Base sizes (without retina variants)
+    pub const BASE_SIZES: &'static [ImageSize] = &[
+        ImageSize::Thumbnail,
+        ImageSize::Gallery,
+        ImageSize::Medium,
+        ImageSize::Large,
+    ];
+
+    /// Sizes that require authentication
+    pub const AUTH_REQUIRED: &'static [ImageSize] = &[ImageSize::Large, ImageSize::LargeRetina];
+
+    /// Sizes that support watermarking
+    pub const WATERMARK_SIZES: &'static [ImageSize] = &[ImageSize::Medium, ImageSize::MediumRetina];
+
+    /// Get the base size (non-retina variant)
+    pub fn base_size(&self) -> ImageSize {
+        match self {
+            ImageSize::Thumbnail | ImageSize::ThumbnailRetina => ImageSize::Thumbnail,
+            ImageSize::Gallery | ImageSize::GalleryRetina => ImageSize::Gallery,
+            ImageSize::Medium | ImageSize::MediumRetina => ImageSize::Medium,
+            ImageSize::Large | ImageSize::LargeRetina => ImageSize::Large,
+        }
+    }
+
+    /// Check if this is a retina (@2x) variant
+    pub fn is_retina(&self) -> bool {
+        matches!(
+            self,
+            ImageSize::ThumbnailRetina
+                | ImageSize::GalleryRetina
+                | ImageSize::MediumRetina
+                | ImageSize::LargeRetina
+        )
+    }
+
+    /// Check if this size requires authentication
+    pub fn requires_auth(&self) -> bool {
+        Self::AUTH_REQUIRED.contains(self)
+    }
+
+    /// Check if this size supports watermarking
+    pub fn supports_watermark(&self) -> bool {
+        Self::WATERMARK_SIZES.contains(self)
+    }
+
+    /// Get the retina variant of this size
+    pub fn retina_variant(&self) -> ImageSize {
+        match self.base_size() {
+            ImageSize::Thumbnail => ImageSize::ThumbnailRetina,
+            ImageSize::Gallery => ImageSize::GalleryRetina,
+            ImageSize::Medium => ImageSize::MediumRetina,
+            ImageSize::Large => ImageSize::LargeRetina,
+            // These are already base sizes, so they map to their retina variants
+            _ => unreachable!(),
+        }
+    }
+
+    /// Get the multiplier for dimensions (1.0 for normal, 2.0 for retina)
+    pub fn multiplier(&self) -> f32 {
+        if self.is_retina() { 2.0 } else { 1.0 }
+    }
+
+    /// Parse from string (e.g., "medium", "medium@2x")
+    pub fn parse(s: &str) -> Option<ImageSize> {
+        match s {
+            "thumbnail" => Some(ImageSize::Thumbnail),
+            "thumbnail@2x" => Some(ImageSize::ThumbnailRetina),
+            "gallery" => Some(ImageSize::Gallery),
+            "gallery@2x" => Some(ImageSize::GalleryRetina),
+            "medium" => Some(ImageSize::Medium),
+            "medium@2x" => Some(ImageSize::MediumRetina),
+            "large" => Some(ImageSize::Large),
+            "large@2x" => Some(ImageSize::LargeRetina),
+            _ => None,
+        }
+    }
+
+    /// Convert to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ImageSize::Thumbnail => "thumbnail",
+            ImageSize::ThumbnailRetina => "thumbnail@2x",
+            ImageSize::Gallery => "gallery",
+            ImageSize::GalleryRetina => "gallery@2x",
+            ImageSize::Medium => "medium",
+            ImageSize::MediumRetina => "medium@2x",
+            ImageSize::Large => "large",
+            ImageSize::LargeRetina => "large@2x",
+        }
+    }
+
+    /// Get all base size strings for validation messages
+    pub fn base_size_names() -> Vec<&'static str> {
+        Self::BASE_SIZES.iter().map(|s| s.as_str()).collect()
+    }
+}
+
+impl std::fmt::Display for ImageSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for ImageSize {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
     pub name: String,

@@ -1,5 +1,6 @@
 use crate::GallerySystemConfig;
 use crate::gallery::Gallery;
+use crate::gallery::types::ImageSize;
 use image::ImageBuffer;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -146,20 +147,21 @@ async fn test_watermark_only_applied_to_medium_size() {
     let format = "jpg";
 
     // Test all sizes
-    let sizes = vec!["thumbnail", "gallery", "medium", "large"];
+    let sizes = ImageSize::BASE_SIZES;
 
-    for size in sizes {
+    for &size in sizes {
         let key_with_copyright = gallery.generate_image_cache_key(
             path,
-            size,
+            size.as_str(),
             format,
-            size == "medium", // Only medium should have watermark
+            size.supports_watermark(), // Only medium should have watermark
         );
 
         // Disable copyright to compare
-        let key_without_copyright = gallery.generate_image_cache_key(path, size, format, false);
+        let key_without_copyright =
+            gallery.generate_image_cache_key(path, size.as_str(), format, false);
 
-        if size == "medium" {
+        if size.supports_watermark() {
             // Medium size keys should be different when watermark is enabled
             assert_ne!(
                 key_with_copyright, key_without_copyright,

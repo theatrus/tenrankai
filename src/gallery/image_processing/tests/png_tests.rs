@@ -167,9 +167,9 @@ async fn test_png_resize_quality() {
     img.save(&source_path).unwrap();
 
     // Test different sizes
-    let sizes = ["thumbnail", "gallery", "medium"];
+    let sizes = &["thumbnail", "gallery", "medium"];
 
-    for size in &sizes {
+    for size in sizes {
         let result = gallery
             .get_resized_image(
                 &source_path,
