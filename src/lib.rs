@@ -304,6 +304,33 @@ fn default_preview_config() -> PreviewConfig {
     }
 }
 
+impl Default for GallerySystemConfig {
+    fn default() -> Self {
+        Self {
+            name: "default".to_string(),
+            url_prefix: "/gallery".to_string(),
+            source_directory: PathBuf::from("photos"),
+            cache_directory: PathBuf::from("cache"),
+            gallery_template: default_gallery_template(),
+            image_detail_template: default_image_detail_template(),
+            images_per_page: default_images_per_page(),
+            thumbnail: default_thumbnail_size(),
+            gallery_size: default_gallery_size(),
+            medium: default_medium_size(),
+            large: default_large_size(),
+            preview: default_preview_config(),
+            cache_refresh_interval_minutes: Some(60),
+            jpeg_quality: Some(85),
+            webp_quality: Some(85.0),
+            pregenerate_cache: false,
+            new_threshold_days: None,
+            approximate_dates_for_public: false,
+            copyright_holder: None,
+            hide_location_from_public: false,
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {

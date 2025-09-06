@@ -24,77 +24,32 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
     config.galleries = Some(vec![
         GallerySystemConfig {
             name: "main".to_string(),
-            url_prefix: "/gallery".to_string(),
             source_directory: photos_dir.clone(),
             cache_directory: cache_dir.join("main"),
-            gallery_template: "modules/gallery.html.liquid".to_string(),
-            image_detail_template: "modules/image_detail.html.liquid".to_string(),
             images_per_page: 20,
-            thumbnail: tenrankai::ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: tenrankai::ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: tenrankai::ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: tenrankai::ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
             preview: tenrankai::PreviewConfig {
                 max_images: 6,
                 max_depth: 3,
                 max_per_folder: 3,
             },
-            cache_refresh_interval_minutes: None,
-            jpeg_quality: Some(85),
-            webp_quality: Some(85.0),
-            pregenerate_cache: false,
             new_threshold_days: Some(7),
-            approximate_dates_for_public: false,
-            copyright_holder: None,
+            ..Default::default()
         },
         GallerySystemConfig {
             name: "portfolio".to_string(),
             url_prefix: "/my-portfolio".to_string(),
             source_directory: portfolio_dir.clone(),
             cache_directory: cache_dir.join("portfolio"),
-            gallery_template: "modules/gallery.html.liquid".to_string(),
-            image_detail_template: "modules/image_detail.html.liquid".to_string(),
             images_per_page: 12,
-            thumbnail: tenrankai::ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: tenrankai::ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: tenrankai::ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: tenrankai::ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
             preview: tenrankai::PreviewConfig {
                 max_images: 9,
                 max_depth: 2,
                 max_per_folder: 4,
             },
-            cache_refresh_interval_minutes: None,
             jpeg_quality: Some(90),
             webp_quality: Some(90.0),
-            pregenerate_cache: false,
-            new_threshold_days: None,
-            approximate_dates_for_public: false,
             copyright_holder: Some("Test Portfolio".to_string()),
+            ..Default::default()
         },
     ]);
 

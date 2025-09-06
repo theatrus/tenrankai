@@ -822,40 +822,11 @@ This folder should not appear in listings.
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            url_prefix: "/gallery".to_string(),
             source_directory: source_dir,
             cache_directory: cache_dir,
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
-            images_per_page: 50,
-            thumbnail: crate::ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: crate::ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: crate::ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: crate::ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
-            preview: crate::PreviewConfig {
-                max_images: 4,
-                max_depth: 3,
-                max_per_folder: 3,
-            },
-            cache_refresh_interval_minutes: None,
-            jpeg_quality: Some(85),
-            webp_quality: Some(85.0),
-            pregenerate_cache: false,
-            new_threshold_days: None,
-            approximate_dates_for_public: false,
-            copyright_holder: None,
+            ..Default::default()
         };
 
         let gallery = Gallery::new(config);
@@ -897,40 +868,11 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            url_prefix: "/gallery".to_string(),
             source_directory: source_dir,
             cache_directory: cache_dir,
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
-            images_per_page: 50,
-            thumbnail: crate::ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: crate::ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: crate::ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: crate::ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
-            preview: crate::PreviewConfig {
-                max_images: 4,
-                max_depth: 3,
-                max_per_folder: 3,
-            },
-            cache_refresh_interval_minutes: None,
-            jpeg_quality: Some(85),
-            webp_quality: Some(85.0),
-            pregenerate_cache: false,
-            new_threshold_days: None,
-            approximate_dates_for_public: false,
-            copyright_holder: None,
+            ..Default::default()
         };
 
         let gallery = Gallery::new(config);

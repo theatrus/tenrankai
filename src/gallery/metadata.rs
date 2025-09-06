@@ -516,40 +516,11 @@ mod tests {
         // Create a test gallery instance
         let gallery_config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            url_prefix: "gallery".to_string(),
-            gallery_template: "gallery.html.liquid".to_string(),
-            image_detail_template: "image_detail.html.liquid".to_string(),
+            url_prefix: "/gallery".to_string(),
             source_directory: PathBuf::from("photos"),
             cache_directory: PathBuf::from("test_cache"),
-            images_per_page: 50,
-            thumbnail: crate::ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: crate::ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: crate::ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: crate::ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
-            preview: crate::PreviewConfig {
-                max_images: 6,
-                max_depth: 3,
-                max_per_folder: 3,
-            },
             cache_refresh_interval_minutes: Some(60),
-            jpeg_quality: Some(85),
-            webp_quality: Some(85.0),
-            pregenerate_cache: false,
-            new_threshold_days: None,
-            approximate_dates_for_public: false,
-            copyright_holder: None,
+            ..Default::default()
         };
 
         let gallery = Gallery::new(gallery_config);
