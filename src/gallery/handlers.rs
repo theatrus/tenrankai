@@ -1,3 +1,4 @@
+use super::types::ImageSize;
 use super::{GalleryQuery, NavigationImage};
 use crate::AppState;
 use axum::{
@@ -432,29 +433,26 @@ pub async fn image_handler_for_named(
     }
 
     // Validate size parameter if provided
-    if let Some(ref size) = query.size {
-        // Check if it's a @2x variant
-        let (base_size, _is_2x) = if size.ends_with("@2x") {
-            (size.trim_end_matches("@2x"), true)
-        } else {
-            (size.as_str(), false)
-        };
-
-        match base_size {
-            "thumbnail" | "gallery" | "medium" => {
-                // These sizes are allowed without authentication
-            }
-            "large" => {
-                // Large size requires authentication
-                if !has_download_permission(&app_state, &headers) {
-                    tracing::warn!(path = %path, "Large image request denied - authentication required");
+    if let Some(ref size_str) = query.size {
+        match ImageSize::parse(size_str) {
+            Some(size) => {
+                if size.requires_auth() && !has_download_permission(&app_state, &headers) {
+                    tracing::warn!(path = %path, "Authentication required for size: {}", size.as_str());
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }
             }
-            _ => {
+            None => {
                 // Invalid size parameter
-                tracing::warn!(path = %path, size = %size, "Invalid size parameter requested");
-                return (StatusCode::BAD_REQUEST, "Invalid size parameter. Valid sizes: thumbnail, gallery, medium, large (with optional @2x suffix)").into_response();
+                tracing::warn!(path = %path, size = %size_str, "Invalid size parameter requested");
+                let valid_sizes = ImageSize::base_size_names().join(", ");
+                return (
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "Invalid size parameter. Valid sizes: {} (with optional @2x suffix)",
+                        valid_sizes
+                    ),
+                )
+                    .into_response();
             }
         }
     } else {

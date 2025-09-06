@@ -120,14 +120,14 @@ async fn test_icc_profile_preservation_across_formats() {
     img.write_with_encoder(encoder).unwrap();
 
     // Test a subset of sizes to speed up the test - thumbnail and medium cover the key paths
-    let sizes = ["thumbnail", "medium"];
+    let sizes = &["thumbnail", "medium"];
     let formats = [
         crate::gallery::image_processing::OutputFormat::Jpeg,
         crate::gallery::image_processing::OutputFormat::WebP,
         crate::gallery::image_processing::OutputFormat::Png,
     ];
 
-    for size in &sizes {
+    for size in sizes {
         for format in &formats {
             tracing::debug!("Testing {} size with {:?} format", size, format);
 

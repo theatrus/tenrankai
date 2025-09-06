@@ -1,4 +1,5 @@
 use crate::copyright::{CopyrightConfig, add_copyright_notice};
+use crate::gallery::types::ImageSize as SizeVariant;
 use crate::gallery::{Gallery, GalleryError};
 use image::{DynamicImage, ImageFormat, imageops::FilterType};
 use std::path::{Path, PathBuf};
@@ -19,30 +20,30 @@ type AvifInfoOption = Option<()>;
 impl Gallery {
     /// Parse size string and determine dimensions
     pub(super) fn parse_size(&self, size: &str) -> Result<(ImageSize, bool), GalleryError> {
-        // Check if it's a @2x variant
-        let (base_size, multiplier) = if size.ends_with("@2x") {
-            (size.trim_end_matches("@2x"), 2)
-        } else {
-            (size, 1)
-        };
+        // Parse the size variant from string
+        let size_variant = SizeVariant::parse(size).ok_or(GalleryError::InvalidPath)?;
 
-        let base_dimensions = match base_size {
-            "thumbnail" => {
+        // Get base dimensions from config based on the base size
+        let base_dimensions = match size_variant.base_size() {
+            SizeVariant::Thumbnail => {
                 ImageSize::new(self.config.thumbnail.width, self.config.thumbnail.height)
             }
-            "gallery" => ImageSize::new(
+            SizeVariant::Gallery => ImageSize::new(
                 self.config.gallery_size.width,
                 self.config.gallery_size.height,
             ),
-            "medium" => ImageSize::new(self.config.medium.width, self.config.medium.height),
-            "large" => ImageSize::new(self.config.large.width, self.config.large.height),
+            SizeVariant::Medium => {
+                ImageSize::new(self.config.medium.width, self.config.medium.height)
+            }
+            SizeVariant::Large => ImageSize::new(self.config.large.width, self.config.large.height),
             _ => return Err(GalleryError::InvalidPath),
         };
 
-        let final_dimensions = base_dimensions.with_multiplier(multiplier);
-        let is_medium = base_size == "medium";
+        // Apply multiplier for retina variants
+        let final_dimensions = base_dimensions.with_multiplier(size_variant.multiplier() as u32);
+        let supports_watermark = size_variant.supports_watermark();
 
-        Ok((final_dimensions, is_medium))
+        Ok((final_dimensions, supports_watermark))
     }
 
     /// Get resized image from cache or generate it

@@ -1,4 +1,5 @@
 use super::image_processing::OutputFormat;
+use super::types::ImageSize;
 use super::{CacheMetadata, Gallery, ImageMetadata};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -250,19 +251,10 @@ impl Gallery {
             return Ok(());
         }
 
-        let sizes = vec![
-            "thumbnail",
-            "thumbnail@2x",
-            "gallery",
-            "gallery@2x",
-            "medium",
-            "medium@2x",
-            "large",
-            "large@2x",
-        ];
+        let sizes = ImageSize::ALL;
         let mut total_generated = 0;
 
-        for size in &sizes {
+        for &size in sizes {
             let formats_to_generate = if only_missing {
                 // Only generate missing formats
                 match self.check_format_coverage(relative_path, size).await {
@@ -292,7 +284,7 @@ impl Gallery {
 
             for format in formats_to_generate {
                 match self
-                    .get_resized_image(&full_path, relative_path, size, format)
+                    .get_resized_image(&full_path, relative_path, size.as_str(), format)
                     .await
                 {
                     Ok(_) => {
@@ -376,6 +368,51 @@ impl Gallery {
         Ok(())
     }
 
+    /// Validate and clean up outdated cache entries for all images
+    pub async fn validate_and_cleanup_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
+        info!(
+            "Starting cache validation and cleanup for gallery '{}'",
+            self.config.name
+        );
+
+        // Get all image paths from metadata cache
+        let image_paths: Vec<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            metadata_cache.keys().cloned().collect()
+        };
+
+        let sizes = ImageSize::ALL;
+
+        for image_path in &image_paths {
+            if !self.is_image(image_path) {
+                continue;
+            }
+
+            for &size in sizes {
+                // This will automatically remove outdated cache files via check_format_coverage
+                match self.check_format_coverage(image_path, size).await {
+                    Ok(_) => {
+                        // Coverage check handles cleanup internally
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Failed to check format coverage for {} {}: {}",
+                            image_path,
+                            size.as_str(),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        info!(
+            "Completed cache validation and cleanup for gallery '{}'",
+            self.config.name
+        );
+        Ok(())
+    }
+
     /// Generate missing formats for all images in the gallery
     pub async fn generate_all_missing_formats(self: Arc<Self>) -> Result<(), super::GalleryError> {
         info!(
@@ -383,12 +420,17 @@ impl Gallery {
             self.config.name
         );
 
-        // First, report current format coverage
+        // First, validate and clean up outdated cache entries
+        if let Err(e) = self.clone().validate_and_cleanup_cache().await {
+            debug!("Failed to validate and cleanup cache: {}", e);
+        }
+
+        // Then, report current format coverage
         if let Err(e) = self.report_format_coverage().await {
             debug!("Failed to report format coverage: {}", e);
         }
 
-        // Then analyze what formats are missing
+        // Finally, analyze what formats are missing
         let missing_formats_map = self.analyze_missing_formats().await?;
         let total_missing_variants = missing_formats_map.len();
 
@@ -404,7 +446,7 @@ impl Gallery {
 
         // Get unique image paths that have missing formats
         let mut unique_images: HashSet<String> = HashSet::new();
-        for (image_path, _) in missing_formats_map.keys() {
+        for (image_path, _size) in missing_formats_map.keys() {
             unique_images.insert(image_path.clone());
         }
 
@@ -442,7 +484,7 @@ impl Gallery {
     pub async fn check_format_coverage(
         &self,
         relative_path: &str,
-        size: &str,
+        size: ImageSize,
     ) -> Result<FormatCoverage, super::GalleryError> {
         let mut coverage = FormatCoverage::default();
 
@@ -462,12 +504,12 @@ impl Gallery {
             }
 
             // Determine if watermark applies (only for medium + copyright holder)
-            let is_medium = size == "medium" || size == "medium@2x";
-            let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+            let apply_watermark =
+                size.supports_watermark() && self.config.copyright_holder.is_some();
 
             let cache_filename = self.generate_cache_filename(
                 relative_path,
-                size,
+                size.as_str(),
                 format.extension(),
                 apply_watermark,
             );
@@ -482,7 +524,27 @@ impl Gallery {
                 ) {
                     (Ok(cache_meta), Ok(source_meta)) => {
                         match (cache_meta.modified(), source_meta.modified()) {
-                            (Ok(cache_time), Ok(source_time)) => cache_time >= source_time,
+                            (Ok(cache_time), Ok(source_time)) => {
+                                if cache_time >= source_time {
+                                    true
+                                } else {
+                                    // Cache is outdated, remove it
+                                    debug!(
+                                        "Cache file is outdated, removing: {} (cache: {:?}, source: {:?})",
+                                        cache_path.display(),
+                                        cache_time,
+                                        source_time
+                                    );
+                                    if let Err(e) = tokio::fs::remove_file(&cache_path).await {
+                                        debug!(
+                                            "Failed to remove outdated cache file {}: {}",
+                                            cache_path.display(),
+                                            e
+                                        );
+                                    }
+                                    false
+                                }
+                            }
                             _ => false,
                         }
                     }
@@ -499,18 +561,9 @@ impl Gallery {
     /// Get missing formats for all images and sizes
     pub async fn analyze_missing_formats(
         &self,
-    ) -> Result<HashMap<(String, String), Vec<OutputFormat>>, super::GalleryError> {
+    ) -> Result<HashMap<(String, ImageSize), Vec<OutputFormat>>, super::GalleryError> {
         let mut missing_formats = HashMap::new();
-        let sizes = vec![
-            "thumbnail",
-            "thumbnail@2x",
-            "gallery",
-            "gallery@2x",
-            "medium",
-            "medium@2x",
-            "large",
-            "large@2x",
-        ];
+        let sizes = ImageSize::ALL;
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
@@ -523,18 +576,20 @@ impl Gallery {
                 continue;
             }
 
-            for size in &sizes {
+            for &size in sizes {
                 match self.check_format_coverage(&image_path, size).await {
                     Ok(coverage) => {
                         let missing = coverage.missing_formats(&image_path);
                         if !missing.is_empty() {
-                            missing_formats.insert((image_path.clone(), size.to_string()), missing);
+                            missing_formats.insert((image_path.clone(), size), missing);
                         }
                     }
                     Err(e) => {
                         debug!(
                             "Failed to check format coverage for {} {}: {}",
-                            image_path, size, e
+                            image_path,
+                            size.as_str(),
+                            e
                         );
                     }
                 }
@@ -561,16 +616,7 @@ impl Gallery {
         );
 
         let missing_formats_map = self.analyze_missing_formats().await?;
-        let sizes = vec![
-            "thumbnail",
-            "thumbnail@2x",
-            "gallery",
-            "gallery@2x",
-            "medium",
-            "medium@2x",
-            "large",
-            "large@2x",
-        ];
+        let sizes = ImageSize::ALL;
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
@@ -586,7 +632,7 @@ impl Gallery {
 
         // Count format coverage for each size
         let mut coverage_stats = HashMap::new();
-        for size in &sizes {
+        for &size in sizes {
             let mut format_counts = HashMap::new();
 
             // Initialize counters
@@ -624,7 +670,7 @@ impl Gallery {
                 }
             }
 
-            coverage_stats.insert(size, format_counts);
+            coverage_stats.insert(size.as_str(), format_counts);
         }
 
         // Report statistics
@@ -634,9 +680,9 @@ impl Gallery {
         );
         info!("Total images: {}", total_images);
 
-        for size in &sizes {
-            if let Some(format_counts) = coverage_stats.get(size) {
-                info!("Size '{}' coverage:", size);
+        for &size in sizes {
+            if let Some(format_counts) = coverage_stats.get(size.as_str()) {
+                info!("Size '{}' coverage:", size.as_str());
 
                 for (format, &count) in format_counts {
                     let percentage = if total_images > 0 {
