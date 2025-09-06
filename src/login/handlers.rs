@@ -55,7 +55,7 @@ pub async fn login_page(
 
     let html = match app_state
         .template_engine
-        .render_template("modules/login.html.liquid", globals)
+        .render_template(crate::TemplateType::Login.path(), globals)
         .await
     {
         Ok(html) => html,
@@ -286,7 +286,7 @@ pub async fn login_success(State(app_state): State<AppState>) -> Result<Html<Str
 
     match app_state
         .template_engine
-        .render_template("modules/login_success.html.liquid", globals)
+        .render_template(crate::TemplateType::LoginSuccess.path(), globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
@@ -348,7 +348,7 @@ pub async fn passkey_enrollment_page(
 
     match app_state
         .template_engine
-        .render_template("modules/passkey_enrollment.html.liquid", globals)
+        .render_template(crate::TemplateType::PasskeyEnrollment.path(), globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
@@ -401,7 +401,7 @@ pub async fn profile_page(
 
     match app_state
         .template_engine
-        .render_template("modules/profile.html.liquid", globals)
+        .render_template(crate::TemplateType::Profile.path(), globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
