@@ -34,7 +34,7 @@
             {% endif %}
         {% endfor %}
         <span class="nav-separator">→</span>
-        <span class="nav-current">{{ image.name }}</span>
+        <span class="nav-current">{{ image.title | default: image.name }}</span>
     </nav>
 
     <div class="image-detail-content">
@@ -113,11 +113,12 @@
         </div>
         
         <div class="image-info">
-            <h2>{{ image.name }}</h2>
+            {% if image.title %}
+                <h2 class="image-title">{{ image.title }}</h2>
+            {% endif %}
             
             {% if image.description %}
                 <div class="image-description">
-                    <h3>Description</h3>
                     {{ image.description }}
                 </div>
             {% endif %}
@@ -125,6 +126,9 @@
             <div class="image-metadata card">
                 <h3>Image Information</h3>
                 <dl>
+                    <dt>Filename</dt>
+                    <dd>{{ image.name }}</dd>
+                    
                     {% if image.capture_date %}
                         <dt>Capture Date</dt>
                         <dd>{{ image.capture_date }}</dd>
