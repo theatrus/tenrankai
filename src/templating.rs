@@ -1,4 +1,4 @@
-use crate::TemplateType;
+use crate::{ApiResponse, TemplateType};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -213,7 +213,7 @@ impl TemplateEngine {
             Ok(html) => Ok(Html(html)),
             Err(e) => {
                 error!("Template rendering error: {}", e);
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                Err(ApiResponse::TemplateRenderError.status_code())
             }
         }
     }
@@ -231,7 +231,7 @@ impl TemplateEngine {
             }
             Err(e) => {
                 error!("Failed to render 404 template: {}", e);
-                Err(StatusCode::NOT_FOUND)
+                Err(ApiResponse::TemplateNotFound.status_code())
             }
         }
     }
@@ -386,8 +386,8 @@ pub async fn template_with_gallery_handler(
             path
         );
         return match app_state.template_engine.render_404_page().await {
-            Ok(html) => (StatusCode::NOT_FOUND, html).into_response(),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
+            Ok(html) => ApiResponse::NotFound.with_html(html.0),
+            Err(_) => ApiResponse::NotFound.into_response(),
         };
     }
 

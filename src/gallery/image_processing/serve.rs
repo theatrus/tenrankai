@@ -1,4 +1,7 @@
-use crate::gallery::{Gallery, GalleryError};
+use crate::{
+    ApiResponse,
+    gallery::{Gallery, GalleryError},
+};
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode, header},
@@ -20,13 +23,13 @@ impl Gallery {
         // Security check
         let full_path = self.config.source_directory.join(relative_path);
         if !full_path.starts_with(&self.config.source_directory) {
-            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+            return ApiResponse::Forbidden.into_response();
         }
 
         // Ensure the file exists
         if !full_path.exists() {
             error!("Image file not found: {:?}", full_path);
-            return (StatusCode::NOT_FOUND, "Image not found").into_response();
+            return ApiResponse::ImageNotFound.into_response();
         }
 
         let output_format = self.determine_output_format(accept_header, relative_path);
@@ -41,7 +44,7 @@ impl Gallery {
             let (_, is_medium) = match self.parse_size(size) {
                 Ok(result) => result,
                 Err(_) => {
-                    return (StatusCode::BAD_REQUEST, "Invalid size parameter").into_response();
+                    return ApiResponse::InvalidSizeParameter.into_response();
                 }
             };
             let apply_watermark = is_medium && self.config.copyright_holder.is_some();
@@ -144,7 +147,7 @@ impl Gallery {
         let cache_path = self.config.cache_directory.join(cache_key);
 
         if !cache_path.exists() {
-            return Ok((StatusCode::NOT_FOUND, "Cache entry not found").into_response());
+            return Ok(ApiResponse::CacheEntryNotFound.into_response());
         }
 
         // Determine MIME type from extension using OutputFormat

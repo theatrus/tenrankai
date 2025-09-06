@@ -239,6 +239,170 @@ impl std::fmt::Display for TemplatePath {
     }
 }
 
+/// HTTP Status Response System for consistent API responses
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ApiResponse {
+    // Success responses
+    Ok,
+
+    // Client errors (4xx)
+    BadRequest,
+    Unauthorized,
+    Forbidden,
+    NotFound,
+    MethodNotAllowed,
+
+    // Specific error cases
+    GalleryNotFound,
+    ImageNotFound,
+    DirectoryNotFound,
+    CacheEntryNotFound,
+    InvalidSizeParameter,
+    InvalidCredentials,
+    AccessDenied,
+    TemplateNotFound,
+    PostNotFound,
+    UserNotFound,
+
+    // Server errors (5xx)
+    InternalServerError,
+    NotImplemented,
+    ProcessingError,
+    DatabaseError,
+    TemplateRenderError,
+    FileSystemError,
+}
+
+impl ApiResponse {
+    /// Get the HTTP status code for this response
+    pub fn status_code(&self) -> axum::http::StatusCode {
+        use axum::http::StatusCode;
+        match self {
+            // Success responses
+            ApiResponse::Ok => StatusCode::OK,
+
+            // Client errors
+            ApiResponse::BadRequest | ApiResponse::InvalidSizeParameter => StatusCode::BAD_REQUEST,
+            ApiResponse::Unauthorized | ApiResponse::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            ApiResponse::Forbidden | ApiResponse::AccessDenied => StatusCode::FORBIDDEN,
+            ApiResponse::NotFound
+            | ApiResponse::GalleryNotFound
+            | ApiResponse::ImageNotFound
+            | ApiResponse::DirectoryNotFound
+            | ApiResponse::CacheEntryNotFound
+            | ApiResponse::TemplateNotFound
+            | ApiResponse::PostNotFound
+            | ApiResponse::UserNotFound => StatusCode::NOT_FOUND,
+            ApiResponse::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+
+            // Server errors
+            ApiResponse::InternalServerError
+            | ApiResponse::ProcessingError
+            | ApiResponse::DatabaseError
+            | ApiResponse::TemplateRenderError
+            | ApiResponse::FileSystemError => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiResponse::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+        }
+    }
+
+    /// Get the error message for this response
+    pub fn message(&self) -> &'static str {
+        match self {
+            // Success responses
+            ApiResponse::Ok => "Success",
+
+            // Client errors
+            ApiResponse::BadRequest => "Bad request",
+            ApiResponse::Unauthorized => "Unauthorized",
+            ApiResponse::Forbidden => "Forbidden",
+            ApiResponse::NotFound => "Not found",
+            ApiResponse::MethodNotAllowed => "Method not allowed",
+
+            // Specific error cases
+            ApiResponse::GalleryNotFound => "Gallery not found",
+            ApiResponse::ImageNotFound => "Image not found",
+            ApiResponse::DirectoryNotFound => "Directory not found",
+            ApiResponse::CacheEntryNotFound => "Cache entry not found",
+            ApiResponse::InvalidSizeParameter => "Invalid size parameter",
+            ApiResponse::InvalidCredentials => "Invalid credentials",
+            ApiResponse::AccessDenied => "Access denied",
+            ApiResponse::TemplateNotFound => "Template not found",
+            ApiResponse::PostNotFound => "Post not found",
+            ApiResponse::UserNotFound => "User not found",
+
+            // Server errors
+            ApiResponse::InternalServerError => "Internal server error",
+            ApiResponse::NotImplemented => "Not implemented",
+            ApiResponse::ProcessingError => "Processing error",
+            ApiResponse::DatabaseError => "Database error",
+            ApiResponse::TemplateRenderError => "Template rendering error",
+            ApiResponse::FileSystemError => "File system error",
+        }
+    }
+
+    /// Create an HTTP response for this API response
+    pub fn into_response(self) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        (self.status_code(), self.message()).into_response()
+    }
+
+    /// Create an HTTP response with custom message
+    pub fn with_message(self, message: String) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        (self.status_code(), message).into_response()
+    }
+
+    /// Create an HTML response with custom content and proper status
+    pub fn with_html(self, html: String) -> axum::response::Response {
+        use axum::response::{Html, IntoResponse};
+        (self.status_code(), Html(html)).into_response()
+    }
+
+    /// Check if this is a client error (4xx)
+    pub fn is_client_error(&self) -> bool {
+        matches!(self.status_code().as_u16(), 400..=499)
+    }
+
+    /// Check if this is a server error (5xx)
+    pub fn is_server_error(&self) -> bool {
+        matches!(self.status_code().as_u16(), 500..=599)
+    }
+
+    /// Check if this is a success response (2xx)
+    pub fn is_success(&self) -> bool {
+        matches!(self.status_code().as_u16(), 200..=299)
+    }
+
+    /// Get all API responses that are client errors
+    pub const CLIENT_ERRORS: &'static [ApiResponse] = &[
+        ApiResponse::BadRequest,
+        ApiResponse::Unauthorized,
+        ApiResponse::Forbidden,
+        ApiResponse::NotFound,
+        ApiResponse::MethodNotAllowed,
+        ApiResponse::GalleryNotFound,
+        ApiResponse::ImageNotFound,
+        ApiResponse::DirectoryNotFound,
+        ApiResponse::CacheEntryNotFound,
+        ApiResponse::InvalidSizeParameter,
+        ApiResponse::InvalidCredentials,
+        ApiResponse::AccessDenied,
+        ApiResponse::TemplateNotFound,
+        ApiResponse::PostNotFound,
+        ApiResponse::UserNotFound,
+    ];
+
+    /// Get all API responses that are server errors
+    pub const SERVER_ERRORS: &'static [ApiResponse] = &[
+        ApiResponse::InternalServerError,
+        ApiResponse::NotImplemented,
+        ApiResponse::ProcessingError,
+        ApiResponse::DatabaseError,
+        ApiResponse::TemplateRenderError,
+        ApiResponse::FileSystemError,
+    ];
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,

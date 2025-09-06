@@ -1,6 +1,6 @@
 use super::types::ImageSize;
 use super::{GalleryQuery, NavigationImage};
-use crate::AppState;
+use crate::{ApiResponse, AppState};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -59,7 +59,7 @@ pub async fn gallery_handler_for_named(
         Some(g) => g,
         None => {
             error!("Gallery '{}' not found", gallery_name);
-            return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
+            return ApiResponse::GalleryNotFound.into_response();
         }
     };
 
@@ -78,7 +78,7 @@ pub async fn gallery_handler_for_named(
             return axum::response::Redirect::temporary(&login_url).into_response();
         } else {
             // User is authenticated but doesn't have access, return 403
-            return (StatusCode::FORBIDDEN, "Access denied").into_response();
+            return ApiResponse::AccessDenied.into_response();
         }
     }
 
@@ -97,7 +97,7 @@ pub async fn gallery_handler_for_named(
         }
         Err(e) => {
             error!("Failed to list directory: {}", e);
-            return (StatusCode::NOT_FOUND, "Directory not found").into_response();
+            return ApiResponse::DirectoryNotFound.into_response();
         }
     };
 
@@ -261,7 +261,7 @@ pub async fn image_detail_handler_for_named(
         Some(g) => g,
         None => {
             error!("Gallery '{}' not found", gallery_name);
-            return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
+            return ApiResponse::GalleryNotFound.into_response();
         }
     };
 
@@ -286,7 +286,7 @@ pub async fn image_detail_handler_for_named(
             return axum::response::Redirect::temporary(&login_url).into_response();
         } else {
             // User is authenticated but doesn't have access, return 403
-            return (StatusCode::FORBIDDEN, "Access denied").into_response();
+            return ApiResponse::AccessDenied.into_response();
         }
     }
 
@@ -410,7 +410,7 @@ pub async fn image_handler_for_named(
         Some(g) => g,
         None => {
             error!("Gallery '{}' not found", gallery_name);
-            return (StatusCode::NOT_FOUND, "Gallery not found").into_response();
+            return ApiResponse::GalleryNotFound.into_response();
         }
     };
 
@@ -429,7 +429,7 @@ pub async fn image_handler_for_named(
         .await
     {
         // For image serving, always return 403 instead of redirect to avoid breaking image URLs
-        return (StatusCode::FORBIDDEN, "Access denied").into_response();
+        return ApiResponse::AccessDenied.into_response();
     }
 
     // Validate size parameter if provided

@@ -1,7 +1,6 @@
-use crate::AppState;
+use crate::{ApiResponse, AppState};
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
     response::{Html, IntoResponse},
 };
 use chrono::Datelike;
@@ -23,7 +22,7 @@ pub async fn posts_index_handler(
     let posts_manager = match app_state.posts_managers.get(&posts_name) {
         Some(manager) => manager,
         None => {
-            return (StatusCode::NOT_FOUND, "Posts section not found").into_response();
+            return ApiResponse::PostNotFound.into_response();
         }
     };
 
@@ -108,7 +107,7 @@ pub async fn posts_index_handler(
         Ok(html) => Html(html).into_response(),
         Err(e) => {
             error!("Template rendering error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Template error").into_response()
+            ApiResponse::TemplateRenderError.into_response()
         }
     }
 }
@@ -120,14 +119,14 @@ pub async fn post_detail_handler(
     let posts_manager = match app_state.posts_managers.get(&posts_name) {
         Some(manager) => manager,
         None => {
-            return (StatusCode::NOT_FOUND, "Posts section not found").into_response();
+            return ApiResponse::PostNotFound.into_response();
         }
     };
 
     let post = match posts_manager.get_post(&slug).await {
         Some(post) => post,
         None => {
-            return (StatusCode::NOT_FOUND, "Post not found").into_response();
+            return ApiResponse::PostNotFound.into_response();
         }
     };
 
@@ -174,7 +173,7 @@ pub async fn post_detail_handler(
         Ok(html) => Html(html).into_response(),
         Err(e) => {
             error!("Template rendering error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Template error").into_response()
+            ApiResponse::TemplateRenderError.into_response()
         }
     }
 }
@@ -186,15 +185,15 @@ pub async fn refresh_posts_handler(
     let posts_manager = match app_state.posts_managers.get(&posts_name) {
         Some(manager) => manager,
         None => {
-            return (StatusCode::NOT_FOUND, "Posts section not found").into_response();
+            return ApiResponse::PostNotFound.into_response();
         }
     };
 
     match posts_manager.refresh_posts().await {
-        Ok(_) => (StatusCode::OK, "Posts refreshed successfully").into_response(),
+        Ok(_) => ApiResponse::Ok.with_message("Posts refreshed successfully".to_string()),
         Err(e) => {
             error!("Failed to refresh posts: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to refresh posts").into_response()
+            ApiResponse::ProcessingError.with_message("Failed to refresh posts".to_string())
         }
     }
 }
