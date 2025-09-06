@@ -376,6 +376,58 @@ impl Gallery {
         Ok(())
     }
 
+    /// Validate and clean up outdated cache entries for all images
+    pub async fn validate_and_cleanup_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
+        info!(
+            "Starting cache validation and cleanup for gallery '{}'",
+            self.config.name
+        );
+
+        // Get all image paths from metadata cache
+        let image_paths: Vec<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            metadata_cache.keys().cloned().collect()
+        };
+
+        let sizes = vec![
+            "thumbnail",
+            "thumbnail@2x",
+            "gallery",
+            "gallery@2x",
+            "medium",
+            "medium@2x",
+            "large",
+            "large@2x",
+        ];
+
+        for image_path in &image_paths {
+            if !self.is_image(image_path) {
+                continue;
+            }
+
+            for size in &sizes {
+                // This will automatically remove outdated cache files via check_format_coverage
+                match self.check_format_coverage(image_path, size).await {
+                    Ok(_) => {
+                        // Coverage check handles cleanup internally
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Failed to check format coverage for {} {}: {}",
+                            image_path, size, e
+                        );
+                    }
+                }
+            }
+        }
+
+        info!(
+            "Completed cache validation and cleanup for gallery '{}'",
+            self.config.name
+        );
+        Ok(())
+    }
+
     /// Generate missing formats for all images in the gallery
     pub async fn generate_all_missing_formats(self: Arc<Self>) -> Result<(), super::GalleryError> {
         info!(
@@ -383,12 +435,17 @@ impl Gallery {
             self.config.name
         );
 
-        // First, report current format coverage
+        // First, validate and clean up outdated cache entries
+        if let Err(e) = self.clone().validate_and_cleanup_cache().await {
+            debug!("Failed to validate and cleanup cache: {}", e);
+        }
+
+        // Then, report current format coverage
         if let Err(e) = self.report_format_coverage().await {
             debug!("Failed to report format coverage: {}", e);
         }
 
-        // Then analyze what formats are missing
+        // Finally, analyze what formats are missing
         let missing_formats_map = self.analyze_missing_formats().await?;
         let total_missing_variants = missing_formats_map.len();
 
@@ -482,7 +539,27 @@ impl Gallery {
                 ) {
                     (Ok(cache_meta), Ok(source_meta)) => {
                         match (cache_meta.modified(), source_meta.modified()) {
-                            (Ok(cache_time), Ok(source_time)) => cache_time >= source_time,
+                            (Ok(cache_time), Ok(source_time)) => {
+                                if cache_time >= source_time {
+                                    true
+                                } else {
+                                    // Cache is outdated, remove it
+                                    debug!(
+                                        "Cache file is outdated, removing: {} (cache: {:?}, source: {:?})",
+                                        cache_path.display(),
+                                        cache_time,
+                                        source_time
+                                    );
+                                    if let Err(e) = tokio::fs::remove_file(&cache_path).await {
+                                        debug!(
+                                            "Failed to remove outdated cache file {}: {}",
+                                            cache_path.display(),
+                                            e
+                                        );
+                                    }
+                                    false
+                                }
+                            }
                             _ => false,
                         }
                     }
