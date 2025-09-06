@@ -67,6 +67,9 @@ pregenerate_cache = false
 new_threshold_days = 7
 # Copyright holder name for watermarking medium-sized images
 copyright_holder = "Your Name"
+# When true, hide location/GPS information from non-authenticated users
+# Users must be logged in to see EXIF GPS coordinates and map information
+hide_location_from_public = false
 
 [galleries.thumbnail]
 width = 300
@@ -101,6 +104,8 @@ images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
 copyright_holder = "Your Portfolio Name"
+# Hide location information from public viewers for this portfolio
+hide_location_from_public = true
 
 # Example: Screenshots gallery
 [[galleries]]

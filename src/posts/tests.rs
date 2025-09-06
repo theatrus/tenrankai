@@ -287,8 +287,8 @@ Footnote[^1]
 
     #[tokio::test]
     async fn test_gallery_image_references() {
+        use crate::GallerySystemConfig;
         use crate::gallery::Gallery;
-        use crate::{GallerySystemConfig, ImageSizeConfig, PreviewConfig};
         use std::collections::HashMap;
         use std::sync::Arc;
 
@@ -325,40 +325,9 @@ Regular markdown image (not a gallery reference):
         // Create main gallery
         let main_gallery_config = GallerySystemConfig {
             name: "main".to_string(),
-            url_prefix: "/gallery".to_string(),
             source_directory: temp_dir.path().join("photos"),
             cache_directory: temp_dir.path().join("cache/main"),
-            gallery_template: "modules/gallery.html.liquid".to_string(),
-            image_detail_template: "modules/image_detail.html.liquid".to_string(),
-            images_per_page: 50,
-            thumbnail: ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
-            preview: PreviewConfig {
-                max_images: 4,
-                max_depth: 3,
-                max_per_folder: 3,
-            },
-            cache_refresh_interval_minutes: None,
-            jpeg_quality: Some(85),
-            webp_quality: Some(85.0),
-            pregenerate_cache: false,
-            new_threshold_days: None,
-            approximate_dates_for_public: false,
-            copyright_holder: None,
+            ..Default::default()
         };
 
         let main_gallery = Arc::new(Gallery::new(main_gallery_config.clone()));
@@ -370,37 +339,10 @@ Regular markdown image (not a gallery reference):
             url_prefix: "/my-portfolio".to_string(),
             source_directory: temp_dir.path().join("portfolio"),
             cache_directory: temp_dir.path().join("cache/portfolio"),
-            gallery_template: "modules/gallery.html.liquid".to_string(),
-            image_detail_template: "modules/image_detail.html.liquid".to_string(),
             images_per_page: 20,
-            thumbnail: ImageSizeConfig {
-                width: 300,
-                height: 300,
-            },
-            gallery_size: ImageSizeConfig {
-                width: 800,
-                height: 800,
-            },
-            medium: ImageSizeConfig {
-                width: 1200,
-                height: 1200,
-            },
-            large: ImageSizeConfig {
-                width: 1600,
-                height: 1600,
-            },
-            preview: PreviewConfig {
-                max_images: 4,
-                max_depth: 3,
-                max_per_folder: 3,
-            },
-            cache_refresh_interval_minutes: None,
             jpeg_quality: Some(90),
             webp_quality: Some(90.0),
-            pregenerate_cache: false,
-            new_threshold_days: None,
-            approximate_dates_for_public: false,
-            copyright_holder: None,
+            ..Default::default()
         };
 
         let portfolio_gallery = Arc::new(Gallery::new(portfolio_gallery_config));

@@ -96,6 +96,11 @@ pub(crate) struct FolderConfig {
     #[serde(default)]
     pub require_auth: bool,
     pub allowed_users: Option<Vec<String>>,
+
+    // Location privacy fields
+    /// When true, hide location/GPS information from non-authenticated users for images in this folder
+    #[serde(default)]
+    pub hide_location_from_public: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

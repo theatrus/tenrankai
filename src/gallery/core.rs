@@ -373,6 +373,14 @@ impl Gallery {
     }
 
     pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, GalleryError> {
+        self.get_image_info_with_user(relative_path, None).await
+    }
+
+    pub async fn get_image_info_with_user(
+        &self,
+        relative_path: &str,
+        user: Option<&str>,
+    ) -> Result<ImageInfo, GalleryError> {
         let full_path = self.config.source_directory.join(relative_path);
 
         if !full_path.starts_with(&self.config.source_directory) {
@@ -413,6 +421,16 @@ impl Gallery {
 
         let is_new = self.is_new(cached_metadata.modification_date);
 
+        // Check if location should be hidden from this user
+        let location_info = if self
+            .should_hide_location_from_user(relative_path, user)
+            .await
+        {
+            None
+        } else {
+            cached_metadata.location_info
+        };
+
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
                 .file_name()
@@ -443,7 +461,7 @@ impl Gallery {
             ),
             description,
             camera_info: cached_metadata.camera_info,
-            location_info: cached_metadata.location_info,
+            location_info,
             file_size,
             dimensions,
             capture_date,
@@ -544,6 +562,7 @@ impl Gallery {
                         title: None,
                         require_auth: false,
                         allowed_users: None,
+                        hide_location_from_public: None,
                     },
                     description_markdown: content,
                 })
@@ -949,6 +968,32 @@ impl Gallery {
         }
 
         filtered_items
+    }
+
+    pub(crate) async fn should_hide_location_from_user(
+        &self,
+        relative_path: &str,
+        user: Option<&str>,
+    ) -> bool {
+        // If user is authenticated, never hide location
+        if user.is_some() {
+            return false;
+        }
+
+        // Check folder-level setting first (most specific)
+        let parent_path = std::path::Path::new(relative_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if let Some(folder_metadata) = self.read_folder_metadata_full(&parent_path).await
+            && let Some(hide_location) = folder_metadata.config.hide_location_from_public
+        {
+            return hide_location;
+        }
+
+        // Fall back to gallery-level setting
+        self.config.hide_location_from_public
     }
 }
 
