@@ -208,6 +208,9 @@ pub struct GallerySystemConfig {
     /// Copyright holder name for watermarking medium-sized images
     #[serde(default)]
     pub copyright_holder: Option<String>,
+    /// When true, hide location/GPS information from non-authenticated users
+    #[serde(default = "default_false")]
+    pub hide_location_from_public: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -341,6 +344,7 @@ impl Default for Config {
                 new_threshold_days: None,
                 approximate_dates_for_public: false,
                 copyright_holder: None,
+                hide_location_from_public: false,
             }]),
             posts: None,
             email: None,

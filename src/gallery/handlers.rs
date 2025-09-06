@@ -289,7 +289,10 @@ pub async fn image_detail_handler_for_named(
         }
     }
 
-    let mut image_info = match gallery.get_image_info(&path).await {
+    let mut image_info = match gallery
+        .get_image_info_with_user(&path, user.as_deref())
+        .await
+    {
         Ok(info) => info,
         Err(e) => {
             error!("Failed to get image info: {}", e);
