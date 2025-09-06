@@ -1,3 +1,4 @@
+use crate::{ApiResponse, TemplateType};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -201,9 +202,9 @@ impl TemplateEngine {
 
     pub async fn render_with_gallery(&self, path: &str) -> Result<Html<String>, StatusCode> {
         let template_path = if path.is_empty() || path == "/" {
-            "pages/index.html.liquid"
+            TemplateType::Index.path()
         } else {
-            &format!("pages/{}.html.liquid", path.trim_start_matches('/'))
+            &TemplateType::dynamic_page_path(path.trim_start_matches('/'))
         };
 
         let globals = liquid::object!({});
@@ -212,7 +213,7 @@ impl TemplateEngine {
             Ok(html) => Ok(Html(html)),
             Err(e) => {
                 error!("Template rendering error: {}", e);
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                Err(ApiResponse::TemplateRenderError.status_code())
             }
         }
     }
@@ -220,14 +221,17 @@ impl TemplateEngine {
     pub async fn render_404_page(&self) -> Result<Html<String>, StatusCode> {
         let globals = liquid::object!({});
 
-        match self.render_template("pages/404.html.liquid", globals).await {
+        match self
+            .render_template(TemplateType::NotFound.path(), globals)
+            .await
+        {
             Ok(html) => {
                 // Create custom response with 404 status
                 Ok(Html(html))
             }
             Err(e) => {
                 error!("Failed to render 404 template: {}", e);
-                Err(StatusCode::NOT_FOUND)
+                Err(ApiResponse::TemplateNotFound.status_code())
             }
         }
     }
@@ -263,21 +267,21 @@ impl TemplateEngine {
 
         // Load common partials first (before loading main template)
         let header_content = self
-            .load_template("partials/_header.html.liquid")
+            .load_template(TemplateType::Header.path())
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load header partial: {}", e);
                 String::new()
             });
         let footer_content = self
-            .load_template("partials/_footer.html.liquid")
+            .load_template(TemplateType::Footer.path())
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load footer partial: {}", e);
                 String::new()
             });
         let gallery_preview_content = self
-            .load_template("partials/_gallery_preview.html.liquid")
+            .load_template(TemplateType::GalleryPreview.path())
             .await
             .unwrap_or_else(|e| {
                 error!("Failed to load gallery preview partial: {}", e);
@@ -286,7 +290,7 @@ impl TemplateEngine {
 
         // Load user menu partial if user auth is enabled
         let user_menu_content = if self.has_user_auth {
-            self.load_template("partials/_user_menu.html.liquid")
+            self.load_template(TemplateType::UserMenu.path())
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to load user menu partial: {}", e);
@@ -334,9 +338,9 @@ pub async fn template_with_gallery_handler(
 
     // Check if template exists first
     let template_path = if path.is_empty() || path == "/" {
-        "pages/index.html.liquid"
+        TemplateType::Index.path()
     } else {
-        &format!("pages/{}.html.liquid", path.trim_start_matches('/'))
+        &TemplateType::dynamic_page_path(path.trim_start_matches('/'))
     };
 
     // Check if template exists in any of the template directories
@@ -382,8 +386,8 @@ pub async fn template_with_gallery_handler(
             path
         );
         return match app_state.template_engine.render_404_page().await {
-            Ok(html) => (StatusCode::NOT_FOUND, html).into_response(),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
+            Ok(html) => ApiResponse::NotFound.with_html(html.0),
+            Err(_) => ApiResponse::NotFound.into_response(),
         };
     }
 

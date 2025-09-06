@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tracing::{error, info};
 
-use crate::{AppState, api::create_signed_cookie};
+use crate::{ApiResponse, AppState, api::create_signed_cookie};
 
 use super::{LoginError, LoginRequest, LoginResponse};
 
@@ -55,13 +55,13 @@ pub async fn login_page(
 
     let html = match app_state
         .template_engine
-        .render_template("modules/login.html.liquid", globals)
+        .render_template(crate::TemplateType::Login.path(), globals)
         .await
     {
         Ok(html) => html,
         Err(e) => {
             error!("Failed to render login page: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(ApiResponse::TemplateRenderError.status_code());
         }
     };
 
@@ -286,13 +286,13 @@ pub async fn login_success(State(app_state): State<AppState>) -> Result<Html<Str
 
     match app_state
         .template_engine
-        .render_template("modules/login_success.html.liquid", globals)
+        .render_template(crate::TemplateType::LoginSuccess.path(), globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
         Err(e) => {
             error!("Failed to render login success page: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiResponse::TemplateRenderError.status_code())
         }
     }
 }
@@ -332,7 +332,7 @@ pub async fn passkey_enrollment_page(
     // Check if user is authenticated
     let username =
         crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-            .ok_or(StatusCode::UNAUTHORIZED)?;
+            .ok_or(ApiResponse::Unauthorized.status_code())?;
 
     // Use return URL from query parameter or default to gallery
     let redirect_url = query
@@ -348,13 +348,13 @@ pub async fn passkey_enrollment_page(
 
     match app_state
         .template_engine
-        .render_template("modules/passkey_enrollment.html.liquid", globals)
+        .render_template(crate::TemplateType::PasskeyEnrollment.path(), globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
         Err(e) => {
             error!("Failed to render passkey enrollment page: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiResponse::TemplateRenderError.status_code())
         }
     }
 }
@@ -367,7 +367,7 @@ pub async fn profile_page(
     // Check authentication
     let username =
         crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-            .ok_or(StatusCode::UNAUTHORIZED)?;
+            .ok_or(ApiResponse::Unauthorized.status_code())?;
 
     // Get user information
     let user_info = if let Some(manager) = &app_state.user_database_manager {
@@ -401,13 +401,13 @@ pub async fn profile_page(
 
     match app_state
         .template_engine
-        .render_template("modules/profile.html.liquid", globals)
+        .render_template(crate::TemplateType::Profile.path(), globals)
         .await
     {
         Ok(html) => Ok(Html(html)),
         Err(e) => {
             error!("Failed to render profile page: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiResponse::TemplateRenderError.status_code())
         }
     }
 }

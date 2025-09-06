@@ -15,21 +15,12 @@ impl Gallery {
     /// Note: This is only used for resized images. Original images are always served as-is.
     pub fn determine_output_format(&self, accept_header: &str, source_path: &str) -> OutputFormat {
         // PNG sources should always output as PNG to preserve transparency and quality
-        if source_path.to_lowercase().ends_with(".png") {
+        if OutputFormat::should_preserve_source_format(source_path) {
             return OutputFormat::Png;
         }
 
-        // For all sources (including AVIF), check browser support in priority order
+        // For all other sources (including AVIF), use browser capability negotiation
         // This allows AVIF sources to be served as WebP/JPEG when browser doesn't support AVIF
-        #[cfg(feature = "avif")]
-        if accept_header.contains("image/avif") {
-            return OutputFormat::Avif;
-        }
-
-        if accept_header.contains("image/webp") {
-            OutputFormat::WebP
-        } else {
-            OutputFormat::Jpeg
-        }
+        OutputFormat::from_accept_header(accept_header)
     }
 }

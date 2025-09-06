@@ -1,3 +1,4 @@
+use crate::ApiResponse;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -139,7 +140,7 @@ pub async fn gallery_composite_preview_handler_for_named(
     let preview_images: Vec<_> = images.into_iter().take(4).collect();
 
     if preview_images.is_empty() {
-        return Err(StatusCode::NOT_FOUND);
+        return Err(ApiResponse::NotFound.status_code());
     }
 
     // Create composite image in a blocking task

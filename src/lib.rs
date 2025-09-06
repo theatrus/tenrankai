@@ -16,6 +16,393 @@ pub mod static_files;
 pub mod templating;
 pub mod webp_encoder;
 
+/// Template types with path resolution and categorization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TemplateType {
+    // Pages - Static page templates
+    Index,
+    About,
+    Contact,
+    NotFound,
+
+    // Modules - Feature-specific templates
+    Gallery,
+    ImageDetail,
+    PostsIndex,
+    PostDetail,
+    Login,
+    LoginSuccess,
+    PasskeyEnrollment,
+    Profile,
+
+    // Partials - Reusable components
+    Header,
+    Footer,
+    GalleryPreview,
+    UserMenu,
+}
+
+/// Template path that can be either a type-safe enum or a dynamic string
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TemplatePath {
+    /// Type-safe template reference
+    Typed(TemplateType),
+    /// Dynamic template path (for runtime-determined templates)
+    Dynamic(String),
+}
+
+impl TemplateType {
+    /// Get the template file path
+    pub fn path(&self) -> &'static str {
+        match self {
+            // Pages
+            TemplateType::Index => "pages/index.html.liquid",
+            TemplateType::About => "pages/about.html.liquid",
+            TemplateType::Contact => "pages/contact.html.liquid",
+            TemplateType::NotFound => "pages/404.html.liquid",
+
+            // Modules
+            TemplateType::Gallery => "modules/gallery.html.liquid",
+            TemplateType::ImageDetail => "modules/image_detail.html.liquid",
+            TemplateType::PostsIndex => "modules/posts_index.html.liquid",
+            TemplateType::PostDetail => "modules/post_detail.html.liquid",
+            TemplateType::Login => "modules/login.html.liquid",
+            TemplateType::LoginSuccess => "modules/login_success.html.liquid",
+            TemplateType::PasskeyEnrollment => "modules/passkey_enrollment.html.liquid",
+            TemplateType::Profile => "modules/profile.html.liquid",
+
+            // Partials
+            TemplateType::Header => "partials/_header.html.liquid",
+            TemplateType::Footer => "partials/_footer.html.liquid",
+            TemplateType::GalleryPreview => "partials/_gallery_preview.html.liquid",
+            TemplateType::UserMenu => "partials/_user_menu.html.liquid",
+        }
+    }
+
+    /// Get the template category
+    pub fn category(&self) -> TemplateCategory {
+        match self {
+            TemplateType::Index
+            | TemplateType::About
+            | TemplateType::Contact
+            | TemplateType::NotFound => TemplateCategory::Page,
+
+            TemplateType::Gallery
+            | TemplateType::ImageDetail
+            | TemplateType::PostsIndex
+            | TemplateType::PostDetail
+            | TemplateType::Login
+            | TemplateType::LoginSuccess
+            | TemplateType::PasskeyEnrollment
+            | TemplateType::Profile => TemplateCategory::Module,
+
+            TemplateType::Header
+            | TemplateType::Footer
+            | TemplateType::GalleryPreview
+            | TemplateType::UserMenu => TemplateCategory::Partial,
+        }
+    }
+
+    /// Check if this is a partial template
+    pub fn is_partial(&self) -> bool {
+        matches!(self.category(), TemplateCategory::Partial)
+    }
+
+    /// Get all standard page templates
+    pub const PAGES: &'static [TemplateType] = &[
+        TemplateType::Index,
+        TemplateType::About,
+        TemplateType::Contact,
+        TemplateType::NotFound,
+    ];
+
+    /// Get all module templates  
+    pub const MODULES: &'static [TemplateType] = &[
+        TemplateType::Gallery,
+        TemplateType::ImageDetail,
+        TemplateType::PostsIndex,
+        TemplateType::PostDetail,
+        TemplateType::Login,
+        TemplateType::LoginSuccess,
+        TemplateType::PasskeyEnrollment,
+        TemplateType::Profile,
+    ];
+
+    /// Get all partial templates
+    pub const PARTIALS: &'static [TemplateType] = &[
+        TemplateType::Header,
+        TemplateType::Footer,
+        TemplateType::GalleryPreview,
+        TemplateType::UserMenu,
+    ];
+
+    /// Get all standard templates (excludes dynamic pages)
+    pub const ALL_STANDARD: &'static [TemplateType] = &[
+        // Pages
+        TemplateType::Index,
+        TemplateType::About,
+        TemplateType::Contact,
+        TemplateType::NotFound,
+        // Modules
+        TemplateType::Gallery,
+        TemplateType::ImageDetail,
+        TemplateType::PostsIndex,
+        TemplateType::PostDetail,
+        TemplateType::Login,
+        TemplateType::LoginSuccess,
+        TemplateType::PasskeyEnrollment,
+        TemplateType::Profile,
+        // Partials
+        TemplateType::Header,
+        TemplateType::Footer,
+        TemplateType::GalleryPreview,
+        TemplateType::UserMenu,
+    ];
+
+    /// Parse from path string (e.g., "pages/index.html.liquid")
+    pub fn parse_from_path(path: &str) -> Option<TemplateType> {
+        match path {
+            // Pages
+            "pages/index.html.liquid" => Some(TemplateType::Index),
+            "pages/about.html.liquid" => Some(TemplateType::About),
+            "pages/contact.html.liquid" => Some(TemplateType::Contact),
+            "pages/404.html.liquid" => Some(TemplateType::NotFound),
+
+            // Modules
+            "modules/gallery.html.liquid" => Some(TemplateType::Gallery),
+            "modules/image_detail.html.liquid" => Some(TemplateType::ImageDetail),
+            "modules/posts_index.html.liquid" => Some(TemplateType::PostsIndex),
+            "modules/post_detail.html.liquid" => Some(TemplateType::PostDetail),
+            "modules/login.html.liquid" => Some(TemplateType::Login),
+            "modules/login_success.html.liquid" => Some(TemplateType::LoginSuccess),
+            "modules/passkey_enrollment.html.liquid" => Some(TemplateType::PasskeyEnrollment),
+            "modules/profile.html.liquid" => Some(TemplateType::Profile),
+
+            // Partials
+            "partials/_header.html.liquid" => Some(TemplateType::Header),
+            "partials/_footer.html.liquid" => Some(TemplateType::Footer),
+            "partials/_gallery_preview.html.liquid" => Some(TemplateType::GalleryPreview),
+            "partials/_user_menu.html.liquid" => Some(TemplateType::UserMenu),
+
+            _ => None,
+        }
+    }
+
+    /// Create a dynamic page path for runtime-determined pages
+    pub fn dynamic_page_path(name: &str) -> String {
+        format!("pages/{}.html.liquid", name)
+    }
+}
+
+impl TemplatePath {
+    /// Get the template path string
+    pub fn path(&self) -> String {
+        match self {
+            TemplatePath::Typed(template_type) => template_type.path().to_string(),
+            TemplatePath::Dynamic(path) => path.clone(),
+        }
+    }
+
+    /// Create a typed template path
+    pub fn typed(template_type: TemplateType) -> Self {
+        TemplatePath::Typed(template_type)
+    }
+
+    /// Create a dynamic template path
+    pub fn dynamic(path: String) -> Self {
+        TemplatePath::Dynamic(path)
+    }
+
+    /// Create a dynamic page path
+    pub fn dynamic_page(name: &str) -> Self {
+        TemplatePath::Dynamic(TemplateType::dynamic_page_path(name))
+    }
+}
+
+/// Template category classification
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TemplateCategory {
+    Page,
+    Module,
+    Partial,
+}
+
+impl std::fmt::Display for TemplateType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.path())
+    }
+}
+
+impl std::fmt::Display for TemplatePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.path())
+    }
+}
+
+/// HTTP Status Response System for consistent API responses
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ApiResponse {
+    // Success responses
+    Ok,
+
+    // Client errors (4xx)
+    BadRequest,
+    Unauthorized,
+    Forbidden,
+    NotFound,
+    MethodNotAllowed,
+
+    // Specific error cases
+    GalleryNotFound,
+    ImageNotFound,
+    DirectoryNotFound,
+    CacheEntryNotFound,
+    InvalidSizeParameter,
+    InvalidCredentials,
+    AccessDenied,
+    TemplateNotFound,
+    PostNotFound,
+    UserNotFound,
+
+    // Server errors (5xx)
+    InternalServerError,
+    NotImplemented,
+    ProcessingError,
+    DatabaseError,
+    TemplateRenderError,
+    FileSystemError,
+}
+
+impl ApiResponse {
+    /// Get the HTTP status code for this response
+    pub fn status_code(&self) -> axum::http::StatusCode {
+        use axum::http::StatusCode;
+        match self {
+            // Success responses
+            ApiResponse::Ok => StatusCode::OK,
+
+            // Client errors
+            ApiResponse::BadRequest | ApiResponse::InvalidSizeParameter => StatusCode::BAD_REQUEST,
+            ApiResponse::Unauthorized | ApiResponse::InvalidCredentials => StatusCode::UNAUTHORIZED,
+            ApiResponse::Forbidden | ApiResponse::AccessDenied => StatusCode::FORBIDDEN,
+            ApiResponse::NotFound
+            | ApiResponse::GalleryNotFound
+            | ApiResponse::ImageNotFound
+            | ApiResponse::DirectoryNotFound
+            | ApiResponse::CacheEntryNotFound
+            | ApiResponse::TemplateNotFound
+            | ApiResponse::PostNotFound
+            | ApiResponse::UserNotFound => StatusCode::NOT_FOUND,
+            ApiResponse::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+
+            // Server errors
+            ApiResponse::InternalServerError
+            | ApiResponse::ProcessingError
+            | ApiResponse::DatabaseError
+            | ApiResponse::TemplateRenderError
+            | ApiResponse::FileSystemError => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiResponse::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+        }
+    }
+
+    /// Get the error message for this response
+    pub fn message(&self) -> &'static str {
+        match self {
+            // Success responses
+            ApiResponse::Ok => "Success",
+
+            // Client errors
+            ApiResponse::BadRequest => "Bad request",
+            ApiResponse::Unauthorized => "Unauthorized",
+            ApiResponse::Forbidden => "Forbidden",
+            ApiResponse::NotFound => "Not found",
+            ApiResponse::MethodNotAllowed => "Method not allowed",
+
+            // Specific error cases
+            ApiResponse::GalleryNotFound => "Gallery not found",
+            ApiResponse::ImageNotFound => "Image not found",
+            ApiResponse::DirectoryNotFound => "Directory not found",
+            ApiResponse::CacheEntryNotFound => "Cache entry not found",
+            ApiResponse::InvalidSizeParameter => "Invalid size parameter",
+            ApiResponse::InvalidCredentials => "Invalid credentials",
+            ApiResponse::AccessDenied => "Access denied",
+            ApiResponse::TemplateNotFound => "Template not found",
+            ApiResponse::PostNotFound => "Post not found",
+            ApiResponse::UserNotFound => "User not found",
+
+            // Server errors
+            ApiResponse::InternalServerError => "Internal server error",
+            ApiResponse::NotImplemented => "Not implemented",
+            ApiResponse::ProcessingError => "Processing error",
+            ApiResponse::DatabaseError => "Database error",
+            ApiResponse::TemplateRenderError => "Template rendering error",
+            ApiResponse::FileSystemError => "File system error",
+        }
+    }
+
+    /// Create an HTTP response for this API response
+    pub fn into_response(self) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        (self.status_code(), self.message()).into_response()
+    }
+
+    /// Create an HTTP response with custom message
+    pub fn with_message(self, message: String) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        (self.status_code(), message).into_response()
+    }
+
+    /// Create an HTML response with custom content and proper status
+    pub fn with_html(self, html: String) -> axum::response::Response {
+        use axum::response::{Html, IntoResponse};
+        (self.status_code(), Html(html)).into_response()
+    }
+
+    /// Check if this is a client error (4xx)
+    pub fn is_client_error(&self) -> bool {
+        matches!(self.status_code().as_u16(), 400..=499)
+    }
+
+    /// Check if this is a server error (5xx)
+    pub fn is_server_error(&self) -> bool {
+        matches!(self.status_code().as_u16(), 500..=599)
+    }
+
+    /// Check if this is a success response (2xx)
+    pub fn is_success(&self) -> bool {
+        matches!(self.status_code().as_u16(), 200..=299)
+    }
+
+    /// Get all API responses that are client errors
+    pub const CLIENT_ERRORS: &'static [ApiResponse] = &[
+        ApiResponse::BadRequest,
+        ApiResponse::Unauthorized,
+        ApiResponse::Forbidden,
+        ApiResponse::NotFound,
+        ApiResponse::MethodNotAllowed,
+        ApiResponse::GalleryNotFound,
+        ApiResponse::ImageNotFound,
+        ApiResponse::DirectoryNotFound,
+        ApiResponse::CacheEntryNotFound,
+        ApiResponse::InvalidSizeParameter,
+        ApiResponse::InvalidCredentials,
+        ApiResponse::AccessDenied,
+        ApiResponse::TemplateNotFound,
+        ApiResponse::PostNotFound,
+        ApiResponse::UserNotFound,
+    ];
+
+    /// Get all API responses that are server errors
+    pub const SERVER_ERRORS: &'static [ApiResponse] = &[
+        ApiResponse::InternalServerError,
+        ApiResponse::NotImplemented,
+        ApiResponse::ProcessingError,
+        ApiResponse::DatabaseError,
+        ApiResponse::TemplateRenderError,
+        ApiResponse::FileSystemError,
+    ];
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,

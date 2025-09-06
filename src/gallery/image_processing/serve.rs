@@ -1,4 +1,7 @@
-use crate::gallery::{Gallery, GalleryError};
+use crate::{
+    ApiResponse,
+    gallery::{Gallery, GalleryError},
+};
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode, header},
@@ -20,13 +23,13 @@ impl Gallery {
         // Security check
         let full_path = self.config.source_directory.join(relative_path);
         if !full_path.starts_with(&self.config.source_directory) {
-            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+            return ApiResponse::Forbidden.into_response();
         }
 
         // Ensure the file exists
         if !full_path.exists() {
             error!("Image file not found: {:?}", full_path);
-            return (StatusCode::NOT_FOUND, "Image not found").into_response();
+            return ApiResponse::ImageNotFound.into_response();
         }
 
         let output_format = self.determine_output_format(accept_header, relative_path);
@@ -41,7 +44,7 @@ impl Gallery {
             let (_, is_medium) = match self.parse_size(size) {
                 Ok(result) => result,
                 Err(_) => {
-                    return (StatusCode::BAD_REQUEST, "Invalid size parameter").into_response();
+                    return ApiResponse::InvalidSizeParameter.into_response();
                 }
             };
             let apply_watermark = is_medium && self.config.copyright_holder.is_some();
@@ -144,19 +147,13 @@ impl Gallery {
         let cache_path = self.config.cache_directory.join(cache_key);
 
         if !cache_path.exists() {
-            return Ok((StatusCode::NOT_FOUND, "Cache entry not found").into_response());
+            return Ok(ApiResponse::CacheEntryNotFound.into_response());
         }
 
-        // Determine MIME type from extension
-        let mime_type = if cache_key.ends_with(".webp") {
-            "image/webp"
-        } else if cache_key.ends_with(".png") {
-            "image/png"
-        } else if cache_key.ends_with(".avif") {
-            "image/avif"
-        } else {
-            "image/jpeg"
-        };
+        // Determine MIME type from extension using OutputFormat
+        let mime_type = super::types::OutputFormat::from_file_extension(cache_key)
+            .map(|format| format.mime_type())
+            .unwrap_or("image/jpeg");
 
         Ok(self
             .serve_file_with_content_type_and_cache_header(&cache_path, mime_type, true)
@@ -188,7 +185,10 @@ impl Gallery {
 
         // Encode to JPEG in memory
         let mut buffer = Cursor::new(Vec::new());
-        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 85);
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut buffer,
+            output_format.default_quality() as u8,
+        );
         encoder.write_image(
             rgb_image.as_raw(),
             rgb_image.width(),
@@ -204,7 +204,10 @@ impl Gallery {
 
         // Create response
         let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
+        headers.insert(
+            header::CONTENT_TYPE,
+            output_format.mime_type().parse().unwrap(),
+        );
         headers.insert(
             header::CONTENT_LENGTH,
             image_data.len().to_string().parse().unwrap(),
