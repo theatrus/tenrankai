@@ -560,10 +560,7 @@ impl Gallery {
         let md_filename = format!("{}.md", stem.to_str()?);
         let md_path = self.config.source_directory.join(parent).join(md_filename);
 
-        match tokio::fs::read_to_string(&md_path).await {
-            Ok(content) => Some(content),
-            Err(_) => None,
-        }
+        (tokio::fs::read_to_string(&md_path).await).ok()
     }
 
     async fn read_sidecar_markdown(&self, image_path: &str) -> Option<String> {
