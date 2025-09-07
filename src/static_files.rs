@@ -42,12 +42,11 @@ impl StaticFileHandler {
         // Files in earlier directories override files in later directories
         for (index, static_dir) in self.static_dirs.iter().enumerate() {
             debug!("Scanning static directory {}: {:?}", index, static_dir);
-            self.scan_directory_recursive(static_dir, &mut versions, index);
+            Self::scan_directory_recursive(static_dir, &mut versions, index);
         }
     }
 
     fn scan_directory_recursive(
-        &self,
         dir: &PathBuf,
         versions: &mut HashMap<String, u64>,
         dir_index: usize,
@@ -79,7 +78,7 @@ impl StaticFileHandler {
                         }
                     } else if metadata.is_dir() {
                         // Recursively scan subdirectories
-                        self.scan_directory_recursive(&path, versions, dir_index);
+                        Self::scan_directory_recursive(&path, versions, dir_index);
                     }
                 }
             }
