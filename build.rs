@@ -9,17 +9,8 @@ fn main() {
     println!("cargo:rerun-if-changed=package.json");
     println!("cargo:rerun-if-changed=tsconfig.json");
 
-    // Always build frontend if setup is present
-    let profile = env::var("PROFILE").unwrap_or_default();
-
-    if profile == "release" {
-        build_frontend();
-    } else {
-        println!(
-            "cargo:warning=Skipping frontend build in debug mode for faster development iteration."
-        );
-        println!("cargo:warning=Frontend will be built automatically in release mode.");
-    }
+    // Always build frontend if setup is present, regardless of profile
+    build_frontend();
 }
 
 fn build_frontend() {

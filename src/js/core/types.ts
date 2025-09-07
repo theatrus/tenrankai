@@ -13,6 +13,15 @@ export interface GalleryItem {
   is_new?: boolean;
 }
 
+export interface GalleryImage {
+  path: string;
+  name: string;
+  thumbnail_url: string;
+  gallery_url: string;
+  dimensions?: [number, number]; // [width, height] format used by templates
+  is_new?: boolean;
+}
+
 export interface PreviewResponse {
   images: GalleryItem[];
   total_count: number;

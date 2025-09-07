@@ -12,67 +12,9 @@
     </div>
 </li>
 
-<script>
-// User menu functionality
-let userMenuOpen = false;
-
-function toggleUserMenu(event) {
-    event.stopPropagation();
-    const dropdown = document.getElementById('userMenuDropdown');
-    userMenuOpen = !userMenuOpen;
-    
-    if (userMenuOpen) {
-        dropdown.classList.add('show');
-        // Add click outside listener
-        setTimeout(() => {
-            document.addEventListener('click', handleClickOutside);
-        }, 0);
-    } else {
-        dropdown.classList.remove('show');
-        document.removeEventListener('click', handleClickOutside);
-    }
-}
-
-function handleClickOutside(event) {
-    const userMenu = document.querySelector('.user-menu');
-    if (!userMenu.contains(event.target)) {
-        userMenuOpen = false;
-        document.getElementById('userMenuDropdown').classList.remove('show');
-        document.removeEventListener('click', handleClickOutside);
-    }
-}
-
-// Check authentication status and populate menu
-async function initUserMenu() {
-    try {
-        const response = await fetch('/api/verify');
-        const data = await response.json();
-        
-        const menuContent = document.getElementById('userMenuContent');
-        
-        if (data.authorized && data.username) {
-            menuContent.innerHTML = `
-                <div class="user-info">
-                    Signed in as
-                    <span class="username">${data.username}</span>
-                </div>
-                <a href="/_login/profile">Profile</a>
-                <a href="/_login/logout">Sign out</a>
-            `;
-        } else {
-            menuContent.innerHTML = `
-                <a href="/_login">Sign in</a>
-            `;
-        }
-    } catch (error) {
-        console.error('Error checking auth status:', error);
-        // Default to showing login
-        document.getElementById('userMenuContent').innerHTML = `
-            <a href="/_login">Sign in</a>
-        `;
-    }
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', initUserMenu);
+<script type="module">
+  import '{{ "js/components/ui/user-menu.js" | asset_url }}';
+  
+  // UserMenu module handles initialization automatically
+  // The global toggleUserMenu function is available from the module
 </script>
