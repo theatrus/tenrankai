@@ -16,6 +16,7 @@ export interface GalleryItem {
 export interface GalleryImage {
   path: string;
   name: string;
+  parent_path: string;
   thumbnail_url: string;
   gallery_url: string;
   dimensions?: [number, number]; // [width, height] format used by templates

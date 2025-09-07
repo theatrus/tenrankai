@@ -63,17 +63,23 @@ export class GalleryPreviewTemplate {
 
   private calculatePreviewColumnWidth(): number {
     const viewportWidth = window.innerWidth;
-    const containerWidth = Math.min(viewportWidth, 1200);
+    
+    // Get the actual container width from the DOM
+    const containerRect = this.previewGrid.getBoundingClientRect();
+    const containerWidth = containerRect.width || Math.min(viewportWidth, 1200);
     
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const gap = 24; // 1.5rem
     
     if (viewportWidth <= 768) {
-      // Mobile: single column
-      const mobilePadding = isIOS ? 16 : 20;
-      return containerWidth - mobilePadding;
+      // Mobile: single column centered with balanced width
+      // Use actual container width to account for any padding/margins
+      const horizontalPadding = 32; // 1rem on each side
+      const availableWidth = Math.min(viewportWidth - (horizontalPadding * 2), containerWidth);
+      // Use 85% of available width for better balance
+      return Math.floor(availableWidth);
     } else {
-      // Desktop: two columns for preview
+      // Desktop: two columns
       const desktopPadding = isIOS ? 32 : 40;
       return (containerWidth - desktopPadding - gap) / 2;
     }
@@ -98,31 +104,42 @@ export class GalleryPreviewTemplate {
       .replace(/-/g, '')
       .replace(/_/g, '');
     
-    const itemDiv = document.createElement('div');
-    itemDiv.className = 'preview-image-item';
-    itemDiv.id = `preview-${cleanName}`;
-    itemDiv.setAttribute('data-path', image.path);
-    itemDiv.style.width = displayDimensions.width + 'px';
-    itemDiv.style.height = displayDimensions.height + 'px';
-    
     const link = document.createElement('a');
-    link.href = `${this.galleryUrl}/detail/${image.path}`;
-    link.className = 'preview-image-link';
+    link.href = `${this.galleryUrl}/${image.parent_path}#${cleanName}`;
+    link.className = 'preview-item image-preview-item' + (image.is_new ? ' is-new' : '');
+    link.style.width = displayDimensions.width + 'px';
+    link.style.display = 'inline-block';
+    link.setAttribute('data-image-path', image.path);
+    
+    const imageDiv = document.createElement('div');
+    imageDiv.className = 'preview-image';
+    imageDiv.style.width = displayDimensions.width + 'px';
+    imageDiv.style.height = displayDimensions.height + 'px';
+    imageDiv.style.backgroundColor = 'transparent';
     
     const img = document.createElement('img');
-    img.src = image.thumbnail_url;
-    img.srcset = `${image.thumbnail_url} 1x, ${image.thumbnail_url}@2x 2x`;
+    const baseUrl = image.gallery_url || image.thumbnail_url;
+    img.src = baseUrl;
+    
+    // Add srcset for high-DPI displays
+    if (baseUrl) {
+      const url2x = baseUrl.replace('?size=gallery', '?size=gallery@2x')
+                           .replace('?size=thumbnail', '?size=thumbnail@2x');
+      img.srcset = `${baseUrl} 1x, ${url2x} 2x`;
+    }
+    
     img.alt = image.name;
     img.width = displayDimensions.width;
     img.height = displayDimensions.height;
-    img.style.width = '100%';
-    img.style.height = '100%';
+    img.style.width = displayDimensions.width + 'px';
+    img.style.height = displayDimensions.height + 'px';
     img.style.objectFit = 'cover';
+    img.style.display = 'block';
     
-    link.appendChild(img);
-    itemDiv.appendChild(link);
+    imageDiv.appendChild(img);
+    link.appendChild(imageDiv);
     
-    return itemDiv;
+    return link;
   }
 
   public layoutPreviewMasonry(): void {
@@ -136,19 +153,20 @@ export class GalleryPreviewTemplate {
       (col as HTMLElement).innerHTML = '';
     });
     
-    // Setup column styling with proper gap
-    const gap = 24; // 1.5rem
-    (columns[0] as HTMLElement).style.display = 'flex';
-    (columns[0] as HTMLElement).style.flexDirection = 'column';
-    (columns[0] as HTMLElement).style.gap = '24px';
+    // Hide/show columns based on viewport - ensure they have proper flexbox properties
+    const col0 = columns[0] as HTMLElement;
+    col0.style.display = 'flex';
+    col0.style.flexDirection = 'column';
+    col0.style.flex = '1';
+    col0.style.minWidth = '0';
     
     if (columns[1]) {
       const col1 = columns[1] as HTMLElement;
       if (numColumns > 1) {
         col1.style.display = 'flex';
         col1.style.flexDirection = 'column';
-        col1.style.gap = '24px';
-        col1.style.marginLeft = gap + 'px'; // Add gap between columns
+        col1.style.flex = '1';
+        col1.style.minWidth = '0';
       } else {
         col1.style.display = 'none';
       }

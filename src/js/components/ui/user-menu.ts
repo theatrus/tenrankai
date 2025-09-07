@@ -56,57 +56,25 @@ export class UserMenu {
       const response = await fetch('/api/verify');
       const data = await response.json();
       
-      if (data.authenticated) {
+      if (data.authorized && data.username) {
         contentDiv.innerHTML = `
           <div class="user-info">
-            <div class="user-name">${this.escapeHtml(data.username)}</div>
-            <div class="user-email">${this.escapeHtml(data.email)}</div>
+            Signed in as
+            <span class="username">${this.escapeHtml(data.username)}</span>
           </div>
-          <div class="menu-items">
-            <a href="/_login/profile" class="menu-item">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="8" r="3"/>
-                <path d="M12 14c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/>
-              </svg>
-              Profile
-            </a>
-            <a href="/_login/logout" class="menu-item">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16,17 21,12 16,7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
-              </svg>
-              Sign Out
-            </a>
-          </div>
+          <a href="/_login/profile">Profile</a>
+          <a href="/_login/logout">Sign out</a>
         `;
       } else {
         contentDiv.innerHTML = `
-          <div class="menu-items">
-            <a href="/_login" class="menu-item">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-                <polyline points="10,17 15,12 10,7"/>
-                <line x1="15" y1="12" x2="3" y2="12"/>
-              </svg>
-              Sign In
-            </a>
-          </div>
+          <a href="/_login">Sign in</a>
         `;
       }
     } catch (error) {
-      console.error('Error loading user info:', error);
+      console.error('Error checking auth status:', error);
+      // Default to showing login
       contentDiv.innerHTML = `
-        <div class="menu-items">
-          <a href="/_login" class="menu-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-              <polyline points="10,17 15,12 10,7"/>
-              <line x1="15" y1="12" x2="3" y2="12"/>
-            </svg>
-            Sign In
-          </a>
-        </div>
+        <a href="/_login">Sign in</a>
       `;
     }
   }
