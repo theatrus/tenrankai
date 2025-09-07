@@ -46,11 +46,16 @@ impl StaticFileHandler {
         }
     }
 
-    fn scan_directory_recursive(&self, dir: &PathBuf, versions: &mut HashMap<String, u64>, dir_index: usize) {
+    fn scan_directory_recursive(
+        &self,
+        dir: &PathBuf,
+        versions: &mut HashMap<String, u64>,
+        dir_index: usize,
+    ) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                
+
                 if let Ok(metadata) = entry.metadata() {
                     if metadata.is_file() {
                         // Check if it's a CSS or JS file
