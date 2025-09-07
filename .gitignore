@@ -25,3 +25,4 @@ config.toml
 
 # User data
 users.toml
+static/js

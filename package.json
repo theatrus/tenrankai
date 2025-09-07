@@ -1,0 +1,16 @@
+{
+  "name": "tenrankai-frontend",
+  "private": true,
+  "scripts": {
+    "build": "tsc && npm run copy-assets",
+    "watch": "tsc --watch & npm run watch-assets",
+    "dev": "npm run watch",
+    "copy-assets": "cp -r src/assets/* static/ 2>/dev/null || true",
+    "watch-assets": "chokidar 'src/assets/**/*' -c 'npm run copy-assets'"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "chokidar-cli": "^3.0.0", 
+    "@types/web": "^0.0.99"
+  }
+}
