@@ -1,7 +1,7 @@
 {% assign page_title = "Setup Passkey" %}
 {% assign meta_description = "Setup a passkey for easier sign-in" %}
 {% assign page_css = "passkey-enrollment.css" | split: "," %}
-{% assign page_js = "login.js" | split: "," %}
+{% comment %}{% assign page_js = "login.js" | split: "," %}{% endcomment %}
 {% include "_header.html.liquid" %}
 
 <div class="container">
@@ -60,10 +60,14 @@
     </div>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
+<!-- Load TypeScript modules for passkey enrollment -->
+<script type="module">
+  import { WebAuthnUtils } from '{{ "js/components/auth/webauthn.js" | asset_url }}';
+  import { Toast } from '{{ "js/components/ui/toast.js" | asset_url }}';
+  
+  document.addEventListener('DOMContentLoaded', function() {
     // Check if WebAuthn is supported
-    if (!LoginUtils.isWebAuthnSupported()) {
+    if (!WebAuthnUtils.isSupported()) {
         document.getElementById('setupPasskeyBtn').disabled = true;
         document.getElementById('setupPasskeyBtn').textContent = 'Passkeys not supported';
         document.querySelector('.setup-note').textContent = 'Your browser does not support passkeys.';
@@ -74,17 +78,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const button = this;
         const redirectUrl = '{{ redirect_url | default: "/gallery" }}';
         
-        // Hide messages
-        LoginUtils.hideError();
-        LoginUtils.hideSuccess();
-        
         button.disabled = true;
         button.textContent = 'Setting up...';
         
         try {
-            await LoginUtils.registerPasskey('Passkey');
+            await WebAuthnUtils.registerPasskey('Passkey');
             
-            LoginUtils.showSuccess('Passkey set up successfully! Redirecting...');
+            Toast.success('Passkey set up successfully! Redirecting...');
             
             // Redirect after a short delay
             setTimeout(() => {
@@ -93,16 +93,16 @@ document.addEventListener('DOMContentLoaded', function() {
             
         } catch (error) {
             if (error.name === 'NotAllowedError') {
-                LoginUtils.showError('Passkey setup was cancelled or timed out. Please try again.');
+                Toast.error('Passkey setup was cancelled or timed out. Please try again.');
             } else {
-                LoginUtils.showError(error.message || 'Failed to set up passkey. Please try again.');
+                Toast.error(error.message || 'Failed to set up passkey. Please try again.');
             }
             
             button.disabled = false;
             button.textContent = 'Set up passkey';
         }
     });
-});
+  });
 </script>
 
 {% include "_footer.html.liquid" %}

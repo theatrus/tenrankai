@@ -1,7 +1,7 @@
 {% assign page_title = "Login" %}
 {% assign meta_description = "Login to access the photo gallery" %}
 {% assign page_css = "login.css" | split: "," %}
-{% assign page_js = "login.js" | split: "," %}
+{% comment %}{% assign page_js = "login.js" | split: "," %}{% endcomment %}
 {% include "_header.html.liquid" %}
 
 <div class="container">
@@ -40,97 +40,101 @@
     </div>
 </div>
 
-<script>
-// Handle login form submission
-document.getElementById('loginForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const username = document.getElementById('username').value.trim();
-    const messageDiv = document.getElementById('message');
-    const errorDiv = document.getElementById('errorMessage');
-    const submitButton = e.target.querySelector('button[type="submit"]');
-    const formContainer = document.getElementById('loginFormContainer');
-    const successContainer = document.getElementById('successContainer');
-    const authenticatingContainer = document.getElementById('authenticatingContainer');
-    
-    // Hide any previous error messages
-    LoginUtils.hideError();
-    
-    if (!username) {
-        LoginUtils.showError('Please enter a username or email address');
-        return;
-    }
-    
-    submitButton.disabled = true;
-    submitButton.textContent = 'Checking...';
-    
-    try {
-        // First, check if WebAuthn is supported and if user has passkeys
-        if (LoginUtils.isWebAuthnSupported()) {
-            const { has_passkeys } = await LoginUtils.checkUserHasPasskeys(username);
-            
-            if (has_passkeys) {
-                // User has passkeys, try to authenticate with them
-                LoginUtils.hideElement('loginFormContainer');
-                LoginUtils.showElement('authenticatingContainer');
-                
-                try {
-                    await LoginUtils.authenticateWithPasskey(username);
-                    // Success - user will be redirected
-                    const returnUrl = LoginUtils.getReturnUrl();
-                    window.location.href = returnUrl || '/gallery';
-                    return;
-                } catch (passkeyError) {
-                    // Passkey auth failed, continue with email flow
-                    LoginUtils.hideElement('authenticatingContainer');
-                    LoginUtils.showElement('loginFormContainer');
-                    
-                    // Show a brief message about falling back to email
-                    errorDiv.textContent = 'Passkey authentication cancelled. Sending login email instead...';
-                    errorDiv.style.display = 'block';
-                    errorDiv.classList.add('info');
-                    
-                    // Small delay before sending email
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            }
-        }
-        
-        // Send email login request (either no passkeys or passkey auth failed)
-        submitButton.textContent = 'Sending...';
-        LoginUtils.hideError();
-        errorDiv.classList.remove('info');
-        
-        const response = await fetch('/_login/request', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ username: username })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Hide the form and show success message
-            LoginUtils.hideElement('loginFormContainer');
-            LoginUtils.hideElement('authenticatingContainer');
-            messageDiv.textContent = data.message;
-            LoginUtils.showElement('successContainer');
-        } else {
-            // Show error message below the form
-            LoginUtils.showError(data.message || 'Login failed');
-        }
-        
-    } catch (error) {
-        LoginUtils.hideElement('authenticatingContainer');
-        LoginUtils.showElement('loginFormContainer');
-        LoginUtils.showError('An error occurred. Please try again.');
-    } finally {
-        submitButton.disabled = false;
-        submitButton.textContent = 'Continue';
-    }
-});
+<!-- Use TypeScript modules but keep the original working login flow -->
+<script type="module">
+  import { WebAuthnUtils } from '{{ "js/components/auth/webauthn.js" | asset_url }}';
+  import { AuthUtils } from '{{ "js/components/auth/auth-utils.js" | asset_url }}';
+  
+  // Handle login form submission - exact same flow as original
+  document.getElementById('loginForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const username = document.getElementById('username').value.trim();
+      const messageDiv = document.getElementById('message');
+      const errorDiv = document.getElementById('errorMessage');
+      const submitButton = e.target.querySelector('button[type="submit"]');
+      const formContainer = document.getElementById('loginFormContainer');
+      const successContainer = document.getElementById('successContainer');
+      const authenticatingContainer = document.getElementById('authenticatingContainer');
+      
+      // Hide any previous error messages
+      AuthUtils.hideError();
+      
+      if (!username) {
+          AuthUtils.showError('Please enter a username or email address');
+          return;
+      }
+      
+      submitButton.disabled = true;
+      submitButton.textContent = 'Checking...';
+      
+      try {
+          // First, check if WebAuthn is supported and if user has passkeys
+          if (WebAuthnUtils.isSupported()) {
+              const { has_passkeys } = await WebAuthnUtils.checkUserHasPasskeys(username);
+              
+              if (has_passkeys) {
+                  // User has passkeys, try to authenticate with them
+                  AuthUtils.hideElement('loginFormContainer');
+                  AuthUtils.showElement('authenticatingContainer');
+                  
+                  try {
+                      await WebAuthnUtils.authenticateWithPasskey(username);
+                      // Success - user will be redirected
+                      const returnUrl = AuthUtils.getReturnUrl();
+                      window.location.href = returnUrl || '/gallery';
+                      return;
+                  } catch (passkeyError) {
+                      // Passkey auth failed, continue with email flow
+                      AuthUtils.hideElement('authenticatingContainer');
+                      AuthUtils.showElement('loginFormContainer');
+                      
+                      // Show a brief message about falling back to email
+                      errorDiv.textContent = 'Passkey authentication cancelled. Sending login email instead...';
+                      errorDiv.style.display = 'block';
+                      errorDiv.classList.add('info');
+                      
+                      // Small delay before sending email
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                  }
+              }
+          }
+          
+          // Send email login request (either no passkeys or passkey auth failed)
+          submitButton.textContent = 'Sending...';
+          AuthUtils.hideError();
+          errorDiv.classList.remove('info');
+          
+          const response = await fetch('/_login/request', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ username: username })
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+              // Hide the form and show success message
+              AuthUtils.hideElement('loginFormContainer');
+              AuthUtils.hideElement('authenticatingContainer');
+              messageDiv.textContent = data.message;
+              AuthUtils.showElement('successContainer');
+          } else {
+              // Show error message below the form
+              AuthUtils.showError(data.message || 'Login failed');
+          }
+          
+      } catch (error) {
+          AuthUtils.hideElement('authenticatingContainer');
+          AuthUtils.showElement('loginFormContainer');
+          AuthUtils.showError('An error occurred. Please try again.');
+      } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Continue';
+      }
+  });
 </script>
 
 <style>
