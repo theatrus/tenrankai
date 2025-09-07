@@ -12,6 +12,22 @@ fn main() {
     build_frontend();
 }
 
+fn npm_command() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "npm.cmd"
+    } else {
+        "npm"
+    }
+}
+
+fn node_command() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "node.exe"
+    } else {
+        "node"
+    }
+}
+
 fn build_frontend() {
     let frontend_dir = Path::new(".");
 
@@ -33,7 +49,7 @@ fn build_frontend() {
     // Install dependencies if node_modules doesn't exist
     if !frontend_dir.join("node_modules").exists() {
         println!("cargo:warning=Installing frontend dependencies...");
-        let output = Command::new("npm")
+        let output = Command::new(npm_command())
             .arg("install")
             .current_dir(frontend_dir)
             .output()
@@ -49,7 +65,7 @@ fn build_frontend() {
 
     // Run the build
     println!("cargo:warning=Compiling TypeScript...");
-    let output = Command::new("npm")
+    let output = Command::new(npm_command())
         .arg("run")
         .arg("build")
         .current_dir(frontend_dir)
@@ -67,7 +83,7 @@ fn build_frontend() {
 }
 
 fn check_node_available() -> bool {
-    Command::new("node")
+    Command::new(node_command())
         .arg("--version")
         .output()
         .map(|output| output.status.success())
