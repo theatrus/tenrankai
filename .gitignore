@@ -26,3 +26,4 @@ config.toml
 # User data
 users.toml
 static/js
+node_modules/

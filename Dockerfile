@@ -11,7 +11,12 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     git \
     python3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js for frontend build
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
 
 # Set working directory
 WORKDIR /app
@@ -21,8 +26,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY templates ./templates
 COPY static ./static
+COPY package.json package-lock.json tsconfig.json build.rs ./
 
-# Build the application with all features in release mode
+# Build the application with all features in release mode (will trigger frontend build)
 RUN cargo build --release
 
 # Runtime stage
