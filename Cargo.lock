@@ -3974,7 +3974,7 @@ dependencies = [
 
 [[package]]
 name = "tenrankai"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ab_glyph",
  "async-trait",
