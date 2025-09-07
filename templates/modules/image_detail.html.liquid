@@ -234,119 +234,18 @@
 </div>
 
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const mainImage = document.getElementById('main-image');
-    const imageContainer = mainImage.closest('.image-container');
-    
-    // Add loading class initially
-    imageContainer.classList.add('loading');
-    
-    // Remove loading class when image is loaded
-    if (mainImage.complete && mainImage.naturalHeight !== 0) {
-        imageContainer.classList.remove('loading');
-    } else {
-        mainImage.addEventListener('load', function() {
-            imageContainer.classList.remove('loading');
-        });
-        
-        mainImage.addEventListener('error', function() {
-            imageContainer.classList.remove('loading');
-        });
-    }
-    
-    // Check download permission via API and populate buttons
-    async function checkDownloadPermission() {
-        try {
-            const response = await fetch('/api/verify');
-            const data = await response.json();
-            return data.authorized;
-        } catch (error) {
-            console.error('Error checking download permission:', error);
-            return false;
-        }
-    }
-    
-    async function setupControls() {
-        const hasDownloadPermission = await checkDownloadPermission();
-        const controlButtons = document.getElementById('control-buttons');
-        
-        if (hasDownloadPermission) {
-            controlButtons.innerHTML = `
-                <a href="{{ image.url }}" target="_blank" class="btn">View Full Size</a>
-                <a href="{{ image.url }}" download="{{ image.name }}" class="btn">Download</a>
-            `;
-            
-            mainImage.addEventListener('click', function() {
-                window.open(this.src.replace('?size=medium', ''), '_blank');
-            });
-            mainImage.style.cursor = 'pointer';
-        } else {
-            controlButtons.innerHTML = `
-                <a href="{{ image.medium_url }}" target="_blank" class="btn">View Medium Size</a>
-                <button class="btn" onclick="requestDownloadAccess()">Request Download Access</button>
-            `;
-            
-            mainImage.addEventListener('click', function() {
-                window.open('{{ image.medium_url }}', '_blank');
-            });
-            mainImage.style.cursor = 'pointer';
-        }
-    }
-    
-    // Function to request download access - redirect to login
-    window.requestDownloadAccess = function() {
-        window.location.href = '/_login';
-    };
-    
-    // Initialize controls
-    setupControls();
-    
-    // Keyboard navigation
-    document.addEventListener('keydown', function(e) {
-        {% if prev_image %}
-        if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            window.location.href = '{{ gallery_url }}/detail/{{ prev_image.path }}';
-        }
-        {% endif %}
-        
-        {% if next_image %}
-        if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            window.location.href = '{{ gallery_url }}/detail/{{ next_image.path }}';
-        }
-        {% endif %}
-        
-        // ESC to go back to gallery
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            {% assign path_parts = image.path | split: "/" %}
-            {% assign gallery_path = "" %}
-            {% for part in path_parts %}
-                {% unless forloop.last %}
-                    {% if gallery_path == "" %}
-                        {% assign gallery_path = part %}
-                    {% else %}
-                        {% assign gallery_path = gallery_path | append: "/" | append: part %}
-                    {% endif %}
-                {% endunless %}
-            {% endfor %}
-            window.location.href = '{{ gallery_url }}/{{ gallery_path }}';
-        }
+<script type="module">
+  import { ImageDetail } from '{{ "js/pages/image-detail.js" | asset_url }}';
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    new ImageDetail({
+      {% if prev_image %}prevImagePath: '{{ prev_image.path }}',{% endif %}
+      {% if next_image %}nextImagePath: '{{ next_image.path }}',{% endif %}
+      galleryUrl: '{{ gallery_url }}',
+      imagePath: '{{ image.path }}',
+      imageName: '{{ image.name }}'
     });
-    
-    // Preload adjacent images for faster navigation
-    {% if prev_image %}
-    const prevImg = new Image();
-    prevImg.src = '{{ gallery_url }}/image/{{ prev_image.path }}?size=medium';
-    {% endif %}
-    
-    {% if next_image %}
-    const nextImg = new Image();
-    nextImg.src = '{{ gallery_url }}/image/{{ next_image.path }}?size=medium';
-    {% endif %}
-});
+  });
 </script>
 
 {% include "_footer.html.liquid" %}

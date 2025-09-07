@@ -38,17 +38,26 @@ impl StaticFileHandler {
         let mut versions = self.file_versions.write().await;
         versions.clear();
 
-        // Scan CSS and JS files from all directories
+        // Scan CSS and JS files from all directories recursively
         // Files in earlier directories override files in later directories
         for (index, static_dir) in self.static_dirs.iter().enumerate() {
             debug!("Scanning static directory {}: {:?}", index, static_dir);
+            Self::scan_directory_recursive(static_dir, &mut versions, index);
+        }
+    }
 
-            if let Ok(entries) = std::fs::read_dir(static_dir) {
-                for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata()
-                        && metadata.is_file()
-                    {
-                        let path = entry.path();
+    fn scan_directory_recursive(
+        dir: &PathBuf,
+        versions: &mut HashMap<String, u64>,
+        dir_index: usize,
+    ) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        // Check if it's a CSS or JS file
                         if let Some(ext) = path.extension()
                             && (ext == "css" || ext == "js")
                             && let Ok(modified) = metadata.modified()
@@ -63,10 +72,13 @@ impl StaticFileHandler {
                                     "File version: {} -> {} (from dir {})",
                                     file_name_str,
                                     duration.as_secs(),
-                                    index
+                                    dir_index
                                 );
                             }
                         }
+                    } else if metadata.is_dir() {
+                        // Recursively scan subdirectories
+                        Self::scan_directory_recursive(&path, versions, dir_index);
                     }
                 }
             }

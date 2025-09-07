@@ -1,6 +1,6 @@
 {% assign page_title = "Profile" %}
 {% assign page_css = "login.css" | split: "," %}
-{% assign page_js = "login.js" | split: "," %}
+{% comment %}{% assign page_js = "login.js" | split: "," %}{% endcomment %}
 {% include "_header.html.liquid" %}
 
 <div class="login-container">
@@ -40,12 +40,12 @@
             <div class="loading">Loading passkeys...</div>
         </div>
         <div class="button-group">
-            <button type="button" class="btn-secondary" onclick="LoginUtils.enrollNewPasskey()">Add New Passkey</button>
+            <button type="button" id="enrollNewPasskey" class="btn-secondary">Add New Passkey</button>
         </div>
         {% else %}
         <p>No passkeys registered. Passkeys provide a more secure and convenient way to sign in.</p>
         <div class="button-group">
-            <button type="button" class="btn-secondary" onclick="LoginUtils.enrollNewPasskey()">Set Up Your First Passkey</button>
+            <button type="button" id="enrollNewPasskey" class="btn-secondary">Set Up Your First Passkey</button>
         </div>
         {% endif %}
     </div>
@@ -58,13 +58,16 @@
     </div>
 </div>
 
-<script>
-// Initialize profile page functionality on load
-document.addEventListener('DOMContentLoaded', function() {
-    {% if webauthn_available and has_passkeys %}
-    LoginUtils.initProfilePage();
+<!-- Load the new TypeScript module that handles profile functionality -->
+<script type="module">
+  import { LoginPage } from '{{ "js/pages/login-page.js" | asset_url }}';
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    {% if webauthn_available %}
+    // Initialize profile page functionality (handles both passkey list and enrollment button)
+    new LoginPage();
     {% endif %}
-});
+  });
 </script>
 
 {% include "_footer.html.liquid" %}

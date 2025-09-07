@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020", 
+    "outDir": "static/js",
+    "rootDir": "src/js",
+    "strict": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src/js/**/*"],
+  "exclude": ["static/**/*", "node_modules", "target"]
+}
