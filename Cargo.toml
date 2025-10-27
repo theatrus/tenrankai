@@ -20,7 +20,7 @@ base64 = "0.22"
 hmac = "0.12"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
-flate2 = "1.0"
+flate2 = "1.1"
 rexif = "0.7"
 image = { version = "0.25" }
 imageproc = "0.25"
@@ -52,7 +52,7 @@ httpdate = "1.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.5"
 urlencoding = "2.1"
-uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
+uuid = { version = "1.18", features = ["v4", "v5", "serde"] }
 walkdir = "2.5"
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 webauthn-rs-proto = "0.5"
@@ -68,5 +68,5 @@ incremental = true    # Keep incremental compilation
 codegen-units = 256   # More codegen units for faster compilation
 
 [dev-dependencies]
-tempfile = "3.8"
-axum-test = "18.0"
+tempfile = "3.23"
+axum-test = "18.1"
