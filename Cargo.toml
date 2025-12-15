@@ -52,7 +52,7 @@ httpdate = "1.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.5"
 urlencoding = "2.1"
-uuid = { version = "1.18", features = ["v4", "v5", "serde"] }
+uuid = { version = "1.19", features = ["v4", "v5", "serde"] }
 walkdir = "2.5"
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 webauthn-rs-proto = "0.5"
