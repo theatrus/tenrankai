@@ -27,3 +27,6 @@ config.toml
 users.toml
 static/js
 node_modules/
+
+# Development planning (keep local)
+TODO.md
