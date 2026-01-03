@@ -20,7 +20,7 @@ pub mod webp_encoder;
 
 // Re-export core types
 pub use api_response::ApiResponse;
-pub use cache::CacheType;
+pub use cache::{CacheType, FormatCoverage};
 pub use config::{
     AppConfig, Config, GallerySystemConfig, ImageSizeConfig, PostsSystemConfig, PreviewConfig,
     ServerConfig, StaticConfig, TemplateConfig,

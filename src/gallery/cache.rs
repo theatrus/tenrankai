@@ -1,66 +1,11 @@
 use super::image_processing::OutputFormat;
 use super::types::ImageSize;
-use super::{CacheMetadata, Gallery, ImageMetadata};
-use crate::CacheType;
+use super::Gallery;
+use crate::{CacheType, FormatCoverage};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
-/// Tracks which formats are available for a specific image and size
-#[derive(Debug, Clone, Default)]
-pub struct FormatCoverage {
-    pub has_jpeg: bool,
-    pub has_webp: bool,
-    pub has_png: bool,
-    #[cfg(feature = "avif")]
-    pub has_avif: bool,
-}
-
-impl FormatCoverage {
-    /// Get all expected formats for a given source image path
-    fn expected_formats(source_path: &str) -> Vec<OutputFormat> {
-        let mut formats = vec![OutputFormat::Jpeg];
-
-        // Skip WebP for PNG sources to preserve transparency
-        if !source_path.to_lowercase().ends_with(".png") {
-            formats.push(OutputFormat::WebP);
-        }
-
-        #[cfg(feature = "avif")]
-        formats.push(OutputFormat::Avif);
-
-        formats
-    }
-
-    /// Check if this coverage has all expected formats for the source
-    pub fn is_complete(&self, source_path: &str) -> bool {
-        let expected = Self::expected_formats(source_path);
-
-        expected.iter().all(|format| match format {
-            OutputFormat::Jpeg => self.has_jpeg,
-            OutputFormat::WebP => self.has_webp,
-            OutputFormat::Png => self.has_png,
-            #[cfg(feature = "avif")]
-            OutputFormat::Avif => self.has_avif,
-        })
-    }
-
-    /// Get missing formats for this coverage
-    pub fn missing_formats(&self, source_path: &str) -> Vec<OutputFormat> {
-        let expected = Self::expected_formats(source_path);
-
-        expected
-            .into_iter()
-            .filter(|format| match format {
-                OutputFormat::Jpeg => !self.has_jpeg,
-                OutputFormat::WebP => !self.has_webp,
-                OutputFormat::Png => !self.has_png,
-                #[cfg(feature = "avif")]
-                OutputFormat::Avif => !self.has_avif,
-            })
-            .collect()
-    }
-}
 
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
@@ -769,44 +714,6 @@ impl Gallery {
     }
 }
 
-pub(crate) fn load_metadata_cache(
-    config: &crate::GallerySystemConfig,
-) -> Result<HashMap<String, ImageMetadata>, super::GalleryError> {
-    let cache_type = CacheType::ImageMetadata;
-    let cache_file = config.cache_directory.join(cache_type.filename(None));
-
-    if !cache_file.exists() {
-        debug!("Metadata cache file not found, starting with empty cache");
-        return Ok(HashMap::new());
-    }
-
-    let json = std::fs::read_to_string(&cache_file)?;
-    let cache: HashMap<String, ImageMetadata> = serde_json::from_str(&json)?;
-
-    info!("Loaded {} cached image metadata entries", cache.len());
-    Ok(cache)
-}
-
-pub(crate) fn load_cache_metadata(
-    config: &crate::GallerySystemConfig,
-) -> Result<CacheMetadata, super::GalleryError> {
-    let cache_type = CacheType::CacheMetadata;
-    let metadata_file = config.cache_directory.join(cache_type.filename(None));
-
-    if !metadata_file.exists() {
-        debug!("Cache metadata file not found");
-        return Err(super::GalleryError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Cache metadata not found",
-        )));
-    }
-
-    let json = std::fs::read_to_string(&metadata_file)?;
-    let metadata: CacheMetadata = serde_json::from_str(&json)?;
-
-    debug!("Loaded cache metadata: version={}", metadata.version);
-    Ok(metadata)
-}
 
 #[cfg(test)]
 mod tests {
