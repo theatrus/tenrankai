@@ -9,8 +9,8 @@ pub mod copyright;
 pub mod email;
 pub mod favicon;
 pub mod gallery;
-pub mod login;
 pub mod logging;
+pub mod login;
 pub mod posts;
 pub mod robots;
 pub mod startup_checks;
@@ -22,9 +22,7 @@ pub mod webp_encoder;
 // Re-export core types
 pub use api_response::ApiResponse;
 pub use logging::LogLevel;
-pub use template_system::{TemplateType, TemplatePath, TemplateCategory};
-
-
+pub use template_system::{TemplateCategory, TemplatePath, TemplateType};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {

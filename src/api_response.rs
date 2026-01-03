@@ -1,7 +1,7 @@
 use axum::{
+    body::Body,
     http::StatusCode,
     response::{Html, IntoResponse, Response},
-    body::Body,
 };
 
 /// HTTP Status Response System for consistent API responses
@@ -47,7 +47,7 @@ pub enum ApiResponse {
     ConfigurationError,
     TemplateRenderError,
     FileSystemError,
-    
+
     // Gallery-specific errors
     GalleryNotFound,
     DirectoryNotFound,
@@ -56,10 +56,10 @@ pub enum ApiResponse {
     ProcessingError,
     AccessDenied,
     CacheEntryNotFound,
-    
+
     // Posts-specific errors
     PostNotFound,
-    
+
     // Template-specific errors
     TemplateNotFound,
 }
@@ -108,7 +108,7 @@ impl ApiResponse {
             Self::ConfigurationError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::TemplateRenderError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FileSystemError => StatusCode::INTERNAL_SERVER_ERROR,
-            
+
             // Gallery-specific errors
             Self::GalleryNotFound => StatusCode::NOT_FOUND,
             Self::DirectoryNotFound => StatusCode::NOT_FOUND,
@@ -117,10 +117,10 @@ impl ApiResponse {
             Self::ProcessingError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AccessDenied => StatusCode::FORBIDDEN,
             Self::CacheEntryNotFound => StatusCode::NOT_FOUND,
-            
+
             // Posts-specific errors
             Self::PostNotFound => StatusCode::NOT_FOUND,
-            
+
             // Template-specific errors
             Self::TemplateNotFound => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -169,7 +169,7 @@ impl ApiResponse {
             Self::ConfigurationError => "Server configuration error",
             Self::TemplateRenderError => "Template rendering failed",
             Self::FileSystemError => "File system operation failed",
-            
+
             // Gallery-specific errors
             Self::GalleryNotFound => "Gallery not found",
             Self::DirectoryNotFound => "Directory not found",
@@ -178,10 +178,10 @@ impl ApiResponse {
             Self::ProcessingError => "Image processing error",
             Self::AccessDenied => "Access denied",
             Self::CacheEntryNotFound => "Cache entry not found",
-            
+
             // Posts-specific errors
             Self::PostNotFound => "Post not found",
-            
+
             // Template-specific errors
             Self::TemplateNotFound => "Template not found",
         }

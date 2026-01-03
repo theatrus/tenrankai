@@ -136,7 +136,10 @@ mod tests {
 
         // Test tracing conversion
         assert_eq!(LogLevel::Debug.to_tracing_level(), tracing::Level::DEBUG);
-        assert_eq!(LogLevel::Info.to_tracing_filter(), tracing::metadata::LevelFilter::INFO);
+        assert_eq!(
+            LogLevel::Info.to_tracing_filter(),
+            tracing::metadata::LevelFilter::INFO
+        );
 
         // Test default
         assert_eq!(LogLevel::default(), LogLevel::Info);
@@ -156,22 +159,23 @@ mod tests {
 
     #[test]
     fn test_log_level_serde() {
-        // Test with a simple struct to verify serde integration
+        // Test serialization/deserialization with a struct (matches original pattern)
+        // toml_edit doesn't support serializing bare enums, only enums within structs
         #[derive(Deserialize, Serialize, PartialEq, Debug)]
         struct TestConfig {
+            name: String,
             log_level: LogLevel,
         }
 
         let config = TestConfig {
+            name: "Test".to_string(),
             log_level: LogLevel::Debug,
         };
 
-        // Test serialization with TOML
-        let toml_str = toml_edit::ser::to_string_pretty(&config).unwrap();
-        assert!(toml_str.contains("log_level = \"debug\""));
+        let toml = toml_edit::ser::to_string_pretty(&config).unwrap();
+        assert!(toml.contains("log_level = \"debug\""));
 
-        // Test deserialization from TOML
-        let parsed: TestConfig = toml_edit::de::from_str(&toml_str).unwrap();
+        let parsed: TestConfig = toml_edit::de::from_str(&toml).unwrap();
         assert_eq!(parsed.log_level, LogLevel::Debug);
     }
 }
