@@ -1,7 +1,10 @@
-use crate::{CacheType, gallery::{CacheMetadata, ImageMetadata}};
+use crate::{
+    CacheType,
+    gallery::{CacheMetadata, ImageMetadata},
+};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
-use serde::Serialize;
 use tracing::{debug, info};
 
 /// Load image metadata cache from disk

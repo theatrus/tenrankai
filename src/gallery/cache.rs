@@ -1,11 +1,10 @@
+use super::Gallery;
 use super::image_processing::OutputFormat;
 use super::types::ImageSize;
-use super::Gallery;
 use crate::{CacheType, FormatCoverage};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info};
-
 
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
@@ -93,7 +92,7 @@ impl Gallery {
         use std::sync::atomic::Ordering;
 
         let cache = self.metadata_cache.read().await;
-        crate::cache::save_image_metadata_cache(&self.config.cache_directory, &*cache).await?;
+        crate::cache::save_image_metadata_cache(&self.config.cache_directory, &cache).await?;
 
         // Reset dirty flag after successful save
         self.metadata_cache_dirty.store(false, Ordering::Relaxed);
@@ -104,7 +103,7 @@ impl Gallery {
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
         let metadata = self.cache_metadata.read().await;
-        crate::cache::save_cache_version_metadata(&self.config.cache_directory, &*metadata).await?;
+        crate::cache::save_cache_version_metadata(&self.config.cache_directory, &metadata).await?;
         Ok(())
     }
 
@@ -704,7 +703,6 @@ impl Gallery {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
