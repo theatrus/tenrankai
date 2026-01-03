@@ -871,7 +871,7 @@ impl Default for Config {
 }
 
 /// Cache type system for consistent cache operations and filenames
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CacheType {
     /// Image metadata cache (metadata_cache.json)
     ImageMetadata,
@@ -883,7 +883,10 @@ pub enum CacheType {
         watermarked: bool,
     },
     /// Composite image cache for folder previews  
-    Composite,
+    Composite {
+        gallery_name: String,
+        path_key: String,
+    },
 }
 
 impl CacheType {
@@ -900,9 +903,9 @@ impl CacheType {
                 let suffix = if *watermarked { "_watermarked" } else { "" };
                 format!("{}{}.{}", key, suffix, format.extension())
             }
-            CacheType::Composite => {
-                let key = key.unwrap_or("root");
-                format!("composite_{}.jpg", key)
+            CacheType::Composite { gallery_name, path_key } => {
+                let key = key.unwrap_or("default");
+                format!("composite_{}_{}_{}.jpg", gallery_name, path_key, key)
             }
         }
     }
@@ -913,7 +916,7 @@ impl CacheType {
             CacheType::ImageMetadata => std::time::Duration::from_secs(24 * 60 * 60), // 24 hours
             CacheType::CacheMetadata => std::time::Duration::from_secs(7 * 24 * 60 * 60), // 7 days
             CacheType::ProcessedImage { .. } => std::time::Duration::from_secs(30 * 24 * 60 * 60), // 30 days
-            CacheType::Composite => std::time::Duration::from_secs(24 * 60 * 60), // 24 hours
+            CacheType::Composite { .. } => std::time::Duration::from_secs(24 * 60 * 60), // 24 hours
         }
     }
 
@@ -921,7 +924,7 @@ impl CacheType {
     pub fn is_persistent(&self) -> bool {
         match self {
             CacheType::ImageMetadata | CacheType::CacheMetadata => true,
-            CacheType::ProcessedImage { .. } | CacheType::Composite => true,
+            CacheType::ProcessedImage { .. } | CacheType::Composite { .. } => true,
         }
     }
 
@@ -929,7 +932,7 @@ impl CacheType {
     pub fn is_auto_cleanup(&self) -> bool {
         match self {
             CacheType::ImageMetadata | CacheType::CacheMetadata => false,
-            CacheType::ProcessedImage { .. } | CacheType::Composite => true,
+            CacheType::ProcessedImage { .. } | CacheType::Composite { .. } => true,
         }
     }
 
@@ -939,7 +942,7 @@ impl CacheType {
             CacheType::CacheMetadata => 10,        // Highest priority
             CacheType::ImageMetadata => 9,         // Second highest
             CacheType::ProcessedImage { .. } => 5, // Medium priority
-            CacheType::Composite => 3,             // Lower priority
+            CacheType::Composite { .. } => 3,             // Lower priority
         }
     }
 
@@ -959,7 +962,10 @@ impl CacheType {
                 format: gallery::image_processing::OutputFormat::Jpeg,
                 watermarked: false,
             },
-            CacheType::Composite,
+            CacheType::Composite {
+                gallery_name: "example".to_string(),
+                path_key: "example".to_string(),
+            },
         ]
     }
 
@@ -974,12 +980,20 @@ impl CacheType {
         }
     }
 
+    /// Create a Composite cache type
+    pub fn composite(gallery_name: String, path_key: String) -> Self {
+        CacheType::Composite {
+            gallery_name,
+            path_key,
+        }
+    }
+
     /// Get the MIME type for this cache type
     pub fn mime_type(&self) -> &'static str {
         match self {
             CacheType::ImageMetadata | CacheType::CacheMetadata => "application/json",
             CacheType::ProcessedImage { format, .. } => format.mime_type(),
-            CacheType::Composite => "image/jpeg",
+            CacheType::Composite { .. } => "image/jpeg",
         }
     }
 }
@@ -1000,7 +1014,9 @@ impl std::fmt::Display for CacheType {
                     if *watermarked { ",watermarked" } else { "" }
                 )
             }
-            CacheType::Composite => write!(f, "Composite"),
+            CacheType::Composite { gallery_name, path_key } => {
+                write!(f, "Composite({}:{})", gallery_name, path_key)
+            }
         }
     }
 }
@@ -1112,11 +1128,17 @@ mod tests {
         assert_eq!(watermarked_cache.mime_type(), "image/webp");
 
         // Test composite cache
-        let composite_cache = CacheType::Composite;
-        assert_eq!(composite_cache.filename(None), "composite_root.jpg");
+        let composite_cache = CacheType::composite("main".to_string(), "root".to_string());
+        assert_eq!(composite_cache.filename(None), "composite_main_root_default.jpg");
         assert_eq!(
-            composite_cache.filename(Some("2024_vacation")),
-            "composite_2024_vacation.jpg"
+            composite_cache.filename(Some("abc123")),
+            "composite_main_root_abc123.jpg"
+        );
+        
+        let composite_cache_path = CacheType::composite("main".to_string(), "vacation_2024".to_string());
+        assert_eq!(
+            composite_cache_path.filename(Some("def456")),
+            "composite_main_vacation_2024_def456.jpg"
         );
         assert_eq!(composite_cache.mime_type(), "image/jpeg");
         assert_eq!(composite_cache.priority(), 3);
@@ -1150,6 +1172,9 @@ mod tests {
 
         let binary_types = CacheType::binary_types();
         assert!(!binary_types.is_empty());
+        
+        // Test display formatting
+        assert_eq!(format!("{}", composite_cache), "Composite(main:root)");
     }
 }
 

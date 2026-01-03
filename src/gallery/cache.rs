@@ -224,7 +224,7 @@ impl Gallery {
         cache_type.filename(Some(&hash))
     }
 
-    /// Generate a cache key for composite images
+    /// Generate a cache key for composite images (legacy method for API compatibility)
     pub(crate) fn generate_composite_cache_key(gallery_path: &str) -> String {
         if gallery_path.is_empty() {
             "composite_root".to_string()
@@ -232,6 +232,51 @@ impl Gallery {
             let safe_path = gallery_path.replace('/', "_");
             format!("composite_{}", safe_path)
         }
+    }
+
+    /// Generate a composite cache filename using the type-safe CacheType system
+    pub(crate) fn generate_composite_cache_filename(
+        &self,
+        gallery_path: &str,
+    ) -> String {
+        let path_key = self.generate_safe_path_key(gallery_path);
+        let cache_type = CacheType::composite(self.config.name.clone(), path_key.clone());
+        
+        // Generate a unique identifier for this specific composite
+        let content_key = self.generate_cache_key(&format!("composite_{}_{}", self.config.name, path_key), "jpg");
+        cache_type.filename(Some(&content_key))
+    }
+
+    /// Generate a safe path key for cache identification
+    fn generate_safe_path_key(&self, gallery_path: &str) -> String {
+        use sha2::{Digest, Sha256};
+        
+        if gallery_path.is_empty() {
+            "root".to_string()
+        } else {
+            // Use base64 encoding for path to handle special characters safely
+            use base64::{Engine as _, engine::general_purpose};
+            let encoded_path = general_purpose::URL_SAFE_NO_PAD.encode(gallery_path);
+            
+            // Limit length and add hash suffix for very long paths
+            if encoded_path.len() > 40 {
+                let mut hasher = Sha256::new();
+                hasher.update(gallery_path);
+                let hash_suffix = &format!("{:x}", hasher.finalize())[..8];
+                format!("{}_{}", &encoded_path[..32], hash_suffix)
+            } else {
+                encoded_path
+            }
+        }
+    }
+
+    /// Generate a composite cache key with full context (legacy API compatibility)
+    pub(crate) fn generate_composite_cache_key_with_context(
+        &self,
+        gallery_path: &str,
+    ) -> String {
+        let path_key = self.generate_safe_path_key(gallery_path);
+        format!("composite_{}_{}", self.config.name, path_key)
     }
 
     /// Pre-generate cache for a single image
@@ -819,6 +864,42 @@ mod tests {
         // Test root composite
         let root_key = Gallery::generate_composite_cache_key("");
         assert_eq!(root_key, "composite_root");
+    }
+
+    #[test]
+    fn test_improved_composite_cache_structure() {
+        use base64::{Engine as _, engine::general_purpose};
+        let default_config = crate::Config::default();
+        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
+
+        // Test safe path key generation
+        let safe_key_simple = gallery.generate_safe_path_key("vacation/2024");
+        assert_eq!(safe_key_simple, general_purpose::URL_SAFE_NO_PAD.encode("vacation/2024"));
+
+        let safe_key_root = gallery.generate_safe_path_key("");
+        assert_eq!(safe_key_root, "root");
+
+        // Test very long path handling
+        let long_path = "a".repeat(100);
+        let safe_key_long = gallery.generate_safe_path_key(&long_path);
+        assert!(safe_key_long.len() <= 42); // Should be truncated with hash
+        assert!(safe_key_long.contains("_")); // Should have hash suffix
+
+        // Test new structured cache filename generation
+        let filename = gallery.generate_composite_cache_filename("vacation/2024");
+        assert!(filename.starts_with("composite_default_"));
+        assert!(filename.ends_with(".jpg"));
+        assert!(filename.contains(&general_purpose::URL_SAFE_NO_PAD.encode("vacation/2024")));
+
+        // Test cache key with context
+        let context_key = gallery.generate_composite_cache_key_with_context("gallery/photos");
+        assert!(context_key.starts_with("composite_default_"));
+        assert!(context_key.contains(&general_purpose::URL_SAFE_NO_PAD.encode("gallery/photos")));
+
+        // Test consistency
+        let filename1 = gallery.generate_composite_cache_filename("test/path");
+        let filename2 = gallery.generate_composite_cache_filename("test/path");
+        assert_eq!(filename1, filename2, "Cache filenames should be deterministic");
     }
 
     #[test]
