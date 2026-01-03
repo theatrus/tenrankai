@@ -190,10 +190,10 @@ pub async fn refresh_posts_handler(
     };
 
     match posts_manager.refresh_posts().await {
-        Ok(_) => ApiResponse::Ok.with_message("Posts refreshed successfully".to_string()),
+        Ok(_) => ApiResponse::Ok.with_message("Posts refreshed successfully"),
         Err(e) => {
             error!("Failed to refresh posts: {}", e);
-            ApiResponse::ProcessingError.with_message("Failed to refresh posts".to_string())
+            ApiResponse::ProcessingError.with_message("Failed to refresh posts")
         }
     }
 }
