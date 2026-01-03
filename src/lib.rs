@@ -903,7 +903,10 @@ impl CacheType {
                 let suffix = if *watermarked { "_watermarked" } else { "" };
                 format!("{}{}.{}", key, suffix, format.extension())
             }
-            CacheType::Composite { gallery_name, path_key } => {
+            CacheType::Composite {
+                gallery_name,
+                path_key,
+            } => {
                 let key = key.unwrap_or("default");
                 format!("composite_{}_{}_{}.jpg", gallery_name, path_key, key)
             }
@@ -942,7 +945,7 @@ impl CacheType {
             CacheType::CacheMetadata => 10,        // Highest priority
             CacheType::ImageMetadata => 9,         // Second highest
             CacheType::ProcessedImage { .. } => 5, // Medium priority
-            CacheType::Composite { .. } => 3,             // Lower priority
+            CacheType::Composite { .. } => 3,      // Lower priority
         }
     }
 
@@ -988,6 +991,21 @@ impl CacheType {
         }
     }
 
+    /// Parse a composite cache key and create CacheType if valid
+    pub fn from_composite_cache_key(cache_key: &str) -> Option<Self> {
+        let parts: Vec<&str> = cache_key.split('_').collect();
+        if parts.len() >= 3 && parts[0] == "composite" {
+            let gallery_name = parts[1].to_string();
+            let path_key = parts[2..].join("_"); // Join remaining parts in case of underscores in path
+            Some(CacheType::Composite {
+                gallery_name,
+                path_key,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Get the MIME type for this cache type
     pub fn mime_type(&self) -> &'static str {
         match self {
@@ -1014,7 +1032,10 @@ impl std::fmt::Display for CacheType {
                     if *watermarked { ",watermarked" } else { "" }
                 )
             }
-            CacheType::Composite { gallery_name, path_key } => {
+            CacheType::Composite {
+                gallery_name,
+                path_key,
+            } => {
                 write!(f, "Composite({}:{})", gallery_name, path_key)
             }
         }
@@ -1129,13 +1150,17 @@ mod tests {
 
         // Test composite cache
         let composite_cache = CacheType::composite("main".to_string(), "root".to_string());
-        assert_eq!(composite_cache.filename(None), "composite_main_root_default.jpg");
+        assert_eq!(
+            composite_cache.filename(None),
+            "composite_main_root_default.jpg"
+        );
         assert_eq!(
             composite_cache.filename(Some("abc123")),
             "composite_main_root_abc123.jpg"
         );
-        
-        let composite_cache_path = CacheType::composite("main".to_string(), "vacation_2024".to_string());
+
+        let composite_cache_path =
+            CacheType::composite("main".to_string(), "vacation_2024".to_string());
         assert_eq!(
             composite_cache_path.filename(Some("def456")),
             "composite_main_vacation_2024_def456.jpg"
@@ -1172,9 +1197,39 @@ mod tests {
 
         let binary_types = CacheType::binary_types();
         assert!(!binary_types.is_empty());
-        
+
         // Test display formatting
         assert_eq!(format!("{}", composite_cache), "Composite(main:root)");
+
+        // Test composite cache key parsing
+        let parsed = CacheType::from_composite_cache_key("composite_main_vacation_2024");
+        assert!(parsed.is_some());
+        if let Some(CacheType::Composite {
+            gallery_name,
+            path_key,
+        }) = parsed
+        {
+            assert_eq!(gallery_name, "main");
+            assert_eq!(path_key, "vacation_2024");
+        }
+
+        // Test parsing with underscores in path
+        let parsed_complex =
+            CacheType::from_composite_cache_key("composite_gallery_folder_subfolder_item");
+        assert!(parsed_complex.is_some());
+        if let Some(CacheType::Composite {
+            gallery_name,
+            path_key,
+        }) = parsed_complex
+        {
+            assert_eq!(gallery_name, "gallery");
+            assert_eq!(path_key, "folder_subfolder_item");
+        }
+
+        // Test invalid cache key
+        assert!(CacheType::from_composite_cache_key("not_a_composite").is_none());
+        assert!(CacheType::from_composite_cache_key("composite_only").is_none());
+        assert!(CacheType::from_composite_cache_key("").is_none());
     }
 }
 
