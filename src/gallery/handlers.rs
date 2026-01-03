@@ -368,6 +368,13 @@ pub async fn image_detail_handler_for_named(
     let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
     let gallery_config = gallery.get_config();
 
+    // Get folder configuration to check if technical details should be hidden
+    let folder_metadata = gallery.read_folder_metadata_full(parent_path).await;
+    let hide_technical_details = folder_metadata
+        .as_ref()
+        .map(|meta| meta.config.hide_technical_details)
+        .unwrap_or(false);
+
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -386,6 +393,7 @@ pub async fn image_detail_handler_for_named(
         "og_image_width": image_info.dimensions.0,
         "og_image_height": image_info.dimensions.1,
         "twitter_card_type": "summary_large_image",
+        "hide_technical_details": hide_technical_details,
     });
 
     match template_engine

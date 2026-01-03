@@ -123,112 +123,114 @@
                 </div>
             {% endif %}
             
-            <div class="image-metadata card">
-                <h3>Image Information</h3>
-                <dl>
-                    <dt>Filename</dt>
-                    <dd>{{ image.name }}</dd>
-                    
-                    {% if image.capture_date %}
-                        <dt>Capture Date</dt>
-                        <dd>{{ image.capture_date }}</dd>
-                    {% endif %}
-                    
-                    <dt>Dimensions</dt>
-                    <dd>
-                        {{ image.dimensions[0] }} × {{ image.dimensions[1] }} pixels
-                        {% assign total_pixels = image.dimensions[0] | times: image.dimensions[1] %}
-                        {% assign megapixels = total_pixels | divided_by: 1000000.0 | round %}
-                        ({{ megapixels }} MP)
-                    </dd>
-                    
-                    <dt>File Size</dt>
-                    <dd>{{ image.file_size | divided_by: 1024 | divided_by: 1024 | round: 2 }} MB</dd>
-                    
-                    {% if image.color_profile %}
-                        <dt>Color Profile</dt>
-                        <dd>{{ image.color_profile }}</dd>
-                    {% endif %}
-                </dl>
-            </div>
-            
-            {% if image.camera_info %}
-                <div class="camera-info card">
-                    <h3>Camera Information</h3>
+            {% unless hide_technical_details %}
+                <div class="image-metadata card">
+                    <h3>Image Information</h3>
                     <dl>
-                        {% if image.camera_info.camera_make or image.camera_info.camera_model %}
-                            <dt>Camera</dt>
-                            <dd>
-                                {% if image.camera_info.camera_make %}{{ image.camera_info.camera_make }}{% endif %}
-                                {% if image.camera_info.camera_make and image.camera_info.camera_model %} {% endif %}
-                                {% if image.camera_info.camera_model %}{{ image.camera_info.camera_model }}{% endif %}
-                            </dd>
+                        <dt>Filename</dt>
+                        <dd>{{ image.name }}</dd>
+                        
+                        {% if image.capture_date %}
+                            <dt>Capture Date</dt>
+                            <dd>{{ image.capture_date }}</dd>
                         {% endif %}
                         
-                        {% if image.camera_info.lens_model %}
-                            <dt>Lens</dt>
-                            <dd>{{ image.camera_info.lens_model }}</dd>
-                        {% endif %}
+                        <dt>Dimensions</dt>
+                        <dd>
+                            {{ image.dimensions[0] }} × {{ image.dimensions[1] }} pixels
+                            {% assign total_pixels = image.dimensions[0] | times: image.dimensions[1] %}
+                            {% assign megapixels = total_pixels | divided_by: 1000000.0 | round %}
+                            ({{ megapixels }} MP)
+                        </dd>
                         
-                        {% if image.camera_info.focal_length %}
-                            <dt>Focal Length</dt>
-                            <dd>{{ image.camera_info.focal_length }}</dd>
-                        {% endif %}
+                        <dt>File Size</dt>
+                        <dd>{{ image.file_size | divided_by: 1024 | divided_by: 1024 | round: 2 }} MB</dd>
                         
-                        {% if image.camera_info.aperture %}
-                            <dt>Aperture</dt>
-                            <dd>{{ image.camera_info.aperture }}</dd>
-                        {% endif %}
-                        
-                        {% if image.camera_info.shutter_speed %}
-                            <dt>Shutter Speed</dt>
-                            <dd>{{ image.camera_info.shutter_speed }}</dd>
-                        {% endif %}
-                        
-                        {% if image.camera_info.iso %}
-                            <dt>ISO</dt>
-                            <dd>{{ image.camera_info.iso }}</dd>
+                        {% if image.color_profile %}
+                            <dt>Color Profile</dt>
+                            <dd>{{ image.color_profile }}</dd>
                         {% endif %}
                     </dl>
                 </div>
-            {% endif %}
-            
-            {% if image.location_info %}
-                <div class="location-info card">
-                    <h3>Location</h3>
-                    <div class="location-content">
-                        <div class="coordinates">
-                            <span class="coord-label">Coordinates:</span>
-                            <span class="coordinates-text">{{ image.location_info.latitude | round: 6 }}, {{ image.location_info.longitude | round: 6 }}</span>
-                        </div>
-                        
-                        <div class="map-links">
-                            <a href="{{ image.location_info.google_maps_url }}" target="_blank" class="map-link google-maps">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M21,3V5H19V3H21M19,7H21V9H19V7M19,11H21V13H19V11M19,15H21V17H19V15M19,19H21V21H19V19M17,21V19H15V21H17M13,21V19H11V21H13M9,21V19H7V21H9M5,21V19H3V21H5M3,17V15H5V17H3M3,13V11H5V13H3M3,9V7H5V9H3M3,5V3H5V5H3M7,5V3H9V5H7M11,5V3H13V5H11M15,5V3H17V5H15"/>
-                                </svg>
-                                Google Maps
-                            </a>
-                            <a href="{{ image.location_info.apple_maps_url }}" target="_blank" class="map-link apple-maps">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z"/>
-                                </svg>
-                                Apple Maps
-                            </a>
-                        </div>
-                        
-                        <div class="embedded-map">
-                            <iframe 
-                                src="https://www.openstreetmap.org/export/embed.html?bbox={{ image.location_info.longitude | minus: 0.01 }}%2C{{ image.location_info.latitude | minus: 0.01 }}%2C{{ image.location_info.longitude | plus: 0.01 }}%2C{{ image.location_info.latitude | plus: 0.01 }}&layer=mapnik&marker={{ image.location_info.latitude }}%2C{{ image.location_info.longitude }}"
-                                width="100%"
-                                height="200"
-                                frameborder="0"
-                                loading="lazy">
-                            </iframe>
+                
+                {% if image.camera_info %}
+                    <div class="camera-info card">
+                        <h3>Camera Information</h3>
+                        <dl>
+                            {% if image.camera_info.camera_make or image.camera_info.camera_model %}
+                                <dt>Camera</dt>
+                                <dd>
+                                    {% if image.camera_info.camera_make %}{{ image.camera_info.camera_make }}{% endif %}
+                                    {% if image.camera_info.camera_make and image.camera_info.camera_model %} {% endif %}
+                                    {% if image.camera_info.camera_model %}{{ image.camera_info.camera_model }}{% endif %}
+                                </dd>
+                            {% endif %}
+                            
+                            {% if image.camera_info.lens_model %}
+                                <dt>Lens</dt>
+                                <dd>{{ image.camera_info.lens_model }}</dd>
+                            {% endif %}
+                            
+                            {% if image.camera_info.focal_length %}
+                                <dt>Focal Length</dt>
+                                <dd>{{ image.camera_info.focal_length }}</dd>
+                            {% endif %}
+                            
+                            {% if image.camera_info.aperture %}
+                                <dt>Aperture</dt>
+                                <dd>{{ image.camera_info.aperture }}</dd>
+                            {% endif %}
+                            
+                            {% if image.camera_info.shutter_speed %}
+                                <dt>Shutter Speed</dt>
+                                <dd>{{ image.camera_info.shutter_speed }}</dd>
+                            {% endif %}
+                            
+                            {% if image.camera_info.iso %}
+                                <dt>ISO</dt>
+                                <dd>{{ image.camera_info.iso }}</dd>
+                            {% endif %}
+                        </dl>
+                    </div>
+                {% endif %}
+                
+                {% if image.location_info %}
+                    <div class="location-info card">
+                        <h3>Location</h3>
+                        <div class="location-content">
+                            <div class="coordinates">
+                                <span class="coord-label">Coordinates:</span>
+                                <span class="coordinates-text">{{ image.location_info.latitude | round: 6 }}, {{ image.location_info.longitude | round: 6 }}</span>
+                            </div>
+                            
+                            <div class="map-links">
+                                <a href="{{ image.location_info.google_maps_url }}" target="_blank" class="map-link google-maps">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M21,3V5H19V3H21M19,7H21V9H19V7M19,11H21V13H19V11M19,15H21V17H19V15M19,19H21V21H19V19M17,21V19H15V21H17M13,21V19H11V21H13M9,21V19H7V21H9M5,21V19H3V21H5M3,17V15H5V17H3M3,13V11H5V13H3M3,9V7H5V9H3M3,5V3H5V5H3M7,5V3H9V5H7M11,5V3H13V5H11M15,5V3H17V5H15"/>
+                                    </svg>
+                                    Google Maps
+                                </a>
+                                <a href="{{ image.location_info.apple_maps_url }}" target="_blank" class="map-link apple-maps">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z"/>
+                                    </svg>
+                                    Apple Maps
+                                </a>
+                            </div>
+                            
+                            <div class="embedded-map">
+                                <iframe 
+                                    src="https://www.openstreetmap.org/export/embed.html?bbox={{ image.location_info.longitude | minus: 0.01 }}%2C{{ image.location_info.latitude | minus: 0.01 }}%2C{{ image.location_info.longitude | plus: 0.01 }}%2C{{ image.location_info.latitude | plus: 0.01 }}&layer=mapnik&marker={{ image.location_info.latitude }}%2C{{ image.location_info.longitude }}"
+                                    width="100%"
+                                    height="200"
+                                    frameborder="0"
+                                    loading="lazy">
+                                </iframe>
+                            </div>
                         </div>
                     </div>
-                </div>
-            {% endif %}
+                {% endif %}
+            {% endunless %}
         </div>
     </div>
 </div>
