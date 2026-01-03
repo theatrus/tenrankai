@@ -563,6 +563,7 @@ impl Gallery {
                         require_auth: false,
                         allowed_users: None,
                         hide_location_from_public: None,
+                        hide_technical_details: false,
                     },
                     description_markdown: content,
                 })
@@ -1006,6 +1007,120 @@ pub(crate) struct ImageMetadataWithSize {
     pub file_size: u64,
     pub modification_date: Option<SystemTime>,
     pub color_profile: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use tokio::fs;
+
+    #[tokio::test]
+    async fn test_folder_config_hide_technical_details_parsing() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let gallery = Gallery::new(config);
+
+        // Test folder with hide_technical_details = true
+        let folder_path = temp_dir.path().join("test-folder");
+        fs::create_dir_all(&folder_path).await.unwrap();
+
+        let folder_md_content = r#"+++
+title = "Test Portfolio"
+hide_technical_details = true
++++
+
+# Test Portfolio
+
+This folder hides technical details."#;
+
+        let folder_md_path = folder_path.join("_folder.md");
+        fs::write(&folder_md_path, folder_md_content).await.unwrap();
+
+        // Test reading the folder metadata
+        let metadata = gallery.read_folder_metadata_full("test-folder").await;
+        assert!(metadata.is_some());
+
+        let metadata = metadata.unwrap();
+        assert_eq!(metadata.config.title, Some("Test Portfolio".to_string()));
+        assert!(metadata.config.hide_technical_details);
+        assert!(
+            metadata
+                .description_markdown
+                .contains("This folder hides technical details.")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_folder_config_hide_technical_details_default_false() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let gallery = Gallery::new(config);
+
+        // Test folder without hide_technical_details (should default to false)
+        let folder_path = temp_dir.path().join("normal-folder");
+        fs::create_dir_all(&folder_path).await.unwrap();
+
+        let folder_md_content = r#"+++
+title = "Normal Gallery"
++++
+
+# Normal Gallery
+
+This folder shows technical details."#;
+
+        let folder_md_path = folder_path.join("_folder.md");
+        fs::write(&folder_md_path, folder_md_content).await.unwrap();
+
+        // Test reading the folder metadata
+        let metadata = gallery.read_folder_metadata_full("normal-folder").await;
+        assert!(metadata.is_some());
+
+        let metadata = metadata.unwrap();
+        assert_eq!(metadata.config.title, Some("Normal Gallery".to_string()));
+        assert!(!metadata.config.hide_technical_details); // Should default to false
+    }
+
+    #[tokio::test]
+    async fn test_folder_config_no_toml_defaults_to_false() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let gallery = Gallery::new(config);
+
+        // Test folder with just markdown (no TOML front matter)
+        let folder_path = temp_dir.path().join("markdown-only");
+        fs::create_dir_all(&folder_path).await.unwrap();
+
+        let folder_md_content = "# Markdown Only Gallery\n\nJust markdown content.";
+
+        let folder_md_path = folder_path.join("_folder.md");
+        fs::write(&folder_md_path, folder_md_content).await.unwrap();
+
+        // Test reading the folder metadata
+        let metadata = gallery.read_folder_metadata_full("markdown-only").await;
+        assert!(metadata.is_some());
+
+        let metadata = metadata.unwrap();
+        assert!(metadata.config.title.is_none());
+        assert!(!metadata.config.hide_technical_details); // Should default to false
+        assert!(
+            metadata
+                .description_markdown
+                .contains("Just markdown content.")
+        );
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

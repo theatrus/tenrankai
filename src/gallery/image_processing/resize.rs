@@ -218,8 +218,8 @@ fn process_image(
     }
 
     // Apply watermark if needed
-    let final_image = if apply_watermark && copyright_holder.is_some() {
-        apply_copyright_watermark(resized, copyright_holder.unwrap(), static_dir)?
+    let final_image = if let (true, Some(holder)) = (apply_watermark, copyright_holder) {
+        apply_copyright_watermark(resized, holder, static_dir)?
     } else {
         resized
     };

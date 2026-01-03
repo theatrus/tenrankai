@@ -1,3 +1,8 @@
++++
+title = "Vacation Memories"
+hide_technical_details = true
++++
+
 # Vacation Memories
 
 Travel photography documenting beautiful destinations and memorable moments from various trips. From stunning sunsets to crystal clear waters, these images capture the beauty of exploration and adventure.

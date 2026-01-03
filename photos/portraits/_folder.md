@@ -1,3 +1,8 @@
++++
+title = "Portrait Photography"
+hide_technical_details = false
++++
+
 # Portrait Photography
 
 A collection of portrait sessions featuring natural lighting and professional studio work. These images explore different moods, expressions, and lighting techniques to capture the essence of each subject.

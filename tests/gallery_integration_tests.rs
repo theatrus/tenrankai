@@ -572,3 +572,93 @@ async fn test_gallery_preview_partial_in_template() {
     assert!(html.contains("gallery-preview-component"));
     assert!(html.contains("Explore Full Gallery"));
 }
+
+#[tokio::test]
+async fn test_hide_technical_details_feature() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+
+    // Create a test image with EXIF data
+    let img = image::ImageBuffer::from_pixel(300, 200, image::Rgb([100u8, 150u8, 200u8]));
+    let img_path = root_dir.join("test_with_metadata.jpg");
+    img.save(&img_path).unwrap();
+
+    // Create a folder structure for testing different configurations
+    let hidden_folder = root_dir.join("hidden-details");
+    std::fs::create_dir_all(&hidden_folder).unwrap();
+
+    let visible_folder = root_dir.join("visible-details");
+    std::fs::create_dir_all(&visible_folder).unwrap();
+
+    // Create folder configs
+    let hidden_folder_config = r#"+++
+title = "Portfolio with Hidden Details"
+hide_technical_details = true
++++
+
+# Clean Portfolio
+
+Professional presentation without technical metadata.
+"#;
+
+    let visible_folder_config = r#"+++
+title = "Technical Gallery"
+hide_technical_details = false
++++
+
+# Technical Photography
+
+Gallery showing full technical details.
+"#;
+
+    std::fs::write(hidden_folder.join("_folder.md"), hidden_folder_config).unwrap();
+    std::fs::write(visible_folder.join("_folder.md"), visible_folder_config).unwrap();
+
+    // Create test images in both folders
+    let hidden_img = image::ImageBuffer::from_pixel(400, 300, image::Rgb([255u8, 100u8, 50u8]));
+    let hidden_img_path = hidden_folder.join("portfolio_image.jpg");
+    hidden_img.save(&hidden_img_path).unwrap();
+
+    let visible_img = image::ImageBuffer::from_pixel(500, 400, image::Rgb([50u8, 255u8, 100u8]));
+    let visible_img_path = visible_folder.join("technical_image.jpg");
+    visible_img.save(&visible_img_path).unwrap();
+
+    let app = create_app(config).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Test image detail page in folder with hidden technical details
+    let response = server
+        .get("/gallery/detail/hidden-details/portfolio_image.jpg")
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let html = response.text();
+    // Should NOT contain technical detail sections
+    assert!(!html.contains("Image Information"));
+    assert!(!html.contains("Camera Information"));
+    assert!(!html.contains("Location"));
+    assert!(!html.contains("Dimensions"));
+    assert!(!html.contains("File Size"));
+
+    // Should still contain navigation and basic elements
+    assert!(html.contains("portfolio_image.jpg"));
+    assert!(html.contains("image-container"));
+
+    // Test image detail page in folder with visible technical details
+    let response = server
+        .get("/gallery/detail/visible-details/technical_image.jpg")
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let html = response.text();
+    // Should contain technical detail sections
+    assert!(html.contains("Image Information"));
+    assert!(html.contains("Dimensions"));
+    assert!(html.contains("File Size"));
+
+    // Should contain navigation and basic elements
+    assert!(html.contains("technical_image.jpg"));
+    assert!(html.contains("image-container"));
+}

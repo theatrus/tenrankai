@@ -238,6 +238,11 @@ pub(crate) struct FolderConfig {
     /// When true, hide location/GPS information from non-authenticated users for images in this folder
     #[serde(default)]
     pub hide_location_from_public: Option<bool>,
+
+    // Technical details privacy field
+    /// When true, hide technical details (camera info, metadata, etc.) from the image detail page
+    #[serde(default)]
+    pub hide_technical_details: bool,
 }
 
 #[derive(Debug, Clone)]
