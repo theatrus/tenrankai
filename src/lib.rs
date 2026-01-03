@@ -10,6 +10,7 @@ pub mod email;
 pub mod favicon;
 pub mod gallery;
 pub mod login;
+pub mod logging;
 pub mod posts;
 pub mod robots;
 pub mod startup_checks;
@@ -20,112 +21,10 @@ pub mod webp_encoder;
 
 // Re-export core types
 pub use api_response::ApiResponse;
+pub use logging::LogLevel;
 pub use template_system::{TemplateType, TemplatePath, TemplateCategory};
 
 
-
-/// Log level type system for configuration and tracing integration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum LogLevel {
-    Trace,
-    Debug,
-    #[default]
-    Info,
-    Warn,
-    Error,
-}
-
-impl LogLevel {
-    /// Convert to tracing::Level
-    pub fn to_tracing_level(&self) -> tracing::Level {
-        match self {
-            LogLevel::Trace => tracing::Level::TRACE,
-            LogLevel::Debug => tracing::Level::DEBUG,
-            LogLevel::Info => tracing::Level::INFO,
-            LogLevel::Warn => tracing::Level::WARN,
-            LogLevel::Error => tracing::Level::ERROR,
-        }
-    }
-
-    /// Convert to tracing filter level
-    pub fn to_tracing_filter(&self) -> tracing::metadata::LevelFilter {
-        match self {
-            LogLevel::Trace => tracing::metadata::LevelFilter::TRACE,
-            LogLevel::Debug => tracing::metadata::LevelFilter::DEBUG,
-            LogLevel::Info => tracing::metadata::LevelFilter::INFO,
-            LogLevel::Warn => tracing::metadata::LevelFilter::WARN,
-            LogLevel::Error => tracing::metadata::LevelFilter::ERROR,
-        }
-    }
-
-    /// Check if this is a verbose log level (trace or debug)
-    pub fn is_verbose(&self) -> bool {
-        matches!(self, LogLevel::Trace | LogLevel::Debug)
-    }
-
-    /// Check if this level would log messages at the given level
-    pub fn would_log(&self, other: LogLevel) -> bool {
-        match self {
-            LogLevel::Trace => true,
-            LogLevel::Debug => !matches!(other, LogLevel::Trace),
-            LogLevel::Info => matches!(other, LogLevel::Info | LogLevel::Warn | LogLevel::Error),
-            LogLevel::Warn => matches!(other, LogLevel::Warn | LogLevel::Error),
-            LogLevel::Error => matches!(other, LogLevel::Error),
-        }
-    }
-
-    /// Get all log levels
-    pub const ALL: &'static [LogLevel] = &[
-        LogLevel::Trace,
-        LogLevel::Debug,
-        LogLevel::Info,
-        LogLevel::Warn,
-        LogLevel::Error,
-    ];
-
-    /// Parse from string
-    pub fn parse(s: &str) -> Option<LogLevel> {
-        match s.to_lowercase().as_str() {
-            "trace" => Some(LogLevel::Trace),
-            "debug" => Some(LogLevel::Debug),
-            "info" => Some(LogLevel::Info),
-            "warn" => Some(LogLevel::Warn),
-            "error" => Some(LogLevel::Error),
-            _ => None,
-        }
-    }
-
-    /// Convert to string representation
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            LogLevel::Trace => "trace",
-            LogLevel::Debug => "debug",
-            LogLevel::Info => "info",
-            LogLevel::Warn => "warn",
-            LogLevel::Error => "error",
-        }
-    }
-}
-
-impl std::fmt::Display for LogLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl std::str::FromStr for LogLevel {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse(s).ok_or_else(|| {
-            format!(
-                "Invalid log level '{}'. Valid levels: trace, debug, info, warn, error",
-                s
-            )
-        })
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -666,77 +565,6 @@ impl std::fmt::Display for CacheType {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_log_level_enum_functionality() {
-        // Test parsing
-        assert_eq!(LogLevel::parse("debug"), Some(LogLevel::Debug));
-        assert_eq!(LogLevel::parse("DEBUG"), Some(LogLevel::Debug));
-        assert_eq!(LogLevel::parse("invalid"), None);
-
-        // Test string conversion
-        assert_eq!(LogLevel::Info.as_str(), "info");
-        assert_eq!(LogLevel::Error.as_str(), "error");
-
-        // Test is_verbose
-        assert!(LogLevel::Trace.is_verbose());
-        assert!(LogLevel::Debug.is_verbose());
-        assert!(!LogLevel::Info.is_verbose());
-        assert!(!LogLevel::Warn.is_verbose());
-        assert!(!LogLevel::Error.is_verbose());
-
-        // Test would_log
-        assert!(LogLevel::Debug.would_log(LogLevel::Error));
-        assert!(LogLevel::Debug.would_log(LogLevel::Warn));
-        assert!(LogLevel::Debug.would_log(LogLevel::Info));
-        assert!(LogLevel::Debug.would_log(LogLevel::Debug));
-        assert!(!LogLevel::Debug.would_log(LogLevel::Trace));
-
-        assert!(!LogLevel::Error.would_log(LogLevel::Debug));
-        assert!(!LogLevel::Error.would_log(LogLevel::Info));
-        assert!(LogLevel::Error.would_log(LogLevel::Error));
-
-        // Test tracing level conversion
-        assert_eq!(LogLevel::Info.to_tracing_level(), tracing::Level::INFO);
-        assert_eq!(LogLevel::Debug.to_tracing_level(), tracing::Level::DEBUG);
-
-        // Test tracing filter conversion
-        assert_eq!(
-            LogLevel::Info.to_tracing_filter(),
-            tracing::metadata::LevelFilter::INFO
-        );
-
-        // Test default
-        assert_eq!(LogLevel::default(), LogLevel::Info);
-
-        // Test display
-        assert_eq!(format!("{}", LogLevel::Warn), "warn");
-
-        // Test FromStr
-        let level: LogLevel = "trace".parse().unwrap();
-        assert_eq!(level, LogLevel::Trace);
-
-        let result: Result<LogLevel, _> = "invalid".parse();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_log_level_serde() {
-        // Test serialization/deserialization
-        let config = AppConfig {
-            name: "Test".to_string(),
-            log_level: LogLevel::Debug,
-            cookie_secret: "secret".to_string(),
-            base_url: None,
-            user_database: None,
-        };
-
-        let toml = toml_edit::ser::to_string_pretty(&config).unwrap();
-        assert!(toml.contains("log_level = \"debug\""));
-
-        let parsed: AppConfig = toml_edit::de::from_str(&toml).unwrap();
-        assert_eq!(parsed.log_level, LogLevel::Debug);
-    }
 
     #[test]
     fn test_cache_type_enum_functionality() {
