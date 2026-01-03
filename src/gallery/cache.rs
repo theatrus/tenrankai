@@ -92,12 +92,8 @@ impl Gallery {
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
         use std::sync::atomic::Ordering;
 
-        let cache_type = CacheType::ImageMetadata;
-        let cache_file = self.config.cache_directory.join(cache_type.filename(None));
         let cache = self.metadata_cache.read().await;
-
-        let json = serde_json::to_string_pretty(&*cache)?;
-        tokio::fs::write(cache_file, json).await?;
+        crate::cache::save_image_metadata_cache(&self.config.cache_directory, &*cache).await?;
 
         // Reset dirty flag after successful save
         self.metadata_cache_dirty.store(false, Ordering::Relaxed);
@@ -107,13 +103,8 @@ impl Gallery {
     }
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
-        let cache_type = CacheType::CacheMetadata;
-        let metadata_file = self.config.cache_directory.join(cache_type.filename(None));
         let metadata = self.cache_metadata.read().await;
-
-        let json = serde_json::to_string_pretty(&*metadata)?;
-        tokio::fs::write(metadata_file, json).await?;
-
+        crate::cache::save_cache_version_metadata(&self.config.cache_directory, &*metadata).await?;
         Ok(())
     }
 
