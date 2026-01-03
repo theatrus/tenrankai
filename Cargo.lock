@@ -2342,9 +2342,9 @@ dependencies = [
 
 [[package]]
 name = "libwebp-sys"
-version = "0.13.3"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9098eab890ebf345de17da067cfcde01a99a63945f09b8f7ce166d8aff29da7b"
+checksum = "39f019895d5064a40a6d1e8859d8093c3dfdaee8d4a15fa08c80405a856658f0"
 dependencies = [
  "cc",
  "glob",
@@ -3949,7 +3949,7 @@ dependencies = [
  "imageproc",
  "libavif",
  "libavif-sys",
- "libwebp-sys 0.13.3",
+ "libwebp-sys 0.14.1",
  "liquid",
  "liquid-core",
  "mime_guess",

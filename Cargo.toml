@@ -29,7 +29,7 @@ resvg = "0.45"
 usvg = "0.45"
 ico = "0.4"
 webp = { version = "0.3", features = ["img"] }
-libwebp-sys = "0.13"
+libwebp-sys = "0.14"
 libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"], optional = true }
 libavif-sys = { git = "https://github.com/theatrus/libavif-rs",  branch = "new-libavif", features = ["codec-aom"], optional = true }
 rgb = "0.8"
