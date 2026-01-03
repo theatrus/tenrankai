@@ -11,7 +11,10 @@ use super::{
     PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest,
     StartAuthenticationRequest, UserPasskey,
 };
-use crate::{AppState, login::{AuthScope, get_authenticated_user}};
+use crate::{
+    AppState,
+    login::{AuthScope, get_authenticated_user},
+};
 
 #[derive(Debug, serde::Serialize)]
 pub struct HasPasskeysResponse {
@@ -376,7 +379,7 @@ pub async fn finish_passkey_authentication(
 
         let cookie = AuthScope::Session.format_cookie(
             &signed_value,
-            false // TODO: Use HTTPS detection
+            false, // TODO: Use HTTPS detection
         );
 
         let mut headers = HeaderMap::new();

@@ -16,7 +16,6 @@ pub mod static_files;
 pub mod templating;
 pub mod webp_encoder;
 
-
 /// Template types with path resolution and categorization
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TemplateType {
@@ -1043,7 +1042,6 @@ impl std::fmt::Display for CacheType {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1118,7 +1116,6 @@ mod tests {
         let parsed: AppConfig = toml_edit::de::from_str(&toml).unwrap();
         assert_eq!(parsed.log_level, LogLevel::Debug);
     }
-
 
     #[test]
     fn test_cache_type_enum_functionality() {

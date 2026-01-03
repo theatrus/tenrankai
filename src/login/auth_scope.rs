@@ -10,7 +10,7 @@ pub enum AuthScope {
     /// Duration: 7 days
     /// Cookie name: "auth"
     Session,
-    
+
     /// Temporary redirect state during login flow
     /// Duration: 10 minutes
     /// Cookie name: "redirect_state"
@@ -29,7 +29,7 @@ impl AuthScope {
     /// Get the maximum age as a Duration
     pub fn duration(self) -> std::time::Duration {
         match self {
-            AuthScope::Session => std::time::Duration::from_secs(604800),     // 7 days
+            AuthScope::Session => std::time::Duration::from_secs(604800), // 7 days
             AuthScope::RedirectState => std::time::Duration::from_secs(3600), // 1 hour
         }
     }
@@ -37,7 +37,7 @@ impl AuthScope {
     /// Check if this scope requires secure-only cookies (HTTPS)
     pub fn is_secure_only(self) -> bool {
         match self {
-            AuthScope::Session => true,  // Session cookies should be secure in production
+            AuthScope::Session => true, // Session cookies should be secure in production
             AuthScope::RedirectState => false, // Redirect state can work over HTTP for development
         }
     }
@@ -45,7 +45,7 @@ impl AuthScope {
     /// Check if this scope uses signed cookies
     pub fn is_signed(self) -> bool {
         match self {
-            AuthScope::Session => true,       // Session cookies are HMAC signed
+            AuthScope::Session => true,        // Session cookies are HMAC signed
             AuthScope::RedirectState => false, // Redirect state is just URL encoded
         }
     }
@@ -124,7 +124,10 @@ mod tests {
         assert!(!AuthScope::RedirectState.is_signed());
 
         // Test parsing from cookie names
-        assert_eq!(AuthScope::from_cookie_name("auth"), Some(AuthScope::Session));
+        assert_eq!(
+            AuthScope::from_cookie_name("auth"),
+            Some(AuthScope::Session)
+        );
         assert_eq!(
             AuthScope::from_cookie_name("redirect_state"),
             Some(AuthScope::RedirectState)
@@ -165,7 +168,10 @@ mod tests {
     fn test_auth_scope_cookie_clearing() {
         // Test session cookie clearing (without secure)
         let clear_cookie = AuthScope::Session.clear_cookie(false);
-        assert_eq!(clear_cookie, "auth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+        assert_eq!(
+            clear_cookie,
+            "auth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+        );
 
         // Test session cookie clearing (with secure)
         let secure_clear = AuthScope::Session.clear_cookie(true);

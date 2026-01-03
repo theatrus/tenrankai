@@ -1,5 +1,5 @@
-use crate::api::{get_scoped_cookie_value, verify_signed_cookie};
 use super::AuthScope;
+use crate::api::{get_scoped_cookie_value, verify_signed_cookie};
 use axum::http::HeaderMap;
 
 /// Check if the user is authenticated and return their username

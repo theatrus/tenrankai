@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tracing::{error, info};
 
-use crate::{ApiResponse, AppState, api::{create_signed_cookie, get_scoped_cookie_value}};
 use super::AuthScope;
+use crate::{
+    ApiResponse, AppState,
+    api::{create_signed_cookie, get_scoped_cookie_value},
+};
 
 use super::{LoginError, LoginRequest, LoginResponse};
 
@@ -63,7 +66,7 @@ pub async fn login_page(
         if is_safe_return_url(&return_url) {
             let cookie = AuthScope::RedirectState.format_cookie(
                 &urlencoding::encode(&return_url),
-                false // TODO: Use HTTPS detection
+                false, // TODO: Use HTTPS detection
             );
             headers.insert(SET_COOKIE, cookie.parse().unwrap());
         }
@@ -200,7 +203,7 @@ pub async fn verify_login(
 
     let auth_cookie = AuthScope::Session.format_cookie(
         &signed_value,
-        false // TODO: Use HTTPS detection
+        false, // TODO: Use HTTPS detection
     );
 
     let mut headers = HeaderMap::new();
