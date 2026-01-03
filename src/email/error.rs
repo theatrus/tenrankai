@@ -19,4 +19,19 @@ pub enum EmailError {
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("Invalid configuration: {0}")]
+    InvalidConfiguration(String),
+
+    #[error("Provider not implemented: {0}")]
+    ProviderNotImplemented(String),
+
+    #[error("Feature not supported by provider: {0}")]
+    FeatureNotSupported(String),
+
+    #[error("Rate limit exceeded for provider: {0}")]
+    RateLimitExceeded(String),
+
+    #[error("Authentication failed for provider: {0}")]
+    AuthenticationFailed(String),
 }
