@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tracing::{error, info};
 
-use crate::{ApiResponse, AppState, AuthScope, api::{create_signed_cookie, get_scoped_cookie_value}};
+use crate::{ApiResponse, AppState, api::{create_signed_cookie, get_scoped_cookie_value}};
+use super::AuthScope;
 
 use super::{LoginError, LoginRequest, LoginResponse};
 

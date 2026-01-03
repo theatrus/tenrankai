@@ -11,7 +11,7 @@ use super::{
     PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest,
     StartAuthenticationRequest, UserPasskey,
 };
-use crate::{AppState, AuthScope, login::get_authenticated_user};
+use crate::{AppState, login::{AuthScope, get_authenticated_user}};
 
 #[derive(Debug, serde::Serialize)]
 pub struct HasPasskeysResponse {

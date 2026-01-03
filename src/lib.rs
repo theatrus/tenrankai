@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub mod api;
-pub mod auth;
 pub mod commands;
 pub mod composite;
 pub mod copyright;
@@ -17,8 +16,6 @@ pub mod static_files;
 pub mod templating;
 pub mod webp_encoder;
 
-// Re-export auth types for convenience
-pub use auth::AuthScope;
 
 /// Template types with path resolution and categorization
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,4 +1,4 @@
-use crate::{ApiResponse, AuthScope};
+use crate::{ApiResponse, login::AuthScope};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
