@@ -11,7 +11,10 @@ use super::{
     PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest,
     StartAuthenticationRequest, UserPasskey,
 };
-use crate::{AppState, login::get_authenticated_user};
+use crate::{
+    AppState,
+    login::{AuthScope, get_authenticated_user},
+};
 
 #[derive(Debug, serde::Serialize)]
 pub struct HasPasskeysResponse {
@@ -374,9 +377,9 @@ pub async fn finish_passkey_authentication(
             crate::api::create_signed_cookie(&app_state.config.app.cookie_secret, &username)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        let cookie = format!(
-            "auth={}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax",
-            signed_value
+        let cookie = AuthScope::Session.format_cookie(
+            &signed_value,
+            false, // TODO: Use HTTPS detection
         );
 
         let mut headers = HeaderMap::new();
