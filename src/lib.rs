@@ -870,6 +870,141 @@ impl Default for Config {
     }
 }
 
+/// Cache type system for consistent cache operations and filenames
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CacheType {
+    /// Image metadata cache (metadata_cache.json)
+    ImageMetadata,
+    /// Cache metadata with version tracking (cache_metadata.json)
+    CacheMetadata,
+    /// Processed image cache with format and watermark variants
+    ProcessedImage {
+        format: gallery::image_processing::OutputFormat,
+        watermarked: bool,
+    },
+    /// Composite image cache for folder previews  
+    Composite,
+}
+
+impl CacheType {
+    /// Get the filename for this cache type
+    pub fn filename(&self, key: Option<&str>) -> String {
+        match self {
+            CacheType::ImageMetadata => "metadata_cache.json".to_string(),
+            CacheType::CacheMetadata => "cache_metadata.json".to_string(),
+            CacheType::ProcessedImage {
+                format,
+                watermarked,
+            } => {
+                let key = key.expect("ProcessedImage cache requires a key");
+                let suffix = if *watermarked { "_watermarked" } else { "" };
+                format!("{}{}.{}", key, suffix, format.extension())
+            }
+            CacheType::Composite => {
+                let key = key.unwrap_or("root");
+                format!("composite_{}.jpg", key)
+            }
+        }
+    }
+
+    /// Get the maximum age for this cache type
+    pub fn max_age(&self) -> std::time::Duration {
+        match self {
+            CacheType::ImageMetadata => std::time::Duration::from_secs(24 * 60 * 60), // 24 hours
+            CacheType::CacheMetadata => std::time::Duration::from_secs(7 * 24 * 60 * 60), // 7 days
+            CacheType::ProcessedImage { .. } => std::time::Duration::from_secs(30 * 24 * 60 * 60), // 30 days
+            CacheType::Composite => std::time::Duration::from_secs(24 * 60 * 60), // 24 hours
+        }
+    }
+
+    /// Check if this cache type should be persisted to disk
+    pub fn is_persistent(&self) -> bool {
+        match self {
+            CacheType::ImageMetadata | CacheType::CacheMetadata => true,
+            CacheType::ProcessedImage { .. } | CacheType::Composite => true,
+        }
+    }
+
+    /// Check if this cache type is automatically cleaned up
+    pub fn is_auto_cleanup(&self) -> bool {
+        match self {
+            CacheType::ImageMetadata | CacheType::CacheMetadata => false,
+            CacheType::ProcessedImage { .. } | CacheType::Composite => true,
+        }
+    }
+
+    /// Get the cache priority (higher numbers = more important)
+    pub fn priority(&self) -> u8 {
+        match self {
+            CacheType::CacheMetadata => 10,        // Highest priority
+            CacheType::ImageMetadata => 9,         // Second highest
+            CacheType::ProcessedImage { .. } => 5, // Medium priority
+            CacheType::Composite => 3,             // Lower priority
+        }
+    }
+
+    /// Check if this cache type requires a key
+    pub fn requires_key(&self) -> bool {
+        matches!(self, CacheType::ProcessedImage { .. })
+    }
+
+    /// Get all cache types that are JSON-based
+    pub const JSON_TYPES: &'static [CacheType] =
+        &[CacheType::ImageMetadata, CacheType::CacheMetadata];
+
+    /// Get all cache types that are binary/image-based
+    pub fn binary_types() -> Vec<CacheType> {
+        vec![
+            CacheType::ProcessedImage {
+                format: gallery::image_processing::OutputFormat::Jpeg,
+                watermarked: false,
+            },
+            CacheType::Composite,
+        ]
+    }
+
+    /// Create a ProcessedImage cache type
+    pub fn processed_image(
+        format: gallery::image_processing::OutputFormat,
+        watermarked: bool,
+    ) -> Self {
+        CacheType::ProcessedImage {
+            format,
+            watermarked,
+        }
+    }
+
+    /// Get the MIME type for this cache type
+    pub fn mime_type(&self) -> &'static str {
+        match self {
+            CacheType::ImageMetadata | CacheType::CacheMetadata => "application/json",
+            CacheType::ProcessedImage { format, .. } => format.mime_type(),
+            CacheType::Composite => "image/jpeg",
+        }
+    }
+}
+
+impl std::fmt::Display for CacheType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CacheType::ImageMetadata => write!(f, "ImageMetadata"),
+            CacheType::CacheMetadata => write!(f, "CacheMetadata"),
+            CacheType::ProcessedImage {
+                format,
+                watermarked,
+            } => {
+                write!(
+                    f,
+                    "ProcessedImage({}{})",
+                    format.extension(),
+                    if *watermarked { ",watermarked" } else { "" }
+                )
+            }
+            CacheType::Composite => write!(f, "Composite"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,6 +1078,78 @@ mod tests {
 
         let parsed: AppConfig = toml_edit::de::from_str(&toml).unwrap();
         assert_eq!(parsed.log_level, LogLevel::Debug);
+    }
+
+    #[test]
+    fn test_cache_type_enum_functionality() {
+        use gallery::image_processing::OutputFormat;
+
+        // Test JSON cache types
+        let metadata_cache = CacheType::ImageMetadata;
+        assert_eq!(metadata_cache.filename(None), "metadata_cache.json");
+        assert!(metadata_cache.is_persistent());
+        assert!(!metadata_cache.is_auto_cleanup());
+        assert_eq!(metadata_cache.priority(), 9);
+        assert!(!metadata_cache.requires_key());
+        assert_eq!(metadata_cache.mime_type(), "application/json");
+
+        let cache_metadata = CacheType::CacheMetadata;
+        assert_eq!(cache_metadata.filename(None), "cache_metadata.json");
+        assert_eq!(cache_metadata.priority(), 10); // Highest priority
+        assert_eq!(cache_metadata.mime_type(), "application/json");
+
+        // Test processed image cache types
+        let jpeg_cache = CacheType::processed_image(OutputFormat::Jpeg, false);
+        assert_eq!(jpeg_cache.filename(Some("abcd1234")), "abcd1234.jpg");
+        assert!(jpeg_cache.requires_key());
+        assert_eq!(jpeg_cache.mime_type(), "image/jpeg");
+
+        let watermarked_cache = CacheType::processed_image(OutputFormat::WebP, true);
+        assert_eq!(
+            watermarked_cache.filename(Some("efgh5678")),
+            "efgh5678_watermarked.webp"
+        );
+        assert_eq!(watermarked_cache.mime_type(), "image/webp");
+
+        // Test composite cache
+        let composite_cache = CacheType::Composite;
+        assert_eq!(composite_cache.filename(None), "composite_root.jpg");
+        assert_eq!(
+            composite_cache.filename(Some("2024_vacation")),
+            "composite_2024_vacation.jpg"
+        );
+        assert_eq!(composite_cache.mime_type(), "image/jpeg");
+        assert_eq!(composite_cache.priority(), 3);
+
+        // Test cache behavior methods
+        assert!(CacheType::ImageMetadata.is_persistent());
+        assert!(
+            CacheType::ProcessedImage {
+                format: OutputFormat::Png,
+                watermarked: false
+            }
+            .is_auto_cleanup()
+        );
+
+        // Test max age
+        assert!(CacheType::ImageMetadata.max_age().as_secs() > 0);
+        assert!(CacheType::CacheMetadata.max_age() > CacheType::ImageMetadata.max_age());
+
+        // Test display
+        assert_eq!(format!("{}", CacheType::ImageMetadata), "ImageMetadata");
+        assert_eq!(format!("{}", jpeg_cache), "ProcessedImage(jpg)");
+        assert_eq!(
+            format!("{}", watermarked_cache),
+            "ProcessedImage(webp,watermarked)"
+        );
+
+        // Test constants
+        assert!(CacheType::JSON_TYPES.contains(&CacheType::ImageMetadata));
+        assert!(CacheType::JSON_TYPES.contains(&CacheType::CacheMetadata));
+        assert_eq!(CacheType::JSON_TYPES.len(), 2);
+
+        let binary_types = CacheType::binary_types();
+        assert!(!binary_types.is_empty());
     }
 }
 

@@ -1,6 +1,7 @@
 use super::image_processing::OutputFormat;
 use super::types::ImageSize;
 use super::{CacheMetadata, Gallery, ImageMetadata};
+use crate::CacheType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -146,7 +147,8 @@ impl Gallery {
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
         use std::sync::atomic::Ordering;
 
-        let cache_file = self.config.cache_directory.join("metadata_cache.json");
+        let cache_type = CacheType::ImageMetadata;
+        let cache_file = self.config.cache_directory.join(cache_type.filename(None));
         let cache = self.metadata_cache.read().await;
 
         let json = serde_json::to_string_pretty(&*cache)?;
@@ -160,7 +162,8 @@ impl Gallery {
     }
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
-        let metadata_file = self.config.cache_directory.join("cache_metadata.json");
+        let cache_type = CacheType::CacheMetadata;
+        let metadata_file = self.config.cache_directory.join(cache_type.filename(None));
         let metadata = self.cache_metadata.read().await;
 
         let json = serde_json::to_string_pretty(&*metadata)?;
@@ -210,21 +213,25 @@ impl Gallery {
         &self,
         path: &str,
         size: &str,
-        format: &str,
+        format_str: &str,
         has_watermark: bool,
     ) -> String {
-        let hash = self.generate_image_cache_key(path, size, format, has_watermark);
-        format!("{}.{}", hash, format)
+        // Parse the format string to OutputFormat, default to JPEG if unknown
+        let format = OutputFormat::from_file_extension(format_str).unwrap_or(OutputFormat::Jpeg);
+        let cache_type = CacheType::processed_image(format, has_watermark);
+
+        let hash = self.generate_image_cache_key(path, size, format_str, has_watermark);
+        cache_type.filename(Some(&hash))
     }
 
     /// Generate a cache key for composite images
     pub(crate) fn generate_composite_cache_key(gallery_path: &str) -> String {
-        let safe_path = if gallery_path.is_empty() {
-            "root".to_string()
+        if gallery_path.is_empty() {
+            "composite_root".to_string()
         } else {
-            gallery_path.replace('/', "_")
-        };
-        format!("composite_{}", safe_path)
+            let safe_path = gallery_path.replace('/', "_");
+            format!("composite_{}", safe_path)
+        }
     }
 
     /// Pre-generate cache for a single image
@@ -733,7 +740,8 @@ impl Gallery {
 pub(crate) fn load_metadata_cache(
     config: &crate::GallerySystemConfig,
 ) -> Result<HashMap<String, ImageMetadata>, super::GalleryError> {
-    let cache_file = config.cache_directory.join("metadata_cache.json");
+    let cache_type = CacheType::ImageMetadata;
+    let cache_file = config.cache_directory.join(cache_type.filename(None));
 
     if !cache_file.exists() {
         debug!("Metadata cache file not found, starting with empty cache");
@@ -750,7 +758,8 @@ pub(crate) fn load_metadata_cache(
 pub(crate) fn load_cache_metadata(
     config: &crate::GallerySystemConfig,
 ) -> Result<CacheMetadata, super::GalleryError> {
-    let metadata_file = config.cache_directory.join("cache_metadata.json");
+    let cache_type = CacheType::CacheMetadata;
+    let metadata_file = config.cache_directory.join(cache_type.filename(None));
 
     if !metadata_file.exists() {
         debug!("Cache metadata file not found");
