@@ -602,7 +602,7 @@ hide_technical_details = true
 
 Professional presentation without technical metadata.
 "#;
-    
+
     let visible_folder_config = r#"+++
 title = "Technical Gallery"
 hide_technical_details = false
@@ -629,31 +629,35 @@ Gallery showing full technical details.
     let server = TestServer::new(app).unwrap();
 
     // Test image detail page in folder with hidden technical details
-    let response = server.get("/gallery/detail/hidden-details/portfolio_image.jpg").await;
+    let response = server
+        .get("/gallery/detail/hidden-details/portfolio_image.jpg")
+        .await;
     assert_eq!(response.status_code(), StatusCode::OK);
-    
+
     let html = response.text();
     // Should NOT contain technical detail sections
     assert!(!html.contains("Image Information"));
-    assert!(!html.contains("Camera Information")); 
+    assert!(!html.contains("Camera Information"));
     assert!(!html.contains("Location"));
     assert!(!html.contains("Dimensions"));
     assert!(!html.contains("File Size"));
-    
+
     // Should still contain navigation and basic elements
     assert!(html.contains("portfolio_image.jpg"));
     assert!(html.contains("image-container"));
 
     // Test image detail page in folder with visible technical details
-    let response = server.get("/gallery/detail/visible-details/technical_image.jpg").await;
+    let response = server
+        .get("/gallery/detail/visible-details/technical_image.jpg")
+        .await;
     assert_eq!(response.status_code(), StatusCode::OK);
-    
+
     let html = response.text();
     // Should contain technical detail sections
     assert!(html.contains("Image Information"));
     assert!(html.contains("Dimensions"));
     assert!(html.contains("File Size"));
-    
+
     // Should contain navigation and basic elements
     assert!(html.contains("technical_image.jpg"));
     assert!(html.contains("image-container"));

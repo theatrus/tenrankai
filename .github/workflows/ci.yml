@@ -21,13 +21,7 @@ jobs:
       fail-fast: false  # Don't cancel other jobs if one fails
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
-        rust: [stable]
-        exclude:
-          # Reduce the number of jobs by excluding some combinations
-          - os: windows-latest
-            rust: beta
-          - os: macos-latest
-            rust: beta
+        # No longer using rust matrix - version specified in rust-toolchain.toml
     steps:
     - uses: actions/checkout@v6
     
@@ -61,18 +55,16 @@ jobs:
         echo "OPENSSL_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       shell: powershell
     
-    - name: Install Rust
+    - name: Install Rust (use rust-toolchain.toml)
       uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
+      # Note: When rust-toolchain.toml is present, it takes precedence
+      # The 'with' section is ignored when rust-toolchain.toml exists
     
-    - name: Override with rust-toolchain.toml if stable
-      if: matrix.rust == 'stable'
+    - name: Verify Rust version from toolchain file
       run: |
-        # The rust-toolchain.toml will override the toolchain
-        # This ensures we test with the exact version specified
+        echo "Using Rust version from rust-toolchain.toml:"
         rustc --version
+        cargo --version
     
     - name: Cache cargo registry
       uses: actions/cache@v5
@@ -94,15 +86,14 @@ jobs:
     
     - name: Check formatting
       run: cargo fmt -- --check
-      if: matrix.rust == 'stable'
     
     - name: Run clippy (Ubuntu/macOS)
       run: cargo clippy -- -D warnings
-      if: matrix.rust == 'stable' && matrix.os != 'windows-latest'
+      if: matrix.os != 'windows-latest'
       
     - name: Run clippy (Windows - no AVIF)
       run: cargo clippy --no-default-features -- -D warnings
-      if: matrix.rust == 'stable' && matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest'
     
     - name: Build (Ubuntu/macOS)
       if: matrix.os != 'windows-latest'
