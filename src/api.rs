@@ -1,4 +1,4 @@
-use crate::ApiResponse;
+use crate::{ApiResponse, AuthScope};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -52,8 +52,13 @@ pub fn get_cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
         })
 }
 
+/// Get cookie value using AuthScope (type-safe version)
+pub fn get_scoped_cookie_value(headers: &HeaderMap, scope: AuthScope) -> Option<String> {
+    get_cookie_value(headers, scope.cookie_name())
+}
+
 pub fn is_authenticated(headers: &HeaderMap, secret: &str) -> Option<String> {
-    get_cookie_value(headers, "auth").and_then(|signed_value| {
+    get_scoped_cookie_value(headers, AuthScope::Session).and_then(|signed_value| {
         if verify_signed_cookie(secret, &signed_value) {
             // Extract username from signed value
             signed_value.split(':').next().map(|s| s.to_string())

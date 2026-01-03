@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tracing::{error, info};
 
-use crate::{ApiResponse, AppState, api::create_signed_cookie};
+use crate::{ApiResponse, AppState, AuthScope, api::{create_signed_cookie, get_scoped_cookie_value}};
 
 use super::{LoginError, LoginRequest, LoginResponse};
 
@@ -18,20 +18,10 @@ fn is_safe_return_url(url: &str) -> bool {
     url.starts_with('/') && !url.starts_with("//") && !url.contains("://")
 }
 
-/// Extracts the return URL from cookies
+/// Extracts the return URL from cookies using AuthScope
 fn get_return_url_from_cookies(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("Cookie")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookies| {
-            cookies
-                .split(';')
-                .map(|c| c.trim())
-                .find(|c| c.starts_with("return_url="))
-                .and_then(|c| c.strip_prefix("return_url="))
-                .and_then(|v| urlencoding::decode(v).ok())
-                .map(|s| s.into_owned())
-        })
+    get_scoped_cookie_value(headers, AuthScope::RedirectState)
+        .and_then(|v| urlencoding::decode(&v).ok().map(|s| s.into_owned()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,9 +60,9 @@ pub async fn login_page(
     if let Some(return_url) = query.return_url {
         // Validate the return URL to prevent open redirects
         if is_safe_return_url(&return_url) {
-            let cookie = format!(
-                "return_url={}; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax",
-                urlencoding::encode(&return_url)
+            let cookie = AuthScope::RedirectState.format_cookie(
+                &urlencoding::encode(&return_url),
+                false // TODO: Use HTTPS detection
             );
             headers.insert(SET_COOKIE, cookie.parse().unwrap());
         }
@@ -207,21 +197,17 @@ pub async fn verify_login(
     let signed_value = create_signed_cookie(&app_state.config.app.cookie_secret, &username)
         .map_err(LoginError::InternalError)?;
 
-    let auth_cookie = format!(
-        "auth={}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax",
-        signed_value
+    let auth_cookie = AuthScope::Session.format_cookie(
+        &signed_value,
+        false // TODO: Use HTTPS detection
     );
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, auth_cookie.parse().unwrap());
 
     // Clear the return URL cookie
-    headers.append(
-        SET_COOKIE,
-        "return_url=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
-            .parse()
-            .unwrap(),
-    );
+    let clear_cookie = AuthScope::RedirectState.clear_cookie(false); // TODO: Use HTTPS detection
+    headers.append(SET_COOKIE, clear_cookie.parse().unwrap());
 
     info!("User {} logged in successfully", username);
 
@@ -271,7 +257,7 @@ pub async fn verify_login(
 }
 
 pub async fn logout() -> impl IntoResponse {
-    let cookie = "auth=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax";
+    let cookie = AuthScope::Session.clear_cookie(false); // TODO: Use HTTPS detection
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, cookie.parse().unwrap());
