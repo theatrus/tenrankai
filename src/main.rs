@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use tracing::{Level, info};
+use tracing::info;
 use tracing_subscriber::FmtSubscriber;
 
 use tenrankai::{
-    Config, create_app,
+    Config, LogLevel, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
     posts, startup_checks,
@@ -25,7 +25,7 @@ struct Cli {
     config: PathBuf,
 
     #[arg(short, long, default_value = "info", global = true)]
-    log_level: String,
+    log_level: LogLevel,
 }
 
 #[derive(Subcommand, Debug)]
@@ -101,15 +101,19 @@ enum UserCommands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Set up logging first
-    let level = match cli.log_level.to_lowercase().as_str() {
-        "trace" => Level::TRACE,
-        "debug" => Level::DEBUG,
-        "info" => Level::INFO,
-        "warn" => Level::WARN,
-        "error" => Level::ERROR,
-        _ => Level::INFO,
+    // Load config to get default log level, but allow CLI to override
+    let mut config = if cli.config.exists() {
+        let config_content = std::fs::read_to_string(&cli.config)?;
+        toml_edit::de::from_str::<Config>(&config_content)?
+    } else {
+        Config::default()
     };
+
+    // Override config log level with CLI arg (CLI takes precedence)
+    config.app.log_level = cli.log_level;
+
+    // Set up logging using the final log level
+    let level = config.app.log_level.to_tracing_level();
 
     let subscriber = FmtSubscriber::builder()
         .with_max_level(level)
@@ -133,10 +137,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             port,
             host,
             quit_after,
-        }) => run_server(cli.config, port, host, quit_after).await,
+        }) => run_server(config, port, host, quit_after).await,
         None => {
             // Default to serve command if no subcommand specified
-            run_server(cli.config, None, None, None).await
+            run_server(config, None, None, None).await
         }
     }
 }
@@ -236,24 +240,16 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
 }
 
 async fn run_server(
-    config_path: PathBuf,
+    config: Config,
     port: Option<u16>,
     host: Option<String>,
     quit_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let config = if config_path.exists() {
-        let config_content = std::fs::read_to_string(&config_path)?;
-        toml_edit::de::from_str::<Config>(&config_content)?
-    } else {
-        info!("Config file not found at {:?}, using defaults", config_path);
-        Config::default()
-    };
-
     let host = host.unwrap_or(config.server.host.clone());
     let port = port.unwrap_or(config.server.port);
 
     info!("Starting {} server", config.app.name);
-    info!("Configuration loaded from: {:?}", config_path);
+    info!("Log level: {}", config.app.log_level);
     info!("Template directories: {:?}", config.templates.directories);
     info!(
         "Static files directories: {:?}",
