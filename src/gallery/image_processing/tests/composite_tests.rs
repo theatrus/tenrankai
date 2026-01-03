@@ -91,9 +91,18 @@ async fn test_store_composite_with_complex_key() {
         result
     );
 
-    // Verify it was stored
+    // Verify it was stored using the new enhanced filename format
     let hash = gallery.generate_cache_key(cache_key, "jpg");
-    let cache_filename = format!("{}.jpg", hash);
+
+    // For keys that follow the "composite_gallery_path" pattern, they'll use the enhanced format
+    let cache_filename =
+        if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
+            cache_type.filename(Some(&hash))
+        } else {
+            // Fallback to old format for non-composite keys
+            format!("{}.jpg", hash)
+        };
+
     let cache_path = gallery.config.cache_directory.join(&cache_filename);
     assert!(
         tokio::fs::metadata(&cache_path).await.is_ok(),
@@ -105,30 +114,43 @@ async fn test_store_composite_with_complex_key() {
 async fn test_composite_cache_key_generation() {
     let (gallery, _temp_dir) = create_test_gallery().await;
 
-    // Test various gallery paths
+    // Test various gallery paths with new enhanced cache key structure
     let test_cases = vec![
-        ("2008-eureka", "composite_2008-eureka"),
-        ("folder/subfolder", "composite_folder_subfolder"),
-        ("", "composite_root"),
-        ("gallery/2024", "composite_gallery_2024"),
+        ("2008-eureka", "composite_test_"),
+        ("folder/subfolder", "composite_test_"),
+        ("", "composite_test_root"),
+        ("gallery/2024", "composite_test_"),
     ];
 
-    for (gallery_path, expected_key) in test_cases {
-        let cache_key = Gallery::generate_composite_cache_key(gallery_path);
-        assert_eq!(
-            cache_key, expected_key,
-            "Cache key mismatch for path '{}'",
-            gallery_path
+    for (gallery_path, expected_prefix) in test_cases {
+        // Use the new enhanced cache key method
+        let cache_key = gallery.generate_composite_cache_key_with_context(gallery_path);
+        assert!(
+            cache_key.starts_with(expected_prefix),
+            "Cache key '{}' should start with '{}'",
+            cache_key,
+            expected_prefix
         );
 
-        // Test that we can generate a proper cache filename
-        let hash = gallery.generate_cache_key(&cache_key, "jpg");
-        assert!(!hash.is_empty(), "Hash should not be empty");
+        // Test that non-empty paths are base64 encoded
+        if !gallery_path.is_empty() {
+            use base64::{Engine as _, engine::general_purpose};
+            let encoded_path = general_purpose::URL_SAFE_NO_PAD.encode(gallery_path);
+            assert!(
+                cache_key.contains(&encoded_path),
+                "Cache key should contain base64 encoded path"
+            );
+        }
 
-        let cache_filename = format!("{}.jpg", hash);
+        // Test that we can generate a proper cache filename using the new method
+        let cache_filename = gallery.generate_composite_cache_filename(gallery_path);
         assert!(
             cache_filename.ends_with(".jpg"),
             "Cache filename should end with .jpg"
+        );
+        assert!(
+            cache_filename.starts_with("composite_test_"),
+            "Cache filename should start with gallery prefix"
         );
     }
 }
@@ -141,12 +163,12 @@ async fn test_serve_cached_composite_with_proper_filename() {
     let img = ImageBuffer::from_pixel(100, 100, Rgba([0, 0, 255, 255]));
     let dynamic_img = image::DynamicImage::ImageRgba8(img);
 
-    // Simulate the composite endpoint workflow
+    // Simulate the composite endpoint workflow using new enhanced API
     let gallery_path = "2008-eureka";
-    let composite_cache_key = Gallery::generate_composite_cache_key(gallery_path);
+    let composite_cache_key = gallery.generate_composite_cache_key_with_context(gallery_path);
     println!("composite_cache_key: {}", composite_cache_key);
 
-    // Store using the base cache key (as store_and_serve_composite expects)
+    // Store using the enhanced cache key (as store_and_serve_composite expects)
     let result = gallery
         .store_and_serve_composite(&composite_cache_key, dynamic_img.clone())
         .await;
@@ -161,9 +183,8 @@ async fn test_serve_cached_composite_with_proper_filename() {
         }
     }
 
-    // Generate the cache filename the same way the API does
-    let hash = gallery.generate_cache_key(&composite_cache_key, "jpg");
-    let cache_filename = format!("{}.jpg", hash);
+    // Generate the cache filename using the new enhanced method
+    let cache_filename = gallery.generate_composite_cache_filename(gallery_path);
     println!("Looking for cache_filename: {}", cache_filename);
 
     // Check if the file actually exists

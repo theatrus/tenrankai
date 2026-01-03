@@ -106,13 +106,9 @@ pub async fn gallery_composite_preview_handler_for_named(
     // Handle special case for root gallery
     let gallery_path = if path == "_root" { String::new() } else { path };
 
-    // Generate a cache key for the composite
-    let composite_cache_key = crate::gallery::Gallery::generate_composite_cache_key(&gallery_path);
-
-    // Generate the full cache filename with extension (composites are always JPEG)
-    // Note: We pass the composite_cache_key (not gallery_path) to match what store_and_serve_composite does
-    let hash = gallery.generate_cache_key(&composite_cache_key, "jpg");
-    let cache_filename = format!("{}.jpg", hash);
+    // Generate composite cache key and filename using the new enhanced system
+    let composite_cache_key = gallery.generate_composite_cache_key_with_context(&gallery_path);
+    let cache_filename = gallery.generate_composite_cache_filename(&gallery_path);
 
     // Try to serve from cache first
     if let Ok(cached_response) = gallery

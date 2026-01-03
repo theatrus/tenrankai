@@ -166,16 +166,39 @@ impl Gallery {
         cache_key: &str,
         image: image::DynamicImage,
     ) -> Result<Response, GalleryError> {
-        use image::ImageEncoder;
-        use std::io::Cursor;
-
         // Always use JPEG for composites
         let output_format = super::types::OutputFormat::Jpeg;
-        // Note: cache_key is already the composite key (e.g., "composite_2008-eureka")
-        // so we use generate_cache_key directly, not generate_composite_cache_key_with_format
+        // Note: cache_key is the enhanced composite key (e.g., "composite_default_MjAwOC1ldXJla2E")
+        // with gallery context and safe base64 encoding
         let hash = self.generate_cache_key(cache_key, output_format.extension());
-        let cache_filename = format!("{}.{}", hash, output_format.extension());
-        let cache_path = self.config.cache_directory.join(&cache_filename);
+
+        // Use the enhanced CacheType system for consistent filename generation
+        if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
+            let cache_filename = cache_type.filename(Some(&hash));
+            let cache_path = self.config.cache_directory.join(&cache_filename);
+
+            // Store the cache_filename for later use in response
+            self.store_composite_with_path(image, cache_path, output_format, cache_filename)
+                .await
+        } else {
+            // Fallback to old method if cache_key format is unexpected
+            let cache_filename = format!("{}.{}", hash, output_format.extension());
+            let cache_path = self.config.cache_directory.join(&cache_filename);
+            self.store_composite_with_path(image, cache_path, output_format, cache_filename)
+                .await
+        }
+    }
+
+    /// Helper method to store composite with given path and return response
+    async fn store_composite_with_path(
+        &self,
+        image: image::DynamicImage,
+        cache_path: std::path::PathBuf,
+        output_format: super::types::OutputFormat,
+        cache_filename: String,
+    ) -> Result<Response, GalleryError> {
+        use image::ImageEncoder;
+        use std::io::Cursor;
 
         // Ensure cache directory exists
         tokio::fs::create_dir_all(&self.config.cache_directory).await?;
@@ -200,7 +223,7 @@ impl Gallery {
 
         // Write to cache
         tokio::fs::write(&cache_path, &image_data).await?;
-        debug!("Stored composite image: {}", cache_filename);
+        tracing::debug!("Stored composite image: {}", cache_filename);
 
         // Create response
         let mut headers = HeaderMap::new();

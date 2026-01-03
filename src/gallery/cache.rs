@@ -1,6 +1,7 @@
 use super::image_processing::OutputFormat;
 use super::types::ImageSize;
 use super::{CacheMetadata, Gallery, ImageMetadata};
+use crate::CacheType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -146,7 +147,8 @@ impl Gallery {
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
         use std::sync::atomic::Ordering;
 
-        let cache_file = self.config.cache_directory.join("metadata_cache.json");
+        let cache_type = CacheType::ImageMetadata;
+        let cache_file = self.config.cache_directory.join(cache_type.filename(None));
         let cache = self.metadata_cache.read().await;
 
         let json = serde_json::to_string_pretty(&*cache)?;
@@ -160,7 +162,8 @@ impl Gallery {
     }
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
-        let metadata_file = self.config.cache_directory.join("cache_metadata.json");
+        let cache_type = CacheType::CacheMetadata;
+        let metadata_file = self.config.cache_directory.join(cache_type.filename(None));
         let metadata = self.cache_metadata.read().await;
 
         let json = serde_json::to_string_pretty(&*metadata)?;
@@ -210,21 +213,57 @@ impl Gallery {
         &self,
         path: &str,
         size: &str,
-        format: &str,
+        format_str: &str,
         has_watermark: bool,
     ) -> String {
-        let hash = self.generate_image_cache_key(path, size, format, has_watermark);
-        format!("{}.{}", hash, format)
+        // Parse the format string to OutputFormat, default to JPEG if unknown
+        let format = OutputFormat::from_file_extension(format_str).unwrap_or(OutputFormat::Jpeg);
+        let cache_type = CacheType::processed_image(format, has_watermark);
+
+        let hash = self.generate_image_cache_key(path, size, format_str, has_watermark);
+        cache_type.filename(Some(&hash))
     }
 
-    /// Generate a cache key for composite images
-    pub(crate) fn generate_composite_cache_key(gallery_path: &str) -> String {
-        let safe_path = if gallery_path.is_empty() {
+    /// Generate a composite cache filename using the type-safe CacheType system
+    pub(crate) fn generate_composite_cache_filename(&self, gallery_path: &str) -> String {
+        let path_key = self.generate_safe_path_key(gallery_path);
+        let cache_type = CacheType::composite(self.config.name.clone(), path_key.clone());
+
+        // Generate a unique identifier for this specific composite
+        let content_key = self.generate_cache_key(
+            &format!("composite_{}_{}", self.config.name, path_key),
+            "jpg",
+        );
+        cache_type.filename(Some(&content_key))
+    }
+
+    /// Generate a safe path key for cache identification
+    fn generate_safe_path_key(&self, gallery_path: &str) -> String {
+        use sha2::{Digest, Sha256};
+
+        if gallery_path.is_empty() {
             "root".to_string()
         } else {
-            gallery_path.replace('/', "_")
-        };
-        format!("composite_{}", safe_path)
+            // Use base64 encoding for path to handle special characters safely
+            use base64::{Engine as _, engine::general_purpose};
+            let encoded_path = general_purpose::URL_SAFE_NO_PAD.encode(gallery_path);
+
+            // Limit length and add hash suffix for very long paths
+            if encoded_path.len() > 40 {
+                let mut hasher = Sha256::new();
+                hasher.update(gallery_path);
+                let hash_suffix = &format!("{:x}", hasher.finalize())[..8];
+                format!("{}_{}", &encoded_path[..32], hash_suffix)
+            } else {
+                encoded_path
+            }
+        }
+    }
+
+    /// Generate a composite cache key with full context (legacy API compatibility)
+    pub(crate) fn generate_composite_cache_key_with_context(&self, gallery_path: &str) -> String {
+        let path_key = self.generate_safe_path_key(gallery_path);
+        format!("composite_{}_{}", self.config.name, path_key)
     }
 
     /// Pre-generate cache for a single image
@@ -733,7 +772,8 @@ impl Gallery {
 pub(crate) fn load_metadata_cache(
     config: &crate::GallerySystemConfig,
 ) -> Result<HashMap<String, ImageMetadata>, super::GalleryError> {
-    let cache_file = config.cache_directory.join("metadata_cache.json");
+    let cache_type = CacheType::ImageMetadata;
+    let cache_file = config.cache_directory.join(cache_type.filename(None));
 
     if !cache_file.exists() {
         debug!("Metadata cache file not found, starting with empty cache");
@@ -750,7 +790,8 @@ pub(crate) fn load_metadata_cache(
 pub(crate) fn load_cache_metadata(
     config: &crate::GallerySystemConfig,
 ) -> Result<CacheMetadata, super::GalleryError> {
-    let metadata_file = config.cache_directory.join("cache_metadata.json");
+    let cache_type = CacheType::CacheMetadata;
+    let metadata_file = config.cache_directory.join(cache_type.filename(None));
 
     if !metadata_file.exists() {
         debug!("Cache metadata file not found");
@@ -801,15 +842,59 @@ mod tests {
             "Watermarked and non-watermarked keys should differ"
         );
 
-        // Test composite cache keys
-        let comp_key1 = Gallery::generate_composite_cache_key("gallery/2024");
-        let comp_key2 = Gallery::generate_composite_cache_key("gallery/2024");
+        // Test new composite cache keys with context
+        let comp_key1 = gallery.generate_composite_cache_key_with_context("gallery/2024");
+        let comp_key2 = gallery.generate_composite_cache_key_with_context("gallery/2024");
         assert_eq!(comp_key1, comp_key2, "Composite keys should be consistent");
-        assert_eq!(comp_key1, "composite_gallery_2024");
 
-        // Test root composite
-        let root_key = Gallery::generate_composite_cache_key("");
-        assert_eq!(root_key, "composite_root");
+        // Test that the new keys contain gallery context and base64 encoding
+        assert!(comp_key1.starts_with("composite_default_"));
+
+        // Test root composite with context
+        let root_key = gallery.generate_composite_cache_key_with_context("");
+        assert_eq!(root_key, "composite_default_root");
+    }
+
+    #[test]
+    fn test_improved_composite_cache_structure() {
+        use base64::{Engine as _, engine::general_purpose};
+        let default_config = crate::Config::default();
+        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
+
+        // Test safe path key generation
+        let safe_key_simple = gallery.generate_safe_path_key("vacation/2024");
+        assert_eq!(
+            safe_key_simple,
+            general_purpose::URL_SAFE_NO_PAD.encode("vacation/2024")
+        );
+
+        let safe_key_root = gallery.generate_safe_path_key("");
+        assert_eq!(safe_key_root, "root");
+
+        // Test very long path handling
+        let long_path = "a".repeat(100);
+        let safe_key_long = gallery.generate_safe_path_key(&long_path);
+        assert!(safe_key_long.len() <= 42); // Should be truncated with hash
+        assert!(safe_key_long.contains("_")); // Should have hash suffix
+
+        // Test new structured cache filename generation
+        let filename = gallery.generate_composite_cache_filename("vacation/2024");
+        assert!(filename.starts_with("composite_default_"));
+        assert!(filename.ends_with(".jpg"));
+        assert!(filename.contains(&general_purpose::URL_SAFE_NO_PAD.encode("vacation/2024")));
+
+        // Test cache key with context
+        let context_key = gallery.generate_composite_cache_key_with_context("gallery/photos");
+        assert!(context_key.starts_with("composite_default_"));
+        assert!(context_key.contains(&general_purpose::URL_SAFE_NO_PAD.encode("gallery/photos")));
+
+        // Test consistency
+        let filename1 = gallery.generate_composite_cache_filename("test/path");
+        let filename2 = gallery.generate_composite_cache_filename("test/path");
+        assert_eq!(
+            filename1, filename2,
+            "Cache filenames should be deterministic"
+        );
     }
 
     #[test]
