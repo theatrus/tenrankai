@@ -29,24 +29,43 @@ export default defineConfig({
   // Development server configuration
   server: {
     port: 5173,
+    host: true, // Allow external connections
+    cors: true,
     proxy: {
       // Proxy API calls to Rust server during development
       '/api': {
         target: 'http://localhost:3000',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       },
       '/gallery': {
         target: 'http://localhost:3000',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       },
       '/_login': {
         target: 'http://localhost:3000',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       },
       // Proxy static assets that aren't part of Vite build
       '/static': {
         target: 'http://localhost:3000',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false,
+        // Exclude Vite's dist files from proxying
+        bypass(req, res, options) {
+          const url = req.url || '';
+          if (url.startsWith('/static/dist/')) {
+            return url;
+          }
+        }
+      },
+      // Proxy all other routes to Rust server for SSR
+      '^(?!/src|/@|/node_modules).*': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        secure: false
       }
     }
   },

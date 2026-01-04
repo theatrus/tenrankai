@@ -5,11 +5,15 @@
     "build": "vite build",
     "build:prod": "NODE_ENV=production vite build",
     "dev": "vite",
+    "dev:open": "vite --open",
     "preview": "vite preview",
+    "type-check": "tsc --noEmit",
     "legacy:build": "tsc && npm run copy-assets",
     "legacy:watch": "tsc --watch & npm run watch-assets",
     "copy-assets": "cp -r src/assets/* static/ 2>/dev/null || true",
-    "watch-assets": "chokidar 'src/assets/**/*' -c 'npm run copy-assets'"
+    "watch-assets": "chokidar 'src/assets/**/*' -c 'npm run copy-assets'",
+    "clean": "rm -rf static/dist node_modules/.vite",
+    "help": "echo 'Development: npm run dev (+ cargo run in another terminal)'"
   },
   "dependencies": {
     "react": "^18.2.0",

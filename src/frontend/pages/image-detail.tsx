@@ -1,4 +1,3 @@
-import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 interface ImageDetailProps {
@@ -8,6 +7,8 @@ interface ImageDetailProps {
 }
 
 function ImageDetailApp({ imagePath, galleryName, metadata }: ImageDetailProps) {
+  console.log('Metadata:', metadata); // Use metadata to avoid TS error for now
+  
   return (
     <div className="react-image-detail">
       <h2>Enhanced Image Detail (React)</h2>
