@@ -1,15 +1,32 @@
 use std::path::Path;
 use std::process::Command;
+use std::env;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/js");
+    println!("cargo:rerun-if-changed=src/frontend");
     println!("cargo:rerun-if-changed=src/css");
     println!("cargo:rerun-if-changed=src/assets");
     println!("cargo:rerun-if-changed=package.json");
     println!("cargo:rerun-if-changed=tsconfig.json");
+    println!("cargo:rerun-if-changed=vite.config.ts");
 
-    // Always build frontend if setup is present, regardless of profile
-    build_frontend();
+    // Control frontend builds based on environment and profile
+    let profile = env::var("PROFILE").unwrap_or_default();
+    let force_frontend_build = env::var("TENRANKAI_BUILD_FRONTEND").is_ok();
+    let skip_frontend_build = env::var("TENRANKAI_SKIP_FRONTEND").is_ok();
+    
+    if skip_frontend_build {
+        println!("cargo:warning=Skipping frontend build (TENRANKAI_SKIP_FRONTEND=1)");
+        return;
+    }
+    
+    if profile == "release" || force_frontend_build {
+        build_frontend();
+    } else {
+        println!("cargo:warning=Skipping frontend build in debug mode. Set TENRANKAI_BUILD_FRONTEND=1 to force build.");
+        println!("cargo:warning=For development, run 'npm run dev' in a separate terminal for hot reloading.");
+    }
 }
 
 fn npm_command() -> &'static str {
@@ -44,8 +61,6 @@ fn build_frontend() {
         return;
     }
 
-    println!("cargo:warning=Building frontend assets...");
-
     // Install dependencies if node_modules doesn't exist
     if !frontend_dir.join("node_modules").exists() {
         println!("cargo:warning=Installing frontend dependencies...");
@@ -63,23 +78,62 @@ fn build_frontend() {
         }
     }
 
-    // Run the build
-    println!("cargo:warning=Compiling TypeScript...");
+    // Determine build system: Vite (modern) or legacy TypeScript
+    let use_vite = frontend_dir.join("vite.config.ts").exists() && 
+                   frontend_dir.join("src/frontend").exists();
+    
+    if use_vite {
+        build_with_vite(frontend_dir);
+    } else {
+        build_with_legacy_typescript(frontend_dir);
+    }
+}
+
+fn build_with_vite(frontend_dir: &Path) {
+    println!("cargo:warning=Building frontend with Vite (React)...");
+    
+    // Use production build for release
+    let build_command = if std::env::var("PROFILE").unwrap_or_default() == "release" {
+        "build:prod"
+    } else {
+        "build"
+    };
+    
     let output = Command::new(npm_command())
         .arg("run")
-        .arg("build")
+        .arg(build_command)
         .current_dir(frontend_dir)
         .output()
-        .expect("Failed to run npm run build");
+        .expect("Failed to run Vite build");
 
     if !output.status.success() {
         panic!(
-            "Frontend build failed: {}",
+            "Vite build failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
 
-    println!("cargo:warning=Frontend build completed successfully.");
+    println!("cargo:warning=Vite build completed successfully.");
+}
+
+fn build_with_legacy_typescript(frontend_dir: &Path) {
+    println!("cargo:warning=Building frontend with legacy TypeScript...");
+    
+    let output = Command::new(npm_command())
+        .arg("run")
+        .arg("legacy:build")
+        .current_dir(frontend_dir)
+        .output()
+        .expect("Failed to run legacy TypeScript build");
+
+    if !output.status.success() {
+        panic!(
+            "Legacy TypeScript build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    println!("cargo:warning=Legacy TypeScript build completed successfully.");
 }
 
 fn check_node_available() -> bool {
