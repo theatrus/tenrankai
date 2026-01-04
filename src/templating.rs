@@ -202,14 +202,14 @@ impl TemplateEngine {
 
     pub async fn render_with_gallery(&self, path: &str) -> Result<Html<String>, StatusCode> {
         let template_path = if path.is_empty() || path == "/" {
-            TemplateType::Index.path()
+            TemplateType::Index.path().to_string()
         } else {
-            &TemplateType::dynamic_page_path(path.trim_start_matches('/'))
+            TemplateType::dynamic_page_path(path.trim_start_matches('/')).path()
         };
 
         let globals = liquid::object!({});
 
-        match self.render_template(template_path, globals).await {
+        match self.render_template(&template_path, globals).await {
             Ok(html) => Ok(Html(html)),
             Err(e) => {
                 error!("Template rendering error: {}", e);
@@ -338,15 +338,15 @@ pub async fn template_with_gallery_handler(
 
     // Check if template exists first
     let template_path = if path.is_empty() || path == "/" {
-        TemplateType::Index.path()
+        TemplateType::Index.path().to_string()
     } else {
-        &TemplateType::dynamic_page_path(path.trim_start_matches('/'))
+        TemplateType::dynamic_page_path(path.trim_start_matches('/')).path()
     };
 
     // Check if template exists in any of the template directories
     let mut template_exists = false;
     for template_dir in &app_state.template_engine.template_dirs {
-        let template_file_path = template_dir.join(template_path);
+        let template_file_path = template_dir.join(&template_path);
         if template_file_path.exists() {
             template_exists = true;
             break;

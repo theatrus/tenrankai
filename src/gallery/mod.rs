@@ -39,9 +39,9 @@ pub struct Gallery {
 
 impl Gallery {
     pub fn new(config: crate::GallerySystemConfig) -> Self {
-        let metadata_cache = cache::load_metadata_cache(&config).unwrap_or_default();
+        let metadata_cache = crate::cache::load_image_metadata_cache(&config).unwrap_or_default();
         let cache_metadata =
-            cache::load_cache_metadata(&config).unwrap_or_else(|_| CacheMetadata {
+            crate::cache::load_cache_version_metadata(&config).unwrap_or_else(|_| CacheMetadata {
                 version: String::new(), // Empty version will trigger full refresh
                 last_full_refresh: SystemTime::UNIX_EPOCH,
             });
