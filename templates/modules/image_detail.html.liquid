@@ -233,6 +233,16 @@
             {% endunless %}
         </div>
     </div>
+    
+    <!-- React Enhancement Zone (Progressive Enhancement) -->
+    <div id="react-image-detail" 
+         data-image-path="{{ image.path }}"
+         data-gallery-name="{{ gallery_config.name }}"
+         data-metadata="{{ image | json | escape }}"
+         style="margin-top: 2rem; padding: 1rem; border: 2px dashed #ccc; background: #f8f9fa;">
+        <!-- React will mount here and enhance the page -->
+        <p style="color: #666; text-align: center; margin: 0;">React enhancement loading...</p>
+    </div>
 </div>
 
 
@@ -249,5 +259,8 @@
     });
   });
 </script>
+
+<!-- React Component Loading -->
+<script type="module" src="{{ "dist/image-detail.js" | asset_url }}"></script>
 
 {% include "_footer.html.liquid" %}
