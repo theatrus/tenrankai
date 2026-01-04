@@ -1,16 +1,42 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ES2020", 
-    "outDir": "static/js",
-    "rootDir": "src/js",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    
     "strict": true,
-    "moduleResolution": "node",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    
     "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
-    "declaration": false,
-    "sourceMap": false
+    "forceConsistentCasingInFileNames": true,
+    
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/frontend/*"],
+      "@components/*": ["src/frontend/components/*"],
+      "@hooks/*": ["src/frontend/hooks/*"],
+      "@api/*": ["src/frontend/api/*"],
+      "@types/*": ["src/frontend/types/*"]
+    }
   },
-  "include": ["src/js/**/*"],
-  "exclude": ["static/**/*", "node_modules", "target"]
+  "include": [
+    "src/frontend/**/*",
+    "src/js/**/*"
+  ],
+  "exclude": [
+    "static/**/*", 
+    "node_modules", 
+    "target",
+    "dist"
+  ]
 }
