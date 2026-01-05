@@ -23,7 +23,7 @@ clap = { version = "4.5", features = ["derive"] }
 flate2 = "1.1"
 rexif = "0.7"
 image = { version = "0.25" }
-imageproc = "0.25"
+imageproc = "0.26"
 ab_glyph = "0.2"
 resvg = "0.45"
 usvg = "0.45"
