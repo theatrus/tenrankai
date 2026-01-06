@@ -237,7 +237,7 @@
     <!-- React Enhancement Zone (Progressive Enhancement) -->
     <div id="react-image-detail" 
          data-image-path="{{ image.path }}"
-         data-gallery-name="{{ gallery_config.name | default: 'main' }}"
+         data-gallery-name="{{ gallery_name | escape }}"
          data-image-name="{{ image.name | escape }}"
          data-image-title="{{ image.title | default: image.name | escape }}"
          style="margin-top: 2rem; padding: 1rem; border: 2px dashed #ccc; background: #f8f9fa;">
