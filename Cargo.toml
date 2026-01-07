@@ -27,7 +27,7 @@ imageproc = "0.25"
 ab_glyph = "0.2"
 resvg = "0.45"
 usvg = "0.45"
-ico = "0.4"
+ico = "0.5"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.14"
 libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"], optional = true }
