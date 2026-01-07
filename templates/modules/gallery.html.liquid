@@ -23,8 +23,6 @@
 
     {% if folder_title %}
         <h2>{{ folder_title }}</h2>
-    {% else %}
-        <h2>Photo Gallery{% if gallery_path != "" %}: {{ gallery_path }}{% endif %}</h2>
     {% endif %}
     
     {% if folder_description %}
@@ -38,7 +36,6 @@
         {% assign directories = items | where: "is_directory", true %}
         {% if directories.size > 0 %}
             <div class="gallery-folders">
-                <h3>Folders</h3>
                 <div class="folder-grid">
                     {% for dir in directories %}
                         <a href="{{ gallery_url }}/{{ dir.path }}" class="folder-item">
@@ -75,7 +72,6 @@
         <!-- Image Gallery -->
         {% if images.size > 0 %}
             <div class="gallery-images">
-                <h3>Images</h3>
                 <div class="image-grid" id="gallery-grid">
                     <div class="masonry-column" data-column="0"></div>
                     <div class="masonry-column" data-column="1"></div>

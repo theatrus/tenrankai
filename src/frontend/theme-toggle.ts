@@ -12,7 +12,7 @@ type Theme = 'light' | 'dark' | 'auto';
 class ThemeManager {
     private currentTheme: Theme;
     constructor() {
-        this.currentTheme = this.getStoredTheme() || this.getOSTheme();
+        this.currentTheme = this.getStoredTheme() || 'light';  // Default to light mode
         this.init();
     }
 
