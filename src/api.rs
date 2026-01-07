@@ -278,12 +278,23 @@ pub async fn image_detail_api_handler_for_named(
         StatusCode::NOT_FOUND
     })?;
 
+    // Resolve the path from the indexer (path might be an index or the actual path)
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&path) {
+            actual_path.to_string()
+        } else {
+            // Fall back to treating it as a direct path (for backward compatibility)
+            path.clone()
+        }
+    };
+
     // Check authentication
     let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
 
-    // Extract the parent folder path from the image path
-    let parent_path = if let Some(last_slash) = path.rfind('/') {
-        &path[..last_slash]
+    // Extract the parent folder path from the resolved image path
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
     } else {
         "" // Image is in root folder
     };
@@ -298,7 +309,7 @@ pub async fn image_detail_api_handler_for_named(
 
     // Get image info (this function already handles authentication logic internally)
     let mut image_info = gallery
-        .get_image_info_with_user(&path, user.as_deref())
+        .get_image_info_with_user(&resolved_path, user.as_deref())
         .await
         .map_err(|e| {
             error!("Failed to get image info: {}", e);

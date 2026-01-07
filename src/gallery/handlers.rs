@@ -244,12 +244,23 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
+    // Resolve the path from the indexer (path might be an index or the actual path)
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&path) {
+            actual_path.to_string()
+        } else {
+            // Fall back to treating it as a direct path (for backward compatibility)
+            path.clone()
+        }
+    };
+
     // Check if the user has access to the folder containing this image
     let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
 
-    // Extract the parent folder path from the image path
-    let parent_path = if let Some(last_slash) = path.rfind('/') {
-        &path[..last_slash]
+    // Extract the parent folder path from the resolved image path
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
     } else {
         "" // Image is in root folder
     };
@@ -260,7 +271,7 @@ pub async fn image_detail_handler_for_named(
     {
         // If folder requires authentication and user is not authenticated, redirect to login
         if user.is_none() && gallery.is_folder_access_restricted(parent_path).await {
-            let return_url = format!("/{}/image/{}", gallery_name, path);
+            let return_url = format!("/{}/detail/{}", gallery_name, path);
             let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
             return axum::response::Redirect::temporary(&login_url).into_response();
         } else {
@@ -270,7 +281,7 @@ pub async fn image_detail_handler_for_named(
     }
 
     let mut image_info = match gallery
-        .get_image_info_with_user(&path, user.as_deref())
+        .get_image_info_with_user(&resolved_path, user.as_deref())
         .await
     {
         Ok(info) => info,
@@ -301,7 +312,7 @@ pub async fn image_detail_handler_for_named(
     }
 
     // Get the parent directory for navigation
-    let parent_path = std::path::Path::new(&path)
+    let parent_path = std::path::Path::new(&resolved_path)
         .parent()
         .and_then(|p| p.to_str())
         .unwrap_or("");
@@ -313,7 +324,7 @@ pub async fn image_detail_handler_for_named(
         .unwrap_or_default();
 
     // Find current image index and get prev/next
-    let current_index = images.iter().position(|img| img.path == path);
+    let current_index = images.iter().position(|img| img.path == resolved_path);
 
     let (prev_image, next_image) = if let Some(index) = current_index {
         let prev = if index > 0 {
@@ -357,7 +368,7 @@ pub async fn image_detail_handler_for_named(
     // Get the JSON data from the API endpoint to ensure consistency
     let image_detail_response = crate::api::image_detail_api_handler_for_named(
         axum::extract::State(app_state.clone()),
-        axum::extract::Path((gallery_name.clone(), path.clone())),
+        axum::extract::Path((gallery_name.clone(), path.clone())), // Use original path for API consistency
         headers.clone(),
     )
     .await;
@@ -418,12 +429,23 @@ pub async fn image_handler_for_named(
         }
     };
 
+    // Resolve the path from the indexer (path might be an index or the actual path)
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&path) {
+            actual_path.to_string()
+        } else {
+            // Fall back to treating it as a direct path (for backward compatibility)
+            path.clone()
+        }
+    };
+
     // Check if the user has access to the folder containing this image
     let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
 
-    // Extract the parent folder path from the image path
-    let parent_path = if let Some(last_slash) = path.rfind('/') {
-        &path[..last_slash]
+    // Extract the parent folder path from the resolved image path
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
     } else {
         "" // Image is in root folder
     };
@@ -475,5 +497,7 @@ pub async fn image_handler_for_named(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    gallery.serve_image(&path, query.size, accept_header).await
+    gallery
+        .serve_image(&resolved_path, query.size, accept_header)
+        .await
 }

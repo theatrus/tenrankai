@@ -243,6 +243,10 @@ pub(crate) struct FolderConfig {
     /// When true, hide technical details (camera info, metadata, etc.) from the image detail page
     #[serde(default)]
     pub hide_technical_details: bool,
+
+    // Image indexing mode for this folder (overrides gallery default)
+    #[allow(dead_code)]
+    pub image_indexing: Option<crate::config::ImageIndexingMode>,
 }
 
 #[derive(Debug, Clone)]

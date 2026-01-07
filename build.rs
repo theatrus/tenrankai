@@ -84,7 +84,8 @@ fn build_frontend() {
     }
 
     // Determine build system: Vite (modern) or legacy TypeScript
-    let use_vite = (frontend_dir.join("vite.config.ts").exists() || frontend_dir.join("vite.config.js").exists())
+    let use_vite = (frontend_dir.join("vite.config.ts").exists()
+        || frontend_dir.join("vite.config.js").exists())
         && frontend_dir.join("src/frontend").exists();
 
     if use_vite {

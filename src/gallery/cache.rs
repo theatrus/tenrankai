@@ -31,6 +31,21 @@ impl Gallery {
 
             // Save the updated cache metadata
             self.save_cache_metadata().await?;
+        } else {
+            // Build the indexer from the existing cache
+            let all_paths: Vec<String> = {
+                let cache = self.metadata_cache.read().await;
+                cache.keys().cloned().collect()
+            };
+
+            if !all_paths.is_empty() {
+                let mut indexer = self.image_indexer.write().await;
+                indexer.build_index(&all_paths);
+                info!(
+                    "Initialized image index with {} images from cache",
+                    all_paths.len()
+                );
+            }
         }
 
         Ok(())

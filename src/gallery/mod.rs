@@ -4,6 +4,7 @@ mod core;
 mod error;
 mod handlers;
 pub mod image_processing;
+mod indexing;
 mod metadata;
 mod types;
 
@@ -36,6 +37,7 @@ pub struct Gallery {
     pub(crate) cache_metadata: Arc<RwLock<CacheMetadata>>,
     pub(crate) metadata_cache_dirty: Arc<AtomicBool>,
     pub(crate) metadata_updates_since_save: Arc<AtomicUsize>,
+    pub(crate) image_indexer: Arc<RwLock<indexing::ImageIndexer>>,
 }
 
 impl Gallery {
@@ -47,12 +49,15 @@ impl Gallery {
                 last_full_refresh: SystemTime::UNIX_EPOCH,
             });
 
+        let image_indexer = indexing::ImageIndexer::new(config.image_indexing);
+
         Self {
             config,
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
             cache_metadata: Arc::new(RwLock::new(cache_metadata)),
             metadata_cache_dirty: Arc::new(AtomicBool::new(false)),
             metadata_updates_since_save: Arc::new(AtomicUsize::new(0)),
+            image_indexer: Arc::new(RwLock::new(image_indexer)),
         }
     }
 
