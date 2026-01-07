@@ -14,7 +14,7 @@
 }
 
 .success-container h1 {
-    color: #28a745;
+    color: var(--message-success-color);
     margin-bottom: var(--spacing-lg);
 }
 

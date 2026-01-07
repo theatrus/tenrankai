@@ -57,7 +57,6 @@ pub fn get_scoped_cookie_value(headers: &HeaderMap, scope: AuthScope) -> Option<
     get_cookie_value(headers, scope.cookie_name())
 }
 
-
 #[derive(Deserialize)]
 pub struct GalleryPreviewQuery {
     count: Option<usize>,
@@ -219,7 +218,6 @@ pub async fn refresh_static_versions(
         message: "Static file versions refreshed successfully".to_string(),
     }))
 }
-
 
 pub async fn gallery_api_handler_for_named(
     State(app_state): State<crate::AppState>,
@@ -389,13 +387,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let gallery_dir = temp_dir.path().join("gallery");
         let cache_dir = temp_dir.path().join("cache");
-        
+
         fs::create_dir_all(&gallery_dir).await.unwrap();
         fs::create_dir_all(&cache_dir).await.unwrap();
 
         // Create a test image file
         let test_image_path = gallery_dir.join("test.jpg");
-        fs::write(&test_image_path, &[0xFF, 0xD8, 0xFF, 0xE0]).await.unwrap(); // Minimal JPEG header
+        fs::write(&test_image_path, &[0xFF, 0xD8, 0xFF, 0xE0])
+            .await
+            .unwrap(); // Minimal JPEG header
 
         // Create folder metadata with privacy settings
         let folder_md_path = gallery_dir.join("_folder.md");
@@ -405,10 +405,17 @@ mod tests {
         let private_dir = gallery_dir.join("private");
         fs::create_dir_all(&private_dir).await.unwrap();
         let private_image_path = private_dir.join("private.jpg");
-        fs::write(&private_image_path, &[0xFF, 0xD8, 0xFF, 0xE0]).await.unwrap();
-        
+        fs::write(&private_image_path, &[0xFF, 0xD8, 0xFF, 0xE0])
+            .await
+            .unwrap();
+
         let private_folder_md_path = private_dir.join("_folder.md");
-        fs::write(&private_folder_md_path, "+++\nrequire_auth = true\nallowed_users = [\"testuser\"]\n+++\n# Private Folder").await.unwrap();
+        fs::write(
+            &private_folder_md_path,
+            "+++\nrequire_auth = true\nallowed_users = [\"testuser\"]\n+++\n# Private Folder",
+        )
+        .await
+        .unwrap();
 
         let gallery_config = GallerySystemConfig {
             name: "test".to_string(),
@@ -426,10 +433,22 @@ mod tests {
             copyright_holder: Some("Test".to_string()),
             hide_location_from_public: false, // Gallery-level default
             cache_refresh_interval_minutes: Some(60),
-            thumbnail: crate::ImageSizeConfig { width: 300, height: 300 },
-            gallery_size: crate::ImageSizeConfig { width: 800, height: 800 },
-            medium: crate::ImageSizeConfig { width: 1200, height: 1200 },
-            large: crate::ImageSizeConfig { width: 1600, height: 1600 },
+            thumbnail: crate::ImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: crate::ImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: crate::ImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: crate::ImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
             preview: crate::PreviewConfig {
                 max_images: 6,
                 max_depth: 3,
@@ -465,10 +484,16 @@ mod tests {
         };
 
         let app_state = AppState {
-            template_engine: Arc::new(crate::templating::TemplateEngine::new(config.templates.directories.clone())),
-            static_handler: crate::static_files::StaticFileHandler::new(config.static_files.directories.clone()),
+            template_engine: Arc::new(crate::templating::TemplateEngine::new(
+                config.templates.directories.clone(),
+            )),
+            static_handler: crate::static_files::StaticFileHandler::new(
+                config.static_files.directories.clone(),
+            ),
             galleries: Arc::new(galleries),
-            favicon_renderer: crate::favicon::FaviconRenderer::new(config.static_files.directories.clone()),
+            favicon_renderer: crate::favicon::FaviconRenderer::new(
+                config.static_files.directories.clone(),
+            ),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_database_manager: None,
@@ -492,15 +517,19 @@ mod tests {
     async fn test_gallery_api_unauthenticated_access() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
-        
+
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             headers,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_ok(), "Gallery API should work for unauthenticated users");
+        assert!(
+            result.is_ok(),
+            "Gallery API should work for unauthenticated users"
+        );
         let response = result.unwrap();
         assert_eq!(response.0.gallery_name, "test");
         assert!(response.0.is_root);
@@ -510,15 +539,19 @@ mod tests {
     async fn test_gallery_api_private_folder_access_denied() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
-        
+
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             headers,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_err(), "Private folder should deny access to unauthenticated users");
+        assert!(
+            result.is_err(),
+            "Private folder should deny access to unauthenticated users"
+        );
         assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
     }
 
@@ -526,22 +559,26 @@ mod tests {
     async fn test_gallery_api_private_folder_access_with_auth() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = create_auth_headers("testuser", "test-secret");
-        
+
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             headers,
-        ).await;
+        )
+        .await;
 
         match result {
             Ok(response) => {
                 assert_eq!(response.0.gallery_name, "test");
                 assert_eq!(response.0.gallery_path, "private");
                 assert!(!response.0.is_root);
-            },
+            }
             Err(status) => {
-                panic!("Private folder should allow access to authorized users, but got status: {:?}", status);
+                panic!(
+                    "Private folder should allow access to authorized users, but got status: {:?}",
+                    status
+                );
             }
         }
     }
@@ -550,15 +587,19 @@ mod tests {
     async fn test_gallery_api_private_folder_wrong_user() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = create_auth_headers("wronguser", "test-secret");
-        
+
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             headers,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_err(), "Private folder should deny access to unauthorized users");
+        assert!(
+            result.is_err(),
+            "Private folder should deny access to unauthorized users"
+        );
         assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
     }
 
@@ -566,112 +607,148 @@ mod tests {
     async fn test_image_detail_api_privacy_filtering() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
-        
+
         // Add metadata to the test image
         {
             let gallery = app_state.galleries.get("test").unwrap();
             let mut cache = gallery.metadata_cache.write().await;
-            cache.insert("test.jpg".to_string(), crate::gallery::ImageMetadata {
-                dimensions: (1920, 1080),
-                capture_date: None,
-                camera_info: Some(crate::gallery::CameraInfo {
-                    camera_make: Some("Canon".to_string()),
-                    camera_model: Some("EOS R5".to_string()),
-                    lens_model: Some("RF 24-70mm".to_string()),
-                    iso: Some(800),
-                    aperture: Some("f/2.8".to_string()),
-                    shutter_speed: Some("1/60s".to_string()),
-                    focal_length: Some("50mm".to_string()),
-                }),
-                location_info: Some(crate::gallery::LocationInfo {
-                    latitude: 37.7749,
-                    longitude: -122.4194,
-                    google_maps_url: "https://maps.google.com/...".to_string(),
-                    apple_maps_url: "https://maps.apple.com/...".to_string(),
-                }),
-                modification_date: None,
-                color_profile: Some("sRGB".to_string()),
-            });
+            cache.insert(
+                "test.jpg".to_string(),
+                crate::gallery::ImageMetadata {
+                    dimensions: (1920, 1080),
+                    capture_date: None,
+                    camera_info: Some(crate::gallery::CameraInfo {
+                        camera_make: Some("Canon".to_string()),
+                        camera_model: Some("EOS R5".to_string()),
+                        lens_model: Some("RF 24-70mm".to_string()),
+                        iso: Some(800),
+                        aperture: Some("f/2.8".to_string()),
+                        shutter_speed: Some("1/60s".to_string()),
+                        focal_length: Some("50mm".to_string()),
+                    }),
+                    location_info: Some(crate::gallery::LocationInfo {
+                        latitude: 37.7749,
+                        longitude: -122.4194,
+                        google_maps_url: "https://maps.google.com/...".to_string(),
+                        apple_maps_url: "https://maps.apple.com/...".to_string(),
+                    }),
+                    modification_date: None,
+                    color_profile: Some("sRGB".to_string()),
+                },
+            );
         }
-        
+
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             headers,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_ok(), "Image detail API should work for unauthenticated users");
+        assert!(
+            result.is_ok(),
+            "Image detail API should work for unauthenticated users"
+        );
         let response = result.unwrap();
-        
+
         // Technical details should be hidden due to folder setting
-        assert!(response.0.image.camera_info.is_none(), "Camera info should be hidden due to hide_technical_details");
-        assert!(response.0.image.color_profile.is_none(), "Color profile should be hidden due to hide_technical_details");
-        
+        assert!(
+            response.0.image.camera_info.is_none(),
+            "Camera info should be hidden due to hide_technical_details"
+        );
+        assert!(
+            response.0.image.color_profile.is_none(),
+            "Color profile should be hidden due to hide_technical_details"
+        );
+
         // Location should be hidden due to folder setting
-        assert!(response.0.image.location_info.is_none(), "Location should be hidden due to hide_location_from_public");
+        assert!(
+            response.0.image.location_info.is_none(),
+            "Location should be hidden due to hide_location_from_public"
+        );
     }
 
     #[tokio::test]
     async fn test_image_detail_api_with_auth_shows_all_data() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = create_auth_headers("testuser", "test-secret");
-        
+
         // Add metadata to the test image
         {
             let gallery = app_state.galleries.get("test").unwrap();
             let mut cache = gallery.metadata_cache.write().await;
-            cache.insert("test.jpg".to_string(), crate::gallery::ImageMetadata {
-                dimensions: (1920, 1080),
-                capture_date: None,
-                camera_info: Some(crate::gallery::CameraInfo {
-                    camera_make: Some("Canon".to_string()),
-                    camera_model: Some("EOS R5".to_string()),
-                    lens_model: Some("RF 24-70mm".to_string()),
-                    iso: Some(800),
-                    aperture: Some("f/2.8".to_string()),
-                    shutter_speed: Some("1/60s".to_string()),
-                    focal_length: Some("50mm".to_string()),
-                }),
-                location_info: Some(crate::gallery::LocationInfo {
-                    latitude: 37.7749,
-                    longitude: -122.4194,
-                    google_maps_url: "https://maps.google.com/...".to_string(),
-                    apple_maps_url: "https://maps.apple.com/...".to_string(),
-                }),
-                modification_date: None,
-                color_profile: Some("sRGB".to_string()),
-            });
+            cache.insert(
+                "test.jpg".to_string(),
+                crate::gallery::ImageMetadata {
+                    dimensions: (1920, 1080),
+                    capture_date: None,
+                    camera_info: Some(crate::gallery::CameraInfo {
+                        camera_make: Some("Canon".to_string()),
+                        camera_model: Some("EOS R5".to_string()),
+                        lens_model: Some("RF 24-70mm".to_string()),
+                        iso: Some(800),
+                        aperture: Some("f/2.8".to_string()),
+                        shutter_speed: Some("1/60s".to_string()),
+                        focal_length: Some("50mm".to_string()),
+                    }),
+                    location_info: Some(crate::gallery::LocationInfo {
+                        latitude: 37.7749,
+                        longitude: -122.4194,
+                        google_maps_url: "https://maps.google.com/...".to_string(),
+                        apple_maps_url: "https://maps.apple.com/...".to_string(),
+                    }),
+                    modification_date: None,
+                    color_profile: Some("sRGB".to_string()),
+                },
+            );
         }
-        
+
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             headers,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_ok(), "Image detail API should work for authenticated users");
+        assert!(
+            result.is_ok(),
+            "Image detail API should work for authenticated users"
+        );
         let response = result.unwrap();
-        
+
         // For authenticated users with hide_technical_details=true, technical details should still be hidden
-        assert!(response.0.image.camera_info.is_none(), "Camera info should still be hidden due to hide_technical_details");
-        assert!(response.0.image.color_profile.is_none(), "Color profile should still be hidden due to hide_technical_details");
-        
+        assert!(
+            response.0.image.camera_info.is_none(),
+            "Camera info should still be hidden due to hide_technical_details"
+        );
+        assert!(
+            response.0.image.color_profile.is_none(),
+            "Color profile should still be hidden due to hide_technical_details"
+        );
+
         // But location should be visible to authenticated users
-        assert!(response.0.image.location_info.is_some(), "Location should be visible to authenticated users");
+        assert!(
+            response.0.image.location_info.is_some(),
+            "Location should be visible to authenticated users"
+        );
     }
 
     #[tokio::test]
     async fn test_image_detail_api_private_image_access_denied() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
-        
+
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private/private.jpg".to_string())),
             headers,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_err(), "Private image should deny access to unauthenticated users");
+        assert!(
+            result.is_err(),
+            "Private image should deny access to unauthenticated users"
+        );
         assert_eq!(result.unwrap_err(), StatusCode::FORBIDDEN);
     }
 
@@ -679,12 +756,13 @@ mod tests {
     async fn test_image_detail_api_nonexistent_gallery() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
-        
+
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("nonexistent".to_string(), "test.jpg".to_string())),
             headers,
-        ).await;
+        )
+        .await;
 
         assert!(result.is_err(), "Nonexistent gallery should return 404");
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
@@ -694,13 +772,14 @@ mod tests {
     async fn test_gallery_api_nonexistent_gallery() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
-        
+
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("nonexistent".to_string(), "".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             headers,
-        ).await;
+        )
+        .await;
 
         assert!(result.is_err(), "Nonexistent gallery should return 404");
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);

@@ -1,6 +1,6 @@
+use std::env;
 use std::path::Path;
 use std::process::Command;
-use std::env;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/js");
@@ -15,17 +15,21 @@ fn main() {
     let profile = env::var("PROFILE").unwrap_or_default();
     let force_frontend_build = env::var("TENRANKAI_BUILD_FRONTEND").is_ok();
     let skip_frontend_build = env::var("TENRANKAI_SKIP_FRONTEND").is_ok();
-    
+
     if skip_frontend_build {
         println!("cargo:warning=Skipping frontend build (TENRANKAI_SKIP_FRONTEND=1)");
         return;
     }
-    
+
     if profile == "release" || force_frontend_build {
         build_frontend();
     } else {
-        println!("cargo:warning=Skipping frontend build in debug mode. Set TENRANKAI_BUILD_FRONTEND=1 to force build.");
-        println!("cargo:warning=For development, run 'npm run dev' in a separate terminal for hot reloading.");
+        println!(
+            "cargo:warning=Skipping frontend build in debug mode. Set TENRANKAI_BUILD_FRONTEND=1 to force build."
+        );
+        println!(
+            "cargo:warning=For development, run 'npm run dev' in a separate terminal for hot reloading."
+        );
     }
 }
 
@@ -79,9 +83,9 @@ fn build_frontend() {
     }
 
     // Determine build system: Vite (modern) or legacy TypeScript
-    let use_vite = frontend_dir.join("vite.config.ts").exists() && 
-                   frontend_dir.join("src/frontend").exists();
-    
+    let use_vite =
+        frontend_dir.join("vite.config.ts").exists() && frontend_dir.join("src/frontend").exists();
+
     if use_vite {
         build_with_vite(frontend_dir);
     } else {
@@ -91,14 +95,14 @@ fn build_frontend() {
 
 fn build_with_vite(frontend_dir: &Path) {
     println!("cargo:warning=Building frontend with Vite (React)...");
-    
+
     // Use production build for release
     let build_command = if std::env::var("PROFILE").unwrap_or_default() == "release" {
         "build:prod"
     } else {
         "build"
     };
-    
+
     let output = Command::new(npm_command())
         .arg("run")
         .arg(build_command)
@@ -118,7 +122,7 @@ fn build_with_vite(frontend_dir: &Path) {
 
 fn build_with_legacy_typescript(frontend_dir: &Path) {
     println!("cargo:warning=Building frontend with legacy TypeScript...");
-    
+
     let output = Command::new(npm_command())
         .arg("run")
         .arg("legacy:build")

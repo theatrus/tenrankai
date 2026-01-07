@@ -133,9 +133,8 @@ fn liquid_value_to_serde_json(input: &dyn ValueView) -> serde_json::Value {
             serde_json::Value::String(kstr.to_string())
         }
     } else if let Some(array) = input.as_array() {
-        let array_values: Vec<serde_json::Value> = array.values()
-            .map(|item| liquid_value_to_serde_json(item))
-            .collect();
+        let array_values: Vec<serde_json::Value> =
+            array.values().map(liquid_value_to_serde_json).collect();
         serde_json::Value::Array(array_values)
     } else if let Some(object) = input.as_object() {
         let mut map = serde_json::Map::new();
@@ -230,7 +229,7 @@ impl TemplateEngine {
         partials: liquid::partials::EagerCompiler<liquid::partials::InMemorySource>,
     ) -> Result<Parser, String> {
         let asset_filter = AssetUrlFilter::new(self.file_versions.clone());
-        let json_filter = JsonFilter::default();
+        let json_filter = JsonFilter;
 
         liquid::ParserBuilder::with_stdlib()
             .partials(partials)

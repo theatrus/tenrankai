@@ -8,7 +8,6 @@ use axum::{
 };
 use tracing::error;
 
-
 // Named gallery handlers for multiple gallery support
 #[axum::debug_handler]
 pub async fn gallery_root_handler_for_named(
@@ -355,6 +354,22 @@ pub async fn image_detail_handler_for_named(
         .map(|meta| meta.config.hide_technical_details)
         .unwrap_or(false);
 
+    // Get the JSON data from the API endpoint to ensure consistency
+    let image_detail_response = crate::api::image_detail_api_handler_for_named(
+        axum::extract::State(app_state.clone()),
+        axum::extract::Path((gallery_name.clone(), path.clone())),
+        headers.clone(),
+    )
+    .await;
+
+    let image_detail_json = match image_detail_response {
+        Ok(axum::Json(data)) => serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string()),
+        Err(_) => {
+            // If API call fails, provide empty object
+            "{}".to_string()
+        }
+    };
+
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -362,6 +377,7 @@ pub async fn image_detail_handler_for_named(
         "breadcrumbs": breadcrumbs,
         "prev_image": prev_image,
         "next_image": next_image,
+        "image_detail_json": image_detail_json,
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
         "app_name": app_state.config.app.name,
@@ -424,7 +440,9 @@ pub async fn image_handler_for_named(
     if let Some(ref size_str) = query.size {
         match ImageSize::parse(size_str) {
             Some(size) => {
-                if size.requires_auth() && !crate::login::has_download_permission(&app_state, &headers) {
+                if size.requires_auth()
+                    && !crate::login::has_download_permission(&app_state, &headers)
+                {
                     tracing::warn!(path = %path, "Authentication required for size: {}", size.as_str());
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }

@@ -636,7 +636,7 @@ mod tests {
             // Status code should be in valid HTTP range
             let code_num = status_code.as_u16();
             assert!(
-                code_num >= 200 && code_num < 600,
+                (200..600).contains(&code_num),
                 "Invalid status code {} for variant {:?}",
                 code_num,
                 variant
@@ -672,7 +672,7 @@ mod tests {
         for response in &success_codes {
             let code = response.status_code().as_u16();
             assert!(
-                code >= 200 && code < 300,
+                (200..300).contains(&code),
                 "Success response should have 2xx code"
             );
             assert!(response.is_success());
@@ -690,7 +690,7 @@ mod tests {
         for response in &client_errors {
             let code = response.status_code().as_u16();
             assert!(
-                code >= 400 && code < 500,
+                (400..500).contains(&code),
                 "Client error should have 4xx code"
             );
             assert!(response.is_client_error());
@@ -706,7 +706,7 @@ mod tests {
         for response in &server_errors {
             let code = response.status_code().as_u16();
             assert!(
-                code >= 500 && code < 600,
+                (500..600).contains(&code),
                 "Server error should have 5xx code"
             );
             assert!(response.is_server_error());

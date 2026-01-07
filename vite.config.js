@@ -15,7 +15,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         'image-detail': resolve(__dirname, 'src/frontend/pages/image-detail.tsx'),
-        'gallery': resolve(__dirname, 'src/frontend/pages/gallery.tsx')
+        'gallery': resolve(__dirname, 'src/frontend/pages/gallery.tsx'),
+        'theme-toggle': resolve(__dirname, 'src/frontend/theme-toggle.ts')
       },
       output: {
         entryFileNames: '[name].js',

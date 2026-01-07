@@ -20,7 +20,10 @@ pub fn is_authenticated(headers: &HeaderMap, secret: &str) -> bool {
 }
 
 /// Get authenticated user for app state (handles no auth config case)
-pub fn get_authenticated_user_for_app(app_state: &crate::AppState, headers: &HeaderMap) -> Option<String> {
+pub fn get_authenticated_user_for_app(
+    app_state: &crate::AppState,
+    headers: &HeaderMap,
+) -> Option<String> {
     // If no user database is configured, return None (no authentication)
     #[allow(clippy::question_mark)]
     if app_state.config.app.user_database.is_none() {
