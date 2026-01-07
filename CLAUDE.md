@@ -3,12 +3,132 @@
 ## Project Overview
 Tenrankai is a web-based photo gallery server written in Rust using the Axum web framework. It provides a dynamic, responsive gallery interface with features like image resizing, metadata extraction, watermarking, and caching. The system supports multiple independent gallery instances, each with its own configuration, URL prefix, and content directories.
 
-## Testing Note for AI Development
-When implementing features, use the `--quit-after` flag to test the server without it running indefinitely:
+## Development Commands & Best Practices
+
+### Frontend Development (React + TypeScript)
+
+**Build Commands:**
 ```bash
-cargo run -- --quit-after 5  # Server auto-shuts down after 5 seconds
+# Clean build (removes old build artifacts)
+npm run clean && npm run build
+
+# Development build with type checking
+npm run type-check && npm run build
+
+# Production build
+npm run build:prod
 ```
-This is especially useful for verifying startup behavior, testing API endpoints, and checking that new features don't break server initialization.
+
+**Development Server (Frontend Only):**
+```bash
+# Start Vite dev server (for frontend development)
+npm run dev
+# Runs on http://localhost:5173/ with hot reload
+# Proxies API calls to Rust server on localhost:3000
+```
+
+### Backend Development (Rust + Axum)
+
+**Build Commands:**
+```bash
+# With AVIF support (default, recommended)
+cargo build
+cargo build --release    # Production build
+
+# Without AVIF support (faster builds, Windows-friendly)
+cargo build --no-default-features
+cargo build --release --no-default-features
+```
+
+**Server Commands:**
+```bash
+# Standard server startup
+cargo run --no-default-features -- serve
+cargo run --no-default-features -- serve --port 8080 --host 0.0.0.0
+
+# Development with auto-shutdown (for testing/CI)
+cargo run --no-default-features -- serve --quit-after 5
+
+# Check available commands
+cargo run --no-default-features -- --help
+cargo run --no-default-features -- serve --help
+```
+
+### Full-Stack Development Workflow
+
+**Option 1: Separate Terminals (Recommended)**
+```bash
+# Terminal 1: Start Rust backend
+cargo run --no-default-features -- serve
+
+# Terminal 2: Start frontend dev server
+npm run dev
+
+# Visit http://localhost:5173/ for hot-reloading frontend
+# API calls automatically proxy to Rust server on :3000
+```
+
+**Option 2: Production-like Testing**
+```bash
+# Build frontend for production
+npm run build
+
+# Run Rust server with built assets
+cargo run --no-default-features -- serve
+
+# Visit http://localhost:8080/ (or configured port)
+```
+
+### Testing & Quality Assurance
+
+**Frontend Testing:**
+```bash
+npm run type-check     # TypeScript type checking
+npm run build          # Build test (catches build errors)
+```
+
+**Backend Testing:**
+```bash
+cargo test --no-default-features                    # Run all tests
+cargo test --no-default-features api::tests         # Run specific test module
+cargo clippy --no-default-features -- -D warnings   # Lint checking
+cargo fmt --check                                    # Format checking
+```
+
+**Integration Testing:**
+```bash
+# Quick server startup test
+cargo run --no-default-features -- serve --quit-after 3
+
+# Test with frontend build
+npm run build && cargo run --no-default-features -- serve --quit-after 5
+```
+
+### Important Notes for AI Development
+
+1. **Always use `--no-default-features`** for faster builds during development
+2. **Use `--quit-after N`** for testing server startup without manual termination
+3. **Build frontend before testing full integration** with `npm run build`
+4. **Check both TypeScript and Rust code** before committing changes
+5. **Use separate terminals for frontend/backend** during active development
+
+### Common Troubleshooting
+
+**Build Issues:**
+```bash
+# Clean everything and rebuild
+npm run clean
+cargo clean
+npm run build
+cargo build --no-default-features
+```
+
+**Port Conflicts:**
+```bash
+# Use different ports if needed
+cargo run --no-default-features -- serve --port 3001
+npm run dev  # Will automatically adjust proxy target
+```
 
 ## Key Features
 - **Multiple Gallery Support**: Configure and run multiple independent gallery instances with unique URLs and settings
@@ -356,40 +476,50 @@ webp_quality = 90.0
 ### Environment Variables
 - `RUST_LOG` - Controls logging verbosity (trace, debug, info, warn, error)
 
-## Testing and Development
+## React + Rust Development Guide
 
-### Building and Running
+### Modern Frontend Architecture
+Tenrankai uses React with TypeScript for enhanced user interfaces, built with Vite and served alongside the Rust backend. The frontend uses:
+
+- **Progressive Enhancement**: Server-side rendered pages work without JavaScript
+- **React SPA Features**: Enhanced navigation, real-time updates, improved UX
+- **ESM Modules**: Modern JavaScript module system (no CJS deprecation warnings)
+- **TypeScript**: Full type safety across frontend and API integration
+- **Embedded JSON**: Fast initial page loads with server-rendered data
+
+### Quick Start Commands
+
+**Development (Recommended - Hot Reload):**
 ```bash
-# Default build (includes AVIF support)
-cargo build
+# Terminal 1: Backend server
+cargo run --no-default-features -- serve
 
-# Build without AVIF (for Windows or when AVIF dependencies are problematic)
-cargo build --no-default-features
+# Terminal 2: Frontend dev server with hot reload
+npm run dev
 
-# Run the server
-cargo run -- --host 0.0.0.0 --port 8080
-
-# Run without AVIF support
-cargo run --no-default-features -- --host 0.0.0.0 --port 8080
+# Visit http://localhost:5173/ for development
+# Frontend automatically proxies API calls to :3000
 ```
 
-### Testing with Auto-Shutdown
-The `--quit-after` flag allows the server to automatically shut down after a specified number of seconds, which is useful for testing startup behavior and running automated tests:
-
+**Production Testing:**
 ```bash
-# Run server for 5 seconds then auto-shutdown
-cargo run -- --quit-after 5
+# Build frontend assets
+npm run build
 
-# Test startup checks with auto-shutdown
-cargo run -- --quit-after 3 --log-level debug
+# Run integrated server
+cargo run --no-default-features -- serve --port 8080
 
-# Verify server starts and serves requests
-cargo run -- --quit-after 10 &
-sleep 2
-curl http://localhost:3000/api/health
+# Visit http://localhost:8080/ for production-like testing
 ```
 
-This feature is particularly helpful when implementing new features to verify the server starts correctly without needing to manually terminate the process.
+**Quick Testing (Auto-shutdown):**
+```bash
+# Test server startup and shutdown
+cargo run --no-default-features -- serve --quit-after 5
+
+# Test with frontend built
+npm run build && cargo run --no-default-features -- serve --quit-after 3
+```
 
 ### Docker Support
 
@@ -430,26 +560,70 @@ podman build -t tenrankai:latest .
   - Release builds: ~168 MB image, 45 MB binary
   - 93% smaller binary, ~75% smaller image with release mode
 
-### Common Commands
-- Check warnings: `cargo build 2>&1 | grep warning`
-- Run with debug logging: `RUST_LOG=debug cargo run`
-- Test startup and shutdown: `cargo run -- --quit-after 5`
-- Run linters: `cargo clippy -- -D warnings`
-- Run linters (no AVIF): `cargo clippy --no-default-features -- -D warnings`
-- Check formatting: `cargo fmt --check`
-- Build for production: `cargo build --release`
-- Build for production (no AVIF): `cargo build --release --no-default-features`
-- Check dependencies: `cargo outdated` and `cargo audit`
-- Test all features: `cargo test --all-features`
-- Test without AVIF: `cargo test --no-default-features`
+### Essential Development Commands
 
-### Testing URLs
-- Gallery root: `http://localhost:8080/gallery` (for main gallery)
-- Portfolio root: `http://localhost:8080/my-portfolio` (for portfolio gallery)
-- Specific folder: `http://localhost:8080/gallery/folder-name`
-- Image with size: `http://localhost:8080/gallery/image/path/to/image.jpg?size=gallery`
-- Gallery preview API: `http://localhost:8080/api/gallery/main/preview?count=12`
-- Composite image: `http://localhost:8080/api/gallery/main/composite/_root`
+**Frontend Commands:**
+```bash
+npm run type-check              # TypeScript type checking
+npm run build                    # Build React components
+npm run build:prod              # Production build with optimizations
+npm run clean                    # Clean build artifacts
+npm run dev                      # Development server with hot reload
+```
+
+**Backend Commands:**
+```bash
+# Server operations
+cargo run --no-default-features -- serve                    # Standard server
+cargo run --no-default-features -- serve --quit-after 5     # Auto-shutdown testing
+cargo run --no-default-features -- serve --port 8080        # Custom port
+
+# Development builds
+cargo build --no-default-features                           # Fast dev build
+cargo build --release --no-default-features                # Production build
+
+# Quality assurance
+cargo test --no-default-features                           # Run tests
+cargo clippy --no-default-features -- -D warnings          # Lint checking
+cargo fmt --check                                           # Format checking
+
+# Advanced commands
+cargo run --no-default-features -- avif-debug file.avif    # AVIF analysis
+cargo run --no-default-features -- user --help             # User management
+```
+
+**Quality Checks (Run Before Commit):**
+```bash
+# Frontend checks
+npm run type-check && npm run build
+
+# Backend checks  
+cargo clippy --no-default-features -- -D warnings && cargo fmt --check
+
+# Full integration test
+npm run build && cargo run --no-default-features -- serve --quit-after 3
+```
+
+### Development URLs
+
+**Frontend Development (Hot Reload):**
+- Frontend dev server: `http://localhost:5173/`
+- Gallery pages: `http://localhost:5173/gallery/`
+- Image details: `http://localhost:5173/gallery/detail/image.jpg`
+- API calls automatically proxy to Rust server
+
+**Backend Server (Production-like):**
+- Main server: `http://localhost:8080/` (or configured port)
+- Gallery root: `http://localhost:8080/gallery`
+- Image detail: `http://localhost:8080/gallery/detail/image.jpg`
+- JSON API: `http://localhost:8080/api/gallery/main/preview?count=12`
+- Health check: `http://localhost:8080/api/health`
+
+**React Enhancement Testing:**
+- Check browser console for "✅ Enhanced with React" messages
+- Verify SPA navigation works (no full page reloads)
+- Test keyboard shortcuts (←/→ arrows in image detail)
+- Confirm embedded JSON data loads instantly
 
 ### AVIF Debug Command
 Test AVIF HDR and gain map support:
@@ -658,6 +832,60 @@ The command shows:
    - `avif-debug` command for analyzing AVIF files
    - Integration tests for gain map preservation
    - Epsilon comparisons for floating-point metadata
+
+## Modern Development Stack (2026)
+
+### Frontend Technologies
+- **React 18**: Modern React with hooks and concurrent features
+- **TypeScript**: Full type safety with strict checking enabled
+- **Vite 5**: Lightning-fast builds and hot module replacement
+- **ESM**: Modern module system (no CommonJS deprecation warnings)
+- **Progressive Enhancement**: Pages work without JavaScript, enhanced with React
+
+### Key Architectural Decisions
+
+1. **Embedded JSON Strategy**:
+   - Server renders initial data as JSON in HTML
+   - React hydrates instantly without API calls
+   - Subsequent navigation uses API for SPA experience
+   - Perfect Lighthouse scores for initial page load
+
+2. **Authentication Integration**:
+   - Server-side privacy filtering preserved in JSON embedding
+   - Client-side permission checks for UX
+   - API respects all security policies
+   - No sensitive data exposure to unauthorized users
+
+3. **Build System**:
+   - Development: `npm run dev` + `cargo run serve` (separate processes)
+   - Production: `npm run build` → static assets served by Rust
+   - TypeScript compilation and type checking integrated
+   - No build tool warnings or deprecations
+
+### Development Best Practices
+
+**Always Use These Commands:**
+```bash
+# Backend development (faster builds)
+cargo run --no-default-features -- serve
+cargo build --no-default-features
+cargo test --no-default-features
+
+# Auto-shutdown for testing
+cargo run --no-default-features -- serve --quit-after N
+
+# Frontend development
+npm run dev              # Hot reload development
+npm run type-check       # TypeScript validation
+npm run build           # Production build test
+```
+
+**Code Quality Checklist:**
+- [ ] TypeScript types are correct (`npm run type-check`)
+- [ ] Rust code compiles without warnings (`cargo clippy`)
+- [ ] Frontend builds successfully (`npm run build`)
+- [ ] Server starts without errors (test with `--quit-after`)
+- [ ] React enhancement works (check browser console)
 
 ## Future Improvements
 

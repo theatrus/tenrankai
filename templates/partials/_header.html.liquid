@@ -66,6 +66,9 @@
         <link rel="stylesheet" href="{{ css_file | asset_url }}">
         {% endfor %}
     {% endif %}
+    
+    {% comment %} Theme toggle script - loaded early to prevent flash {% endcomment %}
+    <script src="{{ 'dist/theme-toggle.js' | asset_url }}" defer></script>
 </head>
 <body>
     <header>

@@ -8,27 +8,6 @@ use axum::{
 };
 use tracing::error;
 
-fn has_download_permission(app_state: &AppState, headers: &HeaderMap) -> bool {
-    // If no user database is configured, allow all downloads
-    if app_state.config.app.user_database.is_none() {
-        return true;
-    }
-
-    // Check if user is authenticated with the login system
-    crate::login::is_authenticated(headers, &app_state.config.app.cookie_secret)
-}
-
-fn get_authenticated_user(app_state: &AppState, headers: &HeaderMap) -> Option<String> {
-    // If no user database is configured, return None (no authentication)
-    #[allow(clippy::question_mark)]
-    if app_state.config.app.user_database.is_none() {
-        return None;
-    }
-
-    // Get authenticated user from headers
-    crate::login::get_authenticated_user(headers, &app_state.config.app.cookie_secret)
-}
-
 // Named gallery handlers for multiple gallery support
 #[axum::debug_handler]
 pub async fn gallery_root_handler_for_named(
@@ -64,7 +43,7 @@ pub async fn gallery_handler_for_named(
     };
 
     // Check if the user has access to this path
-    let user = get_authenticated_user(&app_state, &headers);
+    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
     if !gallery.check_path_access(&path, user.as_deref()).await {
         // If folder requires authentication and user is not authenticated, redirect to login
         if user.is_none() && gallery.is_folder_access_restricted(&path).await {
@@ -266,7 +245,7 @@ pub async fn image_detail_handler_for_named(
     };
 
     // Check if the user has access to the folder containing this image
-    let user = get_authenticated_user(&app_state, &headers);
+    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
 
     // Extract the parent folder path from the image path
     let parent_path = if let Some(last_slash) = path.rfind('/') {
@@ -302,7 +281,7 @@ pub async fn image_detail_handler_for_named(
     };
 
     // Check if user has download permission
-    let has_permission = has_download_permission(&app_state, &headers);
+    let has_permission = crate::login::has_download_permission(&app_state, &headers);
 
     // If approximate dates are enabled and user doesn't have permission, modify the capture date
     if gallery.get_config().approximate_dates_for_public
@@ -375,6 +354,22 @@ pub async fn image_detail_handler_for_named(
         .map(|meta| meta.config.hide_technical_details)
         .unwrap_or(false);
 
+    // Get the JSON data from the API endpoint to ensure consistency
+    let image_detail_response = crate::api::image_detail_api_handler_for_named(
+        axum::extract::State(app_state.clone()),
+        axum::extract::Path((gallery_name.clone(), path.clone())),
+        headers.clone(),
+    )
+    .await;
+
+    let image_detail_json = match image_detail_response {
+        Ok(axum::Json(data)) => serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string()),
+        Err(_) => {
+            // If API call fails, provide empty object
+            "{}".to_string()
+        }
+    };
+
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -382,6 +377,7 @@ pub async fn image_detail_handler_for_named(
         "breadcrumbs": breadcrumbs,
         "prev_image": prev_image,
         "next_image": next_image,
+        "image_detail_json": image_detail_json,
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
         "app_name": app_state.config.app.name,
@@ -423,7 +419,7 @@ pub async fn image_handler_for_named(
     };
 
     // Check if the user has access to the folder containing this image
-    let user = get_authenticated_user(&app_state, &headers);
+    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
 
     // Extract the parent folder path from the image path
     let parent_path = if let Some(last_slash) = path.rfind('/') {
@@ -444,7 +440,9 @@ pub async fn image_handler_for_named(
     if let Some(ref size_str) = query.size {
         match ImageSize::parse(size_str) {
             Some(size) => {
-                if size.requires_auth() && !has_download_permission(&app_state, &headers) {
+                if size.requires_auth()
+                    && !crate::login::has_download_permission(&app_state, &headers)
+                {
                     tracing::warn!(path = %path, "Authentication required for size: {}", size.as_str());
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }
@@ -465,7 +463,7 @@ pub async fn image_handler_for_named(
         }
     } else {
         // No size parameter means full-size original image - requires authentication
-        if !has_download_permission(&app_state, &headers) {
+        if !crate::login::has_download_permission(&app_state, &headers) {
             tracing::warn!(path = %path, "Full-size image request denied - authentication required");
             return (StatusCode::FORBIDDEN, "Download permission required").into_response();
         }

@@ -8,6 +8,7 @@ mod metadata;
 mod types;
 
 // Re-export public items
+pub use core::BreadcrumbItem;
 pub use error::GalleryError;
 pub use handlers::{
     gallery_handler_for_named, gallery_root_handler_for_named, image_detail_handler_for_named,

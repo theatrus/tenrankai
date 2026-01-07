@@ -15,6 +15,7 @@ export class LoginPage {
     const loginFormElement = DomUtils.querySelector<HTMLFormElement>('#loginForm');
     if (loginFormElement) {
       this.loginForm = new LoginForm(loginFormElement);
+      console.debug('Login form initialized:', this.loginForm); // Use loginForm to avoid TS error
     }
 
     // Initialize profile page if present

@@ -1,17 +1,35 @@
 /* ==========================================================================
    CSS Custom Properties for Theming
    ========================================================================== */
+
+/* Default theme (can be overridden by user preference or OS) */
 :root {
+    /* Spacing (theme-independent) */
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-xxl: 3rem;
+}
+
+/* Dark Theme (default) */
+:root,
+:root[data-theme="dark"] {
     /* Background colors */
     --bg-primary: #1a1a1a;
     --bg-secondary: #2a2a2a;
     --bg-card: #606060;
     --bg-hover: #505050;
+    --header-bg: #606060;  /* Keep matching card background for dark theme */
 
     /* Text colors */
     --text-primary: #e0e0e0;
     --text-secondary: #b8b8b8;
     --text-muted: #ccc;
+    --text-tertiary: #a0a0a0;
+    --text-quaternary: #8a8a8a;
+    --text-light: #bbb;
+    --text-white: white;
 
     /* Link colors */
     --link-color: #66b3ff;
@@ -21,13 +39,9 @@
     --border-color: #555;
     --border-hover: #777;
 
-    /* Additional colors */
-    --text-tertiary: #a0a0a0;
-    --text-quaternary: #8a8a8a;
-    --text-light: #bbb;
+    /* Accent colors */
     --accent-red: #ff6b6b;
     --bg-button-hover: #666;
-    --text-white: white;
     
     /* Button disabled states */
     --btn-disabled-bg: #6a6a6a;
@@ -53,19 +67,127 @@
     --code-bg: #2d2d2d;
     --code-text: #f8f8f2;
     --code-border: #444;
-    --code-inline-bg: #e8e8e8;
-    --code-inline-text: #333;
+    --code-inline-bg: #3a3a3a;
+    --code-inline-text: #f8f8f2;
 
     /* Shadow colors */
     --shadow-medium: rgba(0, 0, 0, 0.4);
     --shadow-light: rgba(0, 0, 0, 0.3);
+    --header-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
 
-    /* Spacing */
-    --spacing-sm: 0.5rem;
-    --spacing-md: 1rem;
-    --spacing-lg: 1.5rem;
-    --spacing-xl: 2rem;
-    --spacing-xxl: 3rem;
+/* Light Theme */
+:root[data-theme="light"] {
+    /* Background colors */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-card: #ffffff;
+    --bg-hover: #e9ecef;
+    --header-bg: #f0f4f8;  /* Light blue-gray for header */
+
+    /* Text colors */
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #6c757d;
+    --text-tertiary: #6c757d;
+    --text-quaternary: #adb5bd;
+    --text-light: #6c757d;
+    --text-white: #ffffff;
+
+    /* Link colors */
+    --link-color: #0d6efd;
+    --link-hover: #0a58ca;
+
+    /* Border colors */
+    --border-color: #dee2e6;
+    --border-hover: #adb5bd;
+
+    /* Accent colors */
+    --accent-red: #dc3545;
+    --bg-button-hover: #e9ecef;
+    
+    /* Button disabled states */
+    --btn-disabled-bg: #e9ecef;
+    --btn-disabled-color: #6c757d;
+    --btn-disabled-border: #dee2e6;
+    
+    /* Danger button colors */
+    --btn-danger-bg: var(--message-error-color);
+    --btn-danger-hover: #b02a37;
+
+    /* Message colors */
+    --message-info-bg: rgba(13, 202, 240, 0.1);
+    --message-info-color: #055160;
+    --message-info-border: rgba(13, 202, 240, 0.25);
+    --message-success-bg: rgba(25, 135, 84, 0.1);
+    --message-success-color: #0a3622;
+    --message-success-border: rgba(25, 135, 84, 0.25);
+    --message-error-bg: rgba(220, 53, 69, 0.1);
+    --message-error-color: #58151c;
+    --message-error-border: rgba(220, 53, 69, 0.25);
+
+    /* Code block colors */
+    --code-bg: #f8f9fa;
+    --code-text: #212529;
+    --code-border: #dee2e6;
+    --code-inline-bg: #e9ecef;
+    --code-inline-text: #495057;
+
+    /* Shadow colors */
+    --shadow-medium: rgba(0, 0, 0, 0.1);
+    --shadow-light: rgba(0, 0, 0, 0.05);
+    --header-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Auto theme based on OS preference (when no manual preference is set) */
+:root:not([data-theme]) {
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+        /* Light theme variables (same as above) */
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-card: #ffffff;
+        --bg-hover: #e9ecef;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --text-muted: #6c757d;
+        --text-tertiary: #6c757d;
+        --text-quaternary: #adb5bd;
+        --text-light: #6c757d;
+        --text-white: #ffffff;
+        --link-color: #0d6efd;
+        --link-hover: #0a58ca;
+        --border-color: #dee2e6;
+        --border-hover: #adb5bd;
+        --accent-red: #dc3545;
+        --bg-button-hover: #e9ecef;
+        --btn-disabled-bg: #e9ecef;
+        --btn-disabled-color: #6c757d;
+        --btn-disabled-border: #dee2e6;
+        --btn-danger-bg: var(--message-error-color);
+        --btn-danger-hover: #b02a37;
+        --message-info-bg: rgba(13, 202, 240, 0.1);
+        --message-info-color: #055160;
+        --message-info-border: rgba(13, 202, 240, 0.25);
+        --message-success-bg: rgba(25, 135, 84, 0.1);
+        --message-success-color: #0a3622;
+        --message-success-border: rgba(25, 135, 84, 0.25);
+        --message-error-bg: rgba(220, 53, 69, 0.1);
+        --message-error-color: #58151c;
+        --message-error-border: rgba(220, 53, 69, 0.25);
+        --code-bg: #f8f9fa;
+        --code-text: #212529;
+        --code-border: #dee2e6;
+        --code-inline-bg: #e9ecef;
+        --code-inline-text: #495057;
+        --shadow-medium: rgba(0, 0, 0, 0.1);
+        --shadow-light: rgba(0, 0, 0, 0.05);
+        --header-bg: #f0f4f8;
+        --header-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
 }
 
 
@@ -80,13 +202,14 @@ body {
 }
 
 header {
-    background-color: var(--bg-card);
+    background-color: var(--header-bg);
     color: var(--text-primary);
     padding: 0.5rem 0;
-    box-shadow: 0 2px 4px var(--shadow-medium);
+    box-shadow: var(--header-shadow);
     position: sticky;
     top: 0;
     z-index: 1000;
+    border-bottom: 1px solid var(--border-color);
 }
 
 nav {
@@ -1132,4 +1255,64 @@ th {
         max-width: none;
         margin: 0 0 10px 0;
     }
+}
+
+/* ==========================================================================
+   Theme Toggle Component
+   ========================================================================== */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+}
+
+.theme-toggle-button {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    padding: 0.25rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    border-radius: 4px;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-size: 0.9rem;
+}
+
+.theme-toggle-button:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
+}
+
+.theme-toggle-button:active {
+    transform: scale(0.95);
+}
+
+.theme-toggle-button svg {
+    width: 16px !important;
+    height: 16px !important;
+    display: block !important;
+    fill: currentColor !important;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+/* Theme transition for smooth switching - target specific elements only */
+body,
+header,
+main,
+footer,
+.container,
+.card,
+nav,
+.btn,
+.theme-toggle-button {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Disable transitions during theme change to prevent flash */
+.theme-transitioning,
+.theme-transitioning * {
+    transition: none !important;
 }

@@ -431,6 +431,17 @@ impl Gallery {
             cached_metadata.location_info
         };
 
+        // Check if technical details should be hidden from this user
+        let should_hide_technical_details = self
+            .should_hide_technical_details_from_user(relative_path, user)
+            .await;
+
+        let (camera_info, color_profile) = if should_hide_technical_details {
+            (None, None)
+        } else {
+            (cached_metadata.camera_info, cached_metadata.color_profile)
+        };
+
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
                 .file_name()
@@ -460,13 +471,13 @@ impl Gallery {
                 encoded_path
             ),
             description,
-            camera_info: cached_metadata.camera_info,
+            camera_info,
             location_info,
             file_size,
             dimensions,
             capture_date,
             is_new,
-            color_profile: cached_metadata.color_profile,
+            color_profile,
         })
     }
 
@@ -995,6 +1006,26 @@ impl Gallery {
 
         // Fall back to gallery-level setting
         self.config.hide_location_from_public
+    }
+
+    pub(crate) async fn should_hide_technical_details_from_user(
+        &self,
+        relative_path: &str,
+        _user: Option<&str>,
+    ) -> bool {
+        // If user is authenticated, check folder setting but don't automatically hide
+        let parent_path = std::path::Path::new(relative_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if let Some(folder_metadata) = self.read_folder_metadata_full(&parent_path).await {
+            // Always respect the folder's hide_technical_details setting regardless of auth
+            folder_metadata.config.hide_technical_details
+        } else {
+            // No folder metadata, default to showing technical details
+            false
+        }
     }
 }
 

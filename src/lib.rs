@@ -398,6 +398,39 @@ pub async fn create_app(config: Config) -> axum::Router {
                     }
                 }),
             );
+
+            // API route for gallery data (JSON response)
+            router = router.route(
+                &format!("/api/gallery/{}/data/{{*path}}", name),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>, query, headers| {
+                        let gallery_path = path.0;
+                        api::gallery_api_handler_for_named(
+                            state,
+                            Path((name, gallery_path)),
+                            query,
+                            headers,
+                        )
+                    }
+                }),
+            );
+
+            // API route for image detail data (JSON response)
+            router = router.route(
+                &format!("/api/gallery/{}/image/{{*path}}", name),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>, headers| {
+                        let image_path = path.0;
+                        api::image_detail_api_handler_for_named(
+                            state,
+                            Path((name, image_path)),
+                            headers,
+                        )
+                    }
+                }),
+            );
         }
     }
 

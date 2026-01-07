@@ -113,8 +113,8 @@
 .btn-delete {
     padding: 8px 16px;
     background-color: transparent;
-    color: #dc3545;
-    border: 1px solid #dc3545;
+    color: var(--message-error-color);
+    border: 1px solid var(--message-error-color);
     border-radius: 4px;
     font-size: 14px;
     cursor: pointer;
@@ -122,7 +122,7 @@
 }
 
 .btn-delete:hover {
-    background-color: #dc3545;
+    background-color: var(--message-error-color);
     color: white;
 }
 
@@ -146,21 +146,21 @@
 }
 
 .message.success {
-    background-color: rgba(40, 167, 69, 0.1);
-    color: #28a745;
-    border: 1px solid rgba(40, 167, 69, 0.3);
+    background-color: var(--message-success-bg);
+    color: var(--message-success-color);
+    border: 1px solid var(--message-success-border);
 }
 
 .message.error {
-    background-color: rgba(220, 53, 69, 0.1);
-    color: #dc3545;
-    border: 1px solid rgba(220, 53, 69, 0.3);
+    background-color: var(--message-error-bg);
+    color: var(--message-error-color);
+    border: 1px solid var(--message-error-border);
 }
 
 .message.info {
-    background-color: rgba(23, 162, 184, 0.1);
-    color: #17a2b8;
-    border: 1px solid rgba(23, 162, 184, 0.3);
+    background-color: var(--message-info-bg);
+    color: var(--message-info-color);
+    border: 1px solid var(--message-info-border);
 }
 
 /* Responsive adjustments */
