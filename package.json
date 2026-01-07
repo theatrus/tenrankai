@@ -1,6 +1,7 @@
 {
   "name": "tenrankai-frontend",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "vite build",
     "build:prod": "NODE_ENV=production vite build",

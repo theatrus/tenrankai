@@ -91,6 +91,94 @@ impl ParseFilter for AssetUrlFilter {
     }
 }
 
+// Custom filter for JSON encoding
+#[derive(Clone, Debug, Default)]
+struct JsonFilter;
+
+impl std::fmt::Display for JsonFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("json")
+    }
+}
+
+impl Filter for JsonFilter {
+    fn evaluate(
+        &self,
+        input: &dyn ValueView,
+        _runtime: &dyn Runtime,
+    ) -> liquid_core::Result<Value> {
+        // Convert Liquid value to serde_json::Value first, then serialize
+        let json_value = liquid_value_to_serde_json(input);
+        let json_string = serde_json::to_string(&json_value)
+            .map_err(|e| liquid_core::Error::with_msg(format!("JSON encoding error: {}", e)))?;
+
+        Ok(Value::scalar(json_string))
+    }
+}
+
+// Helper function to convert liquid Value to serde_json::Value
+fn liquid_value_to_serde_json(input: &dyn ValueView) -> serde_json::Value {
+    if let Some(scalar) = input.as_scalar() {
+        if let Some(i) = scalar.to_integer() {
+            serde_json::Value::Number(serde_json::Number::from(i))
+        } else if let Some(f) = scalar.to_float() {
+            serde_json::Number::from_f64(f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null)
+        } else if let Some(b) = scalar.to_bool() {
+            serde_json::Value::Bool(b)
+        } else {
+            // Handle as string using to_kstr
+            let kstr = scalar.to_kstr();
+            serde_json::Value::String(kstr.to_string())
+        }
+    } else if let Some(array) = input.as_array() {
+        let array_values: Vec<serde_json::Value> = array.values()
+            .map(|item| liquid_value_to_serde_json(item))
+            .collect();
+        serde_json::Value::Array(array_values)
+    } else if let Some(object) = input.as_object() {
+        let mut map = serde_json::Map::new();
+        for (key, value) in object.iter() {
+            map.insert(key.to_string(), liquid_value_to_serde_json(value));
+        }
+        serde_json::Value::Object(map)
+    } else {
+        serde_json::Value::Null
+    }
+}
+
+impl FilterReflection for JsonFilter {
+    fn name(&self) -> &str {
+        "json"
+    }
+
+    fn description(&self) -> &str {
+        "Converts a value to a JSON string"
+    }
+
+    fn positional_parameters(&self) -> &'static [liquid_core::parser::ParameterReflection] {
+        &[]
+    }
+
+    fn keyword_parameters(&self) -> &'static [liquid_core::parser::ParameterReflection] {
+        &[]
+    }
+}
+
+impl ParseFilter for JsonFilter {
+    fn reflection(&self) -> &dyn FilterReflection {
+        self
+    }
+
+    fn parse(
+        &self,
+        _arguments: liquid_core::parser::FilterArguments,
+    ) -> liquid_core::Result<Box<dyn Filter>> {
+        Ok(Box::new(self.clone()))
+    }
+}
+
 pub struct TemplateEngine {
     pub template_dirs: Vec<PathBuf>,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
@@ -142,10 +230,12 @@ impl TemplateEngine {
         partials: liquid::partials::EagerCompiler<liquid::partials::InMemorySource>,
     ) -> Result<Parser, String> {
         let asset_filter = AssetUrlFilter::new(self.file_versions.clone());
+        let json_filter = JsonFilter::default();
 
         liquid::ParserBuilder::with_stdlib()
             .partials(partials)
             .filter(asset_filter)
+            .filter(json_filter)
             .build()
             .map_err(|e| format!("Failed to create parser: {}", e))
     }
