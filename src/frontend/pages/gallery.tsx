@@ -1,43 +1,44 @@
 import { createRoot } from 'react-dom/client';
+import { MasonryGrid } from '@components/Gallery/MasonryGrid';
 
-interface GalleryProps {
-  galleryName: string;
-  images: any[];
-}
-
-function GalleryApp({ galleryName, images }: GalleryProps) {
-  return (
-    <div className="react-gallery">
-      <h2>Enhanced Gallery (React)</h2>
-      <p>Gallery: {galleryName}</p>
-      <p>Images: {images.length}</p>
-      <p>This will be enhanced with interactive masonry grid...</p>
-    </div>
-  );
-}
-
-// Mount React component on server-rendered page
+// Mount React masonry gallery on server-rendered page
 document.addEventListener('DOMContentLoaded', () => {
-  const container = document.getElementById('react-gallery');
-  if (container) {
-    // Extract data from server-rendered attributes
-    const galleryName = container.getAttribute('data-gallery-name') || '';
-    const imagesJson = container.getAttribute('data-images') || '[]';
-    
-    let images;
-    try {
-      images = JSON.parse(imagesJson);
-    } catch (e) {
-      console.warn('Failed to parse images:', e);
-      images = [];
-    }
-
-    const root = createRoot(container);
-    root.render(
-      <GalleryApp 
-        galleryName={galleryName}
-        images={images}
-      />
-    );
+  const imagesDataElement = document.getElementById('gallery-images');
+  
+  if (!imagesDataElement) {
+    console.warn('No gallery images data element found');
+    return;
   }
+  
+  let images;
+  try {
+    const jsonText = imagesDataElement.textContent || '[]';
+    images = JSON.parse(jsonText);
+  } catch (e) {
+    console.error('Failed to parse gallery images data:', e);
+    return;
+  }
+
+  // Find the gallery URL from the page
+  const galleryUrlElement = document.querySelector('[data-gallery-url]');
+  const galleryUrl = galleryUrlElement?.getAttribute('data-gallery-url') || '/gallery';
+
+  // Find the container for React
+  const container = document.getElementById('gallery-grid');
+  if (!container) {
+    console.error('Gallery grid container not found');
+    return;
+  }
+
+  // Clear existing content
+  container.innerHTML = '';
+  
+  // Mount React component
+  const root = createRoot(container);
+  root.render(
+    <MasonryGrid 
+      images={images}
+      galleryUrl={galleryUrl}
+    />
+  );
 });
