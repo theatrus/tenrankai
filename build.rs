@@ -12,9 +12,7 @@ fn main() {
     println!("cargo:rerun-if-changed=vite.config.ts");
     println!("cargo:rerun-if-changed=vite.config.js");
 
-    // Control frontend builds based on environment and profile
-    let profile = env::var("PROFILE").unwrap_or_default();
-    let force_frontend_build = env::var("TENRANKAI_BUILD_FRONTEND").is_ok();
+    // Control frontend builds based on environment
     let skip_frontend_build = env::var("TENRANKAI_SKIP_FRONTEND").is_ok();
 
     if skip_frontend_build {
@@ -22,16 +20,8 @@ fn main() {
         return;
     }
 
-    if profile == "release" || force_frontend_build {
-        build_frontend();
-    } else {
-        println!(
-            "cargo:warning=Skipping frontend build in debug mode. Set TENRANKAI_BUILD_FRONTEND=1 to force build."
-        );
-        println!(
-            "cargo:warning=For development, run 'npm run dev' in a separate terminal for hot reloading."
-        );
-    }
+    // Always build frontend
+    build_frontend();
 }
 
 fn npm_command() -> &'static str {

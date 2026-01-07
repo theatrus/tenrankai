@@ -17,6 +17,9 @@ npm run type-check && npm run build
 
 # Production build
 npm run build:prod
+
+# Note: Frontend is automatically built during cargo build
+# To skip frontend build: TENRANKAI_SKIP_FRONTEND=1 cargo build
 ```
 
 **Development Server (Frontend Only):**
@@ -108,9 +111,9 @@ npm run build && cargo run --no-default-features -- serve --quit-after 5
 
 1. **Always use `--no-default-features`** for faster builds during development
 2. **Use `--quit-after N`** for testing server startup without manual termination
-3. **Build frontend before testing full integration** with `npm run build`
+3. **Frontend is automatically built** during `cargo build` (use `TENRANKAI_SKIP_FRONTEND=1` to skip)
 4. **Check both TypeScript and Rust code** before committing changes
-5. **Use separate terminals for frontend/backend** during active development
+5. **Use separate terminals for frontend/backend** during active development with hot reload
 
 ### Common Troubleshooting
 
@@ -332,6 +335,19 @@ The gallery preview uses JavaScript to calculate appropriate column widths:
 - **Large**: Full quality (requires authentication)
 - All sizes support @2x variants for high-DPI displays
 
+### Image URL Indexing
+The gallery supports three modes for generating image URLs:
+- **Filename Mode** (default): Uses actual filenames in URLs (e.g., `/gallery/image/IMG_1234.jpg`)
+  - Pros: Direct file access, easy debugging, predictable URLs
+  - Cons: Exposes internal filenames, may contain personal information
+- **Sequence Mode**: Uses sequential numbers (e.g., `/gallery/image/1`, `/gallery/image/2`)
+  - Pros: Clean URLs, no filename exposure
+  - Cons: URLs change when images are added/removed, not stable across deployments
+- **Unique ID Mode**: Uses 6-character base36 hash IDs (e.g., `/gallery/image/a8k3m9`)
+  - Pros: Stable URLs, no filename exposure, clean and short
+  - Cons: Not human-readable, requires reverse lookup
+- Configure per gallery with `image_indexing = "filename"` (or "sequence" or "unique_id")
+
 ### Image Format Support
 - **Automatic WebP delivery**: Serves WebP format to browsers that support it (based on Accept header)
 - **JPEG fallback**: Falls back to JPEG for browsers without WebP support
@@ -437,6 +453,10 @@ new_threshold_days = 7                    # Mark images modified within 7 days a
 pregenerate_cache = false                 # Pre-generate all image sizes on startup
 approximate_dates_for_public = false      # Show only month/year to non-authenticated users
 copyright_holder = "Your Name"            # Copyright holder for watermarking medium images
+image_indexing = "filename"               # Image URL mode: "filename", "sequence", or "unique_id"
+                                         # - filename: Use actual filename in URLs (default)
+                                         # - sequence: Use sequential numbers (1, 2, 3...)
+                                         # - unique_id: Use base36 hash IDs (a8k3m9, b2n7x4...)
 
 [galleries.thumbnail]
 width = 300
@@ -470,6 +490,7 @@ image_detail_template = "modules/image_detail.html.liquid"
 images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
+image_indexing = "unique_id"              # Use hash IDs for cleaner portfolio URLs
 # No new_threshold_days - this gallery won't highlight new images
 ```
 
@@ -767,6 +788,16 @@ The command shows:
    - `allowed_users = ["user1", "user2"]` to restrict access to specific users
    - Hierarchical access control (parent folder restrictions apply to children)
    - Access control applies to gallery views, previews, and image serving
+
+### Image URL Indexing (January 2026)
+1. **Flexible Image URL Generation**:
+   - Three indexing modes: filename (default), sequence, and unique_id
+   - Per-gallery configuration with `image_indexing` setting
+   - Filename mode: Direct file access, easy debugging
+   - Sequence mode: Clean numbered URLs (1, 2, 3...)
+   - Unique ID mode: 6-character base36 hash IDs for privacy
+   - Stable IDs based on FNV hash of file path
+   - Reverse lookup system for ID/sequence to filename mapping
 
 ### Multi-Directory Template System (December 2025)
 1. **Template Override Support**:

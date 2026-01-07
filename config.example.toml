@@ -70,6 +70,12 @@ copyright_holder = "Your Name"
 # When true, hide location/GPS information from non-authenticated users
 # Users must be logged in to see EXIF GPS coordinates and map information
 hide_location_from_public = false
+# Image indexing mode for gallery URLs
+# Options: "filename" (default), "sequence", "unique_id"
+# - filename: Use actual filename in URLs (e.g., /gallery/image/IMG_1234.jpg)
+# - sequence: Use sequential numbers (e.g., /gallery/image/1, /gallery/image/2)
+# - unique_id: Use base36 hash IDs (e.g., /gallery/image/a8k3m9)
+# image_indexing = "filename"
 
 [galleries.thumbnail]
 width = 300
@@ -106,6 +112,8 @@ webp_quality = 90.0
 copyright_holder = "Your Portfolio Name"
 # Hide location information from public viewers for this portfolio
 hide_location_from_public = true
+# Use unique IDs for portfolio images for cleaner URLs
+image_indexing = "unique_id"
 
 # Example: Screenshots gallery
 [[galleries]]
