@@ -5,7 +5,7 @@ use std::path::Path;
 /// Manages image indexing for different URL modes
 #[derive(Debug)]
 pub struct ImageIndexer {
-    mode: ImageIndexingMode,
+    pub(crate) mode: ImageIndexingMode,
     /// Maps from image path to index (for all modes)
     path_to_index: HashMap<String, String>,
     /// Maps from index back to path (for sequence and unique_id modes)
@@ -24,6 +24,19 @@ impl ImageIndexer {
 
     /// Build index for a set of image paths
     pub fn build_index(&mut self, paths: &[String]) {
+        // Don't clear if we have entries and new paths is empty
+        if !self.path_to_index.is_empty() && paths.is_empty() {
+            tracing::warn!(
+                "build_index called with empty paths array, but indexer has {} existing entries. Keeping existing entries.",
+                self.path_to_index.len()
+            );
+            return;
+        }
+
+        // Clear existing mappings before building new index
+        self.path_to_index.clear();
+        self.index_to_path.clear();
+
         match self.mode {
             ImageIndexingMode::Filename => {
                 // For filename mode, the index is the path itself
@@ -122,24 +135,11 @@ impl ImageIndexer {
             ImageIndexingMode::UniqueId => {
                 // Generate unique IDs maintaining folder structure
                 for path in image_paths {
-                    let folder = Path::new(path)
-                        .parent()
-                        .and_then(|p| p.to_str())
-                        .unwrap_or("");
-                    let _filename = Path::new(path)
-                        .file_name()
-                        .and_then(|f| f.to_str())
-                        .unwrap_or(path);
-
                     let id = generate_unique_id(path);
-                    let index_key = if folder.is_empty() {
-                        id.clone()
-                    } else {
-                        format!("{}/{}", folder, id)
-                    };
-
-                    self.path_to_index.insert(path.clone(), index_key.clone());
-                    self.index_to_path.insert(index_key, path.clone());
+                    // For unique IDs within folders, we only store the ID part
+                    // The handler will combine folder + ID when needed
+                    self.path_to_index.insert(path.clone(), id.clone());
+                    self.index_to_path.insert(id.clone(), path.clone());
                 }
             }
         }

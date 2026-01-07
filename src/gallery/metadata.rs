@@ -352,7 +352,7 @@ impl Gallery {
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
                 && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory)
             {
-                let relative_str = relative_path.to_string_lossy().to_string();
+                let relative_str = relative_path.to_string_lossy().replace('\\', "/");
 
                 if let Ok(metadata) = self.extract_image_metadata(path).await {
                     self.insert_metadata_with_tracking(relative_str, metadata)
@@ -399,7 +399,7 @@ impl Gallery {
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
                 && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory)
             {
-                let relative_str = relative_path.to_string_lossy().to_string();
+                let relative_str = relative_path.to_string_lossy().replace('\\', "/");
 
                 // Collect all image paths for indexing
                 all_image_paths.push(relative_str.clone());

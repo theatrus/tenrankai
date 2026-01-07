@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::FmtSubscriber;
 
@@ -294,9 +296,8 @@ async fn run_server(
         }
     }
 
-    let app = create_app(config.clone()).await;
-
-    // Initialize galleries and set up background tasks
+    // Initialize galleries first
+    let mut galleries_map = HashMap::new();
     let mut galleries_for_shutdown = Vec::new();
 
     if let Some(gallery_configs) = &config.galleries {
@@ -356,10 +357,14 @@ async fn run_server(
             );
             Gallery::start_periodic_cache_save(gallery.clone(), 5);
 
-            // Store gallery for shutdown handler
+            // Store gallery in map and for shutdown handler
+            galleries_map.insert(gallery_config.name.clone(), gallery.clone());
             galleries_for_shutdown.push(gallery);
         }
     }
+
+    // Create the app with the initialized galleries
+    let app = create_app(config.clone(), Some(Arc::new(galleries_map))).await;
 
     // Initialize posts background refresh
     // We need to recreate posts managers here for background tasks

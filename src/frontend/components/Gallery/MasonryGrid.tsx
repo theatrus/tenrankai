@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 export interface GalleryImage {
-  path: string;
+  path: string; // Contains the indexed identifier (filename, sequence, or unique_id)
   name: string;
   thumbnail_url?: string;
   gallery_url?: string;
@@ -155,7 +155,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl }) 
                 key={image.path} 
                 className={`image-item ${image.is_new ? 'is-new' : ''}`}
                 id={cleanId}
-                data-path={image.path}
+                data-id={image.path}
                 style={{
                   width: `${displayDimensions.width}px`,
                   height: `${displayDimensions.height}px`

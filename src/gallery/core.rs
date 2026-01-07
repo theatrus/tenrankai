@@ -85,8 +85,8 @@ impl Gallery {
                 // Get the indexed identifier for this image
                 let url_identifier = {
                     let indexer = self.image_indexer.read().await;
-                    indexer
-                        .get_index(&item_path)
+                    let indexed = indexer.get_index(&item_path);
+                    indexed
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| urlencoding::encode(&item_path).to_string())
                 };
@@ -131,7 +131,7 @@ impl Gallery {
                     name: file_name,
                     display_name: None,
                     description: None,
-                    path: item_path,
+                    path: url_identifier.clone(), // Use indexed identifier as path
                     parent_path: Some(relative_path.to_string()),
                     is_directory: false,
                     thumbnail_url: Some(thumbnail_url),
@@ -854,7 +854,7 @@ impl Gallery {
                         name: file_name,
                         display_name: None,
                         description: None,
-                        path: item_path.clone(),
+                        path: url_identifier.clone(), // Use indexed identifier as path
                         parent_path: Some(path.to_string()),
                         is_directory: false,
                         thumbnail_url: Some(thumbnail_url),
