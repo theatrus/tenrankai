@@ -10,6 +10,7 @@ fn main() {
     println!("cargo:rerun-if-changed=package.json");
     println!("cargo:rerun-if-changed=tsconfig.json");
     println!("cargo:rerun-if-changed=vite.config.ts");
+    println!("cargo:rerun-if-changed=vite.config.js");
 
     // Control frontend builds based on environment and profile
     let profile = env::var("PROFILE").unwrap_or_default();
@@ -83,8 +84,8 @@ fn build_frontend() {
     }
 
     // Determine build system: Vite (modern) or legacy TypeScript
-    let use_vite =
-        frontend_dir.join("vite.config.ts").exists() && frontend_dir.join("src/frontend").exists();
+    let use_vite = (frontend_dir.join("vite.config.ts").exists() || frontend_dir.join("vite.config.js").exists())
+        && frontend_dir.join("src/frontend").exists();
 
     if use_vite {
         build_with_vite(frontend_dir);
