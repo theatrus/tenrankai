@@ -71,6 +71,12 @@ where
 }
 
 impl OptionalAuth {
+    /// Create a new OptionalAuth for testing
+    #[cfg(test)]
+    pub fn new(username: Option<String>) -> Self {
+        OptionalAuth(username.map(|u| AuthUser { username: u }))
+    }
+
     /// Check if user is authenticated
     pub fn is_authenticated(&self) -> bool {
         self.0.is_some()

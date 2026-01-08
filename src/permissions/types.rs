@@ -13,7 +13,7 @@ pub struct RolePermissions {
     pub can_see_exact_dates: bool,
     #[serde(default)]
     pub can_see_location: bool,
-    
+
     // Download permissions
     #[serde(default)]
     pub can_download_medium: bool,
@@ -21,7 +21,7 @@ pub struct RolePermissions {
     pub can_download_large: bool,
     #[serde(default)]
     pub can_download_original: bool,
-    
+
     // Metadata permissions
     #[serde(default)]
     pub can_read_metadata: bool,
@@ -35,16 +35,16 @@ pub struct RolePermissions {
     pub can_set_picks: bool,
     #[serde(default)]
     pub can_add_tags: bool,
-    
+
     // Moderation permissions
     #[serde(default)]
     pub can_edit_any_comments: bool,
     #[serde(default)]
     pub can_delete_any_comments: bool,
-    
+
     // Special permissions
     #[serde(default)]
-    pub owner_access: bool,  // Bypasses all restrictions
+    pub owner_access: bool, // Bypasses all restrictions
 }
 
 impl RolePermissions {
@@ -68,21 +68,21 @@ impl RolePermissions {
         self.can_see_technical_details |= other.can_see_technical_details;
         self.can_see_exact_dates |= other.can_see_exact_dates;
         self.can_see_location |= other.can_see_location;
-        
+
         self.can_download_medium |= other.can_download_medium;
         self.can_download_large |= other.can_download_large;
         self.can_download_original |= other.can_download_original;
-        
+
         self.can_read_metadata |= other.can_read_metadata;
         self.can_add_comments |= other.can_add_comments;
         self.can_edit_own_comments |= other.can_edit_own_comments;
         self.can_delete_own_comments |= other.can_delete_own_comments;
         self.can_set_picks |= other.can_set_picks;
         self.can_add_tags |= other.can_add_tags;
-        
+
         self.can_edit_any_comments |= other.can_edit_any_comments;
         self.can_delete_any_comments |= other.can_delete_any_comments;
-        
+
         self.owner_access |= other.owner_access;
     }
 
@@ -98,18 +98,18 @@ impl RolePermissions {
             self.can_see_technical_details = true;
             self.can_see_exact_dates = true;
             self.can_see_location = true;
-            
+
             self.can_download_medium = true;
             self.can_download_large = true;
             self.can_download_original = true;
-            
+
             self.can_read_metadata = true;
             self.can_add_comments = true;
             self.can_edit_own_comments = true;
             self.can_delete_own_comments = true;
             self.can_set_picks = true;
             self.can_add_tags = true;
-            
+
             self.can_edit_any_comments = true;
             self.can_delete_any_comments = true;
         }
@@ -122,7 +122,7 @@ pub struct Role {
     pub name: String,
     pub permissions: RolePermissions,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub inherits: Option<String>,  // Name of parent role to inherit from
+    pub inherits: Option<String>, // Name of parent role to inherit from
 }
 
 impl Role {
@@ -147,7 +147,7 @@ impl Role {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRole {
     pub username: String,
-    pub roles: Vec<String>,  // Role names assigned to this user
+    pub roles: Vec<String>, // Role names assigned to this user
 }
 
 impl UserRole {
@@ -162,15 +162,15 @@ pub struct PermissionConfig {
     /// Role assigned to unauthenticated users
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_role: Option<String>,
-    
+
     /// Role assigned to authenticated users without specific roles
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_authenticated_role: Option<String>,
-    
+
     /// Defined roles
     #[serde(default)]
     pub roles: HashMap<String, Role>,
-    
+
     /// User role assignments
     #[serde(default)]
     pub user_roles: Vec<UserRole>,
@@ -194,8 +194,8 @@ impl PermissionConfig {
                     can_view: true,
                     can_download_medium: true,
                     ..Default::default()
-                }
-            )
+                },
+            ),
         );
 
         // Contributor role (authenticated users default)
@@ -217,17 +217,14 @@ impl PermissionConfig {
                     can_set_picks: true,
                     can_add_tags: true,
                     ..Default::default()
-                }
-            )
+                },
+            ),
         );
 
         // Admin role with full access
         roles.insert(
             "admin".to_string(),
-            Role::new(
-                "admin".to_string(),
-                RolePermissions::owner()
-            )
+            Role::new("admin".to_string(), RolePermissions::owner()),
         );
 
         roles

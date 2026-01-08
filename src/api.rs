@@ -376,7 +376,11 @@ pub async fn image_detail_api_handler_for_named(
 pub struct UpdateMetadataRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub highlighted: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_optional_pick_status", default)]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_pick_status",
+        default
+    )]
     pub pick_status: Option<Option<crate::metadata_storage::PickStatus>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
@@ -389,10 +393,10 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Error;
-    
+
     // First, deserialize to a JSON value
     let value = serde_json::Value::deserialize(deserializer)?;
-    
+
     match value {
         serde_json::Value::Null => Ok(Some(None)), // Explicit null means clear
         serde_json::Value::String(s) => {
@@ -483,7 +487,7 @@ pub async fn update_metadata_handler(
     Json(request): Json<UpdateMetadataRequest>,
 ) -> impl IntoResponse {
     let user = auth.username();
-    
+
     debug!("Update metadata request: {:?}", request);
 
     // Get gallery
@@ -694,7 +698,7 @@ pub async fn edit_comment_handler(
 
     // Edit comment
     match metadata.edit_comment(&comment_id, user, request.text) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(e) => return ApiResponse::BadRequest.with_message(&e),
     }
 
@@ -767,7 +771,7 @@ pub async fn delete_comment_handler(
 
     // Delete comment
     match metadata.delete_comment(&comment_id, user) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(e) => return ApiResponse::BadRequest.with_message(&e),
     }
 
@@ -793,6 +797,12 @@ mod tests {
     use std::{collections::HashMap, sync::Arc};
     use tempfile::TempDir;
     use tokio::fs;
+
+    // Helper function to convert headers to OptionalAuth for testing
+    fn headers_to_optional_auth(headers: &HeaderMap, app_state: &crate::AppState) -> crate::login::OptionalAuth {
+        let username = crate::login::get_authenticated_user_for_app(app_state, headers);
+        crate::login::OptionalAuth::new(username)
+    }
 
     async fn create_test_app_state() -> (AppState, TempDir) {
         let temp_dir = TempDir::new().unwrap();
@@ -867,6 +877,7 @@ mod tests {
             },
             image_indexing: crate::config::ImageIndexingMode::Filename,
             enable_metadata: true,
+            permissions: Default::default(),
         };
 
         let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config));
@@ -930,12 +941,13 @@ mod tests {
     async fn test_gallery_api_unauthenticated_access() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
+        let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
-            headers,
+            auth,
         )
         .await;
 
@@ -952,12 +964,13 @@ mod tests {
     async fn test_gallery_api_private_folder_access_denied() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
+        let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
-            headers,
+            auth,
         )
         .await;
 
@@ -972,12 +985,13 @@ mod tests {
     async fn test_gallery_api_private_folder_access_with_auth() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = create_auth_headers("testuser", "test-secret");
+        let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
-            headers,
+            auth,
         )
         .await;
 
@@ -1000,12 +1014,13 @@ mod tests {
     async fn test_gallery_api_private_folder_wrong_user() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = create_auth_headers("wronguser", "test-secret");
+        let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
-            headers,
+            auth,
         )
         .await;
 
@@ -1051,10 +1066,11 @@ mod tests {
             );
         }
 
+        let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
-            headers,
+            auth,
         )
         .await;
 
@@ -1116,10 +1132,11 @@ mod tests {
             );
         }
 
+        let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
-            headers,
+            auth,
         )
         .await;
 
@@ -1151,10 +1168,11 @@ mod tests {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
 
+        let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("test".to_string(), "private/private.jpg".to_string())),
-            headers,
+            auth,
         )
         .await;
 
@@ -1170,10 +1188,11 @@ mod tests {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
 
+        let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("nonexistent".to_string(), "test.jpg".to_string())),
-            headers,
+            auth,
         )
         .await;
 
@@ -1185,12 +1204,13 @@ mod tests {
     async fn test_gallery_api_nonexistent_gallery() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
+        let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path(("nonexistent".to_string(), "".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
-            headers,
+            auth,
         )
         .await;
 

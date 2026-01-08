@@ -58,10 +58,10 @@ pub struct Comment {
 pub struct CommentVersion {
     /// The old text
     pub text: String,
-    
+
     /// When this version was created
     pub edited_at: DateTime<Utc>,
-    
+
     /// Who edited it
     pub edited_by: String,
 }
@@ -118,11 +118,18 @@ impl ImageUserMetadata {
     }
 
     /// Edit a comment (only allowed by the author)
-    pub fn edit_comment(&mut self, comment_id: &str, editor: &str, new_text: String) -> Result<(), String> {
-        let comment = self.comments.iter_mut()
+    pub fn edit_comment(
+        &mut self,
+        comment_id: &str,
+        editor: &str,
+        new_text: String,
+    ) -> Result<(), String> {
+        let comment = self
+            .comments
+            .iter_mut()
             .find(|c| c.id == comment_id)
             .ok_or_else(|| "Comment not found".to_string())?;
-        
+
         if comment.author != editor {
             return Err("Only the comment author can edit their comment".to_string());
         }
@@ -138,17 +145,19 @@ impl ImageUserMetadata {
         // Update the comment
         comment.text = new_text;
         comment.edited_at = Some(Utc::now());
-        
+
         self.update_modified(Some(editor.to_string()));
         Ok(())
     }
 
     /// Delete a comment (only allowed by the author)
     pub fn delete_comment(&mut self, comment_id: &str, deleter: &str) -> Result<(), String> {
-        let pos = self.comments.iter()
+        let pos = self
+            .comments
+            .iter()
             .position(|c| c.id == comment_id)
             .ok_or_else(|| "Comment not found".to_string())?;
-        
+
         if self.comments[pos].author != deleter {
             return Err("Only the comment author can delete their comment".to_string());
         }

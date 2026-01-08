@@ -462,13 +462,21 @@ can_edit_any_comments = true
 - The `owner_access` flag properly bypasses all permission checks when true
 - Permissions merge with OR logic (most permissive wins)
 
-### ⏳ Step 2: Create Permission Resolution System (IN PROGRESS)
+### ✅ Step 2: Create Permission Resolution System (COMPLETED)
 
-**Next tasks:**
-- Implement `PermissionResolver` that handles inheritance
-- Create methods to resolve user permissions given gallery + folder configs
-- Handle role inheritance with cycle detection
-- Implement permission merging for users with multiple roles
+**What we implemented:**
+- Created `src/permissions/resolver.rs` with `PermissionResolver` struct
+- Implemented `resolve_user_permissions()` for authenticated and public users
+- Added role inheritance with circular dependency detection
+- Implemented permission merging for users with multiple roles
+- Handled folder-level permission overrides
+- Created comprehensive test suite for all resolver scenarios
+
+**Learnings:**
+- Circular inheritance detection requires propagating the error through the recursion
+- The resolver uses a visited set to track and detect circular dependencies
+- Permission merging uses OR logic - most permissive wins
+- Tests need a test-only constructor for OptionalAuth (added `#[cfg(test)] pub fn new()`)
 
 ### 📝 Remaining Steps
 

@@ -487,7 +487,10 @@ pub async fn create_app(
 
             // API route for editing comments - using separate path structure
             router = router.route(
-                &format!("/api/gallery/{}/comment/{{comment_id}}/edit/{{*image_path}}", name),
+                &format!(
+                    "/api/gallery/{}/comment/{{comment_id}}/edit/{{*image_path}}",
+                    name
+                ),
                 axum::routing::put({
                     let name = name.clone();
                     move |state, path: Path<(String, String)>, auth, request| {
@@ -504,7 +507,10 @@ pub async fn create_app(
 
             // API route for deleting comments - using separate path structure
             router = router.route(
-                &format!("/api/gallery/{}/comment/{{comment_id}}/delete/{{*image_path}}", name),
+                &format!(
+                    "/api/gallery/{}/comment/{{comment_id}}/delete/{{*image_path}}",
+                    name
+                ),
                 axum::routing::delete({
                     let name = name.clone();
                     move |state, path: Path<(String, String)>, auth| {
