@@ -591,6 +591,32 @@ can_edit_any_comments = true
 - Folder overrides properly supersede gallery permissions
 - Role inheritance simplifies configuration
 
+### ✅ Step 8: Remove Legacy Config Fields and Update Schemas (COMPLETED)
+
+**What we implemented:**
+- Removed all legacy permission fields from `GallerySystemConfig`:
+  - `approximate_dates_for_public`
+  - `hide_location_from_public`
+  - `enable_metadata`
+- Removed all legacy permission fields from `FolderConfig`:
+  - `require_auth`
+  - `allowed_users`
+  - `hide_location_from_public`
+  - `hide_technical_details`
+  - `enable_metadata`
+- Updated all code that used these fields to use the new permission system
+- Updated API handlers to use permission resolver for date/location filtering
+- Updated gallery core methods to use permissions for access control
+- Updated test configurations to use new permission structure
+- Updated `config.example.toml` with permission examples
+- Removed migration module since we're not supporting legacy configs
+
+**Learnings:**
+- Permission resolution can be done directly without the full `resolve_permissions_for_path` helper
+- Creating a `PermissionResolver` manually works well for gallery core methods
+- Tests needed updates to remove legacy field references
+- Example configuration now shows clear permission examples
+
 ### 📝 Remaining Steps
 
-8. Document permission system for users
+9. Document permission system for users

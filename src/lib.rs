@@ -84,7 +84,7 @@ async fn server_header_middleware(
 }
 
 pub async fn create_app(
-    mut config: Config,
+    config: Config,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
     let mut template_engine = templating::TemplateEngine::new(config.templates.directories.clone());
@@ -114,11 +114,8 @@ pub async fn create_app(
     } else {
         // Create galleries if not provided
         let mut galleries = HashMap::new();
-        if let Some(gallery_configs) = &mut config.galleries {
+        if let Some(gallery_configs) = &config.galleries {
             for gallery_config in gallery_configs {
-                // Migrate old config to new permission system
-                crate::permissions::migrate_gallery_config(gallery_config);
-                
                 let gallery = Arc::new(gallery::Gallery::new(gallery_config.clone()));
                 galleries.insert(gallery_config.name.clone(), gallery);
             }

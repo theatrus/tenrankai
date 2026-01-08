@@ -8,6 +8,7 @@ use serde::Deserialize;
 use tracing::error;
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostsQuery {
     page: Option<usize>,
 }

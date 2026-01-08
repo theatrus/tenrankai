@@ -29,11 +29,13 @@ fn get_return_url_from_cookies(headers: &HeaderMap) -> Option<String> {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerifyQuery {
     token: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoginQuery {
     #[serde(rename = "return")]
     return_url: Option<String>,

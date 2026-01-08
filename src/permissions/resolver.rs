@@ -10,7 +10,10 @@ pub struct PermissionResolver<'a> {
 
 impl<'a> PermissionResolver<'a> {
     /// Create a new resolver with gallery config and optional folder config
-    pub fn new(gallery_config: &'a PermissionConfig, folder_config: Option<&'a PermissionConfig>) -> Self {
+    pub fn new(
+        gallery_config: &'a PermissionConfig,
+        folder_config: Option<&'a PermissionConfig>,
+    ) -> Self {
         Self {
             gallery_config,
             folder_config,
@@ -18,7 +21,10 @@ impl<'a> PermissionResolver<'a> {
     }
 
     /// Resolve permissions for a user (authenticated or not)
-    pub fn resolve_user_permissions(&self, username: Option<&str>) -> Result<RolePermissions, PermissionError> {
+    pub fn resolve_user_permissions(
+        &self,
+        username: Option<&str>,
+    ) -> Result<RolePermissions, PermissionError> {
         match username {
             Some(user) => self.resolve_authenticated_user_permissions(user),
             None => self.resolve_public_permissions(),
@@ -28,18 +34,18 @@ impl<'a> PermissionResolver<'a> {
     /// Resolve permissions for an unauthenticated user
     fn resolve_public_permissions(&self) -> Result<RolePermissions, PermissionError> {
         // Check folder-level public role first
-        if let Some(folder_config) = self.folder_config {
-            if let Some(public_role) = &folder_config.public_role {
-                if public_role == "none" {
-                    return Ok(RolePermissions::default()); // No access
-                }
-                // Try to resolve from folder roles first
-                if let Ok(perms) = self.resolve_role_permissions(public_role, folder_config) {
-                    return Ok(perms);
-                }
-                // Fall back to gallery roles
-                return self.resolve_role_permissions(public_role, self.gallery_config);
+        if let Some(folder_config) = self.folder_config
+            && let Some(public_role) = &folder_config.public_role
+        {
+            if public_role == "none" {
+                return Ok(RolePermissions::default()); // No access
             }
+            // Try to resolve from folder roles first
+            if let Ok(perms) = self.resolve_role_permissions(public_role, folder_config) {
+                return Ok(perms);
+            }
+            // Fall back to gallery roles
+            return self.resolve_role_permissions(public_role, self.gallery_config);
         }
 
         // Fall back to gallery-level public role
@@ -56,20 +62,26 @@ impl<'a> PermissionResolver<'a> {
     }
 
     /// Resolve permissions for an authenticated user
-    fn resolve_authenticated_user_permissions(&self, username: &str) -> Result<RolePermissions, PermissionError> {
+    fn resolve_authenticated_user_permissions(
+        &self,
+        username: &str,
+    ) -> Result<RolePermissions, PermissionError> {
         let mut final_permissions = RolePermissions::default();
         let mut found_roles = false;
 
         // Check folder-level user roles
-        if let Some(folder_config) = self.folder_config {
-            if let Some(role_names) = folder_config.get_user_roles(username) {
-                found_roles = true;
-                for role_name in role_names {
-                    // Try folder roles first, then gallery roles
-                    let role_perms = self.resolve_role_permissions(role_name, folder_config)
-                        .or_else(|_| self.resolve_role_permissions(role_name, self.gallery_config))?;
-                    final_permissions.merge(&role_perms);
-                }
+        if let Some(folder_config) = self.folder_config
+            && let Some(role_names) = folder_config.get_user_roles(username)
+        {
+            found_roles = true;
+            for role_name in role_names {
+                // Try folder roles first, then gallery roles
+                let role_perms = self
+                    .resolve_role_permissions(role_name, folder_config)
+                    .or_else(|_| {
+                        self.resolve_role_permissions(role_name, self.gallery_config)
+                    })?;
+                final_permissions.merge(&role_perms);
             }
         }
 
@@ -85,19 +97,27 @@ impl<'a> PermissionResolver<'a> {
         // If no specific roles found, use default authenticated role
         if !found_roles {
             // Check folder default first
-            if let Some(folder_config) = self.folder_config {
-                if let Some(default_role) = &folder_config.default_authenticated_role {
-                    let default_perms = self.resolve_role_permissions(default_role, folder_config)
-                        .or_else(|_| self.resolve_role_permissions(default_role, self.gallery_config))?;
-                    final_permissions.merge(&default_perms);
-                    found_roles = true;
+            if let Some(folder_config) = self.folder_config
+                && let Some(default_role) = &folder_config.default_authenticated_role
+            {
+                if default_role == "none" {
+                    // Explicitly no default access for authenticated users
+                    return Ok(RolePermissions::default());
                 }
+                let default_perms = self
+                    .resolve_role_permissions(default_role, folder_config)
+                    .or_else(|_| {
+                        self.resolve_role_permissions(default_role, self.gallery_config)
+                    })?;
+                final_permissions.merge(&default_perms);
+                found_roles = true;
             }
 
             // Fall back to gallery default
             if !found_roles {
                 if let Some(default_role) = &self.gallery_config.default_authenticated_role {
-                    let default_perms = self.resolve_role_permissions(default_role, self.gallery_config)?;
+                    let default_perms =
+                        self.resolve_role_permissions(default_role, self.gallery_config)?;
                     final_permissions.merge(&default_perms);
                 } else {
                     // Default to contributor if nothing specified
@@ -148,19 +168,24 @@ impl<'a> PermissionResolver<'a> {
         // Handle inheritance
         if let Some(parent_name) = &role.inherits {
             // Try to find parent in current config, then in gallery config
-            let parent_perms = self.resolve_role_with_inheritance(parent_name, config, visited)
+            let parent_perms = self
+                .resolve_role_with_inheritance(parent_name, config, visited)
                 .or_else(|e| {
                     // If it's a circular inheritance error, propagate it
                     if matches!(e, PermissionError::CircularInheritance(_)) {
                         return Err(e);
                     }
-                    
+
                     if std::ptr::eq(config, self.gallery_config) {
                         // Already at gallery level, can't go higher
                         Err(PermissionError::RoleNotFound(parent_name.clone()))
                     } else {
                         // Try gallery config
-                        self.resolve_role_with_inheritance(parent_name, self.gallery_config, visited)
+                        self.resolve_role_with_inheritance(
+                            parent_name,
+                            self.gallery_config,
+                            visited,
+                        )
                     }
                 })?;
 
@@ -174,7 +199,7 @@ impl<'a> PermissionResolver<'a> {
     }
 
     /// Get all roles including defaults and configured ones
-    fn get_all_roles<'b>(&self, config: &'b PermissionConfig) -> HashMap<String, Role> {
+    fn get_all_roles(&self, config: &PermissionConfig) -> HashMap<String, Role> {
         let mut all_roles = HashMap::new();
 
         // Add default roles
@@ -221,14 +246,14 @@ impl<'a> PermissionResolver<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::UserRole;
+    use super::*;
 
     #[test]
     fn test_public_user_default() {
         let config = PermissionConfig::default();
         let resolver = PermissionResolver::new(&config, None);
-        
+
         let perms = resolver.resolve_user_permissions(None).unwrap();
         assert!(perms.can_view);
         assert!(perms.can_download_medium);
@@ -239,7 +264,7 @@ mod tests {
     fn test_authenticated_user_default() {
         let config = PermissionConfig::default();
         let resolver = PermissionResolver::new(&config, None);
-        
+
         let perms = resolver.resolve_user_permissions(Some("testuser")).unwrap();
         assert!(perms.can_view);
         assert!(perms.can_see_technical_details);
@@ -249,28 +274,37 @@ mod tests {
     #[test]
     fn test_role_inheritance() {
         let mut config = PermissionConfig::default();
-        
+
         // Create base role
-        config.roles.insert("base".to_string(), Role::new(
+        config.roles.insert(
             "base".to_string(),
-            RolePermissions {
-                can_view: true,
-                can_download_medium: true,
-                ..Default::default()
-            }
-        ));
+            Role::new(
+                "base".to_string(),
+                RolePermissions {
+                    can_view: true,
+                    can_download_medium: true,
+                    ..Default::default()
+                },
+            ),
+        );
 
         // Create child role that inherits from base
-        config.roles.insert("child".to_string(), Role::with_inheritance(
+        config.roles.insert(
             "child".to_string(),
-            RolePermissions {
-                can_see_technical_details: true,
-                ..Default::default()
-            },
-            "base".to_string()
-        ));
+            Role::with_inheritance(
+                "child".to_string(),
+                RolePermissions {
+                    can_see_technical_details: true,
+                    ..Default::default()
+                },
+                "base".to_string(),
+            ),
+        );
 
-        config.user_roles.push(UserRole::new("testuser".to_string(), vec!["child".to_string()]));
+        config.user_roles.push(UserRole::new(
+            "testuser".to_string(),
+            vec!["child".to_string()],
+        ));
 
         let resolver = PermissionResolver::new(&config, None);
         let perms = resolver.resolve_user_permissions(Some("testuser")).unwrap();
@@ -303,14 +337,20 @@ mod tests {
     #[test]
     fn test_owner_access() {
         let mut config = PermissionConfig::default();
-        config.roles.insert("owner".to_string(), Role::new(
+        config.roles.insert(
             "owner".to_string(),
-            RolePermissions {
-                owner_access: true,
-                ..Default::default()
-            }
+            Role::new(
+                "owner".to_string(),
+                RolePermissions {
+                    owner_access: true,
+                    ..Default::default()
+                },
+            ),
+        );
+        config.user_roles.push(UserRole::new(
+            "admin".to_string(),
+            vec!["owner".to_string()],
         ));
-        config.user_roles.push(UserRole::new("admin".to_string(), vec!["owner".to_string()]));
 
         let resolver = PermissionResolver::new(&config, None);
         let perms = resolver.resolve_user_permissions(Some("admin")).unwrap();
@@ -327,7 +367,7 @@ mod tests {
         let mut config = PermissionConfig::default();
         config.user_roles.push(UserRole::new(
             "testuser".to_string(),
-            vec!["viewer".to_string(), "contributor".to_string()]
+            vec!["viewer".to_string(), "contributor".to_string()],
         ));
 
         let resolver = PermissionResolver::new(&config, None);
@@ -342,23 +382,35 @@ mod tests {
     #[test]
     fn test_circular_inheritance() {
         let mut config = PermissionConfig::default();
-        
+
         // Create circular inheritance
-        config.roles.insert("role_a".to_string(), Role::with_inheritance(
+        config.roles.insert(
             "role_a".to_string(),
-            RolePermissions::default(),
-            "role_b".to_string()
-        ));
-        config.roles.insert("role_b".to_string(), Role::with_inheritance(
+            Role::with_inheritance(
+                "role_a".to_string(),
+                RolePermissions::default(),
+                "role_b".to_string(),
+            ),
+        );
+        config.roles.insert(
             "role_b".to_string(),
-            RolePermissions::default(),
-            "role_a".to_string()
+            Role::with_inheritance(
+                "role_b".to_string(),
+                RolePermissions::default(),
+                "role_a".to_string(),
+            ),
+        );
+        config.user_roles.push(UserRole::new(
+            "testuser".to_string(),
+            vec!["role_a".to_string()],
         ));
-        config.user_roles.push(UserRole::new("testuser".to_string(), vec!["role_a".to_string()]));
 
         let resolver = PermissionResolver::new(&config, None);
         let result = resolver.resolve_user_permissions(Some("testuser"));
-        
-        assert!(matches!(result, Err(PermissionError::CircularInheritance(_))));
+
+        assert!(matches!(
+            result,
+            Err(PermissionError::CircularInheritance(_))
+        ));
     }
 }

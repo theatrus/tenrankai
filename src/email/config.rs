@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmailConfig {
     pub from_address: String,
     pub from_name: Option<String>,
@@ -189,7 +190,7 @@ impl std::str::FromStr for EmailProviderType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "provider", rename_all = "lowercase")]
+#[serde(tag = "provider", rename_all = "lowercase", deny_unknown_fields)]
 pub enum EmailProviderConfig {
     Null,
     Ses(SesConfig),
@@ -199,6 +200,7 @@ pub enum EmailProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SmtpConfig {
     pub host: String,
     pub port: u16,
@@ -208,11 +210,13 @@ pub struct SmtpConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SendGridConfig {
     pub api_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MailgunConfig {
     pub api_key: String,
     pub domain: String,
@@ -220,6 +224,7 @@ pub struct MailgunConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SesConfig {
     pub region: Option<String>,
     pub access_key_id: Option<String>,

@@ -332,7 +332,7 @@ export function UserMetadata({
                 )}
               </span>
             ))}
-            {isAuthenticated && (
+            {isAuthenticated && permissions.can_add_tags && (
               <>
                 {showTagInput ? (
                   <div className="tag-input-container">

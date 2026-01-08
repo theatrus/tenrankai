@@ -42,11 +42,23 @@ pub async fn gallery_handler_for_named(
         }
     };
 
-    // Check if the user has access to this path
-    let user = auth.username();
-    if !gallery.check_path_access(&path, user).await {
-        // If folder requires authentication and user is not authenticated, redirect to login
-        if !auth.is_authenticated() && gallery.is_folder_access_restricted(&path).await {
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        // If user is not authenticated and public role is "none", redirect to login
+        if !auth.is_authenticated() {
             let return_url = if path.is_empty() {
                 format!("/{}", gallery_name)
             } else {
@@ -102,8 +114,8 @@ pub async fn gallery_handler_for_named(
 
     // Convert images to JSON for client-side rendering (legacy)
     let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
-    
-    // Get breadcrumbs and folder metadata  
+
+    // Get breadcrumbs and folder metadata
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
@@ -126,7 +138,7 @@ pub async fn gallery_handler_for_named(
     // Combine directories and images for the template's items array
     let mut items = directories.clone();
     items.extend(images.clone());
-    
+
     let gallery_config = gallery.get_config();
 
     // Determine OpenGraph image - use composite if we have 2+ images, otherwise use first image
@@ -295,9 +307,6 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    // Check if the user has access to the folder containing this image
-    let user = auth.username();
-
     // Extract the parent folder path from the resolved image path
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
         &resolved_path[..last_slash]
@@ -305,9 +314,23 @@ pub async fn image_detail_handler_for_named(
         "" // Image is in root folder
     };
 
-    if !gallery.check_path_access(parent_path, user).await {
-        // If folder requires authentication and user is not authenticated, redirect to login
-        if !auth.is_authenticated() && gallery.is_folder_access_restricted(parent_path).await {
+    // Resolve permissions for the parent path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        // If user is not authenticated and public role is "none", redirect to login
+        if !auth.is_authenticated() {
             let return_url = format!("/{}/detail/{}", gallery_name, path);
             let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
             return axum::response::Redirect::temporary(&login_url).into_response();
@@ -317,7 +340,10 @@ pub async fn image_detail_handler_for_named(
         }
     }
 
-    let mut image_info = match gallery.get_image_info_with_user(&resolved_path, user).await {
+    let mut image_info = match gallery
+        .get_image_info_with_user(&resolved_path, auth.username())
+        .await
+    {
         Ok(info) => info,
         Err(e) => {
             error!("Failed to get image info: {}", e);
@@ -331,12 +357,29 @@ pub async fn image_detail_handler_for_named(
         image_info.name = indexer.get_display_name(&resolved_path);
     }
 
-    // Check if user has download permission
-    let has_permission = auth.is_authenticated();
+    // Get permission resolver for the image path
+    let parent_path_for_perms = std::path::Path::new(&resolved_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
 
-    // If approximate dates are enabled and user doesn't have permission, modify the capture date
-    if gallery.get_config().approximate_dates_for_public
-        && !has_permission
+    // Get folder metadata to check permissions
+    let folder_metadata = gallery
+        .read_folder_metadata_full(&parent_path_for_perms)
+        .await;
+
+    // Create permission resolver
+    let resolver = crate::permissions::PermissionResolver::new(
+        &gallery.get_config().permissions,
+        folder_metadata.as_ref().map(|m| &m.config.permissions),
+    );
+
+    // Resolve permissions for the user
+    let user = auth.user().map(|u| u.username.as_str());
+    let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
+
+    // If user doesn't have exact date permission, modify the capture date
+    if !permissions.can_see_exact_dates
         && let Some(ref capture_date_str) = image_info.capture_date
     {
         // Parse the existing date and reformat to show only month and year
@@ -408,12 +451,7 @@ pub async fn image_detail_handler_for_named(
     let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
     let gallery_config = gallery.get_config();
 
-    // Get folder configuration to check if technical details should be hidden
-    let folder_metadata = gallery.read_folder_metadata_full(parent_path).await;
-    let hide_technical_details = folder_metadata
-        .as_ref()
-        .map(|meta| meta.config.hide_technical_details)
-        .unwrap_or(false);
+    // Technical details are now controlled by permissions, not a separate flag
 
     // Get the JSON data from the API endpoint to ensure consistency
     let image_detail_response = crate::api::image_detail_api_handler_for_named(
@@ -434,9 +472,6 @@ pub async fn image_detail_handler_for_named(
     // Get authenticated user info from extractor
     let is_authenticated = auth.is_authenticated();
     let current_user = auth.username().unwrap_or_default().to_string();
-
-    // Check if metadata is enabled for this path
-    let metadata_enabled = gallery.is_metadata_enabled_for_path(&resolved_path).await;
 
     // Resolve permissions for this path
     let user_permissions = match crate::permissions::resolve_permissions_for_path(
@@ -473,10 +508,8 @@ pub async fn image_detail_handler_for_named(
         "og_image_width": image_info.dimensions.0,
         "og_image_height": image_info.dimensions.1,
         "twitter_card_type": "summary_large_image",
-        "hide_technical_details": hide_technical_details,
         "is_authenticated": is_authenticated,
         "current_user": current_user,
-        "metadata_enabled": metadata_enabled,
         // Add permissions for template use - serialize to JSON to avoid recursion limit
         "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
     });
@@ -550,8 +583,10 @@ pub async fn image_handler_for_named(
             Some(size) => {
                 // Map size to required permission
                 let has_permission = match size {
-                    ImageSize::Thumbnail | ImageSize::ThumbnailRetina | 
-                    ImageSize::Gallery | ImageSize::GalleryRetina => {
+                    ImageSize::Thumbnail
+                    | ImageSize::ThumbnailRetina
+                    | ImageSize::Gallery
+                    | ImageSize::GalleryRetina => {
                         // These sizes only require view permission
                         user_permissions.permissions.can_view
                     }
@@ -586,7 +621,11 @@ pub async fn image_handler_for_named(
         // No size parameter means full-size original image
         if !user_permissions.permissions.can_download_original {
             tracing::warn!(path = %path, "Full-size image request denied - no permission");
-            return (StatusCode::FORBIDDEN, "Original download permission required").into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                "Original download permission required",
+            )
+                .into_response();
         }
     }
 

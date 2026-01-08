@@ -179,17 +179,7 @@ impl Gallery {
             items.iter().filter(|i| !i.is_directory).count()
         );
 
-        // Filter items by access permissions
-        let filtered_items = self.filter_items_by_access(items, user).await;
-
-        debug!(
-            "After access filtering: {} items ({} directories, {} images)",
-            filtered_items.len(),
-            filtered_items.iter().filter(|i| i.is_directory).count(),
-            filtered_items.iter().filter(|i| !i.is_directory).count()
-        );
-
-        Ok(filtered_items)
+        Ok(items)
     }
 
     pub async fn list_directory(
@@ -360,8 +350,22 @@ impl Gallery {
                     "" // Image is in root folder
                 };
 
-                if !self.check_path_access(image_folder_path, user).await {
-                    continue;
+                // Get folder metadata to check permissions
+                let folder_metadata = self.read_folder_metadata_full(image_folder_path).await;
+
+                // Create permission resolver
+                let resolver = crate::permissions::PermissionResolver::new(
+                    &self.config.permissions,
+                    folder_metadata.as_ref().map(|m| &m.config.permissions),
+                );
+
+                // Resolve permissions for the user
+                if let Ok(permissions) = resolver.resolve_user_permissions(user) {
+                    if !permissions.can_view {
+                        continue;
+                    }
+                } else {
+                    continue; // Skip on permission resolution errors
                 }
             }
 
@@ -449,40 +453,74 @@ impl Gallery {
 
         let is_new = self.is_new(cached_metadata.modification_date);
 
-        // Check if location should be hidden from this user
-        let location_info = if self
-            .should_hide_location_from_user(relative_path, user)
-            .await
-        {
-            None
-        } else {
-            cached_metadata.location_info
-        };
+        // Get parent path for permission checking
+        let parent_path = std::path::Path::new(relative_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-        // Check if technical details should be hidden from this user
-        let should_hide_technical_details = self
-            .should_hide_technical_details_from_user(relative_path, user)
-            .await;
+        // Get folder metadata to check permissions
+        let folder_metadata = self.read_folder_metadata_full(&parent_path).await;
 
-        let (camera_info, color_profile) = if should_hide_technical_details {
-            (None, None)
-        } else {
-            (cached_metadata.camera_info, cached_metadata.color_profile)
-        };
+        // Create permission resolver
+        let resolver = crate::permissions::PermissionResolver::new(
+            &self.config.permissions,
+            folder_metadata.as_ref().map(|m| &m.config.permissions),
+        );
 
-        // Load user metadata if the user is authenticated and metadata is enabled
-        let user_metadata =
-            if user.is_some() && self.is_metadata_enabled_for_path(relative_path).await {
-                match self.user_metadata_storage.load(&full_path).await {
-                    Ok(metadata) => metadata,
-                    Err(e) => {
-                        debug!("Failed to load user metadata for {}: {}", relative_path, e);
-                        None
-                    }
+        // Resolve permissions for the user
+        let permissions = match resolver.resolve_user_permissions(user) {
+            Ok(perms) => perms,
+            Err(_) => {
+                // On error, use most restrictive permissions
+                crate::permissions::RolePermissions {
+                    can_view: true, // They can view if they got this far
+                    can_see_location: false,
+                    can_see_technical_details: false,
+                    can_see_exact_dates: false,
+                    can_download_medium: false,
+                    can_download_large: false,
+                    can_download_original: false,
+                    can_read_metadata: false,
+                    can_add_comments: false,
+                    can_edit_own_comments: false,
+                    can_delete_own_comments: false,
+                    can_set_picks: false,
+                    can_add_tags: false,
+                    can_edit_any_comments: false,
+                    can_delete_any_comments: false,
+                    owner_access: false,
                 }
-            } else {
-                None
-            };
+            }
+        };
+
+        // Filter location info based on permissions
+        let location_info = if permissions.can_see_location {
+            cached_metadata.location_info
+        } else {
+            None
+        };
+
+        // Filter technical details based on permissions
+        let (camera_info, color_profile) = if permissions.can_see_technical_details {
+            (cached_metadata.camera_info, cached_metadata.color_profile)
+        } else {
+            (None, None)
+        };
+
+        // Load user metadata if the user is authenticated
+        // Note: metadata access is now controlled by permissions, not a separate check
+        let user_metadata = if user.is_some() {
+            match self.user_metadata_storage.load(&full_path).await {
+                Ok(metadata) => metadata,
+                Err(e) => {
+                    debug!("Failed to load user metadata for {}: {}", relative_path, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
@@ -522,30 +560,6 @@ impl Gallery {
             color_profile,
             user_metadata,
         })
-    }
-
-    /// Check if metadata features are enabled for a given path
-    pub async fn is_metadata_enabled_for_path(&self, relative_path: &str) -> bool {
-        // First check gallery-level setting
-        if !self.config.enable_metadata {
-            return false;
-        }
-
-        // Then check folder-level override
-        let folder_path = if let Some(last_slash) = relative_path.rfind('/') {
-            &relative_path[..last_slash]
-        } else {
-            ""
-        };
-
-        if let Some(metadata) = self.read_folder_metadata_full(folder_path).await
-            && let Some(folder_enable) = metadata.config.enable_metadata
-        {
-            return folder_enable;
-        }
-
-        // Default to gallery setting
-        self.config.enable_metadata
     }
 
     pub(crate) async fn read_folder_metadata(
@@ -620,10 +634,7 @@ impl Gallery {
                         let markdown_content = parts[2].trim().to_string();
 
                         match toml_edit::de::from_str::<super::FolderConfig>(toml_content) {
-                            Ok(mut config) => {
-                                // Migrate old config to new permission system
-                                crate::permissions::migrate_folder_config(&mut config, &self.config);
-                                
+                            Ok(config) => {
                                 return Some(super::FolderMetadata {
                                     config,
                                     description_markdown: markdown_content,
@@ -637,23 +648,12 @@ impl Gallery {
                 }
 
                 // No TOML front matter, treat entire content as markdown
-                let mut config = super::FolderConfig {
-                    hidden: false,
-                    title: None,
-                    require_auth: false,
-                    allowed_users: None,
-                    hide_location_from_public: None,
-                    hide_technical_details: false,
-                    image_indexing: None,
-                    enable_metadata: None,
-                    permissions: Default::default(),
-                };
-                
-                // Migrate old config to new permission system
-                crate::permissions::migrate_folder_config(&mut config, &self.config);
-                
                 Some(super::FolderMetadata {
-                    config,
+                    config: super::FolderConfig {
+                        hidden: false,
+                        title: None,
+                        permissions: Default::default(),
+                    },
                     description_markdown: content,
                 })
             }
@@ -805,8 +805,23 @@ impl Gallery {
             }
 
             // Check access control for current folder
-            if !self.check_folder_access(path, user).await {
-                return Ok(());
+            let folder_metadata = self.read_folder_metadata_full(path).await;
+
+            // Create permission resolver
+            let resolver = crate::permissions::PermissionResolver::new(
+                &self.config.permissions,
+                folder_metadata.as_ref().map(|m| &m.config.permissions),
+            );
+
+            // Resolve permissions for the user
+            match resolver.resolve_user_permissions(user) {
+                Ok(permissions) if permissions.can_view => {
+                    // User has view access, continue
+                }
+                _ => {
+                    // No access or error resolving permissions
+                    return Ok(());
+                }
             }
 
             let full_path = if path.is_empty() {
@@ -846,8 +861,23 @@ impl Gallery {
                     }
 
                     // Check access control for this directory
-                    if !self.check_folder_access(&item_path, user).await {
-                        continue;
+                    let subfolder_metadata = self.read_folder_metadata_full(&item_path).await;
+
+                    // Create permission resolver
+                    let resolver = crate::permissions::PermissionResolver::new(
+                        &self.config.permissions,
+                        subfolder_metadata.as_ref().map(|m| &m.config.permissions),
+                    );
+
+                    // Resolve permissions for the user
+                    match resolver.resolve_user_permissions(user) {
+                        Ok(permissions) if permissions.can_view => {
+                            // User has view access, continue
+                        }
+                        _ => {
+                            // No access or error resolving permissions
+                            continue;
+                        }
                     }
 
                     // Recursively collect from subdirectories
@@ -975,149 +1005,6 @@ impl Gallery {
 
         breadcrumbs
     }
-
-    /// Check if a folder requires authentication
-    pub(crate) async fn is_folder_access_restricted(&self, folder_path: &str) -> bool {
-        if let Some(folder_metadata) = self.read_folder_metadata_full(folder_path).await {
-            folder_metadata.config.require_auth || folder_metadata.config.allowed_users.is_some()
-        } else {
-            false
-        }
-    }
-
-    /// Check if a user has access to a specific folder
-    pub(crate) async fn check_folder_access(&self, folder_path: &str, user: Option<&str>) -> bool {
-        // If folder doesn't have access restrictions, allow access
-        if let Some(folder_metadata) = self.read_folder_metadata_full(folder_path).await {
-            let config = &folder_metadata.config;
-
-            // If folder doesn't require auth and has no user restrictions, allow access
-            if !config.require_auth && config.allowed_users.is_none() {
-                return true;
-            }
-
-            // If user is not authenticated but folder requires auth or has user restrictions, deny
-            let user = match user {
-                Some(u) => u,
-                None => return false,
-            };
-
-            // If folder has specific allowed users, check if user is in the list
-            if let Some(allowed_users) = &config.allowed_users {
-                allowed_users.contains(&user.to_string())
-            } else if config.require_auth {
-                // Folder requires auth but no specific users listed - any authenticated user can access
-                true
-            } else {
-                // Default allow
-                true
-            }
-        } else {
-            // If we can't read metadata, default to allowing access (backward compatibility)
-            true
-        }
-    }
-
-    /// Check if a folder path or any of its parent folders have access restrictions
-    pub(crate) async fn check_path_access(&self, path: &str, user: Option<&str>) -> bool {
-        // Check the current path and all parent paths for access restrictions
-        let mut current_path = String::new();
-
-        // Always check root folder access first
-        if !self.check_folder_access("", user).await {
-            return false;
-        }
-
-        if !path.is_empty() {
-            let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-
-            for part in parts {
-                if !current_path.is_empty() {
-                    current_path.push('/');
-                }
-                current_path.push_str(part);
-
-                // Check access for this path level
-                if !self.check_folder_access(&current_path, user).await {
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-
-    /// Filter gallery items based on user access permissions
-    pub(crate) async fn filter_items_by_access(
-        &self,
-        items: Vec<GalleryItem>,
-        user: Option<&str>,
-    ) -> Vec<GalleryItem> {
-        let mut filtered_items = Vec::new();
-
-        for item in items {
-            if item.is_directory {
-                // For directories, check if user has access
-                if self.check_folder_access(&item.path, user).await {
-                    filtered_items.push(item);
-                }
-            } else {
-                // For images, check access to the parent folder
-                let parent_path = item.parent_path.as_deref().unwrap_or("");
-                if self.check_path_access(parent_path, user).await {
-                    filtered_items.push(item);
-                }
-            }
-        }
-
-        filtered_items
-    }
-
-    pub(crate) async fn should_hide_location_from_user(
-        &self,
-        relative_path: &str,
-        user: Option<&str>,
-    ) -> bool {
-        // If user is authenticated, never hide location
-        if user.is_some() {
-            return false;
-        }
-
-        // Check folder-level setting first (most specific)
-        let parent_path = std::path::Path::new(relative_path)
-            .parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        if let Some(folder_metadata) = self.read_folder_metadata_full(&parent_path).await
-            && let Some(hide_location) = folder_metadata.config.hide_location_from_public
-        {
-            return hide_location;
-        }
-
-        // Fall back to gallery-level setting
-        self.config.hide_location_from_public
-    }
-
-    pub(crate) async fn should_hide_technical_details_from_user(
-        &self,
-        relative_path: &str,
-        _user: Option<&str>,
-    ) -> bool {
-        // If user is authenticated, check folder setting but don't automatically hide
-        let parent_path = std::path::Path::new(relative_path)
-            .parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        if let Some(folder_metadata) = self.read_folder_metadata_full(&parent_path).await {
-            // Always respect the folder's hide_technical_details setting regardless of auth
-            folder_metadata.config.hide_technical_details
-        } else {
-            // No folder metadata, default to showing technical details
-            false
-        }
-    }
 }
 
 // Helper struct that includes file size
@@ -1136,80 +1023,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use tokio::fs;
-
-    #[tokio::test]
-    async fn test_folder_config_hide_technical_details_parsing() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = crate::GallerySystemConfig {
-            name: "test".to_string(),
-            source_directory: temp_dir.path().to_path_buf(),
-            ..Default::default()
-        };
-        let gallery = Gallery::new(config);
-
-        // Test folder with hide_technical_details = true
-        let folder_path = temp_dir.path().join("test-folder");
-        fs::create_dir_all(&folder_path).await.unwrap();
-
-        let folder_md_content = r#"+++
-title = "Test Portfolio"
-hide_technical_details = true
-+++
-
-# Test Portfolio
-
-This folder hides technical details."#;
-
-        let folder_md_path = folder_path.join("_folder.md");
-        fs::write(&folder_md_path, folder_md_content).await.unwrap();
-
-        // Test reading the folder metadata
-        let metadata = gallery.read_folder_metadata_full("test-folder").await;
-        assert!(metadata.is_some());
-
-        let metadata = metadata.unwrap();
-        assert_eq!(metadata.config.title, Some("Test Portfolio".to_string()));
-        assert!(metadata.config.hide_technical_details);
-        assert!(
-            metadata
-                .description_markdown
-                .contains("This folder hides technical details.")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_folder_config_hide_technical_details_default_false() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = crate::GallerySystemConfig {
-            name: "test".to_string(),
-            source_directory: temp_dir.path().to_path_buf(),
-            ..Default::default()
-        };
-        let gallery = Gallery::new(config);
-
-        // Test folder without hide_technical_details (should default to false)
-        let folder_path = temp_dir.path().join("normal-folder");
-        fs::create_dir_all(&folder_path).await.unwrap();
-
-        let folder_md_content = r#"+++
-title = "Normal Gallery"
-+++
-
-# Normal Gallery
-
-This folder shows technical details."#;
-
-        let folder_md_path = folder_path.join("_folder.md");
-        fs::write(&folder_md_path, folder_md_content).await.unwrap();
-
-        // Test reading the folder metadata
-        let metadata = gallery.read_folder_metadata_full("normal-folder").await;
-        assert!(metadata.is_some());
-
-        let metadata = metadata.unwrap();
-        assert_eq!(metadata.config.title, Some("Normal Gallery".to_string()));
-        assert!(!metadata.config.hide_technical_details); // Should default to false
-    }
 
     #[tokio::test]
     async fn test_folder_config_no_toml_defaults_to_false() {
@@ -1236,7 +1049,6 @@ This folder shows technical details."#;
 
         let metadata = metadata.unwrap();
         assert!(metadata.config.title.is_none());
-        assert!(!metadata.config.hide_technical_details); // Should default to false
         assert!(
             metadata
                 .description_markdown

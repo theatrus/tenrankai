@@ -18,7 +18,6 @@ interface ImageDetailPageProps {
   hideMetadata?: boolean;
   isAuthenticated?: boolean;
   currentUser?: string;
-  metadataEnabled?: boolean;
 }
 
 interface Breadcrumb {
@@ -63,8 +62,7 @@ export function ImageDetailPage({
   galleryUrl, 
   hideMetadata = false,
   isAuthenticated = false,
-  currentUser,
-  metadataEnabled = false
+  currentUser
 }: ImageDetailPageProps) {
   const { data: imageData, loading, error, loadImage, updateMetadata } = useImageDetail({
     galleryName: initialData.gallery_name,
@@ -171,7 +169,7 @@ export function ImageDetailPage({
           <div ref={imageContainerRef} className="swipeable-image-area">
             <ImageDisplay 
               image={currentData.image} 
-              hasDownloadPermission={false} 
+              hasDownloadPermission={currentData.permissions.can_download_large || currentData.permissions.can_download_original} 
             />
           </div>
           
@@ -183,7 +181,7 @@ export function ImageDetailPage({
           />
           
           <div className="image-controls">
-            <ImageControls image={currentData.image} />
+            <ImageControls image={currentData.image} permissions={currentData.permissions} />
             
             {(currentData.prev_image || currentData.next_image) && (
               <div className="nav-hint-container">
@@ -213,19 +211,20 @@ export function ImageDetailPage({
           
           {!hideMetadata && (
             <>
-              <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} />
-              <CameraMetadata image={currentData.image} />
-              <LocationMetadata image={currentData.image} />
+              <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} permissions={currentData.permissions} />
+              <CameraMetadata image={currentData.image} permissions={currentData.permissions} />
+              <LocationMetadata image={currentData.image} permissions={currentData.permissions} />
             </>
           )}
           
-          {metadataEnabled && (
+          {currentData.permissions.can_read_metadata && (
             <UserMetadata
               metadata={currentData.image.user_metadata}
               imagePath={currentData.image.path}
               galleryName={currentData.gallery_name}
               isAuthenticated={isAuthenticated}
               currentUser={currentUser}
+              permissions={currentData.permissions}
               onUpdate={(updatedMetadata) => updateMetadata(updatedMetadata)}
             />
           )}
@@ -253,7 +252,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const hideMetadata = container.getAttribute('data-hide-metadata') === 'true';
     const isAuthenticated = container.getAttribute('data-authenticated') === 'true';
     const currentUser = container.getAttribute('data-current-user') || undefined;
-    const metadataEnabled = container.getAttribute('data-metadata-enabled') === 'true';
     
     console.log('React taking over image detail page with data:', {
       imagePath: initialData.image.path,
@@ -262,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
       galleryUrl,
       hideMetadata,
       isAuthenticated,
-      metadataEnabled
+      permissions: initialData.permissions
     });
 
     const root = createRoot(container);
@@ -273,7 +271,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hideMetadata={hideMetadata}
         isAuthenticated={isAuthenticated}
         currentUser={currentUser}
-        metadataEnabled={metadataEnabled}
       />
     );
   } catch (error) {

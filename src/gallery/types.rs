@@ -227,33 +227,11 @@ pub(crate) struct ImageMetadata {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
     pub title: Option<String>,
-
-    // Access control fields
-    #[serde(default)]
-    pub require_auth: bool,
-    pub allowed_users: Option<Vec<String>>,
-
-    // Location privacy fields
-    /// When true, hide location/GPS information from non-authenticated users for images in this folder
-    #[serde(default)]
-    pub hide_location_from_public: Option<bool>,
-
-    // Technical details privacy field
-    /// When true, hide technical details (camera info, metadata, etc.) from the image detail page
-    #[serde(default)]
-    pub hide_technical_details: bool,
-
-    // Image indexing mode for this folder (overrides gallery default)
-    #[allow(dead_code)]
-    pub image_indexing: Option<crate::config::ImageIndexingMode>,
-
-    // Metadata features control
-    /// Override gallery-level metadata setting for this folder
-    pub enable_metadata: Option<bool>,
 
     // Permission configuration for this folder
     /// Folder-specific permission overrides

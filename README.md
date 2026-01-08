@@ -271,7 +271,6 @@ region = "us-east-1"
 - `pregenerate_cache`: Pre-generate all image sizes on startup/refresh
 - `jpeg_quality`: JPEG compression quality (1-100)
 - `webp_quality`: WebP compression quality (0.0-100.0)
-- `approximate_dates_for_public`: Show only month/year capture dates to non-authenticated users
 - `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")
 - `image_detail_template`: Custom template for image detail pages (default: "modules/image_detail.html.liquid")
 - `copyright_holder`: Copyright holder name for watermarking medium-sized images (optional)

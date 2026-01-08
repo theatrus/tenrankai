@@ -451,7 +451,7 @@ jpeg_quality = 85                         # JPEG quality (1-100)
 webp_quality = 85.0                       # WebP quality (0.0-100.0)
 new_threshold_days = 7                    # Mark images modified within 7 days as "NEW"
 pregenerate_cache = false                 # Pre-generate all image sizes on startup
-approximate_dates_for_public = false      # Show only month/year to non-authenticated users
+# Use permissions.roles.<role>.permissions.can_see_exact_dates instead of deprecated approximate_dates_for_public
 copyright_holder = "Your Name"            # Copyright holder for watermarking medium images
 image_indexing = "filename"               # Image URL mode: "filename", "sequence", or "unique_id"
                                          # - filename: Use actual filename in URLs (default)
@@ -783,11 +783,12 @@ The command shows:
    - Template reorganization into modules/ directory
 
 ### Gallery Access Control
-1. **Folder-Level Access Control**:
-   - `require_auth = true` in _folder.md TOML to require authentication
-   - `allowed_users = ["user1", "user2"]` to restrict access to specific users
+1. **Folder-Level Access Control** (Updated to role-based permissions):
+   - Use `permissions.public_role = "none"` to require authentication
+   - Define custom roles with specific permissions under `permissions.roles`
+   - Assign users to roles via `permissions.user_roles`
    - Hierarchical access control (parent folder restrictions apply to children)
-   - Access control applies to gallery views, previews, and image serving
+   - Fine-grained permissions for viewing, downloading, metadata access, etc.
 
 ### Image URL Indexing (January 2026)
 1. **Flexible Image URL Generation**:

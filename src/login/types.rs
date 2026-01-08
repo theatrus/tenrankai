@@ -8,6 +8,7 @@ use tokio::fs;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct User {
     pub email: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -70,6 +71,7 @@ impl<'a> UserWithUsernameMut<'a> {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UserDatabase {
     pub users: HashMap<String, User>,
 }
@@ -160,6 +162,7 @@ impl UserDatabase {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoginToken {
     pub username: String,
     pub token: String,

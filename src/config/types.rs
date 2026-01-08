@@ -5,6 +5,7 @@ use crate::{LogLevel, email};
 
 /// Main application configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub server: ServerConfig,
     pub app: AppConfig,
@@ -20,6 +21,7 @@ pub struct Config {
 
 /// Server configuration for host and port settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
@@ -27,6 +29,7 @@ pub struct ServerConfig {
 
 /// Application-level configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AppConfig {
     pub name: String,
     #[serde(default)]
@@ -40,6 +43,7 @@ pub struct AppConfig {
 
 /// Template directory configuration with custom serialization
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TemplateConfig {
     #[serde(
         deserialize_with = "super::serialization::deserialize_template_directories",
@@ -50,6 +54,7 @@ pub struct TemplateConfig {
 
 /// Static files directory configuration with custom serialization
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct StaticConfig {
     #[serde(
         deserialize_with = "super::serialization::deserialize_static_directories",
@@ -60,6 +65,7 @@ pub struct StaticConfig {
 
 /// Gallery system configuration with image processing settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GallerySystemConfig {
     pub name: String,
     pub url_prefix: String,
@@ -88,21 +94,12 @@ pub struct GallerySystemConfig {
     pub pregenerate_cache: bool,
     /// Number of days to consider an image as "new" (based on file modification date)
     pub new_threshold_days: Option<u32>,
-    /// When true, show only approximate capture dates (month/year) to non-authenticated users
-    #[serde(default = "super::defaults::default_false")]
-    pub approximate_dates_for_public: bool,
     /// Copyright holder name for watermarking medium-sized images
     #[serde(default)]
     pub copyright_holder: Option<String>,
-    /// When true, hide location/GPS information from non-authenticated users
-    #[serde(default = "super::defaults::default_false")]
-    pub hide_location_from_public: bool,
     /// Image indexing mode for URLs: "filename" (default), "sequence", or "unique_id"
     #[serde(default = "super::defaults::default_image_indexing")]
     pub image_indexing: ImageIndexingMode,
-    /// Enable metadata features (comments, picks, etc.) for authenticated users
-    #[serde(default = "super::defaults::default_true")]
-    pub enable_metadata: bool,
     /// Permission configuration for this gallery
     #[serde(default)]
     pub permissions: crate::permissions::types::PermissionConfig,
@@ -122,6 +119,7 @@ pub enum ImageIndexingMode {
 
 /// Image size configuration for gallery processing
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ImageSizeConfig {
     pub width: u32,
     pub height: u32,
@@ -129,6 +127,7 @@ pub struct ImageSizeConfig {
 
 /// Preview configuration for gallery previews
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PreviewConfig {
     pub max_images: usize,
     pub max_depth: usize,
@@ -137,6 +136,7 @@ pub struct PreviewConfig {
 
 /// Posts system configuration for markdown-based content
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostsSystemConfig {
     pub name: String,
     pub source_directory: PathBuf,

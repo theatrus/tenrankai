@@ -68,12 +68,32 @@ export interface BreadcrumbItem {
   is_current: boolean;
 }
 
+export interface RolePermissions {
+  can_view: boolean;
+  can_see_technical_details: boolean;
+  can_see_exact_dates: boolean;
+  can_see_location: boolean;
+  can_download_medium: boolean;
+  can_download_large: boolean;
+  can_download_original: boolean;
+  can_read_metadata: boolean;
+  can_add_comments: boolean;
+  can_edit_own_comments: boolean;
+  can_delete_own_comments: boolean;
+  can_set_picks: boolean;
+  can_add_tags: boolean;
+  can_edit_any_comments: boolean;
+  can_delete_any_comments: boolean;
+  owner_access: boolean;
+}
+
 export interface ImageDetailData {
   gallery_name: string;
   image: ImageInfo;
   breadcrumbs: BreadcrumbItem[];
   prev_image?: NavigationImage;
   next_image?: NavigationImage;
+  permissions: RolePermissions;
 }
 
 export interface GalleryItem {

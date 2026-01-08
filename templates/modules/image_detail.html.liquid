@@ -25,7 +25,9 @@
 
     <!-- React Image Detail Mount Point -->
     <div id="react-image-detail" 
-         data-gallery-url="{{ gallery_url }}"></div>
+         data-gallery-url="{{ gallery_url }}"
+         data-authenticated="{{ is_authenticated }}"
+         data-current-user="{{ current_user }}"></div>
 
     <!-- Embedded JSON data for React component -->
     <script type="application/json" id="image-detail-data">

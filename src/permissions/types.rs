@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 /// Permissions that can be assigned to a role
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct RolePermissions {
     // Viewing permissions
     #[serde(default)]
@@ -118,6 +119,7 @@ impl RolePermissions {
 
 /// A named role with permissions
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Role {
     pub name: String,
     pub permissions: RolePermissions,
@@ -145,6 +147,7 @@ impl Role {
 
 /// User to role assignment
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UserRole {
     pub username: String,
     pub roles: Vec<String>, // Role names assigned to this user
@@ -158,6 +161,7 @@ impl UserRole {
 
 /// Gallery or folder permission configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PermissionConfig {
     /// Role assigned to unauthenticated users
     #[serde(skip_serializing_if = "Option::is_none")]
