@@ -254,6 +254,11 @@ pub(crate) struct FolderConfig {
     // Metadata features control
     /// Override gallery-level metadata setting for this folder
     pub enable_metadata: Option<bool>,
+    
+    // Permission configuration for this folder
+    /// Folder-specific permission overrides
+    #[serde(default)]
+    pub permissions: crate::permissions::types::PermissionConfig,
 }
 
 #[derive(Debug, Clone)]

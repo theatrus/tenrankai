@@ -113,6 +113,7 @@ impl Default for GallerySystemConfig {
             hide_location_from_public: false,
             image_indexing: default_image_indexing(),
             enable_metadata: true,
+            permissions: Default::default(),
         }
     }
 }
@@ -160,6 +161,7 @@ impl Default for Config {
                 hide_location_from_public: false,
                 image_indexing: default_image_indexing(),
                 enable_metadata: true,
+                permissions: Default::default(),
             }]),
             posts: None,
             email: None,

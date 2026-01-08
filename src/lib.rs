@@ -11,6 +11,7 @@ pub mod gallery;
 pub mod logging;
 pub mod login;
 pub mod metadata_storage;
+pub mod permissions;
 pub mod posts;
 pub mod robots;
 pub mod startup_checks;

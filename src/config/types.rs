@@ -103,6 +103,9 @@ pub struct GallerySystemConfig {
     /// Enable metadata features (comments, picks, etc.) for authenticated users
     #[serde(default = "super::defaults::default_true")]
     pub enable_metadata: bool,
+    /// Permission configuration for this gallery
+    #[serde(default)]
+    pub permissions: crate::permissions::types::PermissionConfig,
 }
 
 /// Image indexing mode for gallery URLs

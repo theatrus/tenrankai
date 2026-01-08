@@ -644,6 +644,7 @@ impl Gallery {
                         hide_technical_details: false,
                         image_indexing: None,
                         enable_metadata: None,
+                        permissions: Default::default(),
                     },
                     description_markdown: content,
                 })
