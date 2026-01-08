@@ -4,6 +4,9 @@ pub mod migration;
 pub mod resolver;
 pub mod types;
 
+#[cfg(test)]
+mod tests;
+
 pub use error::PermissionError;
 pub use resolver::PermissionResolver;
 pub use types::{PermissionConfig, Role, RolePermissions, UserRole};

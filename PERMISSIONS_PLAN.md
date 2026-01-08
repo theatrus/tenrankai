@@ -560,7 +560,37 @@ can_edit_any_comments = true
 - Migration only runs if permissions are not already configured
 - Folder config is more private than public API but that's OK for internal use
 
+### ✅ Step 7: Test with Various Permission Scenarios (COMPLETED)
+
+**What we implemented:**
+- Created comprehensive test suite in `src/permissions/tests.rs`
+- Tested 6 real-world scenarios:
+  1. **Public Portfolio**: Public viewers with limited access, clients with downloads, photographers with full access
+  2. **Family Album**: Private gallery with different access levels (family, extended family, kids)
+  3. **Team Workspace**: Public viewers, team members, team leads with moderation, admins
+  4. **Folder Override**: Gallery with public access but specific folders with restrictions
+  5. **Multiple Roles**: Users with multiple roles get merged permissions
+  6. **Event Photography**: Different access for wedding guests vs corporate events
+- All scenarios test different aspects of the permission system:
+  - Role inheritance
+  - Permission merging
+  - Folder-level overrides
+  - Public vs authenticated access
+  - Owner bypass
+  - Fine-grained permissions
+
+**Test Results:**
+- 22 permission tests total (including unit tests)
+- All tests passing
+- Scenarios cover common use cases and edge cases
+
+**Learnings:**
+- When `public_role` is `None`, system defaults to viewer permissions (not no access)
+- Use `public_role = "none"` to explicitly deny public access
+- Permission merging with OR logic works well for multiple roles
+- Folder overrides properly supersede gallery permissions
+- Role inheritance simplifies configuration
+
 ### 📝 Remaining Steps
 
-7. Test with various permission scenarios
 8. Document permission system for users
