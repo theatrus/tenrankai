@@ -426,10 +426,8 @@ pub struct MetadataResponse {
 pub async fn get_metadata_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path)): Path<(String, String)>,
-    auth: crate::login::RequireAuth,
+    auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let user = auth.username();
-
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
@@ -446,15 +444,34 @@ pub async fn get_metadata_handler(
         }
     };
 
-    // Check access to the folder
+    // Extract parent path for permission checking
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
-        &resolved_path[..last_slash]
+        resolved_path[..last_slash].to_string()
     } else {
-        ""
+        String::new()
     };
 
-    if !gallery.check_path_access(parent_path, Some(user)).await {
-        return ApiResponse::AccessDenied.into_response();
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        return ApiResponse::NotFound.into_response(); // Hide existence
+    }
+
+    // Check if user can read metadata
+    if !user_permissions.permissions.can_read_metadata {
+        return ApiResponse::Forbidden.with_message("You do not have permission to read metadata");
     }
 
     // Check if metadata is enabled for this path
@@ -483,11 +500,9 @@ pub async fn get_metadata_handler(
 pub async fn update_metadata_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path)): Path<(String, String)>,
-    auth: crate::login::RequireAuth,
+    auth: crate::login::OptionalAuth,
     Json(request): Json<UpdateMetadataRequest>,
 ) -> impl IntoResponse {
-    let user = auth.username();
-
     debug!("Update metadata request: {:?}", request);
 
     // Get gallery
@@ -506,16 +521,45 @@ pub async fn update_metadata_handler(
         }
     };
 
-    // Check access to the folder
+    // Extract parent path for permission checking
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
-        &resolved_path[..last_slash]
+        resolved_path[..last_slash].to_string()
     } else {
-        ""
+        String::new()
     };
 
-    if !gallery.check_path_access(parent_path, Some(user)).await {
-        return ApiResponse::AccessDenied.into_response();
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        return ApiResponse::NotFound.into_response(); // Hide existence
     }
+
+    // Check appropriate permissions based on what's being updated
+    if request.pick_status.is_some() && !user_permissions.permissions.can_set_picks {
+        return ApiResponse::Forbidden.with_message("You do not have permission to set pick status");
+    }
+    
+    if request.tags.is_some() && !user_permissions.permissions.can_add_tags {
+        return ApiResponse::Forbidden.with_message("You do not have permission to modify tags");
+    }
+
+    if request.highlighted.is_some() && !user_permissions.permissions.can_read_metadata {
+        return ApiResponse::Forbidden.with_message("You do not have permission to modify metadata");
+    }
+
+    let user = user_permissions.username;
 
     // Check if metadata is enabled for this path
     if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
@@ -550,7 +594,7 @@ pub async fn update_metadata_handler(
         metadata.tags = tags;
     }
 
-    metadata.update_modified(Some(user.to_string()));
+    metadata.update_modified(user);
 
     // Save metadata
     match gallery
@@ -570,11 +614,9 @@ pub async fn update_metadata_handler(
 pub async fn add_comment_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path)): Path<(String, String)>,
-    auth: crate::login::RequireAuth,
+    auth: crate::login::OptionalAuth,
     Json(request): Json<AddCommentRequest>,
 ) -> impl IntoResponse {
-    let user = auth.username();
-
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
@@ -591,16 +633,40 @@ pub async fn add_comment_handler(
         }
     };
 
-    // Check access to the folder
+    // Extract parent path for permission checking
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
-        &resolved_path[..last_slash]
+        resolved_path[..last_slash].to_string()
     } else {
-        ""
+        String::new()
     };
 
-    if !gallery.check_path_access(parent_path, Some(user)).await {
-        return ApiResponse::AccessDenied.into_response();
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        return ApiResponse::NotFound.into_response(); // Hide existence
     }
+
+    // Check if user can add comments
+    if !user_permissions.permissions.can_add_comments {
+        return ApiResponse::Forbidden.with_message("You do not have permission to add comments");
+    }
+
+    let user = match user_permissions.username {
+        Some(u) => u,
+        None => return ApiResponse::Unauthorized.into_response(),
+    };
 
     // Check if metadata is enabled for this path
     if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
@@ -621,7 +687,7 @@ pub async fn add_comment_handler(
     };
 
     // Add comment
-    metadata.add_comment(user.to_string(), request.text);
+    metadata.add_comment(user, request.text);
 
     // Save metadata
     match gallery
@@ -646,11 +712,9 @@ pub struct EditCommentRequest {
 pub async fn edit_comment_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path, comment_id)): Path<(String, String, String)>,
-    auth: crate::login::RequireAuth,
+    auth: crate::login::OptionalAuth,
     Json(request): Json<EditCommentRequest>,
 ) -> impl IntoResponse {
-    let user = auth.username();
-
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
@@ -667,15 +731,29 @@ pub async fn edit_comment_handler(
         }
     };
 
-    // Check access to the folder
+    // Extract parent path for permission checking
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
-        &resolved_path[..last_slash]
+        resolved_path[..last_slash].to_string()
     } else {
-        ""
+        String::new()
     };
 
-    if !gallery.check_path_access(parent_path, Some(user)).await {
-        return ApiResponse::AccessDenied.into_response();
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        return ApiResponse::NotFound.into_response(); // Hide existence
     }
 
     // Check if metadata is enabled for this path
@@ -695,6 +773,31 @@ pub async fn edit_comment_handler(
             return ApiResponse::InternalServerError.into_response();
         }
     };
+
+    // Find the comment to check author
+    let comment = metadata.comments.iter().find(|c| c.id == comment_id);
+    if comment.is_none() {
+        return ApiResponse::NotFound.into_response();
+    }
+
+    let comment_author = &comment.unwrap().author;
+    let user = match user_permissions.username.as_ref() {
+        Some(u) => u,
+        None => return ApiResponse::Unauthorized.into_response(),
+    };
+
+    // Check if user can edit this comment
+    let can_edit = if comment_author == user && user_permissions.permissions.can_edit_own_comments {
+        true
+    } else if user_permissions.permissions.can_edit_any_comments {
+        true
+    } else {
+        false
+    };
+
+    if !can_edit {
+        return ApiResponse::Forbidden.with_message("You do not have permission to edit this comment");
+    }
 
     // Edit comment
     match metadata.edit_comment(&comment_id, user, request.text) {
@@ -720,10 +823,8 @@ pub async fn edit_comment_handler(
 pub async fn delete_comment_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path, comment_id)): Path<(String, String, String)>,
-    auth: crate::login::RequireAuth,
+    auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let user = auth.username();
-
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
@@ -740,15 +841,29 @@ pub async fn delete_comment_handler(
         }
     };
 
-    // Check access to the folder
+    // Extract parent path for permission checking
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
-        &resolved_path[..last_slash]
+        resolved_path[..last_slash].to_string()
     } else {
-        ""
+        String::new()
     };
 
-    if !gallery.check_path_access(parent_path, Some(user)).await {
-        return ApiResponse::AccessDenied.into_response();
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        return ApiResponse::NotFound.into_response(); // Hide existence
     }
 
     // Check if metadata is enabled for this path
@@ -768,6 +883,31 @@ pub async fn delete_comment_handler(
             return ApiResponse::InternalServerError.into_response();
         }
     };
+
+    // Find the comment to check author
+    let comment = metadata.comments.iter().find(|c| c.id == comment_id);
+    if comment.is_none() {
+        return ApiResponse::NotFound.into_response();
+    }
+
+    let comment_author = &comment.unwrap().author;
+    let user = match user_permissions.username.as_ref() {
+        Some(u) => u,
+        None => return ApiResponse::Unauthorized.into_response(),
+    };
+
+    // Check if user can delete this comment
+    let can_delete = if comment_author == user && user_permissions.permissions.can_delete_own_comments {
+        true
+    } else if user_permissions.permissions.can_delete_any_comments {
+        true
+    } else {
+        false
+    };
+
+    if !can_delete {
+        return ApiResponse::Forbidden.with_message("You do not have permission to delete this comment");
+    }
 
     // Delete comment
     match metadata.delete_comment(&comment_id, user) {

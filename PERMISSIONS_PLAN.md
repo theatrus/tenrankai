@@ -497,9 +497,29 @@ can_edit_any_comments = true
 - Helper methods on extractors make permission checks cleaner in handlers
 - Tests confirmed the extractors work correctly with proper role resolution
 
+### ✅ Step 4: Update Handlers to Use New Extractors (COMPLETED)
+
+**What we updated:**
+- `add_comment_handler` - Uses permissions to check `can_add_comments`
+- `edit_comment_handler` - Checks `can_edit_own_comments` or `can_edit_any_comments`
+- `delete_comment_handler` - Checks `can_delete_own_comments` or `can_delete_any_comments`
+- `update_metadata_handler` - Checks permissions for picks, tags, and metadata
+- `get_metadata_handler` - Checks `can_read_metadata` permission
+- `image_handler_for_named` - Maps image sizes to download permissions:
+  - Thumbnail/Gallery sizes: `can_view`
+  - Medium size: `can_download_medium`
+  - Large size: `can_download_large`
+  - Original (no size): `can_download_original`
+
+**Learnings:**
+- All handlers now use `OptionalAuth` instead of `RequireAuth`
+- Permissions are resolved using `resolve_permissions_for_path()`
+- Fine-grained permission checks replace simple authentication checks
+- Image download permissions are mapped to specific size requests
+- Permission denied returns appropriate HTTP status codes (403 Forbidden)
+
 ### 📝 Remaining Steps
 
-4. Update handlers to use new extractors
 5. Update templates with permission checks
 6. Create migration code for existing configs
 7. Test with various permission scenarios

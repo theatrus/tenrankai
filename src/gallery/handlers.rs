@@ -461,27 +461,52 @@ pub async fn image_handler_for_named(
         }
     };
 
-    // Check if the user has access to the folder containing this image
-    let user = auth.username();
-
     // Extract the parent folder path from the resolved image path
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
-        &resolved_path[..last_slash]
+        resolved_path[..last_slash].to_string()
     } else {
-        "" // Image is in root folder
+        String::new() // Image is in root folder
     };
 
-    if !gallery.check_path_access(parent_path, user).await {
-        // For image serving, always return 403 instead of redirect to avoid breaking image URLs
-        return ApiResponse::AccessDenied.into_response();
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        return ApiResponse::NotFound.into_response(); // Hide existence
     }
 
-    // Validate size parameter if provided
+    // Validate size parameter and check permissions
     if let Some(ref size_str) = query.size {
         match ImageSize::parse(size_str) {
             Some(size) => {
-                if size.requires_auth() && !auth.is_authenticated() {
-                    tracing::warn!(path = %path, "Authentication required for size: {}", size.as_str());
+                // Map size to required permission
+                let has_permission = match size {
+                    ImageSize::Thumbnail | ImageSize::ThumbnailRetina | 
+                    ImageSize::Gallery | ImageSize::GalleryRetina => {
+                        // These sizes only require view permission
+                        user_permissions.permissions.can_view
+                    }
+                    ImageSize::Medium | ImageSize::MediumRetina => {
+                        user_permissions.permissions.can_download_medium
+                    }
+                    ImageSize::Large | ImageSize::LargeRetina => {
+                        user_permissions.permissions.can_download_large
+                    }
+                };
+
+                if !has_permission {
+                    tracing::warn!(path = %path, "Permission denied for size: {}", size.as_str());
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }
             }
@@ -500,10 +525,10 @@ pub async fn image_handler_for_named(
             }
         }
     } else {
-        // No size parameter means full-size original image - requires authentication
-        if !auth.is_authenticated() {
-            tracing::warn!(path = %path, "Full-size image request denied - authentication required");
-            return (StatusCode::FORBIDDEN, "Download permission required").into_response();
+        // No size parameter means full-size original image
+        if !user_permissions.permissions.can_download_original {
+            tracing::warn!(path = %path, "Full-size image request denied - no permission");
+            return (StatusCode::FORBIDDEN, "Original download permission required").into_response();
         }
     }
 
