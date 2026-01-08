@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ImageUserMetadata, Comment, PickStatus } from '../../types';
+import { useState, useRef, useEffect } from 'react';
+import { ImageUserMetadata, PickStatus } from '../../types';
 
 interface UserMetadataProps {
   metadata?: ImageUserMetadata;
@@ -15,7 +15,6 @@ export function UserMetadata({
   imagePath, 
   galleryName,
   isAuthenticated,
-  currentUser,
   onUpdate 
 }: UserMetadataProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -39,48 +38,100 @@ export function UserMetadata({
   const handlePickStatusChange = async (newStatus: PickStatus | undefined) => {
     if (!isAuthenticated) return;
 
+    // Create new metadata with the updated pick status
+    const updatedMetadata: ImageUserMetadata = {
+      comments: metadata?.comments || [],
+      highlighted: metadata?.highlighted || false,
+      tags: metadata?.tags || [],
+      pick_status: newStatus,
+      last_modified: metadata?.last_modified,
+      modified_by: metadata?.modified_by,
+    };
+    
+    // Update local state immediately for better UX
+    onUpdate(updatedMetadata);
+
     try {
+      // Only send the pick_status field we're updating
+      const updatePayload: any = {};
+      if (newStatus !== undefined) {
+        updatePayload.pick_status = newStatus;
+      } else {
+        // Send null to clear the pick status
+        updatePayload.pick_status = null;
+      }
+      
       const response = await fetch(`/api/gallery/${galleryName}/metadata/${encodeURIComponent(imagePath)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...metadata,
-          pick_status: newStatus,
-        }),
+        body: JSON.stringify(updatePayload),
       });
 
       if (response.ok) {
-        const updatedMetadata = await response.json();
-        onUpdate(updatedMetadata);
+        const serverResponse = await response.json();
+        onUpdate(serverResponse.metadata);
+      } else {
+        // Revert on error
+        if (metadata) {
+          onUpdate(metadata);
+        }
       }
     } catch (error) {
       console.error('Failed to update pick status:', error);
+      // Revert on error
+      if (metadata) {
+        onUpdate(metadata);
+      }
     }
   };
 
   const handleHighlightToggle = async () => {
     if (!isAuthenticated) return;
 
+    // Create new metadata with the toggled highlight
+    const updatedMetadata: ImageUserMetadata = {
+      comments: metadata?.comments || [],
+      highlighted: !metadata?.highlighted,
+      tags: metadata?.tags || [],
+      pick_status: metadata?.pick_status,
+      last_modified: metadata?.last_modified,
+      modified_by: metadata?.modified_by,
+    };
+    
+    // Update local state immediately for better UX
+    onUpdate(updatedMetadata);
+
     try {
+      // Only send the highlighted field we're updating
+      const updatePayload = {
+        highlighted: !metadata?.highlighted,
+      };
+      
       const response = await fetch(`/api/gallery/${galleryName}/metadata/${encodeURIComponent(imagePath)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...metadata,
-          highlighted: !metadata?.highlighted,
-        }),
+        body: JSON.stringify(updatePayload),
       });
 
       if (response.ok) {
-        const updatedMetadata = await response.json();
-        onUpdate(updatedMetadata);
+        const serverResponse = await response.json();
+        onUpdate(serverResponse.metadata);
+      } else {
+        // Revert on error
+        if (metadata) {
+          onUpdate(metadata);
+        }
       }
     } catch (error) {
       console.error('Failed to update highlight status:', error);
+      // Revert on error
+      if (metadata) {
+        onUpdate(metadata);
+      }
     }
   };
 
@@ -99,8 +150,8 @@ export function UserMetadata({
       });
 
       if (response.ok) {
-        const updatedMetadata = await response.json();
-        onUpdate(updatedMetadata);
+        const serverResponse = await response.json();
+        onUpdate(serverResponse.metadata);
         setNewComment('');
         setIsEditing(false);
       }
@@ -119,14 +170,13 @@ export function UserMetadata({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...metadata,
           tags: selectedTags,
         }),
       });
 
       if (response.ok) {
-        const updatedMetadata = await response.json();
-        onUpdate(updatedMetadata);
+        const serverResponse = await response.json();
+        onUpdate(serverResponse.metadata);
         setShowTagInput(false);
         setTagInput('');
       }
@@ -169,6 +219,11 @@ export function UserMetadata({
     }
   };
 
+  // Don't render anything for non-authenticated users
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <div className="user-metadata">
       {/* Pick Status and Highlight Controls */}
@@ -183,11 +238,23 @@ export function UserMetadata({
               <span className="pick-icon">✓</span> Pick
             </button>
             <button
+              className={`pick-btn undecided ${!metadata?.pick_status ? 'active' : ''}`}
+              onClick={() => {
+                // Only clear if there's currently a pick status set
+                if (metadata?.pick_status) {
+                  handlePickStatusChange(undefined);
+                }
+              }}
+              title="Clear pick status"
+            >
+              <span className="pick-icon">?</span> Undecided
+            </button>
+            <button
               className={`pick-btn no-pick ${metadata?.pick_status === 'no_pick' ? 'active' : ''}`}
               onClick={() => handlePickStatusChange(metadata?.pick_status === 'no_pick' ? undefined : 'no_pick')}
-              title="Mark as No Pick"
+              title="Mark as Reject"
             >
-              <span className="pick-icon">✗</span> No Pick
+              <span className="pick-icon">✗</span> Reject
             </button>
             <button
               className={`highlight-btn ${metadata?.highlighted ? 'active' : ''}`}
@@ -201,94 +268,96 @@ export function UserMetadata({
         </div>
       )}
 
-      {/* Tags */}
-      <div className="metadata-tags">
-        <h4 className="metadata-header">Tags</h4>
-        <div className="tags-container">
-          {selectedTags.map(tag => (
-            <span key={tag} className="tag">
-              {tag}
-              {isAuthenticated && (
-                <button
-                  className="tag-remove"
-                  onClick={() => removeTag(tag)}
-                  aria-label={`Remove ${tag} tag`}
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          ))}
-          {isAuthenticated && (
-            <>
-              {showTagInput ? (
-                <div className="tag-input-container">
-                  <input
-                    type="text"
-                    className="tag-input"
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (tagInput.trim()) {
-                          addTag(tagInput);
+      {/* Tags - Hidden for now */}
+      {false && (
+        <div className="metadata-tags">
+          <h4 className="metadata-header">Tags</h4>
+          <div className="tags-container">
+            {selectedTags.map(tag => (
+              <span key={tag} className="tag">
+                {tag}
+                {isAuthenticated && (
+                  <button
+                    className="tag-remove"
+                    onClick={() => removeTag(tag)}
+                    aria-label={`Remove ${tag} tag`}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
+            ))}
+            {isAuthenticated && (
+              <>
+                {showTagInput ? (
+                  <div className="tag-input-container">
+                    <input
+                      type="text"
+                      className="tag-input"
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (tagInput.trim()) {
+                            addTag(tagInput);
+                          }
+                        } else if (e.key === 'Escape') {
+                          setShowTagInput(false);
+                          setTagInput('');
                         }
-                      } else if (e.key === 'Escape') {
+                      }}
+                      placeholder="Add a tag..."
+                      autoFocus
+                    />
+                    <button
+                      className="tag-save-btn"
+                      onClick={handleTagUpdate}
+                      disabled={selectedTags.length === (metadata?.tags || []).length && 
+                               selectedTags.every(t => (metadata?.tags || []).includes(t))}
+                    >
+                      Save
+                    </button>
+                    <button
+                      className="tag-cancel-btn"
+                      onClick={() => {
+                        setSelectedTags(metadata?.tags || []);
                         setShowTagInput(false);
                         setTagInput('');
-                      }
-                    }}
-                    placeholder="Add a tag..."
-                    autoFocus
-                  />
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
                   <button
-                    className="tag-save-btn"
-                    onClick={handleTagUpdate}
-                    disabled={selectedTags.length === (metadata?.tags || []).length && 
-                             selectedTags.every(t => (metadata?.tags || []).includes(t))}
+                    className="add-tag-btn"
+                    onClick={() => setShowTagInput(true)}
                   >
-                    Save
+                    + Add Tag
                   </button>
+                )}
+              </>
+            )}
+          </div>
+          {isAuthenticated && showTagInput && (
+            <div className="suggested-tags">
+              {suggestedTags
+                .filter(tag => !selectedTags.includes(tag) && tag.includes(tagInput.toLowerCase()))
+                .slice(0, 5)
+                .map(tag => (
                   <button
-                    className="tag-cancel-btn"
-                    onClick={() => {
-                      setSelectedTags(metadata?.tags || []);
-                      setShowTagInput(false);
-                      setTagInput('');
-                    }}
+                    key={tag}
+                    className="suggested-tag"
+                    onClick={() => addTag(tag)}
                   >
-                    Cancel
+                    {tag}
                   </button>
-                </div>
-              ) : (
-                <button
-                  className="add-tag-btn"
-                  onClick={() => setShowTagInput(true)}
-                >
-                  + Add Tag
-                </button>
-              )}
-            </>
+                ))}
+            </div>
           )}
         </div>
-        {isAuthenticated && showTagInput && (
-          <div className="suggested-tags">
-            {suggestedTags
-              .filter(tag => !selectedTags.includes(tag) && tag.includes(tagInput.toLowerCase()))
-              .slice(0, 5)
-              .map(tag => (
-                <button
-                  key={tag}
-                  className="suggested-tag"
-                  onClick={() => addTag(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Comments Section */}
       <div className="metadata-comments">
@@ -367,9 +436,6 @@ export function UserMetadata({
           </div>
         )}
 
-        {!isAuthenticated && metadata?.comments && metadata.comments.length === 0 && (
-          <p className="no-comments">No comments yet.</p>
-        )}
       </div>
     </div>
   );

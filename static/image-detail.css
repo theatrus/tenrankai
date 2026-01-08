@@ -524,6 +524,12 @@ dd {
   color: var(--danger-text, #721c24);
 }
 
+.pick-btn.undecided.active {
+  background: var(--info-bg, #d1ecf1);
+  border-color: var(--info-border, #17a2b8);
+  color: var(--info-text, #0c5460);
+}
+
 .highlight-btn.active {
   background: var(--warning-bg, #fff3cd);
   border-color: var(--warning-border, #ffc107);

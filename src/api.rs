@@ -7,8 +7,9 @@ use axum::{
 use base64::{Engine, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use sha2::Sha256;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -375,10 +376,36 @@ pub async fn image_detail_api_handler_for_named(
 pub struct UpdateMetadataRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub highlighted: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pick_status: Option<crate::metadata_storage::PickStatus>,
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_optional_pick_status", default)]
+    pub pick_status: Option<Option<crate::metadata_storage::PickStatus>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+}
+
+fn deserialize_optional_pick_status<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<crate::metadata_storage::PickStatus>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    
+    // First, deserialize to a JSON value
+    let value = serde_json::Value::deserialize(deserializer)?;
+    
+    match value {
+        serde_json::Value::Null => Ok(Some(None)), // Explicit null means clear
+        serde_json::Value::String(s) => {
+            // Parse the pick status string
+            match s.as_str() {
+                "pick" => Ok(Some(Some(crate::metadata_storage::PickStatus::Pick))),
+                "no_pick" => Ok(Some(Some(crate::metadata_storage::PickStatus::NoPick))),
+                "undecided" => Ok(Some(Some(crate::metadata_storage::PickStatus::Undecided))),
+                _ => Err(D::Error::custom(format!("Unknown pick status: {}", s))),
+            }
+        }
+        _ => Err(D::Error::custom("pick_status must be null or a string")),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -456,6 +483,8 @@ pub async fn update_metadata_handler(
     Json(request): Json<UpdateMetadataRequest>,
 ) -> impl IntoResponse {
     let user = auth.username();
+    
+    debug!("Update metadata request: {:?}", request);
 
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
@@ -506,8 +535,12 @@ pub async fn update_metadata_handler(
     if let Some(highlighted) = request.highlighted {
         metadata.highlighted = highlighted;
     }
-    if let Some(pick_status) = request.pick_status {
-        metadata.pick_status = Some(pick_status);
+    if let Some(pick_status_update) = request.pick_status {
+        // pick_status_update is Option<Option<PickStatus>>
+        // If Some(None), it means clear the pick status
+        // If Some(Some(status)), it means set to that status
+        metadata.pick_status = pick_status_update;
+        debug!("Updated pick_status to: {:?}", metadata.pick_status);
     }
     if let Some(tags) = request.tags {
         metadata.tags = tags;

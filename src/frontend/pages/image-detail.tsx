@@ -205,9 +205,10 @@ export function ImageDetailPage({
           )}
           
           {currentData.image.description && (
-            <div className="image-description">
-              {currentData.image.description}
-            </div>
+            <div 
+              className="image-description"
+              dangerouslySetInnerHTML={{ __html: currentData.image.description }}
+            />
           )}
           
           {!hideMetadata && (
