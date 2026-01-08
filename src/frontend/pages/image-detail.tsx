@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ImageDetailData } from '../types/index.ts';
 import { useImageDetail } from '../hooks/useImageDetail.ts';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation.ts';
 import { useDelayedLoading } from '../hooks/useDelayedLoading.ts';
+import { useSwipeGestures } from '../hooks/useSwipeGestures.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
+import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 
@@ -63,6 +65,9 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
   
   // Only show loading after 500ms delay
   const showLoading = useDelayedLoading(loading && !currentData);
+  
+  // Ref for swipe gestures
+  const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // Enhanced navigation with SPA-style URL updates
   const handleNavigation = async (direction: 'prev' | 'next') => {
@@ -104,6 +109,20 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
     }
   });
 
+  // Add swipe gesture support
+  useSwipeGestures(imageContainerRef, {
+    onSwipeLeft: () => {
+      if (currentData?.next_image) {
+        handleNavigation('next');
+      }
+    },
+    onSwipeRight: () => {
+      if (currentData?.prev_image) {
+        handleNavigation('prev');
+      }
+    }
+  });
+
   if (error) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -132,10 +151,18 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
       
       <div className="image-detail-content">
         <div className="image-main">
-          <ImageDisplay 
-            image={currentData.image} 
-            hasDownloadPermission={false} 
+          <MobileNavigation
+            prevImage={currentData.prev_image}
+            nextImage={currentData.next_image}
+            onNavigate={handleNavigation}
           />
+          
+          <div ref={imageContainerRef} className="swipeable-image-area">
+            <ImageDisplay 
+              image={currentData.image} 
+              hasDownloadPermission={false} 
+            />
+          </div>
           
           <ImageNavigation
             prevImage={currentData.prev_image}

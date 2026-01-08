@@ -355,3 +355,121 @@ dd {
     display: block;
     border: none;
 }
+
+/* Mobile Navigation */
+.mobile-navigation {
+    display: none;
+    position: relative;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    gap: 1rem;
+    z-index: 10;
+}
+
+.mobile-nav-btn {
+    background: var(--bg-card);
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.mobile-nav-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.mobile-nav-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.mobile-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.mobile-nav-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+/* Swipeable Image Area */
+.swipeable-image-area {
+    touch-action: pan-y pinch-zoom;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+    .mobile-navigation {
+        display: flex;
+    }
+    
+    /* Hide desktop navigation on mobile */
+    .image-navigation {
+        display: none;
+    }
+    
+    /* Adjust image container for mobile */
+    .image-container {
+        border-radius: 8px;
+        margin: 0;
+    }
+    
+    /* Show swipe hint on mobile */
+    .nav-hint {
+        display: none;
+    }
+    
+    .image-controls::after {
+        content: "Swipe left/right to navigate";
+        display: block;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-style: italic;
+        margin-top: 0.5rem;
+        text-align: center;
+    }
+    
+    /* Adjust spacing on mobile */
+    .image-detail-content {
+        gap: 1rem;
+    }
+    
+    .image-main {
+        padding: 0;
+    }
+    
+    /* Mobile layout adjustments */
+    .image-detail-container {
+        padding: 1rem;
+    }
+    
+    .image-detail-container .gallery-nav {
+        font-size: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+}
+
+/* Tablet-specific adjustments */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .mobile-navigation {
+        display: flex;
+    }
+    
+    .mobile-nav-btn {
+        width: 56px;
+        height: 56px;
+    }
+}
