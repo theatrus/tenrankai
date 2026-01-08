@@ -15,6 +15,16 @@ pub struct UserPermissions {
     pub permissions: RolePermissions,
 }
 
+impl UserPermissions {
+    /// Create new UserPermissions instance
+    pub fn new(username: Option<&str>, permissions: RolePermissions) -> Self {
+        Self {
+            username: username.map(|s| s.to_string()),
+            permissions,
+        }
+    }
+}
+
 /// Optional permissions - always succeeds, provides permissions for user or public
 #[derive(Debug, Clone)]
 pub struct OptionalPermissions(pub UserPermissions);

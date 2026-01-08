@@ -95,6 +95,22 @@ pub async fn gallery_handler_for_named(
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            // Fall back to default permissions on error
+            crate::permissions::UserPermissions::new(None, Default::default())
+        }
+    };
+
     // Determine OpenGraph image - use composite if we have 2+ images, otherwise use first image
     let (og_image, og_image_width, og_image_height) = if images.len() >= 2 {
         // Use composite image for galleries with multiple images
@@ -214,6 +230,11 @@ pub async fn gallery_handler_for_named(
         "og_image_width": og_image_width,
         "og_image_height": og_image_height,
         "twitter_card_type": "summary_large_image",
+        // Authentication info
+        "is_authenticated": auth.is_authenticated(),
+        "current_user": auth.username().unwrap_or_default().to_string(),
+        // Add permissions for template use - serialize to JSON to avoid recursion limit
+        "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
     });
 
     match template_engine
@@ -398,6 +419,22 @@ pub async fn image_detail_handler_for_named(
     // Check if metadata is enabled for this path
     let metadata_enabled = gallery.is_metadata_enabled_for_path(&resolved_path).await;
 
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            // Fall back to default permissions on error
+            crate::permissions::UserPermissions::new(None, Default::default())
+        }
+    };
+
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -421,6 +458,8 @@ pub async fn image_detail_handler_for_named(
         "is_authenticated": is_authenticated,
         "current_user": current_user,
         "metadata_enabled": metadata_enabled,
+        // Add permissions for template use - serialize to JSON to avoid recursion limit
+        "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
     });
 
     match template_engine

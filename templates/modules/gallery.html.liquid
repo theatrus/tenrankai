@@ -104,7 +104,11 @@
 </div>
 
 
-<!-- Gallery URL for React component -->
-<div data-gallery-url="{{ gallery_url }}" style="display: none"></div>
+<!-- Gallery URL and permissions for React component -->
+<div data-gallery-url="{{ gallery_url }}" 
+     data-permissions="{{ permissions | json }}"
+     data-authenticated="{{ is_authenticated }}"
+     data-current-user="{{ current_user }}"
+     style="display: none"></div>
 
 {% include "_footer.html.liquid" %}

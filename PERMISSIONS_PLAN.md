@@ -518,9 +518,26 @@ can_edit_any_comments = true
 - Image download permissions are mapped to specific size requests
 - Permission denied returns appropriate HTTP status codes (403 Forbidden)
 
+### ✅ Step 5: Update Templates with Permission Checks (COMPLETED)
+
+**What we implemented:**
+- Updated `gallery_handler_for_named` to resolve permissions and add them to liquid context
+- Updated `image_detail_handler_for_named` to include permissions in template context
+- Modified `gallery.html.liquid` template to pass permissions to React components
+- Modified `image_detail.html.liquid` template to include permissions data attribute
+- Updated API response structures to include permissions:
+  - `GalleryApiResponse` now includes `permissions` field
+  - `ImageDetailApiResponse` now includes `permissions` field
+- Updated API handlers to resolve and include permissions in responses
+
+**Learnings:**
+- Permissions are passed to React components via data attributes
+- API responses need to include permissions for dynamic client-side rendering
+- Template context includes full permission object for conditional rendering
+- Consistent permission resolution across both server-side rendering and API
+
 ### 📝 Remaining Steps
 
-5. Update templates with permission checks
 6. Create migration code for existing configs
 7. Test with various permission scenarios
 8. Document permission system for users

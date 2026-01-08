@@ -80,6 +80,7 @@ pub struct GalleryApiResponse {
     pub total_pages: usize,
     pub folder_title: Option<String>,
     pub folder_description: Option<String>,
+    pub permissions: crate::permissions::RolePermissions,
 }
 
 #[derive(Serialize, Debug)]
@@ -89,6 +90,7 @@ pub struct ImageDetailApiResponse {
     pub breadcrumbs: Vec<crate::gallery::BreadcrumbItem>,
     pub prev_image: Option<crate::gallery::NavigationImage>,
     pub next_image: Option<crate::gallery::NavigationImage>,
+    pub permissions: crate::permissions::RolePermissions,
 }
 
 // Named gallery API handlers for multiple gallery support
@@ -236,6 +238,22 @@ pub async fn gallery_api_handler_for_named(
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            // Fall back to default permissions on error
+            crate::permissions::UserPermissions::new(None, Default::default())
+        }
+    };
+
     Ok(Json(GalleryApiResponse {
         gallery_name,
         gallery_path: path,
@@ -247,6 +265,7 @@ pub async fn gallery_api_handler_for_named(
         total_pages,
         folder_title,
         folder_description,
+        permissions: user_permissions.permissions,
     }))
 }
 
@@ -361,12 +380,29 @@ pub async fn image_detail_api_handler_for_named(
     // Build breadcrumbs for the parent directory, not including the image filename
     let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
 
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            // Fall back to default permissions on error
+            crate::permissions::UserPermissions::new(None, Default::default())
+        }
+    };
+
     Ok(Json(ImageDetailApiResponse {
         gallery_name,
         image: image_info,
         breadcrumbs,
         prev_image,
         next_image,
+        permissions: user_permissions.permissions,
     }))
 }
 
