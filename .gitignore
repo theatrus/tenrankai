@@ -25,8 +25,11 @@ config.toml
 
 # User data
 users.toml
-static/js
 node_modules/
 
 # Development planning (keep local)
 TODO.md
+
+# Compiled JavaScript output
+/static/js/        # Legacy TypeScript compilation
+/static/dist/      # Vite/React build output

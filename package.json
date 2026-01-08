@@ -3,13 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "build:prod": "vite build --mode production",
+    "build": "npm run build:legacy && vite build",
+    "build:prod": "npm run build:legacy && vite build --mode production",
+    "build:legacy": "tsc -p tsconfig.legacy.json",
+    "watch:legacy": "tsc -p tsconfig.legacy.json --watch",
     "dev": "vite",
     "dev:open": "vite --open",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit",
-    "clean": "node -e \"const fs = require('fs'); ['static/dist', 'node_modules/.vite'].forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));\"",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.legacy.json --noEmit",
+    "clean": "node -e \"const fs = require('fs'); ['static/dist', 'static/js', 'node_modules/.vite'].forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));\"",
     "help": "echo 'Development: npm run dev (+ cargo run in another terminal)'"
   },
   "dependencies": {
