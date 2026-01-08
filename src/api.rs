@@ -315,7 +315,7 @@ pub async fn image_detail_api_handler_for_named(
             error!("Failed to get image info: {}", e);
             StatusCode::NOT_FOUND
         })?;
-    
+
     // Update the name to use the display name from the indexer
     {
         let indexer = gallery.image_indexer.read().await;

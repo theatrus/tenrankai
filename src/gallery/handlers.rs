@@ -290,7 +290,7 @@ pub async fn image_detail_handler_for_named(
             return (StatusCode::NOT_FOUND, "Image not found").into_response();
         }
     };
-    
+
     // Update the name to use the display name from the indexer
     {
         let indexer = gallery.image_indexer.read().await;

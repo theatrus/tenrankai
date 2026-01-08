@@ -45,14 +45,33 @@ impl ImageIndexer {
                 }
             }
             ImageIndexingMode::Sequence => {
-                // Sort paths and assign sequential numbers
-                let mut sorted_paths = paths.to_vec();
-                sorted_paths.sort();
+                // Group images by folder and assign sequences within each folder
+                let mut folder_images: HashMap<String, Vec<String>> = HashMap::new();
 
-                for (index, path) in sorted_paths.iter().enumerate() {
-                    let index_str = (index + 1).to_string(); // 1-based indexing
-                    self.path_to_index.insert(path.clone(), index_str.clone());
-                    self.index_to_path.insert(index_str, path.clone());
+                for path in paths {
+                    let folder = Path::new(path)
+                        .parent()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or("");
+                    folder_images
+                        .entry(folder.to_string())
+                        .or_default()
+                        .push(path.clone());
+                }
+
+                // Sort and index each folder's images separately
+                for (folder, mut images) in folder_images {
+                    images.sort();
+                    for (index, path) in images.iter().enumerate() {
+                        // Create unique index by combining folder and sequence number
+                        let index_str = if folder.is_empty() {
+                            (index + 1).to_string()
+                        } else {
+                            format!("{}/{}", folder, index + 1)
+                        };
+                        self.path_to_index.insert(path.clone(), index_str.clone());
+                        self.index_to_path.insert(index_str.clone(), path.clone());
+                    }
                 }
             }
             ImageIndexingMode::UniqueId => {
@@ -97,22 +116,45 @@ impl ImageIndexer {
                     .unwrap_or(path)
                     .to_string()
             }
-            ImageIndexingMode::Sequence | ImageIndexingMode::UniqueId => {
+            ImageIndexingMode::Sequence => {
                 // Get the index number from the path
                 if let Some(index_str) = self.get_index(path) {
-                    // For sequence mode, the index is already the number
-                    if self.mode == ImageIndexingMode::Sequence {
-                        format!("Image {}", index_str)
-                    } else {
-                        // For unique ID mode, find the sequence position
-                        let mut sorted_paths: Vec<_> = self.path_to_index.keys().collect();
-                        sorted_paths.sort();
-                        if let Some(pos) = sorted_paths.iter().position(|p| p.as_str() == path) {
-                            format!("Image {}", pos + 1)
-                        } else {
-                            format!("Image {}", index_str)
-                        }
-                    }
+                    // Extract just the number part (after the last '/')
+                    let number = index_str.rsplit('/').next().unwrap_or(index_str);
+                    format!("Image {}", number)
+                } else {
+                    // Fallback to filename if not found
+                    Path::new(path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(path)
+                        .to_string()
+                }
+            }
+            ImageIndexingMode::UniqueId => {
+                // For unique ID mode, find the sequence position within the folder
+                let folder = Path::new(path)
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("");
+
+                // Get all paths in the same folder and sort them
+                let mut folder_paths: Vec<_> = self
+                    .path_to_index
+                    .keys()
+                    .filter(|p| {
+                        Path::new(p)
+                            .parent()
+                            .and_then(|parent| parent.to_str())
+                            .unwrap_or("")
+                            == folder
+                    })
+                    .cloned()
+                    .collect();
+                folder_paths.sort();
+
+                if let Some(pos) = folder_paths.iter().position(|p| p == path) {
+                    format!("Image {}", pos + 1)
                 } else {
                     // Fallback to filename if not found
                     Path::new(path)
@@ -250,16 +292,23 @@ mod tests {
             "b.jpg".to_string(),
             "a.jpg".to_string(),
             "c.jpg".to_string(),
+            "folder/b.jpg".to_string(),
+            "folder/a.jpg".to_string(),
         ];
 
         indexer.build_index(&paths);
 
+        // Root folder images
         assert_eq!(indexer.get_index("a.jpg"), Some("1"));
         assert_eq!(indexer.get_index("b.jpg"), Some("2"));
         assert_eq!(indexer.get_index("c.jpg"), Some("3"));
 
+        // Subfolder images (restart at 1)
+        assert_eq!(indexer.get_index("folder/a.jpg"), Some("folder/1"));
+        assert_eq!(indexer.get_index("folder/b.jpg"), Some("folder/2"));
+
         assert_eq!(indexer.get_path("1"), Some("a.jpg"));
-        assert_eq!(indexer.get_path("2"), Some("b.jpg"));
+        assert_eq!(indexer.get_path("folder/1"), Some("folder/a.jpg"));
     }
 
     #[test]
@@ -294,18 +343,18 @@ mod tests {
         assert_eq!(indexer.get_display_name("folder/image.jpg"), "image.jpg");
         assert_eq!(indexer.get_display_name("photo.png"), "photo.png");
 
-        // Test sequence mode
+        // Test sequence mode - numbers restart per folder
         let mut indexer = ImageIndexer::new(ImageIndexingMode::Sequence);
         indexer.build_index(&paths);
 
-        assert_eq!(indexer.get_display_name("folder/image.jpg"), "Image 1");
-        assert_eq!(indexer.get_display_name("photo.png"), "Image 2");
+        assert_eq!(indexer.get_display_name("photo.png"), "Image 1"); // Root folder
+        assert_eq!(indexer.get_display_name("folder/image.jpg"), "Image 1"); // Folder restarts at 1
 
-        // Test unique ID mode
+        // Test unique ID mode - numbers based on position within folder
         let mut indexer = ImageIndexer::new(ImageIndexingMode::UniqueId);
         indexer.build_index(&paths);
 
-        assert_eq!(indexer.get_display_name("folder/image.jpg"), "Image 1");
-        assert_eq!(indexer.get_display_name("photo.png"), "Image 2");
+        assert_eq!(indexer.get_display_name("photo.png"), "Image 1"); // Only image in root
+        assert_eq!(indexer.get_display_name("folder/image.jpg"), "Image 1"); // First in folder alphabetically
     }
 }
