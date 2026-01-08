@@ -398,9 +398,9 @@ pub async fn image_detail_handler_for_named(
     };
 
     // Get authenticated user info
-    let auth_info = crate::login::get_authenticated_user(&app_state, &headers).await;
-    let is_authenticated = auth_info.is_some();
-    let current_user = auth_info.map(|info| info.username).unwrap_or_default();
+    let auth_user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
+    let is_authenticated = auth_user.is_some();
+    let current_user = auth_user.unwrap_or_default();
     
     // Check if metadata is enabled for this path
     let metadata_enabled = gallery.is_metadata_enabled_for_path(&resolved_path).await;
