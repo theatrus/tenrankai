@@ -15,6 +15,7 @@ export function UserMetadata({
   imagePath, 
   galleryName,
   isAuthenticated,
+  currentUser,
   onUpdate 
 }: UserMetadataProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -22,6 +23,8 @@ export function UserMetadata({
   const [selectedTags, setSelectedTags] = useState<string[]>(metadata?.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Common photography-related tags
@@ -157,6 +160,48 @@ export function UserMetadata({
       }
     } catch (error) {
       console.error('Failed to add comment:', error);
+    }
+  };
+
+  const handleEditComment = async (commentId: string) => {
+    if (!isAuthenticated || !editingCommentText.trim()) return;
+
+    try {
+      const response = await fetch(`/api/gallery/${galleryName}/comment/${commentId}/edit/${encodeURIComponent(imagePath)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: editingCommentText.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        const serverResponse = await response.json();
+        onUpdate(serverResponse.metadata);
+        setEditingCommentId(null);
+        setEditingCommentText('');
+      }
+    } catch (error) {
+      console.error('Failed to edit comment:', error);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!isAuthenticated || !confirm('Are you sure you want to delete this comment?')) return;
+
+    try {
+      const response = await fetch(`/api/gallery/${galleryName}/comment/${commentId}/delete/${encodeURIComponent(imagePath)}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        const serverResponse = await response.json();
+        onUpdate(serverResponse.metadata);
+      }
+    } catch (error) {
+      console.error('Failed to delete comment:', error);
     }
   };
 
@@ -375,9 +420,69 @@ export function UserMetadata({
               <div key={comment.id} className="comment">
                 <div className="comment-header">
                   <span className="comment-author">{comment.author}</span>
-                  <span className="comment-date">{formatDate(comment.created_at)}</span>
+                  <div className="comment-header-right">
+                    <span className="comment-date">
+                      {formatDate(comment.created_at)}
+                      {comment.edited_at && <span className="comment-edited"> (edited)</span>}
+                    </span>
+                    {currentUser === comment.author && isAuthenticated && (
+                      <div className="comment-actions-menu">
+                        {editingCommentId !== comment.id && (
+                          <>
+                            <button
+                              className="comment-action-btn"
+                              onClick={() => {
+                                setEditingCommentId(comment.id);
+                                setEditingCommentText(comment.text);
+                              }}
+                              title="Edit comment"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="comment-action-btn comment-delete-btn"
+                              onClick={() => handleDeleteComment(comment.id)}
+                              title="Delete comment"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="comment-text">{comment.text}</div>
+                {editingCommentId === comment.id ? (
+                  <div className="comment-edit-form">
+                    <textarea
+                      className="comment-textarea"
+                      value={editingCommentText}
+                      onChange={(e) => setEditingCommentText(e.target.value)}
+                      rows={3}
+                      autoFocus
+                    />
+                    <div className="comment-actions">
+                      <button
+                        className="comment-submit"
+                        onClick={() => handleEditComment(comment.id)}
+                        disabled={!editingCommentText.trim() || editingCommentText.trim() === comment.text}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="comment-cancel"
+                        onClick={() => {
+                          setEditingCommentId(null);
+                          setEditingCommentText('');
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="comment-text">{comment.text}</div>
+                )}
               </div>
             ))}
           </div>

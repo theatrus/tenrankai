@@ -633,6 +633,158 @@ pub async fn add_comment_handler(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct EditCommentRequest {
+    pub text: String,
+}
+
+/// Edit a comment
+pub async fn edit_comment_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, image_path, comment_id)): Path<(String, String, String)>,
+    auth: crate::login::RequireAuth,
+    Json(request): Json<EditCommentRequest>,
+) -> impl IntoResponse {
+    let user = auth.username();
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => return ApiResponse::GalleryNotFound.into_response(),
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Check access to the folder
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
+    } else {
+        ""
+    };
+
+    if !gallery.check_path_access(parent_path, Some(user)).await {
+        return ApiResponse::AccessDenied.into_response();
+    }
+
+    // Check if metadata is enabled for this path
+    if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
+        return ApiResponse::FeatureDisabled.into_response();
+    }
+
+    // Get the full path
+    let full_path = gallery.source_directory().join(&resolved_path);
+
+    // Load existing metadata
+    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return ApiResponse::NotFound.into_response(),
+        Err(e) => {
+            error!("Failed to load metadata: {}", e);
+            return ApiResponse::InternalServerError.into_response();
+        }
+    };
+
+    // Edit comment
+    match metadata.edit_comment(&comment_id, user, request.text) {
+        Ok(()) => {},
+        Err(e) => return ApiResponse::BadRequest.with_message(&e),
+    }
+
+    // Save metadata
+    match gallery
+        .user_metadata_storage
+        .save(&full_path, &metadata)
+        .await
+    {
+        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Err(e) => {
+            error!("Failed to save metadata: {}", e);
+            ApiResponse::InternalServerError.into_response()
+        }
+    }
+}
+
+/// Delete a comment
+pub async fn delete_comment_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, image_path, comment_id)): Path<(String, String, String)>,
+    auth: crate::login::RequireAuth,
+) -> impl IntoResponse {
+    let user = auth.username();
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => return ApiResponse::GalleryNotFound.into_response(),
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Check access to the folder
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
+    } else {
+        ""
+    };
+
+    if !gallery.check_path_access(parent_path, Some(user)).await {
+        return ApiResponse::AccessDenied.into_response();
+    }
+
+    // Check if metadata is enabled for this path
+    if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
+        return ApiResponse::FeatureDisabled.into_response();
+    }
+
+    // Get the full path
+    let full_path = gallery.source_directory().join(&resolved_path);
+
+    // Load existing metadata
+    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return ApiResponse::NotFound.into_response(),
+        Err(e) => {
+            error!("Failed to load metadata: {}", e);
+            return ApiResponse::InternalServerError.into_response();
+        }
+    };
+
+    // Delete comment
+    match metadata.delete_comment(&comment_id, user) {
+        Ok(()) => {},
+        Err(e) => return ApiResponse::BadRequest.with_message(&e),
+    }
+
+    // Save metadata
+    match gallery
+        .user_metadata_storage
+        .save(&full_path, &metadata)
+        .await
+    {
+        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Err(e) => {
+            error!("Failed to save metadata: {}", e);
+            ApiResponse::InternalServerError.into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

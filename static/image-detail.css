@@ -711,9 +711,10 @@ dd {
 .comment-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 0.5rem;
   font-size: 0.9rem;
+  gap: 1rem;
 }
 
 .comment-author {
@@ -721,9 +722,50 @@ dd {
   color: var(--text-primary);
 }
 
+.comment-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
 .comment-date {
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.comment-edited {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.comment-actions-menu {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.comment-action-btn {
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--link-color);
+  font-size: 0.8rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.comment-action-btn:hover {
+  background: var(--bg-hover);
+}
+
+.comment-delete-btn {
+  color: var(--accent-red);
+}
+
+.comment-delete-btn:hover {
+  background: var(--message-error-bg);
+  color: var(--message-error-color);
 }
 
 .comment-text {
@@ -822,6 +864,10 @@ dd {
   margin-left: auto;
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+.comment-edit-form {
+  margin-top: 0.5rem;
 }
 
 .no-comments {

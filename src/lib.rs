@@ -483,6 +483,39 @@ pub async fn create_app(
                     }
                 }),
             );
+
+            // API route for editing comments - using separate path structure
+            router = router.route(
+                &format!("/api/gallery/{}/comment/{{comment_id}}/edit/{{*image_path}}", name),
+                axum::routing::put({
+                    let name = name.clone();
+                    move |state, path: Path<(String, String)>, auth, request| {
+                        let (comment_id, image_path) = path.0;
+                        api::edit_comment_handler(
+                            state,
+                            Path((name, image_path, comment_id)),
+                            auth,
+                            request,
+                        )
+                    }
+                }),
+            );
+
+            // API route for deleting comments - using separate path structure
+            router = router.route(
+                &format!("/api/gallery/{}/comment/{{comment_id}}/delete/{{*image_path}}", name),
+                axum::routing::delete({
+                    let name = name.clone();
+                    move |state, path: Path<(String, String)>, auth| {
+                        let (comment_id, image_path) = path.0;
+                        api::delete_comment_handler(
+                            state,
+                            Path((name, image_path, comment_id)),
+                            auth,
+                        )
+                    }
+                }),
+            );
         }
     }
 
