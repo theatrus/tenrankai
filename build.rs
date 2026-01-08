@@ -9,6 +9,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/assets");
     println!("cargo:rerun-if-changed=package.json");
     println!("cargo:rerun-if-changed=tsconfig.json");
+    println!("cargo:rerun-if-changed=tsconfig.legacy.json");
     println!("cargo:rerun-if-changed=vite.config.ts");
     println!("cargo:rerun-if-changed=vite.config.js");
 
@@ -73,15 +74,44 @@ fn build_frontend() {
         }
     }
 
-    // Always use Vite build system
+    // Build legacy TypeScript first
+    build_legacy_typescript(frontend_dir);
+    
+    // Then build Vite/React
     if !frontend_dir.join("vite.config.js").exists()
         && !frontend_dir.join("vite.config.ts").exists()
     {
-        println!("cargo:warning=No Vite configuration found. Skipping frontend build.");
+        println!("cargo:warning=No Vite configuration found. Skipping React build.");
         return;
     }
 
     build_with_vite(frontend_dir);
+}
+
+fn build_legacy_typescript(frontend_dir: &Path) {
+    // Check if legacy TypeScript source exists
+    if !frontend_dir.join("src/js").exists() {
+        println!("cargo:warning=No legacy TypeScript found (src/js). Skipping legacy build.");
+        return;
+    }
+
+    println!("cargo:warning=Building legacy TypeScript...");
+
+    let output = Command::new(npm_command())
+        .arg("run")
+        .arg("build:legacy")
+        .current_dir(frontend_dir)
+        .output()
+        .expect("Failed to run legacy TypeScript build");
+
+    if !output.status.success() {
+        panic!(
+            "Legacy TypeScript build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    println!("cargo:warning=Legacy TypeScript build completed successfully.");
 }
 
 fn build_with_vite(frontend_dir: &Path) {

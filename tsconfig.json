@@ -30,7 +30,8 @@
     }
   },
   "include": [
-    "src/frontend/**/*"
+    "src/frontend/**/*",
+    "src/js/**/*"
   ],
   "exclude": [
     "static/**/*", 
