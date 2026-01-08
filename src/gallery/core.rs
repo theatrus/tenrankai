@@ -82,16 +82,24 @@ impl Gallery {
                 });
             } else if self.is_image(&file_name) {
                 // Found image
-                let encoded_path = urlencoding::encode(&item_path);
+                // Get the indexed identifier for this image
+                let url_identifier = {
+                    let indexer = self.image_indexer.read().await;
+                    let indexed = indexer.get_index(&item_path);
+                    indexed
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| urlencoding::encode(&item_path).to_string())
+                };
+
                 let thumbnail_url = format!(
                     "/{}/image/{}?size=thumbnail",
                     self.config.url_prefix.trim_start_matches('/'),
-                    encoded_path
+                    url_identifier
                 );
                 let gallery_url = format!(
                     "/{}/image/{}?size=gallery",
                     self.config.url_prefix.trim_start_matches('/'),
-                    encoded_path
+                    url_identifier
                 );
 
                 // Get metadata from cache if available
@@ -119,11 +127,17 @@ impl Gallery {
 
                 let is_new = self.is_new(modification_date);
 
+                // Get the display name from the indexer
+                let display_name = {
+                    let indexer = self.image_indexer.read().await;
+                    indexer.get_display_name(&item_path)
+                };
+
                 items.push(GalleryItem {
-                    name: file_name,
+                    name: display_name,
                     display_name: None,
                     description: None,
-                    path: item_path,
+                    path: url_identifier.clone(), // Use indexed identifier as path
                     parent_path: Some(relative_path.to_string()),
                     is_directory: false,
                     thumbnail_url: Some(thumbnail_url),
@@ -359,11 +373,18 @@ impl Gallery {
                     entry.path().strip_prefix(&self.config.source_directory)
             {
                 let path_string = relative_to_source.to_string_lossy().to_string();
-                let encoded_path = urlencoding::encode(&path_string);
+                // Get the indexed identifier for this image
+                let url_identifier = {
+                    let indexer = self.image_indexer.read().await;
+                    indexer
+                        .get_index(&path_string)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| urlencoding::encode(&path_string).to_string())
+                };
                 let thumbnail_url = format!(
                     "/{}/image/{}?size=thumbnail",
                     self.config.url_prefix.trim_start_matches('/'),
-                    encoded_path
+                    url_identifier
                 );
                 preview_images.push(thumbnail_url);
             }
@@ -403,7 +424,14 @@ impl Gallery {
 
         let description = self.read_sidecar_markdown(relative_path).await;
 
-        let encoded_path = urlencoding::encode(relative_path);
+        // Get the indexed identifier for this image
+        let url_identifier = {
+            let indexer = self.image_indexer.read().await;
+            indexer
+                .get_index(relative_path)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| urlencoding::encode(relative_path).to_string())
+        };
 
         // Format capture date if available
         let capture_date = cached_metadata.capture_date.and_then(|date| {
@@ -453,22 +481,22 @@ impl Gallery {
             url: format!(
                 "/{}/image/{}",
                 self.config.url_prefix.trim_start_matches('/'),
-                encoded_path
+                url_identifier
             ),
             thumbnail_url: format!(
                 "/{}/image/{}?size=thumbnail",
                 self.config.url_prefix.trim_start_matches('/'),
-                encoded_path
+                url_identifier
             ),
             gallery_url: format!(
                 "/{}/image/{}?size=gallery",
                 self.config.url_prefix.trim_start_matches('/'),
-                encoded_path
+                url_identifier
             ),
             medium_url: format!(
                 "/{}/image/{}?size=medium",
                 self.config.url_prefix.trim_start_matches('/'),
-                encoded_path
+                url_identifier
             ),
             description,
             camera_info,
@@ -575,6 +603,7 @@ impl Gallery {
                         allowed_users: None,
                         hide_location_from_public: None,
                         hide_technical_details: false,
+                        image_indexing: None,
                     },
                     description_markdown: content,
                 })
@@ -808,23 +837,36 @@ impl Gallery {
 
                     let is_new = self.is_new(modification_date);
 
-                    let encoded_path = urlencoding::encode(&item_path);
+                    // Get the indexed identifier for this image
+                    let url_identifier = {
+                        let indexer = self.image_indexer.read().await;
+                        indexer
+                            .get_index(&item_path)
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| urlencoding::encode(&item_path).to_string())
+                    };
                     let thumbnail_url = format!(
                         "/{}/image/{}?size=thumbnail",
                         self.config.url_prefix.trim_start_matches('/'),
-                        encoded_path
+                        url_identifier
                     );
                     let gallery_url = format!(
                         "/{}/image/{}?size=gallery",
                         self.config.url_prefix.trim_start_matches('/'),
-                        encoded_path
+                        url_identifier
                     );
 
+                    // Get the display name from the indexer
+                    let display_name = {
+                        let indexer = self.image_indexer.read().await;
+                        indexer.get_display_name(&item_path)
+                    };
+
                     folder_items.push(GalleryItem {
-                        name: file_name,
+                        name: display_name,
                         display_name: None,
                         description: None,
-                        path: item_path.clone(),
+                        path: url_identifier.clone(), // Use indexed identifier as path
                         parent_path: Some(path.to_string()),
                         is_directory: false,
                         thumbnail_url: Some(thumbnail_url),

@@ -22,8 +22,8 @@ pub mod webp_encoder;
 pub use api_response::ApiResponse;
 pub use cache::{CacheType, FormatCoverage};
 pub use config::{
-    AppConfig, Config, GallerySystemConfig, ImageSizeConfig, PostsSystemConfig, PreviewConfig,
-    ServerConfig, StaticConfig, TemplateConfig,
+    AppConfig, Config, GallerySystemConfig, ImageIndexingMode, ImageSizeConfig, PostsSystemConfig,
+    PreviewConfig, ServerConfig, StaticConfig, TemplateConfig,
 };
 pub use logging::LogLevel;
 pub use template_system::{TemplateCategory, TemplatePath, TemplateType};
@@ -79,7 +79,10 @@ async fn server_header_middleware(
     response
 }
 
-pub async fn create_app(config: Config) -> axum::Router {
+pub async fn create_app(
+    config: Config,
+    galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
+) -> axum::Router {
     let mut template_engine = templating::TemplateEngine::new(config.templates.directories.clone());
 
     let static_handler =
@@ -101,17 +104,22 @@ pub async fn create_app(config: Config) -> axum::Router {
 
     let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directories.clone());
 
-    // Initialize galleries
-    let mut galleries = HashMap::new();
-    if let Some(gallery_configs) = &config.galleries {
-        for gallery_config in gallery_configs {
-            let gallery = Arc::new(gallery::Gallery::new(gallery_config.clone()));
-            galleries.insert(gallery_config.name.clone(), gallery);
+    // Use provided galleries or create new ones
+    let galleries_arc = if let Some(provided_galleries) = galleries {
+        provided_galleries
+    } else {
+        // Create galleries if not provided
+        let mut galleries = HashMap::new();
+        if let Some(gallery_configs) = &config.galleries {
+            for gallery_config in gallery_configs {
+                let gallery = Arc::new(gallery::Gallery::new(gallery_config.clone()));
+                galleries.insert(gallery_config.name.clone(), gallery);
+            }
         }
-    }
+        Arc::new(galleries)
+    };
 
     // Initialize posts managers
-    let galleries_arc = Arc::new(galleries);
     let mut posts_managers = HashMap::new();
     if let Some(posts_configs) = &config.posts {
         for posts_config in posts_configs {

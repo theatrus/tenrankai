@@ -159,7 +159,7 @@ This is the content of the second test post."#;
         email: None,
     };
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app.into_make_service()).unwrap();
 
     (temp_dir, server)

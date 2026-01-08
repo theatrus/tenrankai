@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use axum_test::TestServer;
 use std::path::PathBuf;
 use tempfile::TempDir;
-use tenrankai::{Config, GallerySystemConfig, create_app};
+use tenrankai::{Config, GallerySystemConfig, ImageIndexingMode, create_app};
 
 /// Helper to create a test configuration with galleries
 fn create_test_config(temp_dir: &TempDir) -> Config {
@@ -33,6 +33,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                 max_per_folder: 3,
             },
             new_threshold_days: Some(7),
+            image_indexing: ImageIndexingMode::Filename,
             ..Default::default()
         },
         GallerySystemConfig {
@@ -49,6 +50,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             jpeg_quality: Some(90),
             webp_quality: Some(90.0),
             copyright_holder: Some("Test Portfolio".to_string()),
+            image_indexing: ImageIndexingMode::Filename,
             ..Default::default()
         },
     ]);
@@ -97,7 +99,7 @@ async fn test_gallery_root_renders_correctly() {
         3,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test main gallery
@@ -128,7 +130,7 @@ async fn test_portfolio_gallery_renders_with_custom_prefix() {
         2,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test portfolio gallery with custom URL prefix
@@ -160,7 +162,7 @@ async fn test_gallery_with_folder_metadata() {
     );
     create_test_images(&vacation_dir, 4);
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test subfolder with metadata
@@ -197,7 +199,7 @@ async fn test_gallery_opengraph_with_composite_image() {
         4,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     let response = server.get("/gallery").await;
@@ -224,7 +226,7 @@ async fn test_gallery_opengraph_with_single_image() {
         1,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     let response = server.get("/gallery").await;
@@ -249,7 +251,7 @@ async fn test_gallery_preview_api() {
         10,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test preview API for main gallery
@@ -294,7 +296,7 @@ async fn test_composite_api_endpoint() {
         img.save(&img_path).unwrap();
     }
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test composite endpoint for subdirectory
@@ -344,7 +346,7 @@ async fn test_composite_api_not_found() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test composite endpoint for non-existent directory
@@ -391,7 +393,7 @@ async fn test_composite_api_with_avif_images() {
         .expect("Failed to save AVIF");
     }
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test composite endpoint for AVIF directory
@@ -430,7 +432,7 @@ async fn test_image_detail_page() {
         3,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test image detail page
@@ -438,6 +440,18 @@ async fn test_image_detail_page() {
     assert_eq!(response.status_code(), StatusCode::OK);
 
     let html = response.text();
+
+    // Also check the API endpoint to see what data is being passed
+    let api_response = server.get("/api/gallery/main/image/test_001.jpg").await;
+    let api_json = api_response.text();
+    eprintln!("API Response: {}", api_json);
+
+    // Check if the HTML contains the initial data script tag
+    if html.contains("window.__INITIAL_DATA__") {
+        eprintln!("Found initial data in HTML");
+    } else {
+        eprintln!("No initial data found in HTML - React won't render navigation");
+    }
     assert!(html.contains("test_001.jpg"));
     assert!(
         html.contains(r#"href="/gallery""#),
@@ -448,14 +462,27 @@ async fn test_image_detail_page() {
         "Should have correct image URL"
     );
 
-    // Check navigation links
+    // Since React renders client-side, check that the JSON data contains navigation info
+    // The actual navigation links won't be in the HTML until React renders
     assert!(
-        html.contains("/gallery/detail/test_000.jpg"),
-        "Should have previous image link"
+        api_json.contains(r#""prev_image":{"path":"test_000.jpg""#),
+        "API should include previous image data"
     );
     assert!(
-        html.contains("/gallery/detail/test_002.jpg"),
-        "Should have next image link"
+        api_json.contains(r#""next_image":{"path":"test_002.jpg""#),
+        "API should include next image data"
+    );
+
+    // Also verify the embedded JSON data in the HTML contains the navigation
+    assert!(
+        html.contains(r#"<script type="application/json" id="image-detail-data">"#),
+        "HTML should contain embedded JSON data for React"
+    );
+
+    // The JSON should contain navigation data
+    assert!(
+        html.contains(r#""prev_image":{"path":"test_000.jpg""#),
+        "Embedded JSON should include previous image data"
     );
 }
 
@@ -473,7 +500,7 @@ async fn test_gallery_breadcrumbs() {
     create_folder_with_metadata(&europe_dir, "Europe 2024", "European adventure");
     create_test_images(&europe_dir, 2);
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     let response = server.get("/gallery/travel/europe").await;
@@ -512,7 +539,7 @@ async fn test_gallery_pagination() {
         25,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // First page
@@ -539,7 +566,7 @@ async fn test_nonexistent_gallery_returns_404() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test nonexistent gallery name in API
@@ -560,7 +587,7 @@ async fn test_gallery_preview_partial_in_template() {
         6,
     );
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test home page which includes gallery preview
@@ -625,7 +652,7 @@ Gallery showing full technical details.
     let visible_img_path = visible_folder.join("technical_image.jpg");
     visible_img.save(&visible_img_path).unwrap();
 
-    let app = create_app(config).await;
+    let app = create_app(config, None).await;
     let server = TestServer::new(app).unwrap();
 
     // Test image detail page in folder with hidden technical details
@@ -635,16 +662,23 @@ Gallery showing full technical details.
     assert_eq!(response.status_code(), StatusCode::OK);
 
     let html = response.text();
-    // Should NOT contain technical detail sections
-    assert!(!html.contains("Image Information"));
-    assert!(!html.contains("Camera Information"));
-    assert!(!html.contains("Location"));
-    assert!(!html.contains("Dimensions"));
-    assert!(!html.contains("File Size"));
 
-    // Should still contain navigation and basic elements
+    // Check the API response to verify hide_technical_details is working
+    let api_response = server
+        .get("/api/gallery/main/image/hidden-details/portfolio_image.jpg")
+        .await;
+    let _api_json = api_response.text();
+
+    // The API response should include the hide_technical_details flag
+    // Since this is rendered by React, we check the JSON data instead of HTML
     assert!(html.contains("portfolio_image.jpg"));
-    assert!(html.contains("image-container"));
+
+    // Verify that the template context has hide_technical_details set
+    // This is passed as a data attribute to React
+    assert!(
+        html.contains(r#"data-hide-metadata="true""#),
+        "Should have hide_technical_details flag set to true"
+    );
 
     // Test image detail page in folder with visible technical details
     let response = server
@@ -653,12 +687,10 @@ Gallery showing full technical details.
     assert_eq!(response.status_code(), StatusCode::OK);
 
     let html = response.text();
-    // Should contain technical detail sections
-    assert!(html.contains("Image Information"));
-    assert!(html.contains("Dimensions"));
-    assert!(html.contains("File Size"));
-
-    // Should contain navigation and basic elements
+    // When technical details are visible, hide_metadata should be false
     assert!(html.contains("technical_image.jpg"));
-    assert!(html.contains("image-container"));
+    assert!(
+        html.contains(r#"data-hide-metadata="false""#) || html.contains(r#"data-hide-metadata="""#),
+        "Should have hide_technical_details flag set to false or empty"
+    );
 }

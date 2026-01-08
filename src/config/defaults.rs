@@ -22,6 +22,11 @@ pub fn default_false() -> bool {
     false
 }
 
+/// Default image indexing mode (filename)
+pub fn default_image_indexing() -> ImageIndexingMode {
+    ImageIndexingMode::Filename
+}
+
 /// Default gallery template path
 pub fn default_gallery_template() -> String {
     "modules/gallery.html.liquid".to_string()
@@ -101,6 +106,7 @@ impl Default for GallerySystemConfig {
             approximate_dates_for_public: false,
             copyright_holder: None,
             hide_location_from_public: false,
+            image_indexing: default_image_indexing(),
         }
     }
 }
@@ -146,6 +152,7 @@ impl Default for Config {
                 approximate_dates_for_public: false,
                 copyright_holder: None,
                 hide_location_from_public: false,
+                image_indexing: default_image_indexing(),
             }]),
             posts: None,
             email: None,

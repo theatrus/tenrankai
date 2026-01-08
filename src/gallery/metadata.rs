@@ -297,6 +297,20 @@ impl Gallery {
                     .store(true, std::sync::atomic::Ordering::Relaxed);
                 debug!("Removed deleted image from cache: {}", relative_path);
             }
+
+            // Also update the indexer - rebuild it without this image
+            drop(cache); // Release the cache lock first
+            let all_paths: Vec<String> = {
+                let cache = self.metadata_cache.read().await;
+                cache
+                    .keys()
+                    .filter(|p| *p != relative_path)
+                    .cloned()
+                    .collect()
+            };
+            let mut indexer = self.image_indexer.write().await;
+            indexer.build_index(&all_paths);
+
             return Ok(());
         }
 
@@ -305,6 +319,14 @@ impl Gallery {
             self.insert_metadata_with_tracking(relative_path.to_string(), metadata)
                 .await;
             debug!("Updated metadata for: {}", relative_path);
+
+            // Update the indexer with all current images
+            let all_paths: Vec<String> = {
+                let cache = self.metadata_cache.read().await;
+                cache.keys().cloned().collect()
+            };
+            let mut indexer = self.image_indexer.write().await;
+            indexer.build_index(&all_paths);
         }
 
         Ok(())
@@ -330,7 +352,7 @@ impl Gallery {
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
                 && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory)
             {
-                let relative_str = relative_path.to_string_lossy().to_string();
+                let relative_str = relative_path.to_string_lossy().replace('\\', "/");
 
                 if let Ok(metadata) = self.extract_image_metadata(path).await {
                     self.insert_metadata_with_tracking(relative_str, metadata)
@@ -345,6 +367,15 @@ impl Gallery {
                 "Refreshed metadata for {} images in {}",
                 count, directory_path
             );
+
+            // Rebuild the index with all current images
+            let all_paths: Vec<String> = {
+                let cache = self.metadata_cache.read().await;
+                cache.keys().cloned().collect()
+            };
+            let mut indexer = self.image_indexer.write().await;
+            indexer.build_index(&all_paths);
+            debug!("Rebuilt image index after directory refresh");
         }
 
         Ok(())
@@ -356,6 +387,7 @@ impl Gallery {
         info!("Starting full metadata refresh");
         let start_time = std::time::Instant::now();
         let mut count = 0;
+        let mut all_image_paths = Vec::new();
 
         for entry in WalkDir::new(&self.config.source_directory)
             .follow_links(true)
@@ -367,7 +399,10 @@ impl Gallery {
                 && self.is_image(&path.file_name().unwrap_or_default().to_string_lossy())
                 && let Ok(relative_path) = path.strip_prefix(&self.config.source_directory)
             {
-                let relative_str = relative_path.to_string_lossy().to_string();
+                let relative_str = relative_path.to_string_lossy().replace('\\', "/");
+
+                // Collect all image paths for indexing
+                all_image_paths.push(relative_str.clone());
 
                 // Extract metadata for this image
                 if let Ok(metadata) = self.extract_image_metadata(path).await {
@@ -380,6 +415,13 @@ impl Gallery {
                     }
                 }
             }
+        }
+
+        // Build the image index with all collected paths
+        {
+            let mut indexer = self.image_indexer.write().await;
+            indexer.build_index(&all_image_paths);
+            info!("Built image index with {} images", all_image_paths.len());
         }
 
         // Save the cache to disk

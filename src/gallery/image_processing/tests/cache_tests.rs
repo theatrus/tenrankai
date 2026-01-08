@@ -1,9 +1,7 @@
-use crate::GallerySystemConfig;
+use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
 use axum::http::StatusCode;
-use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::RwLock;
 
 // Helper function to create a test gallery
 async fn create_test_gallery() -> (Gallery, TempDir) {
@@ -14,19 +12,11 @@ async fn create_test_gallery() -> (Gallery, TempDir) {
         name: "test".to_string(),
         source_directory: temp_dir.path().to_path_buf(),
         cache_directory: cache_dir,
+        image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
-    let gallery = Gallery {
-        config,
-        metadata_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        cache_metadata: Arc::new(RwLock::new(crate::gallery::CacheMetadata {
-            version: String::new(),
-            last_full_refresh: std::time::SystemTime::UNIX_EPOCH,
-        })),
-        metadata_cache_dirty: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        metadata_updates_since_save: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-    };
+    let gallery = Gallery::new(config);
 
     (gallery, temp_dir)
 }

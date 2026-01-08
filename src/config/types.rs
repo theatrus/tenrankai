@@ -97,6 +97,21 @@ pub struct GallerySystemConfig {
     /// When true, hide location/GPS information from non-authenticated users
     #[serde(default = "super::defaults::default_false")]
     pub hide_location_from_public: bool,
+    /// Image indexing mode for URLs: "filename" (default), "sequence", or "unique_id"
+    #[serde(default = "super::defaults::default_image_indexing")]
+    pub image_indexing: ImageIndexingMode,
+}
+
+/// Image indexing mode for gallery URLs
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageIndexingMode {
+    /// Use actual filenames in URLs (default)
+    Filename,
+    /// Use sequential numbers based on sorted filenames
+    Sequence,
+    /// Use unique base36 identifiers generated from path hash
+    UniqueId,
 }
 
 /// Image size configuration for gallery processing

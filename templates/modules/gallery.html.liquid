@@ -104,28 +104,10 @@
 </div>
 
 
-<script type="module">
-  import { GalleryMasonry } from '{{ "js/pages/gallery-masonry.js" | asset_url }}';
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    const imagesDataElement = document.getElementById('gallery-images');
-    
-    if (!imagesDataElement) return;
-    
-    let images;
-    try {
-      images = JSON.parse(imagesDataElement.textContent);
-    } catch (e) {
-      console.error('Failed to parse gallery images data:', e);
-      return;
-    }
-    
-    // Initialize gallery masonry with images
-    new GalleryMasonry({
-      galleryUrl: '{{ gallery_url }}',
-      images: images
-    });
-  });
-</script>
+<!-- Gallery URL for React component -->
+<div data-gallery-url="{{ gallery_url }}" style="display: none"></div>
+
+<!-- Load React gallery component -->
+<script type="module" src="{{ 'dist/gallery.js' | asset_url }}" defer></script>
 
 {% include "_footer.html.liquid" %}

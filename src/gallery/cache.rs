@@ -4,7 +4,7 @@ use super::types::ImageSize;
 use crate::{CacheType, FormatCoverage};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
@@ -31,6 +31,31 @@ impl Gallery {
 
             // Save the updated cache metadata
             self.save_cache_metadata().await?;
+        } else {
+            // Build the indexer from the existing cache
+            let all_paths: Vec<String> = {
+                let cache = self.metadata_cache.read().await;
+                cache.keys().cloned().collect()
+            };
+
+            if !all_paths.is_empty() {
+                let mut indexer = self.image_indexer.write().await;
+                debug!(
+                    "Building index for paths: {:?}",
+                    &all_paths[..5.min(all_paths.len())]
+                );
+                indexer.build_index(&all_paths);
+                info!(
+                    "Initialized image index with {} images from cache for gallery '{}'",
+                    all_paths.len(),
+                    self.config.name
+                );
+            } else {
+                warn!(
+                    "No paths found in cache to build image index for gallery '{}'",
+                    self.config.name
+                );
+            }
         }
 
         Ok(())
