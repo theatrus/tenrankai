@@ -75,11 +75,24 @@ impl ImageIndexer {
                 }
             }
             ImageIndexingMode::UniqueId => {
-                // Generate unique IDs from path hash
+                // Generate unique IDs from path hash, preserving folder structure
                 for path in paths {
                     let id = generate_unique_id(path);
-                    self.path_to_index.insert(path.clone(), id.clone());
-                    self.index_to_path.insert(id, path.clone());
+
+                    // Include folder path in the index
+                    let index_str =
+                        if let Some(parent) = Path::new(path).parent().and_then(|p| p.to_str()) {
+                            if parent.is_empty() {
+                                id.clone()
+                            } else {
+                                format!("{}/{}", parent, id)
+                            }
+                        } else {
+                            id.clone()
+                        };
+
+                    self.path_to_index.insert(path.clone(), index_str.clone());
+                    self.index_to_path.insert(index_str, path.clone());
                 }
             }
         }
@@ -217,10 +230,21 @@ impl ImageIndexer {
                 // Generate unique IDs maintaining folder structure
                 for path in image_paths {
                     let id = generate_unique_id(path);
-                    // For unique IDs within folders, we only store the ID part
-                    // The handler will combine folder + ID when needed
-                    self.path_to_index.insert(path.clone(), id.clone());
-                    self.index_to_path.insert(id.clone(), path.clone());
+
+                    // Include folder path in the index
+                    let index_str =
+                        if let Some(parent) = Path::new(path).parent().and_then(|p| p.to_str()) {
+                            if parent.is_empty() {
+                                id.clone()
+                            } else {
+                                format!("{}/{}", parent, id)
+                            }
+                        } else {
+                            id.clone()
+                        };
+
+                    self.path_to_index.insert(path.clone(), index_str.clone());
+                    self.index_to_path.insert(index_str, path.clone());
                 }
             }
         }
@@ -314,15 +338,22 @@ mod tests {
     #[test]
     fn test_unique_id_indexing() {
         let mut indexer = ImageIndexer::new(ImageIndexingMode::UniqueId);
-        let paths = vec!["test.jpg".to_string()];
+        let paths = vec!["test.jpg".to_string(), "folder/image.jpg".to_string()];
 
         indexer.build_index(&paths);
 
+        // Root folder image - just the ID
         let id = indexer.get_index("test.jpg").unwrap();
         assert_eq!(id.len(), 6);
         assert!(id.chars().all(|c| c.is_ascii_alphanumeric()));
-
         assert_eq!(indexer.get_path(id), Some("test.jpg"));
+
+        // Subfolder image - folder/ID format
+        let folder_id = indexer.get_index("folder/image.jpg").unwrap();
+        assert!(folder_id.starts_with("folder/"));
+        let id_part = folder_id.strip_prefix("folder/").unwrap();
+        assert_eq!(id_part.len(), 6);
+        assert_eq!(indexer.get_path(&folder_id), Some("folder/image.jpg"));
     }
 
     #[test]
