@@ -478,9 +478,27 @@ can_edit_any_comments = true
 - Permission merging uses OR logic - most permissive wins
 - Tests need a test-only constructor for OptionalAuth (added `#[cfg(test)] pub fn new()`)
 
+### ✅ Step 3: Implement Axum Extractors (COMPLETED)
+
+**What we implemented:**
+- Created `src/permissions/extractors.rs` with permission-aware extractors
+- `OptionalPermissions` - Always succeeds, provides permissions for user or public
+- `RequireView` - Returns 403 if user cannot view
+- `RequireMetadata` - Returns 403 if user cannot read metadata
+- `RequireOwner` - Returns 403 if user is not an owner
+- `UserPermissions` struct with helper methods for checking permissions
+- `resolve_permissions_for_path()` helper for handlers with explicit gallery/path
+- Comprehensive helper methods for checking edit/delete permissions on own content
+
+**Learnings:**
+- Extractors need to determine gallery and path from the request context
+- Path extraction from MatchedPath works for most routes
+- Alternative `resolve_permissions_for_path` function useful for handlers with explicit params
+- Helper methods on extractors make permission checks cleaner in handlers
+- Tests confirmed the extractors work correctly with proper role resolution
+
 ### 📝 Remaining Steps
 
-3. Implement Axum extractors
 4. Update handlers to use new extractors
 5. Update templates with permission checks
 6. Create migration code for existing configs
