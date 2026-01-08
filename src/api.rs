@@ -315,6 +315,12 @@ pub async fn image_detail_api_handler_for_named(
             error!("Failed to get image info: {}", e);
             StatusCode::NOT_FOUND
         })?;
+    
+    // Update the name to use the display name from the indexer
+    {
+        let indexer = gallery.image_indexer.read().await;
+        image_info.name = indexer.get_display_name(&resolved_path);
+    }
 
     // Check if user has download permission
     let has_permission = app_state.config.app.user_database.is_none() || user.is_some();

@@ -290,6 +290,12 @@ pub async fn image_detail_handler_for_named(
             return (StatusCode::NOT_FOUND, "Image not found").into_response();
         }
     };
+    
+    // Update the name to use the display name from the indexer
+    {
+        let indexer = gallery.image_indexer.read().await;
+        image_info.name = indexer.get_display_name(&resolved_path);
+    }
 
     // Check if user has download permission
     let has_permission = crate::login::has_download_permission(&app_state, &headers);
