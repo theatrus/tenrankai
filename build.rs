@@ -76,7 +76,7 @@ fn build_frontend() {
 
     // Build legacy TypeScript first
     build_legacy_typescript(frontend_dir);
-    
+
     // Then build Vite/React
     if !frontend_dir.join("vite.config.js").exists()
         && !frontend_dir.join("vite.config.ts").exists()
