@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse},
 };
-use tracing::error;
+use tracing::{debug, error};
 
 // Named gallery handlers for multiple gallery support
 #[axum::debug_handler]
@@ -324,7 +324,17 @@ pub async fn image_detail_handler_for_named(
         .unwrap_or_default();
 
     // Find current image index and get prev/next
-    let current_index = images.iter().position(|img| img.path == resolved_path);
+    // We need to compare against the original path (indexed identifier) not the resolved path
+    let current_index = images.iter().position(|img| img.path == path);
+
+    // Debug logging to understand the issue
+    if current_index.is_none() {
+        debug!(
+            "Could not find current image in navigation. Looking for '{}', available paths: {:?}",
+            path,
+            images.iter().map(|i| &i.path).collect::<Vec<_>>()
+        );
+    }
 
     let (prev_image, next_image) = if let Some(index) = current_index {
         let prev = if index > 0 {

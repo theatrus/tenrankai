@@ -465,6 +465,7 @@ mod tests {
                 max_depth: 3,
                 max_per_folder: 3,
             },
+            image_indexing: crate::config::ImageIndexingMode::Filename,
         };
 
         let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config));

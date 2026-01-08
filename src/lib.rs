@@ -22,8 +22,8 @@ pub mod webp_encoder;
 pub use api_response::ApiResponse;
 pub use cache::{CacheType, FormatCoverage};
 pub use config::{
-    AppConfig, Config, GallerySystemConfig, ImageSizeConfig, PostsSystemConfig, PreviewConfig,
-    ServerConfig, StaticConfig, TemplateConfig,
+    AppConfig, Config, GallerySystemConfig, ImageIndexingMode, ImageSizeConfig, PostsSystemConfig,
+    PreviewConfig, ServerConfig, StaticConfig, TemplateConfig,
 };
 pub use logging::LogLevel;
 pub use template_system::{TemplateCategory, TemplatePath, TemplateType};
