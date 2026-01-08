@@ -295,7 +295,7 @@ pub struct AuthStatusResponse {
 
 pub async fn check_auth_status(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> Json<AuthStatusResponse> {
     // If no user database is configured, return not authorized
     if app_state.config.app.user_database.is_none() {
@@ -305,24 +305,19 @@ pub async fn check_auth_status(
         });
     }
 
-    let username =
-        crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret);
-
     Json(AuthStatusResponse {
-        authorized: username.is_some(),
-        username,
+        authorized: auth.is_authenticated(),
+        username: auth.username().map(|s| s.to_string()),
     })
 }
 
 pub async fn passkey_enrollment_page(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Query(query): Query<LoginQuery>,
 ) -> Result<Html<String>, StatusCode> {
-    // Check if user is authenticated
-    let username =
-        crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-            .ok_or(ApiResponse::Unauthorized.status_code())?;
+    // Get authenticated username
+    let username = auth.username().to_string();
 
     // Use return URL from query parameter or default to gallery
     let redirect_url = query
@@ -352,12 +347,10 @@ pub async fn passkey_enrollment_page(
 /// Profile page handler - shows user information and passkey management
 pub async fn profile_page(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
 ) -> Result<Html<String>, StatusCode> {
-    // Check authentication
-    let username =
-        crate::login::get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-            .ok_or(ApiResponse::Unauthorized.status_code())?;
+    // Get authenticated username
+    let username = auth.username().to_string();
 
     // Get user information
     let user_info = if let Some(manager) = &app_state.user_database_manager {

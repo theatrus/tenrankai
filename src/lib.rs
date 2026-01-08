@@ -54,6 +54,8 @@ pub struct AppState {
     pub config: Config,
 }
 
+// FromRef is automatically implemented for AppState since it implements Clone
+
 async fn static_file_handler(
     State(app_state): State<AppState>,
     Path(path): Path<String>,
@@ -327,8 +329,8 @@ pub async fn create_app(
                 prefix,
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, query, headers| {
-                        gallery::gallery_root_handler_for_named(state, Path(name), query, headers)
+                    move |state, query, auth| {
+                        gallery::gallery_root_handler_for_named(state, Path(name), query, auth)
                     }
                 }),
             );
@@ -338,13 +340,13 @@ pub async fn create_app(
                 &format!("{}/{{*path}}", prefix),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>, query, headers| {
+                    move |state, path: Path<String>, query, auth| {
                         let gallery_path = path.0;
                         gallery::gallery_handler_for_named(
                             state,
                             Path((name, gallery_path)),
                             query,
-                            headers,
+                            auth,
                         )
                     }
                 }),
@@ -355,13 +357,14 @@ pub async fn create_app(
                 &format!("{}/image/{{*path}}", prefix),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>, query, headers| {
+                    move |state, path: Path<String>, query, headers, auth| {
                         let image_path = path.0;
                         gallery::image_handler_for_named(
                             state,
                             Path((name, image_path)),
                             query,
                             headers,
+                            auth,
                         )
                     }
                 }),
@@ -372,12 +375,12 @@ pub async fn create_app(
                 &format!("{}/detail/{{*path}}", prefix),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>, headers| {
+                    move |state, path: Path<String>, auth| {
                         let detail_path = path.0;
                         gallery::image_detail_handler_for_named(
                             state,
                             Path((name, detail_path)),
-                            headers,
+                            auth,
                         )
                     }
                 }),
@@ -413,13 +416,13 @@ pub async fn create_app(
                 &format!("/api/gallery/{}/data/{{*path}}", name),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>, query, headers| {
+                    move |state, path: Path<String>, query, auth| {
                         let gallery_path = path.0;
                         api::gallery_api_handler_for_named(
                             state,
                             Path((name, gallery_path)),
                             query,
-                            headers,
+                            auth,
                         )
                     }
                 }),
@@ -430,12 +433,12 @@ pub async fn create_app(
                 &format!("/api/gallery/{}/image/{{*path}}", name),
                 axum::routing::get({
                     let name = name.clone();
-                    move |state, path: Path<String>, headers| {
+                    move |state, path: Path<String>, auth| {
                         let image_path = path.0;
                         api::image_detail_api_handler_for_named(
                             state,
                             Path((name, image_path)),
-                            headers,
+                            auth,
                         )
                     }
                 }),
@@ -447,13 +450,9 @@ pub async fn create_app(
                     &format!("/api/gallery/{}/metadata/{{*path}}", name),
                     axum::routing::get({
                         let name = name.clone();
-                        move |state, path: Path<String>, headers| {
+                        move |state, path: Path<String>, auth| {
                             let image_path = path.0;
-                            api::get_metadata_handler(
-                                state,
-                                Path((name, image_path)),
-                                headers,
-                            )
+                            api::get_metadata_handler(state, Path((name, image_path)), auth)
                         }
                     }),
                 )
@@ -461,12 +460,12 @@ pub async fn create_app(
                     &format!("/api/gallery/{}/metadata/{{*path}}", name),
                     axum::routing::put({
                         let name = name.clone();
-                        move |state, path: Path<String>, headers, request| {
+                        move |state, path: Path<String>, auth, request| {
                             let image_path = path.0;
                             api::update_metadata_handler(
                                 state,
                                 Path((name, image_path)),
-                                headers,
+                                auth,
                                 request,
                             )
                         }
@@ -478,14 +477,9 @@ pub async fn create_app(
                 &format!("/api/gallery/{}/comments/{{*path}}", name),
                 axum::routing::post({
                     let name = name.clone();
-                    move |state, path: Path<String>, headers, request| {
+                    move |state, path: Path<String>, auth, request| {
                         let image_path = path.0;
-                        api::add_comment_handler(
-                            state,
-                            Path((name, image_path)),
-                            headers,
-                            request,
-                        )
+                        api::add_comment_handler(state, Path((name, image_path)), auth, request)
                     }
                 }),
             );

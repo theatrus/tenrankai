@@ -2,7 +2,7 @@ use crate::{ApiResponse, login::AuthScope};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{Json, Response, IntoResponse},
+    response::{IntoResponse, Json, Response},
 };
 use base64::{Engine, engine::general_purpose};
 use hmac::{Hmac, Mac};
@@ -190,24 +190,8 @@ pub struct RefreshResponse {
 
 pub async fn refresh_static_versions(
     State(app_state): State<crate::AppState>,
-    headers: HeaderMap,
+    _auth: crate::login::RequireAuth,
 ) -> Result<Json<RefreshResponse>, StatusCode> {
-    // If no user database is configured, deny access
-    if app_state.config.app.user_database.is_none() {
-        return Ok(Json(RefreshResponse {
-            success: false,
-            message: "Authentication not configured".to_string(),
-        }));
-    }
-
-    // Check if user is authenticated
-    if !crate::login::is_authenticated(&headers, &app_state.config.app.cookie_secret) {
-        return Ok(Json(RefreshResponse {
-            success: false,
-            message: "Authentication required".to_string(),
-        }));
-    }
-
     // Refresh static file versions
     app_state.static_handler.refresh_file_versions().await;
 
@@ -223,24 +207,21 @@ pub async fn gallery_api_handler_for_named(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<crate::gallery::GalleryQuery>,
-    headers: HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> Result<Json<GalleryApiResponse>, StatusCode> {
     let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
         error!("Gallery '{}' not found", gallery_name);
         StatusCode::NOT_FOUND
     })?;
 
-    // Check authentication
-    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
-
     // Check if the user has access to this path
-    if !gallery.check_path_access(&path, user.as_deref()).await {
+    if !gallery.check_path_access(&path, auth.username()).await {
         return Err(StatusCode::FORBIDDEN);
     }
 
     let page = query.page.unwrap_or(0);
     let (directories, images, total_pages) = gallery
-        .list_directory_with_user(&path, page, user.as_deref())
+        .list_directory_with_user(&path, page, auth.username())
         .await
         .map_err(|e| {
             error!("Failed to list directory: {}", e);
@@ -271,7 +252,7 @@ pub async fn gallery_api_handler_for_named(
 pub async fn image_detail_api_handler_for_named(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
-    headers: HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> Result<Json<ImageDetailApiResponse>, StatusCode> {
     let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
         error!("Gallery '{}' not found", gallery_name);
@@ -289,9 +270,6 @@ pub async fn image_detail_api_handler_for_named(
         }
     };
 
-    // Check authentication
-    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
-
     // Extract the parent folder path from the resolved image path
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
         &resolved_path[..last_slash]
@@ -301,7 +279,7 @@ pub async fn image_detail_api_handler_for_named(
 
     // Check if the user has access to the folder containing this image
     if !gallery
-        .check_path_access(parent_path, user.as_deref())
+        .check_path_access(parent_path, auth.username())
         .await
     {
         return Err(StatusCode::FORBIDDEN);
@@ -309,7 +287,7 @@ pub async fn image_detail_api_handler_for_named(
 
     // Get image info (this function already handles authentication logic internally)
     let mut image_info = gallery
-        .get_image_info_with_user(&resolved_path, user.as_deref())
+        .get_image_info_with_user(&resolved_path, auth.username())
         .await
         .map_err(|e| {
             error!("Failed to get image info: {}", e);
@@ -323,7 +301,7 @@ pub async fn image_detail_api_handler_for_named(
     }
 
     // Check if user has download permission
-    let has_permission = app_state.config.app.user_database.is_none() || user.is_some();
+    let has_permission = app_state.config.app.user_database.is_none() || auth.is_authenticated();
 
     // If approximate dates are enabled and user doesn't have permission, modify the capture date
     if gallery.get_config().approximate_dates_for_public
@@ -417,13 +395,9 @@ pub struct MetadataResponse {
 pub async fn get_metadata_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path)): Path<(String, String)>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
 ) -> impl IntoResponse {
-    // Check authentication
-    let user = match crate::login::get_authenticated_user_for_app(&app_state, &headers) {
-        Some(u) => u,
-        None => return ApiResponse::Unauthorized.into_response(),
-    };
+    let user = auth.username();
 
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
@@ -448,10 +422,10 @@ pub async fn get_metadata_handler(
         ""
     };
 
-    if !gallery.check_path_access(parent_path, Some(&user)).await {
+    if !gallery.check_path_access(parent_path, Some(user)).await {
         return ApiResponse::AccessDenied.into_response();
     }
-    
+
     // Check if metadata is enabled for this path
     if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
         return ApiResponse::FeatureDisabled.into_response();
@@ -478,14 +452,10 @@ pub async fn get_metadata_handler(
 pub async fn update_metadata_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path)): Path<(String, String)>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Json(request): Json<UpdateMetadataRequest>,
 ) -> impl IntoResponse {
-    // Check authentication
-    let user = match crate::login::get_authenticated_user_for_app(&app_state, &headers) {
-        Some(u) => u,
-        None => return ApiResponse::Unauthorized.into_response(),
-    };
+    let user = auth.username();
 
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
@@ -510,10 +480,10 @@ pub async fn update_metadata_handler(
         ""
     };
 
-    if !gallery.check_path_access(parent_path, Some(&user)).await {
+    if !gallery.check_path_access(parent_path, Some(user)).await {
         return ApiResponse::AccessDenied.into_response();
     }
-    
+
     // Check if metadata is enabled for this path
     if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
         return ApiResponse::FeatureDisabled.into_response();
@@ -543,7 +513,7 @@ pub async fn update_metadata_handler(
         metadata.tags = tags;
     }
 
-    metadata.update_modified(Some(user));
+    metadata.update_modified(Some(user.to_string()));
 
     // Save metadata
     match gallery
@@ -563,14 +533,10 @@ pub async fn update_metadata_handler(
 pub async fn add_comment_handler(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, image_path)): Path<(String, String)>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Json(request): Json<AddCommentRequest>,
 ) -> impl IntoResponse {
-    // Check authentication
-    let user = match crate::login::get_authenticated_user_for_app(&app_state, &headers) {
-        Some(u) => u,
-        None => return ApiResponse::Unauthorized.into_response(),
-    };
+    let user = auth.username();
 
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
@@ -595,10 +561,10 @@ pub async fn add_comment_handler(
         ""
     };
 
-    if !gallery.check_path_access(parent_path, Some(&user)).await {
+    if !gallery.check_path_access(parent_path, Some(user)).await {
         return ApiResponse::AccessDenied.into_response();
     }
-    
+
     // Check if metadata is enabled for this path
     if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
         return ApiResponse::FeatureDisabled.into_response();
@@ -618,7 +584,7 @@ pub async fn add_comment_handler(
     };
 
     // Add comment
-    metadata.add_comment(user.clone(), request.text);
+    metadata.add_comment(user.to_string(), request.text);
 
     // Save metadata
     match gallery

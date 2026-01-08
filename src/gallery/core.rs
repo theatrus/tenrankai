@@ -471,17 +471,18 @@ impl Gallery {
         };
 
         // Load user metadata if the user is authenticated and metadata is enabled
-        let user_metadata = if user.is_some() && self.is_metadata_enabled_for_path(relative_path).await {
-            match self.user_metadata_storage.load(&full_path).await {
-                Ok(metadata) => metadata,
-                Err(e) => {
-                    debug!("Failed to load user metadata for {}: {}", relative_path, e);
-                    None
+        let user_metadata =
+            if user.is_some() && self.is_metadata_enabled_for_path(relative_path).await {
+                match self.user_metadata_storage.load(&full_path).await {
+                    Ok(metadata) => metadata,
+                    Err(e) => {
+                        debug!("Failed to load user metadata for {}: {}", relative_path, e);
+                        None
+                    }
                 }
-            }
-        } else {
-            None
-        };
+            } else {
+                None
+            };
 
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
@@ -529,20 +530,20 @@ impl Gallery {
         if !self.config.enable_metadata {
             return false;
         }
-        
+
         // Then check folder-level override
         let folder_path = if let Some(last_slash) = relative_path.rfind('/') {
             &relative_path[..last_slash]
         } else {
             ""
         };
-        
-        if let Some(metadata) = self.read_folder_metadata_full(folder_path).await {
-            if let Some(folder_enable) = metadata.config.enable_metadata {
-                return folder_enable;
-            }
+
+        if let Some(metadata) = self.read_folder_metadata_full(folder_path).await
+            && let Some(folder_enable) = metadata.config.enable_metadata
+        {
+            return folder_enable;
         }
-        
+
         // Default to gallery setting
         self.config.enable_metadata
     }

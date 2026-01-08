@@ -250,7 +250,7 @@ pub(crate) struct FolderConfig {
     // Image indexing mode for this folder (overrides gallery default)
     #[allow(dead_code)]
     pub image_indexing: Option<crate::config::ImageIndexingMode>,
-    
+
     // Metadata features control
     /// Override gallery-level metadata setting for this folder
     pub enable_metadata: Option<bool>,

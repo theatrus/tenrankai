@@ -51,10 +51,10 @@ impl Gallery {
             });
 
         let image_indexer = indexing::ImageIndexer::new(config.image_indexing);
-        
+
         // Create sidecar metadata storage for now
         // TODO: Make this configurable through config
-        let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> = 
+        let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> =
             Arc::new(crate::metadata_storage::SidecarMetadataStorage::new());
 
         Self {

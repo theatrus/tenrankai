@@ -3,7 +3,7 @@ use super::{GalleryQuery, NavigationImage};
 use crate::{ApiResponse, AppState};
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{Html, IntoResponse},
 };
 use tracing::{debug, error};
@@ -14,13 +14,13 @@ pub async fn gallery_root_handler_for_named(
     State(app_state): State<AppState>,
     Path(gallery_name): Path<String>,
     Query(query): Query<GalleryQuery>,
-    headers: HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     gallery_handler_for_named(
         State(app_state),
         Path((gallery_name, "".to_string())),
         Query(query),
-        headers,
+        auth,
     )
     .await
 }
@@ -30,7 +30,7 @@ pub async fn gallery_handler_for_named(
     State(app_state): State<AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
-    headers: HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
 
@@ -43,10 +43,10 @@ pub async fn gallery_handler_for_named(
     };
 
     // Check if the user has access to this path
-    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
-    if !gallery.check_path_access(&path, user.as_deref()).await {
+    let user = auth.username();
+    if !gallery.check_path_access(&path, user).await {
         // If folder requires authentication and user is not authenticated, redirect to login
-        if user.is_none() && gallery.is_folder_access_restricted(&path).await {
+        if !auth.is_authenticated() && gallery.is_folder_access_restricted(&path).await {
             let return_url = if path.is_empty() {
                 format!("/{}", gallery_name)
             } else {
@@ -63,7 +63,7 @@ pub async fn gallery_handler_for_named(
 
     let page = query.page.unwrap_or(0);
     let (directories, images, total_pages) = match gallery
-        .list_directory_with_user(&path, page, user.as_deref())
+        .list_directory_with_user(&path, page, auth.username())
         .await
     {
         Ok(result) => {
@@ -232,7 +232,7 @@ pub async fn gallery_handler_for_named(
 pub async fn image_detail_handler_for_named(
     State(app_state): State<AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
-    headers: HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     let template_engine = &app_state.template_engine;
 
@@ -256,7 +256,7 @@ pub async fn image_detail_handler_for_named(
     };
 
     // Check if the user has access to the folder containing this image
-    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
+    let user = auth.username();
 
     // Extract the parent folder path from the resolved image path
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
@@ -265,12 +265,9 @@ pub async fn image_detail_handler_for_named(
         "" // Image is in root folder
     };
 
-    if !gallery
-        .check_path_access(parent_path, user.as_deref())
-        .await
-    {
+    if !gallery.check_path_access(parent_path, user).await {
         // If folder requires authentication and user is not authenticated, redirect to login
-        if user.is_none() && gallery.is_folder_access_restricted(parent_path).await {
+        if !auth.is_authenticated() && gallery.is_folder_access_restricted(parent_path).await {
             let return_url = format!("/{}/detail/{}", gallery_name, path);
             let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
             return axum::response::Redirect::temporary(&login_url).into_response();
@@ -280,10 +277,7 @@ pub async fn image_detail_handler_for_named(
         }
     }
 
-    let mut image_info = match gallery
-        .get_image_info_with_user(&resolved_path, user.as_deref())
-        .await
-    {
+    let mut image_info = match gallery.get_image_info_with_user(&resolved_path, user).await {
         Ok(info) => info,
         Err(e) => {
             error!("Failed to get image info: {}", e);
@@ -298,7 +292,7 @@ pub async fn image_detail_handler_for_named(
     }
 
     // Check if user has download permission
-    let has_permission = crate::login::has_download_permission(&app_state, &headers);
+    let has_permission = auth.is_authenticated();
 
     // If approximate dates are enabled and user doesn't have permission, modify the capture date
     if gallery.get_config().approximate_dates_for_public
@@ -385,7 +379,7 @@ pub async fn image_detail_handler_for_named(
     let image_detail_response = crate::api::image_detail_api_handler_for_named(
         axum::extract::State(app_state.clone()),
         axum::extract::Path((gallery_name.clone(), path.clone())), // Use original path for API consistency
-        headers.clone(),
+        auth.clone(),
     )
     .await;
 
@@ -397,14 +391,13 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    // Get authenticated user info
-    let auth_user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
-    let is_authenticated = auth_user.is_some();
-    let current_user = auth_user.unwrap_or_default();
-    
+    // Get authenticated user info from extractor
+    let is_authenticated = auth.is_authenticated();
+    let current_user = auth.username().unwrap_or_default().to_string();
+
     // Check if metadata is enabled for this path
     let metadata_enabled = gallery.is_metadata_enabled_for_path(&resolved_path).await;
-    
+
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -446,7 +439,8 @@ pub async fn image_handler_for_named(
     State(app_state): State<AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
-    headers: HeaderMap,
+    headers: axum::http::HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
@@ -468,7 +462,7 @@ pub async fn image_handler_for_named(
     };
 
     // Check if the user has access to the folder containing this image
-    let user = crate::login::get_authenticated_user_for_app(&app_state, &headers);
+    let user = auth.username();
 
     // Extract the parent folder path from the resolved image path
     let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
@@ -477,10 +471,7 @@ pub async fn image_handler_for_named(
         "" // Image is in root folder
     };
 
-    if !gallery
-        .check_path_access(parent_path, user.as_deref())
-        .await
-    {
+    if !gallery.check_path_access(parent_path, user).await {
         // For image serving, always return 403 instead of redirect to avoid breaking image URLs
         return ApiResponse::AccessDenied.into_response();
     }
@@ -489,9 +480,7 @@ pub async fn image_handler_for_named(
     if let Some(ref size_str) = query.size {
         match ImageSize::parse(size_str) {
             Some(size) => {
-                if size.requires_auth()
-                    && !crate::login::has_download_permission(&app_state, &headers)
-                {
+                if size.requires_auth() && !auth.is_authenticated() {
                     tracing::warn!(path = %path, "Authentication required for size: {}", size.as_str());
                     return (StatusCode::FORBIDDEN, "Download permission required").into_response();
                 }
@@ -512,7 +501,7 @@ pub async fn image_handler_for_named(
         }
     } else {
         // No size parameter means full-size original image - requires authentication
-        if !crate::login::has_download_permission(&app_state, &headers) {
+        if !auth.is_authenticated() {
             tracing::warn!(path = %path, "Full-size image request denied - authentication required");
             return (StatusCode::FORBIDDEN, "Download permission required").into_response();
         }
