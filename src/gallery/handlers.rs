@@ -80,18 +80,13 @@ pub async fn gallery_handler_for_named(
         }
     };
 
-    // Convert images to JSON for client-side rendering
-    let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
-
-    // Combine directories and images for the template's items array
-    let mut items = directories.clone();
-    items.extend(images.clone());
-
     // Check if this is the root path
     let is_root = path.is_empty() || path == "/";
-    let gallery_config = gallery.get_config();
 
-    // Render the template
+    // Convert images to JSON for client-side rendering
+    let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
+    
+    // Get breadcrumbs and folder metadata
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
@@ -110,6 +105,30 @@ pub async fn gallery_handler_for_named(
             crate::permissions::UserPermissions::new(None, Default::default())
         }
     };
+    
+    // Create comprehensive gallery data for React component
+    let gallery_data = serde_json::json!({
+        "gallery_name": &gallery_name,
+        "gallery_path": &path,
+        "is_root": is_root,
+        "directories": &directories,
+        "images": &images,
+        "breadcrumbs": &breadcrumbs,
+        "page": page,
+        "total_pages": total_pages,
+        "folder_title": &folder_title,
+        "folder_description": &folder_description,
+        "permissions": &user_permissions.permissions,
+        "is_authenticated": auth.is_authenticated(),
+        "current_user": auth.username().unwrap_or_default(),
+    });
+    let gallery_data_json = serde_json::to_string(&gallery_data).unwrap_or_else(|_| "{}".to_string());
+
+    // Combine directories and images for the template's items array
+    let mut items = directories.clone();
+    items.extend(images.clone());
+    
+    let gallery_config = gallery.get_config();
 
     // Determine OpenGraph image - use composite if we have 2+ images, otherwise use first image
     let (og_image, og_image_width, og_image_height) = if images.len() >= 2 {
@@ -158,6 +177,7 @@ pub async fn gallery_handler_for_named(
         "images": images,
         "items": items,
         "images_json": images_json,
+        "gallery_data_json": gallery_data_json,
         "page": page,
         "current_page": page,
         "total_pages": total_pages,
