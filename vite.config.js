@@ -13,21 +13,22 @@ export default defineConfig({
     outDir: '../../static/dist',
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        'image-detail': resolve(__dirname, 'src/frontend/pages/image-detail.tsx'),
-        'gallery': resolve(__dirname, 'src/frontend/pages/gallery.tsx'),
-        'theme-toggle': resolve(__dirname, 'src/frontend/theme-toggle.ts')
-      },
+      input: resolve(__dirname, 'src/frontend/app.ts'),
       output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: '[name]-[hash].js',
-        assetFileNames: '[name]-[hash].[ext]'
+        entryFileNames: 'tenrankai.js',
+        format: 'iife',
+        name: 'Tenrankai',
+        // Bundle everything into a single file
+        inlineDynamicImports: true,
+        manualChunks: undefined
       }
     },
     // Target modern browsers for better performance
     target: 'es2020',
     // Enable source maps for debugging
-    sourcemap: true
+    sourcemap: true,
+    // Minify the output (using esbuild by default)
+    minify: true
   },
   
   // Development server configuration
