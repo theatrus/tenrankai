@@ -26,7 +26,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY templates ./templates
 COPY static ./static
-COPY package.json package-lock.json tsconfig.json build.rs ./
+COPY package.json package-lock.json tsconfig.json tsconfig.legacy.json vite.config.js build.rs ./
 
 # Build the application with all features in release mode (will trigger frontend build)
 RUN cargo build --release
