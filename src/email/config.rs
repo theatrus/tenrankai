@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct EmailConfig {
     pub from_address: String,
     pub from_name: Option<String>,
