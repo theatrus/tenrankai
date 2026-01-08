@@ -15,6 +15,12 @@ interface ImageDetailPageProps {
   hideMetadata?: boolean;
 }
 
+interface Breadcrumb {
+  path: string;
+  display_name: string;
+  is_current: boolean;
+}
+
 function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle }: { 
   breadcrumbs: Breadcrumb[] | any; 
   galleryUrl: string; 
@@ -176,30 +182,6 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
         </div>
       </div>
       
-      {/* Loading overlay for navigation transitions only */}
-      {loading && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: '#fff',
-            padding: '1rem 2rem',
-            borderRadius: '4px',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-          }}>
-            Loading...
-          </div>
-        </div>
-      )}
     </>
   );
 }

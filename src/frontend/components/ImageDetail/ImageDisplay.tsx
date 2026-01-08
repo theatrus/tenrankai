@@ -9,24 +9,17 @@ interface ImageDisplayProps {
 }
 
 export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: ImageDisplayProps) {
-  const [imageLoading, setImageLoading] = useState(true);
+  const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   const loadedImageRef = useRef<string | null>(null);
+  const isInitialMount = useRef(true);
   
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
 
   useEffect(() => {
-    console.log('ImageDisplay: Image path changed, checking if need to reload', {
-      path: image.path,
-      medium_url: image.medium_url,
-      previouslyLoaded: loadedImageRef.current,
-      needsReload: loadedImageRef.current !== image.medium_url
-    });
-    
     if (!image.medium_url) {
-      console.error('ImageDisplay: No medium_url provided for image');
       setImageError(true);
       setImageLoading(false);
       return;
@@ -34,8 +27,10 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
     
     // Only reset loading state if this is a different image
     if (loadedImageRef.current !== image.medium_url) {
-      console.log('ImageDisplay: Different image, resetting loading state');
-      setImageLoading(true);
+      // Don't show loading on initial mount (image might already be cached)
+      if (!isInitialMount.current) {
+        setImageLoading(true);
+      }
       setImageError(false);
       loadedImageRef.current = null; // Clear the loaded image reference
       
@@ -46,12 +41,14 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
       
       // Set a timeout to detect stuck loading
       timeoutRef.current = setTimeout(() => {
-        console.warn('ImageDisplay: Image taking too long to load, checking if still loading...');
         setImageLoading(false);
         setImageError(true);
       }, 10000); // 10 second timeout
-    } else {
-      console.log('ImageDisplay: Same image already loaded, skipping reset');
+    }
+    
+    // After first mount, treat as navigation
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
     }
     
     return () => {
@@ -62,14 +59,12 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
   }, [image.path, image.medium_url]);
 
   const handleImageLoad = () => {
-    console.log('ImageDisplay: Image loaded successfully, setting imageLoading to false');
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     loadedImageRef.current = image.medium_url; // Mark this image as loaded
     setImageLoading(false);
   };
 
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    console.log('ImageDisplay: Image failed to load', e);
+  const handleImageError = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setImageLoading(false);
     setImageError(true);
@@ -86,8 +81,6 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
       window.open(fullSizeUrl, '_blank');
     }
   };
-
-  console.log('ImageDisplay: Rendering with state', { imageLoading, imageError });
 
   return (
     <div className="image-container" 
@@ -111,6 +104,12 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
           width={image.dimensions[0]}
           height={image.dimensions[1]}
           loading="eager"
+          onLoadStart={() => {
+            // Start loading when the browser actually begins loading
+            if (!isInitialMount.current && loadedImageRef.current !== image.medium_url) {
+              setImageLoading(true);
+            }
+          }}
           onLoad={handleImageLoad}
           onError={handleImageError}
           onClick={handleClick}

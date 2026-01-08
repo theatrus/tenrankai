@@ -4,12 +4,12 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "build:prod": "NODE_ENV=production vite build",
+    "build:prod": "vite build --mode production",
     "dev": "vite",
     "dev:open": "vite --open",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "clean": "rm -rf static/dist node_modules/.vite",
+    "clean": "node -e \"const fs = require('fs'); ['static/dist', 'node_modules/.vite'].forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));\"",
     "help": "echo 'Development: npm run dev (+ cargo run in another terminal)'"
   },
   "dependencies": {

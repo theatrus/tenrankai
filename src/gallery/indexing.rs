@@ -85,7 +85,9 @@ impl ImageIndexer {
                             if parent.is_empty() {
                                 id.clone()
                             } else {
-                                format!("{}/{}", parent, id)
+                                // Always use forward slashes for URLs, regardless of OS
+                                let parent_with_forward_slashes = parent.replace('\\', "/");
+                                format!("{}/{}", parent_with_forward_slashes, id)
                             }
                         } else {
                             id.clone()
@@ -237,7 +239,9 @@ impl ImageIndexer {
                             if parent.is_empty() {
                                 id.clone()
                             } else {
-                                format!("{}/{}", parent, id)
+                                // Always use forward slashes for URLs, regardless of OS
+                                let parent_with_forward_slashes = parent.replace('\\', "/");
+                                format!("{}/{}", parent_with_forward_slashes, id)
                             }
                         } else {
                             id.clone()
