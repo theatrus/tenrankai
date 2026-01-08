@@ -79,6 +79,7 @@ impl Gallery {
                     dimensions: None,
                     capture_date: None,
                     is_new: false,
+                    user_metadata: None, // Folders don't have user metadata
                 });
             } else if self.is_image(&file_name) {
                 // Found image
@@ -133,6 +134,44 @@ impl Gallery {
                     indexer.get_display_name(&item_path)
                 };
 
+                // Load user metadata based on permissions
+                // We need to check permissions for this specific folder
+                let user_metadata = if user.is_some() {
+                    // Get folder metadata to check permissions
+                    let image_folder_path = if let Some(last_slash) = item_path.rfind('/') {
+                        &item_path[..last_slash]
+                    } else {
+                        "" // Image is in root folder
+                    };
+                    
+                    let folder_metadata = self.read_folder_metadata_full(image_folder_path).await;
+                    
+                    // Create permission resolver
+                    let resolver = crate::permissions::PermissionResolver::new(
+                        &self.config.permissions,
+                        folder_metadata.as_ref().map(|m| &m.config.permissions),
+                    );
+                    
+                    // Resolve permissions for the user
+                    let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
+                    
+                    // Only load metadata if user has permission
+                    if permissions.can_read_metadata {
+                        let full_image_path = self.config.source_directory.join(&item_path);
+                        match self.user_metadata_storage.load(&full_image_path).await {
+                            Ok(metadata) => metadata,
+                            Err(e) => {
+                                debug!("Failed to load user metadata for {}: {}", item_path, e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 items.push(GalleryItem {
                     name: display_name,
                     display_name: None,
@@ -147,6 +186,7 @@ impl Gallery {
                     dimensions,
                     capture_date,
                     is_new,
+                    user_metadata,
                 });
             }
         }
@@ -508,9 +548,8 @@ impl Gallery {
             (None, None)
         };
 
-        // Load user metadata if the user is authenticated
-        // Note: metadata access is now controlled by permissions, not a separate check
-        let user_metadata = if user.is_some() {
+        // Load user metadata if the user has permission
+        let user_metadata = if user.is_some() && permissions.can_read_metadata {
             match self.user_metadata_storage.load(&full_path).await {
                 Ok(metadata) => metadata,
                 Err(e) => {
@@ -955,6 +994,7 @@ impl Gallery {
                         dimensions,
                         capture_date,
                         is_new,
+                        user_metadata: None, // Not loading metadata in preview mode
                     });
                 }
             }

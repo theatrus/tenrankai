@@ -153,6 +153,9 @@ pub struct GalleryItem {
     pub dimensions: Option<(u32, u32)>,
     pub capture_date: Option<SystemTime>,
     pub is_new: bool,
+    /// User-editable metadata (comments, pick status, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_metadata: Option<crate::metadata_storage::ImageUserMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
