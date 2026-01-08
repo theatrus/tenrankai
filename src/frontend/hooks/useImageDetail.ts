@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ImageDetailData } from '../types/index.ts';
+import { ImageDetailData, ImageUserMetadata } from '../types/index.ts';
 import { ImageDetailApiClient } from '../api/image-detail.ts';
 
 interface UseImageDetailOptions {
@@ -13,6 +13,7 @@ interface UseImageDetailReturn {
   error: string | null;
   refetch: () => Promise<void>;
   loadImage: (imagePath: string) => Promise<void>;
+  updateMetadata: (metadata: ImageUserMetadata) => void;
 }
 
 export function useImageDetail({ galleryName, initialData }: UseImageDetailOptions): UseImageDetailReturn {
@@ -42,12 +43,25 @@ export function useImageDetail({ galleryName, initialData }: UseImageDetailOptio
       await loadImage(data.image.path);
     }
   };
+  
+  const updateMetadata = (metadata: ImageUserMetadata) => {
+    if (data) {
+      setData({
+        ...data,
+        image: {
+          ...data.image,
+          user_metadata: metadata
+        }
+      });
+    }
+  };
 
   return {
     data,
     loading,
     error,
     refetch,
-    loadImage
+    loadImage,
+    updateMetadata
   };
 }

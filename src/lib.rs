@@ -10,6 +10,7 @@ pub mod favicon;
 pub mod gallery;
 pub mod logging;
 pub mod login;
+pub mod metadata_storage;
 pub mod posts;
 pub mod robots;
 pub mod startup_checks;
@@ -435,6 +436,55 @@ pub async fn create_app(
                             state,
                             Path((name, image_path)),
                             headers,
+                        )
+                    }
+                }),
+            );
+
+            // API route for image metadata (get/update)
+            router = router
+                .route(
+                    &format!("/api/gallery/{}/metadata/{{*path}}", name),
+                    axum::routing::get({
+                        let name = name.clone();
+                        move |state, path: Path<String>, headers| {
+                            let image_path = path.0;
+                            api::get_metadata_handler(
+                                state,
+                                Path((name, image_path)),
+                                headers,
+                            )
+                        }
+                    }),
+                )
+                .route(
+                    &format!("/api/gallery/{}/metadata/{{*path}}", name),
+                    axum::routing::put({
+                        let name = name.clone();
+                        move |state, path: Path<String>, headers, request| {
+                            let image_path = path.0;
+                            api::update_metadata_handler(
+                                state,
+                                Path((name, image_path)),
+                                headers,
+                                request,
+                            )
+                        }
+                    }),
+                );
+
+            // API route for adding comments
+            router = router.route(
+                &format!("/api/gallery/{}/comments/{{*path}}", name),
+                axum::routing::post({
+                    let name = name.clone();
+                    move |state, path: Path<String>, headers, request| {
+                        let image_path = path.0;
+                        api::add_comment_handler(
+                            state,
+                            Path((name, image_path)),
+                            headers,
+                            request,
                         )
                     }
                 }),

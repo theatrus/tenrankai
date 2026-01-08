@@ -100,6 +100,9 @@ pub struct GallerySystemConfig {
     /// Image indexing mode for URLs: "filename" (default), "sequence", or "unique_id"
     #[serde(default = "super::defaults::default_image_indexing")]
     pub image_indexing: ImageIndexingMode,
+    /// Enable metadata features (comments, picks, etc.) for authenticated users
+    #[serde(default = "super::defaults::default_true")]
+    pub enable_metadata: bool,
 }
 
 /// Image indexing mode for gallery URLs

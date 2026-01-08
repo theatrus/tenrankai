@@ -22,6 +22,11 @@ pub fn default_false() -> bool {
     false
 }
 
+/// Default true value for boolean configuration options
+pub fn default_true() -> bool {
+    true
+}
+
 /// Default image indexing mode (filename)
 pub fn default_image_indexing() -> ImageIndexingMode {
     ImageIndexingMode::Filename
@@ -107,6 +112,7 @@ impl Default for GallerySystemConfig {
             copyright_holder: None,
             hide_location_from_public: false,
             image_indexing: default_image_indexing(),
+            enable_metadata: true,
         }
     }
 }
@@ -153,6 +159,7 @@ impl Default for Config {
                 copyright_holder: None,
                 hide_location_from_public: false,
                 image_indexing: default_image_indexing(),
+                enable_metadata: true,
             }]),
             posts: None,
             email: None,

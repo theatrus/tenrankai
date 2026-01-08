@@ -470,6 +470,19 @@ impl Gallery {
             (cached_metadata.camera_info, cached_metadata.color_profile)
         };
 
+        // Load user metadata if the user is authenticated and metadata is enabled
+        let user_metadata = if user.is_some() && self.is_metadata_enabled_for_path(relative_path).await {
+            match self.user_metadata_storage.load(&full_path).await {
+                Ok(metadata) => metadata,
+                Err(e) => {
+                    debug!("Failed to load user metadata for {}: {}", relative_path, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
                 .file_name()
@@ -506,7 +519,32 @@ impl Gallery {
             capture_date,
             is_new,
             color_profile,
+            user_metadata,
         })
+    }
+
+    /// Check if metadata features are enabled for a given path
+    pub async fn is_metadata_enabled_for_path(&self, relative_path: &str) -> bool {
+        // First check gallery-level setting
+        if !self.config.enable_metadata {
+            return false;
+        }
+        
+        // Then check folder-level override
+        let folder_path = if let Some(last_slash) = relative_path.rfind('/') {
+            &relative_path[..last_slash]
+        } else {
+            ""
+        };
+        
+        if let Some(metadata) = self.read_folder_metadata_full(folder_path).await {
+            if let Some(folder_enable) = metadata.config.enable_metadata {
+                return folder_enable;
+            }
+        }
+        
+        // Default to gallery setting
+        self.config.enable_metadata
     }
 
     pub(crate) async fn read_folder_metadata(
@@ -604,6 +642,7 @@ impl Gallery {
                         hide_location_from_public: None,
                         hide_technical_details: false,
                         image_indexing: None,
+                        enable_metadata: None,
                     },
                     description_markdown: content,
                 })

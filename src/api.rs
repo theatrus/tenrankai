@@ -2,7 +2,7 @@ use crate::{ApiResponse, login::AuthScope};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{Json, Response},
+    response::{Json, Response, IntoResponse},
 };
 use base64::{Engine, engine::general_purpose};
 use hmac::{Hmac, Mac};
@@ -391,6 +391,249 @@ pub async fn image_detail_api_handler_for_named(
     }))
 }
 
+// Metadata API handlers
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateMetadataRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlighted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pick_status: Option<crate::metadata_storage::PickStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddCommentRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MetadataResponse {
+    pub metadata: crate::metadata_storage::ImageUserMetadata,
+}
+
+/// Get metadata for an image
+pub async fn get_metadata_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, image_path)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Check authentication
+    let user = match crate::login::get_authenticated_user_for_app(&app_state, &headers) {
+        Some(u) => u,
+        None => return ApiResponse::Unauthorized.into_response(),
+    };
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => return ApiResponse::GalleryNotFound.into_response(),
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Check access to the folder
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
+    } else {
+        ""
+    };
+
+    if !gallery.check_path_access(parent_path, Some(&user)).await {
+        return ApiResponse::AccessDenied.into_response();
+    }
+    
+    // Check if metadata is enabled for this path
+    if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
+        return ApiResponse::FeatureDisabled.into_response();
+    }
+
+    // Get the full path
+    let full_path = gallery.source_directory().join(&resolved_path);
+
+    // Load metadata
+    match gallery.user_metadata_storage.load(&full_path).await {
+        Ok(Some(metadata)) => Json(MetadataResponse { metadata }).into_response(),
+        Ok(None) => Json(MetadataResponse {
+            metadata: crate::metadata_storage::ImageUserMetadata::default(),
+        })
+        .into_response(),
+        Err(e) => {
+            error!("Failed to load metadata: {}", e);
+            ApiResponse::InternalServerError.into_response()
+        }
+    }
+}
+
+/// Update metadata for an image
+pub async fn update_metadata_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, image_path)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateMetadataRequest>,
+) -> impl IntoResponse {
+    // Check authentication
+    let user = match crate::login::get_authenticated_user_for_app(&app_state, &headers) {
+        Some(u) => u,
+        None => return ApiResponse::Unauthorized.into_response(),
+    };
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => return ApiResponse::GalleryNotFound.into_response(),
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Check access to the folder
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
+    } else {
+        ""
+    };
+
+    if !gallery.check_path_access(parent_path, Some(&user)).await {
+        return ApiResponse::AccessDenied.into_response();
+    }
+    
+    // Check if metadata is enabled for this path
+    if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
+        return ApiResponse::FeatureDisabled.into_response();
+    }
+
+    // Get the full path
+    let full_path = gallery.source_directory().join(&resolved_path);
+
+    // Load existing metadata or create new
+    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+        Ok(Some(m)) => m,
+        Ok(None) => crate::metadata_storage::ImageUserMetadata::new(),
+        Err(e) => {
+            error!("Failed to load metadata: {}", e);
+            return ApiResponse::InternalServerError.into_response();
+        }
+    };
+
+    // Update fields
+    if let Some(highlighted) = request.highlighted {
+        metadata.highlighted = highlighted;
+    }
+    if let Some(pick_status) = request.pick_status {
+        metadata.pick_status = Some(pick_status);
+    }
+    if let Some(tags) = request.tags {
+        metadata.tags = tags;
+    }
+
+    metadata.update_modified(Some(user));
+
+    // Save metadata
+    match gallery
+        .user_metadata_storage
+        .save(&full_path, &metadata)
+        .await
+    {
+        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Err(e) => {
+            error!("Failed to save metadata: {}", e);
+            ApiResponse::InternalServerError.into_response()
+        }
+    }
+}
+
+/// Add a comment to an image
+pub async fn add_comment_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, image_path)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(request): Json<AddCommentRequest>,
+) -> impl IntoResponse {
+    // Check authentication
+    let user = match crate::login::get_authenticated_user_for_app(&app_state, &headers) {
+        Some(u) => u,
+        None => return ApiResponse::Unauthorized.into_response(),
+    };
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => return ApiResponse::GalleryNotFound.into_response(),
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Check access to the folder
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        &resolved_path[..last_slash]
+    } else {
+        ""
+    };
+
+    if !gallery.check_path_access(parent_path, Some(&user)).await {
+        return ApiResponse::AccessDenied.into_response();
+    }
+    
+    // Check if metadata is enabled for this path
+    if !gallery.is_metadata_enabled_for_path(&resolved_path).await {
+        return ApiResponse::FeatureDisabled.into_response();
+    }
+
+    // Get the full path
+    let full_path = gallery.source_directory().join(&resolved_path);
+
+    // Load existing metadata or create new
+    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+        Ok(Some(m)) => m,
+        Ok(None) => crate::metadata_storage::ImageUserMetadata::new(),
+        Err(e) => {
+            error!("Failed to load metadata: {}", e);
+            return ApiResponse::InternalServerError.into_response();
+        }
+    };
+
+    // Add comment
+    metadata.add_comment(user.clone(), request.text);
+
+    // Save metadata
+    match gallery
+        .user_metadata_storage
+        .save(&full_path, &metadata)
+        .await
+    {
+        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Err(e) => {
+            error!("Failed to save metadata: {}", e);
+            ApiResponse::InternalServerError.into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,6 +715,7 @@ mod tests {
                 max_per_folder: 3,
             },
             image_indexing: crate::config::ImageIndexingMode::Filename,
+            enable_metadata: true,
         };
 
         let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config));

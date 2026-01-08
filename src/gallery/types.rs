@@ -172,6 +172,9 @@ pub struct ImageInfo {
     pub capture_date: Option<String>,
     pub is_new: bool,
     pub color_profile: Option<String>,
+    /// User-editable metadata (comments, pick status, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_metadata: Option<crate::metadata_storage::ImageUserMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +250,10 @@ pub(crate) struct FolderConfig {
     // Image indexing mode for this folder (overrides gallery default)
     #[allow(dead_code)]
     pub image_indexing: Option<crate::config::ImageIndexingMode>,
+    
+    // Metadata features control
+    /// Override gallery-level metadata setting for this folder
+    pub enable_metadata: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

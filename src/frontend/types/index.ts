@@ -17,6 +17,25 @@ export interface LocationInfo {
   apple_maps_url: string;
 }
 
+export interface Comment {
+  id: string;
+  author: string;
+  text: string;
+  created_at: string;
+  edited_at?: string;
+}
+
+export type PickStatus = 'pick' | 'no_pick';
+
+export interface ImageUserMetadata {
+  comments: Comment[];
+  highlighted: boolean;
+  pick_status?: PickStatus;
+  tags: string[];
+  last_modified?: string;
+  modified_by?: string;
+}
+
 export interface ImageInfo {
   path: string;
   name: string;
@@ -33,6 +52,7 @@ export interface ImageInfo {
   location_info?: LocationInfo;
   color_profile?: string;
   is_new: boolean;
+  user_metadata?: ImageUserMetadata;
 }
 
 export interface NavigationImage {

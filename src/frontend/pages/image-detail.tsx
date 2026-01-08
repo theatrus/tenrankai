@@ -10,11 +10,15 @@ import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
+import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 
 interface ImageDetailPageProps {
   initialData: ImageDetailData;
   galleryUrl: string;
   hideMetadata?: boolean;
+  isAuthenticated?: boolean;
+  currentUser?: string;
+  metadataEnabled?: boolean;
 }
 
 interface Breadcrumb {
@@ -54,8 +58,15 @@ function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle }: {
   );
 }
 
-export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false }: ImageDetailPageProps) {
-  const { data: imageData, loading, error, loadImage } = useImageDetail({
+export function ImageDetailPage({ 
+  initialData, 
+  galleryUrl, 
+  hideMetadata = false,
+  isAuthenticated = false,
+  currentUser,
+  metadataEnabled = false
+}: ImageDetailPageProps) {
+  const { data: imageData, loading, error, loadImage, updateMetadata } = useImageDetail({
     galleryName: initialData.gallery_name,
     initialData
   });
@@ -206,6 +217,17 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
               <LocationMetadata image={currentData.image} />
             </>
           )}
+          
+          {metadataEnabled && (
+            <UserMetadata
+              metadata={currentData.image.user_metadata}
+              imagePath={currentData.image.path}
+              galleryName={currentData.gallery_name}
+              isAuthenticated={isAuthenticated}
+              currentUser={currentUser}
+              onUpdate={(updatedMetadata) => updateMetadata(updatedMetadata)}
+            />
+          )}
         </div>
       </div>
       
@@ -228,13 +250,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialData: ImageDetailData = JSON.parse(dataScript.textContent);
     const galleryUrl = container.getAttribute('data-gallery-url') || '/gallery';
     const hideMetadata = container.getAttribute('data-hide-metadata') === 'true';
+    const isAuthenticated = container.getAttribute('data-authenticated') === 'true';
+    const currentUser = container.getAttribute('data-current-user') || undefined;
+    const metadataEnabled = container.getAttribute('data-metadata-enabled') === 'true';
     
     console.log('React taking over image detail page with data:', {
       imagePath: initialData.image.path,
       imageUrl: initialData.image.medium_url,
       breadcrumbs: initialData.breadcrumbs,
       galleryUrl,
-      hideMetadata
+      hideMetadata,
+      isAuthenticated,
+      metadataEnabled
     });
 
     const root = createRoot(container);
@@ -243,6 +270,9 @@ document.addEventListener('DOMContentLoaded', () => {
         initialData={initialData}
         galleryUrl={galleryUrl}
         hideMetadata={hideMetadata}
+        isAuthenticated={isAuthenticated}
+        currentUser={currentUser}
+        metadataEnabled={metadataEnabled}
       />
     );
   } catch (error) {
