@@ -393,8 +393,25 @@ Folders can use TOML front matter in `_folder.md` files for advanced configurati
 +++
 hidden = true
 title = "Private Collection"
-require_auth = true
-allowed_users = ["alice", "bob"]
+
+# Optional: Configure folder-specific permissions
+[permissions]
+# Remove public access for this folder
+public_role = "none"
+
+# Define a custom role for this folder
+[permissions.roles.family]
+name = "family"
+permissions = { can_view = true, can_download_original = true, can_add_comments = true }
+
+# Assign users to the family role
+[[permissions.user_roles]]
+username = "alice"
+roles = ["family"]
+
+[[permissions.user_roles]]
+username = "bob"
+roles = ["family"]
 +++
 
 # Optional Markdown Content
@@ -405,8 +422,7 @@ This folder is hidden from gallery listings but remains accessible via direct UR
 **Configuration Options:**
 - `hidden = true`: Hides the folder from gallery listings, previews, and counts (but allows direct access)
 - `title = "Custom Name"`: Override the folder display name
-- `require_auth = true`: Require user authentication to access this folder
-- `allowed_users = ["user1", "user2"]`: Restrict access to specific users (implies require_auth)
+- `permissions`: Configure folder-specific access control with flexible roles
 
 **Hidden Folders:**
 - Do not appear in gallery navigation or listings
@@ -415,10 +431,170 @@ This folder is hidden from gallery listings but remains accessible via direct UR
 - Perfect for private collections or work-in-progress galleries
 
 **Access Control:**
+- Uses flexible role-based permissions (see Permission System below)
+- Folder permissions override gallery-level permissions
 - Access restrictions are hierarchical (parent folder restrictions apply to children)
-- Users must be authenticated to access folders with `require_auth = true`
-- Only listed users can access folders with `allowed_users` specified
-- Access control applies to folder browsing, image viewing, and API endpoints
+- Fine-grained control over viewing, downloading, metadata, and more
+
+## Permission System
+
+Tenrankai uses a flexible role-based access control (RBAC) system that allows fine-grained control over who can view, download, and interact with your galleries.
+
+### Key Features
+
+- **Flexible Roles**: Define custom roles with specific permissions
+- **Role Inheritance**: Roles can inherit permissions from other roles
+- **Multi-Level Control**: Set permissions at both gallery and folder levels
+- **Fine-Grained Permissions**: Control viewing, downloading, metadata, comments, and more
+- **User-Friendly Configuration**: Simple TOML-based configuration
+
+### Available Permissions
+
+- **Viewing**: `can_view` - Basic viewing access
+- **Information Display**:
+  - `can_see_technical_details` - Camera settings, EXIF data
+  - `can_see_exact_dates` - Exact capture dates (vs approximate)
+  - `can_see_location` - GPS coordinates and map links
+- **Downloading**:
+  - `can_download_medium` - Medium-sized images
+  - `can_download_large` - Large images
+  - `can_download_original` - Original full-resolution files
+- **Metadata & Interaction**:
+  - `can_read_metadata` - View comments, tags, picks
+  - `can_add_comments` - Add new comments
+  - `can_edit_own_comments` - Edit their own comments
+  - `can_delete_own_comments` - Delete their own comments
+  - `can_set_picks` - Set pick/reject status
+  - `can_add_tags` - Add tags to images
+- **Moderation**:
+  - `can_edit_any_comments` - Edit anyone's comments
+  - `can_delete_any_comments` - Delete anyone's comments
+- **Full Control**: `owner_access` - Bypass all restrictions
+
+### Gallery-Level Permissions
+
+Configure default permissions for an entire gallery in your `config.toml`:
+
+```toml
+[[galleries]]
+name = "main"
+# ... other gallery settings ...
+
+[galleries.permissions]
+# Role for unauthenticated users (omit for no public access)
+public_role = "viewer"
+
+# Default role for authenticated users without specific assignments
+default_authenticated_role = "contributor"
+
+# Define custom roles
+[galleries.permissions.roles.viewer]
+name = "viewer"
+permissions = { can_view = true, can_download_medium = true }
+
+[galleries.permissions.roles.contributor]
+name = "contributor"
+inherits = "viewer"  # Inherit all viewer permissions
+permissions = { 
+    can_see_technical_details = true,
+    can_see_exact_dates = true,
+    can_see_location = true,
+    can_download_large = true,
+    can_read_metadata = true,
+    can_add_comments = true,
+    can_edit_own_comments = true,
+    can_set_picks = true
+}
+
+[galleries.permissions.roles.admin]
+name = "admin"
+permissions = { owner_access = true }  # Full access
+
+# Assign roles to users
+[[galleries.permissions.user_roles]]
+username = "alice"
+roles = ["admin"]
+
+[[galleries.permissions.user_roles]]
+username = "bob"
+roles = ["contributor", "viewer"]  # Multiple roles allowed
+```
+
+### Folder-Level Permissions
+
+Override gallery permissions for specific folders in `_folder.md`:
+
+```markdown
++++
+title = "Private Collection"
+
+[permissions]
+# Remove public access for this folder
+public_role = "none"
+
+# Custom role for this folder
+[permissions.roles.family]
+name = "family"
+permissions = { 
+    can_view = true,
+    can_download_original = true,
+    can_add_comments = true
+}
+
+# Assign users
+[[permissions.user_roles]]
+username = "mom"
+roles = ["family"]
++++
+```
+
+### Common Patterns
+
+**Public Portfolio** - View only, no downloads:
+```toml
+public_role = "viewer"
+[galleries.permissions.roles.viewer]
+permissions = { can_view = true }
+```
+
+**Client Access** - View and download, no comments:
+```toml
+public_role = "none"  # No public access
+[[galleries.permissions.user_roles]]
+username = "client1"
+roles = ["client"]
+
+[galleries.permissions.roles.client]
+permissions = { 
+    can_view = true,
+    can_download_medium = true,
+    can_see_technical_details = true
+}
+```
+
+**Team Collaboration** - Full interaction for team:
+```toml
+default_authenticated_role = "team_member"
+
+[galleries.permissions.roles.team_member]
+permissions = {
+    can_view = true,
+    can_download_original = true,
+    can_read_metadata = true,
+    can_add_comments = true,
+    can_set_picks = true,
+    can_add_tags = true
+}
+```
+
+### Permission Resolution
+
+1. **User-specific roles** are checked first (both folder and gallery level)
+2. **Default authenticated role** applies if no specific roles found
+3. **Public role** applies to unauthenticated users
+4. **Folder permissions** override gallery permissions
+5. **Multiple roles** are merged with OR logic (most permissive wins)
+6. **Owner access** bypasses all restrictions
 
 ## Posts System
 

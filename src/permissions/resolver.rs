@@ -78,9 +78,7 @@ impl<'a> PermissionResolver<'a> {
                 // Try folder roles first, then gallery roles
                 let role_perms = self
                     .resolve_role_permissions(role_name, folder_config)
-                    .or_else(|_| {
-                        self.resolve_role_permissions(role_name, self.gallery_config)
-                    })?;
+                    .or_else(|_| self.resolve_role_permissions(role_name, self.gallery_config))?;
                 final_permissions.merge(&role_perms);
             }
         }

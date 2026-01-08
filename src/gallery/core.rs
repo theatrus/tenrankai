@@ -143,18 +143,18 @@ impl Gallery {
                     } else {
                         "" // Image is in root folder
                     };
-                    
+
                     let folder_metadata = self.read_folder_metadata_full(image_folder_path).await;
-                    
+
                     // Create permission resolver
                     let resolver = crate::permissions::PermissionResolver::new(
                         &self.config.permissions,
                         folder_metadata.as_ref().map(|m| &m.config.permissions),
                     );
-                    
+
                     // Resolve permissions for the user
                     let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
-                    
+
                     // Only load metadata if user has permission
                     if permissions.can_read_metadata {
                         let full_image_path = self.config.source_directory.join(&item_path);

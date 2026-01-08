@@ -956,9 +956,9 @@ pub async fn delete_comment_handler(
     };
 
     // Check if user can delete this comment
-    let can_delete =
-        (comment_author == user && user_permissions.permissions.can_delete_own_comments)
-            || user_permissions.permissions.can_delete_any_comments;
+    let can_delete = (comment_author == user
+        && user_permissions.permissions.can_delete_own_comments)
+        || user_permissions.permissions.can_delete_any_comments;
 
     if !can_delete {
         return ApiResponse::Forbidden

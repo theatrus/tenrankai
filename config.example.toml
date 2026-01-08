@@ -75,18 +75,39 @@ copyright_holder = "Your Name"
 # image_indexing = "filename"
 
 # Permission configuration for this gallery
-# Default: All users can view (public gallery)
-# You can customize permissions by defining roles and their permissions
-# [galleries.permissions]
-# public_role = "viewer"  # Role for unauthenticated users
-# 
-# [galleries.permissions.roles.viewer]
-# permissions = { can_view = true, can_see_technical_details = false, can_see_location = false }
-# 
-# [galleries.permissions.roles.contributor]
-# inherits = ["viewer"]
-# users = ["alice@example.com", "bob@example.com"]
-# permissions = { can_download_medium = true, can_download_large = true }
+# Default: If no permissions are configured, public users can view
+[galleries.permissions]
+# Role assigned to unauthenticated users (omit or use "none" for no public access)
+public_role = "viewer"
+# Role assigned to authenticated users without specific role assignments
+default_authenticated_role = "contributor"
+
+# Define the viewer role for public/unauthenticated users
+[galleries.permissions.roles.viewer]
+name = "viewer"
+permissions = { can_view = true, can_download_medium = true }
+# Note: By default, viewers cannot see exact dates, location, or technical details
+
+# Define the contributor role for authenticated users
+[galleries.permissions.roles.contributor]
+name = "contributor"
+# Inherits all permissions from viewer role
+inherits = "viewer"
+permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true }
+
+# Define an admin role with full access
+[galleries.permissions.roles.admin]
+name = "admin"
+permissions = { owner_access = true }  # Full access to everything
+
+# Assign roles to specific users
+[[galleries.permissions.user_roles]]
+username = "alice"
+roles = ["admin"]
+
+[[galleries.permissions.user_roles]]
+username = "bob"
+roles = ["contributor"]
 
 [galleries.thumbnail]
 width = 300
@@ -127,14 +148,30 @@ image_indexing = "unique_id"
 # Restrict portfolio to authenticated users only
 [galleries.permissions]
 public_role = "none"  # No access for unauthenticated users
+default_authenticated_role = "none"  # Authenticated users need explicit role assignment
 
+# Client role - can view and download portfolio images
 [galleries.permissions.roles.client]
-users = ["client1@example.com", "client2@example.com"]
+name = "client"
 permissions = { can_view = true, can_see_technical_details = true, can_download_medium = true }
 
+# Portfolio owner role - full control
 [galleries.permissions.roles.owner]
-users = ["owner@example.com"]
+name = "owner"
 permissions = { owner_access = true }  # Full access to everything
+
+# Assign users to roles
+[[galleries.permissions.user_roles]]
+username = "client1"
+roles = ["client"]
+
+[[galleries.permissions.user_roles]]
+username = "client2"
+roles = ["client"]
+
+[[galleries.permissions.user_roles]]
+username = "owner"
+roles = ["owner"]
 
 # Example: Screenshots gallery
 [[galleries]]
