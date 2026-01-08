@@ -23,27 +23,36 @@ export function useSwipeGestures(
   }
 ) {
   const touchStart = useRef<TouchPoint | null>(null);
+  const isSwipingHorizontally = useRef<boolean>(false);
 
   useEffect(() => {
     const element = elementRef.current;
     if (!element) return;
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (options.preventDefaultTouchEvents) {
-        e.preventDefault();
-      }
-      
       const touch = e.touches[0];
       touchStart.current = {
         x: touch.clientX,
         y: touch.clientY,
         time: Date.now()
       };
+      isSwipingHorizontally.current = false;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (options.preventDefaultTouchEvents) {
-        e.preventDefault();
+      if (!touchStart.current) return;
+
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - touchStart.current.x;
+      const deltaY = touch.clientY - touchStart.current.y;
+      
+      // Only prevent default if we're clearly swiping horizontally
+      // This allows vertical scrolling to work normally
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+        isSwipingHorizontally.current = true;
+        if (options.preventDefaultTouchEvents) {
+          e.preventDefault();
+        }
       }
     };
 
@@ -57,6 +66,7 @@ export function useSwipeGestures(
 
       // Reset touch start
       touchStart.current = null;
+      isSwipingHorizontally.current = false;
 
       // Check if it's a valid swipe (quick enough)
       if (deltaTime > options.maxSwipeTime) return;
