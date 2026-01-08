@@ -536,8 +536,31 @@ can_edit_any_comments = true
 - Template context includes full permission object for conditional rendering
 - Consistent permission resolution across both server-side rendering and API
 
+### ✅ Step 6: Create Migration Code for Existing Configs (COMPLETED)
+
+**What we implemented:**
+- Created `src/permissions/migration.rs` with migration functions
+- `migrate_gallery_config()` - Migrates gallery-level configuration to new permission system
+- `migrate_folder_config()` - Migrates folder-level configuration to new permission system
+- Migration maps old settings to new permission flags:
+  - `approximate_dates_for_public` → viewer role lacks `can_see_exact_dates`
+  - `hide_location_from_public` → viewer role lacks `can_see_location`
+  - `hide_technical_details` → viewer role lacks `can_see_technical_details`
+  - `require_auth` → removes public_role (no public access)
+  - `allowed_users` → creates "allowed" role and assigns users
+  - `enable_metadata` → controls metadata permissions for contributor role
+- Migration is called automatically when galleries are loaded in `create_app()`
+- Migration is called automatically when folder metadata is read
+- Created comprehensive tests for migration scenarios
+
+**Learnings:**
+- Migration needs to handle both gallery and folder levels separately
+- The generic `new` method required type annotations for None values
+- Test configs can be simplified to focus on just the migration logic
+- Migration only runs if permissions are not already configured
+- Folder config is more private than public API but that's OK for internal use
+
 ### 📝 Remaining Steps
 
-6. Create migration code for existing configs
 7. Test with various permission scenarios
 8. Document permission system for users

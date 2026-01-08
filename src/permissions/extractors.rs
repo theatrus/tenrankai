@@ -17,9 +17,9 @@ pub struct UserPermissions {
 
 impl UserPermissions {
     /// Create new UserPermissions instance
-    pub fn new(username: Option<&str>, permissions: RolePermissions) -> Self {
+    pub fn new<S: Into<String>>(username: Option<S>, permissions: RolePermissions) -> Self {
         Self {
-            username: username.map(|s| s.to_string()),
+            username: username.map(|s| s.into()),
             permissions,
         }
     }
@@ -317,11 +317,6 @@ impl UserPermissions {
         self.username.as_deref() == Some(author)
     }
     
-    /// Create user permissions for testing
-    #[cfg(test)]
-    pub fn new(username: Option<String>, permissions: RolePermissions) -> Self {
-        UserPermissions { username, permissions }
-    }
 }
 
 /// Alternative: resolve permissions given explicit gallery and path

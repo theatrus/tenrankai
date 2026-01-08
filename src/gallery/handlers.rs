@@ -119,7 +119,7 @@ pub async fn gallery_handler_for_named(
         Ok(perms) => perms,
         Err(_) => {
             // Fall back to default permissions on error
-            crate::permissions::UserPermissions::new(None, Default::default())
+            crate::permissions::UserPermissions::new(None::<String>, Default::default())
         }
     };
 
@@ -450,7 +450,7 @@ pub async fn image_detail_handler_for_named(
         Ok(perms) => perms,
         Err(_) => {
             // Fall back to default permissions on error
-            crate::permissions::UserPermissions::new(None, Default::default())
+            crate::permissions::UserPermissions::new(None::<String>, Default::default())
         }
     };
 

@@ -620,7 +620,10 @@ impl Gallery {
                         let markdown_content = parts[2].trim().to_string();
 
                         match toml_edit::de::from_str::<super::FolderConfig>(toml_content) {
-                            Ok(config) => {
+                            Ok(mut config) => {
+                                // Migrate old config to new permission system
+                                crate::permissions::migrate_folder_config(&mut config, &self.config);
+                                
                                 return Some(super::FolderMetadata {
                                     config,
                                     description_markdown: markdown_content,
@@ -634,18 +637,23 @@ impl Gallery {
                 }
 
                 // No TOML front matter, treat entire content as markdown
+                let mut config = super::FolderConfig {
+                    hidden: false,
+                    title: None,
+                    require_auth: false,
+                    allowed_users: None,
+                    hide_location_from_public: None,
+                    hide_technical_details: false,
+                    image_indexing: None,
+                    enable_metadata: None,
+                    permissions: Default::default(),
+                };
+                
+                // Migrate old config to new permission system
+                crate::permissions::migrate_folder_config(&mut config, &self.config);
+                
                 Some(super::FolderMetadata {
-                    config: super::FolderConfig {
-                        hidden: false,
-                        title: None,
-                        require_auth: false,
-                        allowed_users: None,
-                        hide_location_from_public: None,
-                        hide_technical_details: false,
-                        image_indexing: None,
-                        enable_metadata: None,
-                        permissions: Default::default(),
-                    },
+                    config,
                     description_markdown: content,
                 })
             }
