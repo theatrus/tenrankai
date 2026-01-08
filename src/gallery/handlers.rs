@@ -80,13 +80,30 @@ pub async fn gallery_handler_for_named(
         }
     };
 
+    // Get the JSON data from the API endpoint to ensure consistency
+    let gallery_api_response = crate::api::gallery_api_handler_for_named(
+        axum::extract::State(app_state.clone()),
+        axum::extract::Path((gallery_name.clone(), path.clone())),
+        axum::extract::Query(query.clone()),
+        auth.clone(),
+    )
+    .await;
+
+    let gallery_data_json = match gallery_api_response {
+        Ok(axum::Json(data)) => serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string()),
+        Err(_) => {
+            // If API call fails, provide empty object
+            "{}".to_string()
+        }
+    };
+
     // Check if this is the root path
     let is_root = path.is_empty() || path == "/";
 
-    // Convert images to JSON for client-side rendering
+    // Convert images to JSON for client-side rendering (legacy)
     let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
     
-    // Get breadcrumbs and folder metadata
+    // Get breadcrumbs and folder metadata  
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
     let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
 
@@ -105,24 +122,6 @@ pub async fn gallery_handler_for_named(
             crate::permissions::UserPermissions::new(None, Default::default())
         }
     };
-    
-    // Create comprehensive gallery data for React component
-    let gallery_data = serde_json::json!({
-        "gallery_name": &gallery_name,
-        "gallery_path": &path,
-        "is_root": is_root,
-        "directories": &directories,
-        "images": &images,
-        "breadcrumbs": &breadcrumbs,
-        "page": page,
-        "total_pages": total_pages,
-        "folder_title": &folder_title,
-        "folder_description": &folder_description,
-        "permissions": &user_permissions.permissions,
-        "is_authenticated": auth.is_authenticated(),
-        "current_user": auth.username().unwrap_or_default(),
-    });
-    let gallery_data_json = serde_json::to_string(&gallery_data).unwrap_or_else(|_| "{}".to_string());
 
     // Combine directories and images for the template's items array
     let mut items = directories.clone();
