@@ -26,7 +26,10 @@
     <!-- React Image Detail Mount Point -->
     <div id="react-image-detail" 
          data-gallery-url="{{ gallery_url }}"
-         data-hide-metadata="{{ hide_technical_details }}"></div>
+         data-hide-metadata="{{ hide_technical_details }}"
+         data-authenticated="{{ is_authenticated }}"
+         data-current-user="{{ current_user }}"
+         data-metadata-enabled="{{ metadata_enabled }}"></div>
 
     <!-- Embedded JSON data for React component -->
     <script type="application/json" id="image-detail-data">

@@ -397,6 +397,14 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
+    // Get authenticated user info
+    let auth_info = crate::login::get_authenticated_user(&app_state, &headers).await;
+    let is_authenticated = auth_info.is_some();
+    let current_user = auth_info.map(|info| info.username).unwrap_or_default();
+    
+    // Check if metadata is enabled for this path
+    let metadata_enabled = gallery.is_metadata_enabled_for_path(&resolved_path).await;
+    
     let liquid_context = liquid::object!({
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
@@ -417,6 +425,9 @@ pub async fn image_detail_handler_for_named(
         "og_image_height": image_info.dimensions.1,
         "twitter_card_type": "summary_large_image",
         "hide_technical_details": hide_technical_details,
+        "is_authenticated": is_authenticated,
+        "current_user": current_user,
+        "metadata_enabled": metadata_enabled,
     });
 
     match template_engine
