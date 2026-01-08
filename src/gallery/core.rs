@@ -127,8 +127,14 @@ impl Gallery {
 
                 let is_new = self.is_new(modification_date);
 
+                // Get the display name from the indexer
+                let display_name = {
+                    let indexer = self.image_indexer.read().await;
+                    indexer.get_display_name(&item_path)
+                };
+
                 items.push(GalleryItem {
-                    name: file_name,
+                    name: display_name,
                     display_name: None,
                     description: None,
                     path: url_identifier.clone(), // Use indexed identifier as path
@@ -850,8 +856,14 @@ impl Gallery {
                         url_identifier
                     );
 
+                    // Get the display name from the indexer
+                    let display_name = {
+                        let indexer = self.image_indexer.read().await;
+                        indexer.get_display_name(&item_path)
+                    };
+
                     folder_items.push(GalleryItem {
-                        name: file_name,
+                        name: display_name,
                         display_name: None,
                         description: None,
                         path: url_identifier.clone(), // Use indexed identifier as path

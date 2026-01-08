@@ -86,6 +86,45 @@ impl ImageIndexer {
         }
     }
 
+    /// Get the display name for a path based on the indexing mode
+    pub fn get_display_name(&self, path: &str) -> String {
+        match self.mode {
+            ImageIndexingMode::Filename => {
+                // Extract just the filename from the path
+                Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(path)
+                    .to_string()
+            }
+            ImageIndexingMode::Sequence | ImageIndexingMode::UniqueId => {
+                // Get the index number from the path
+                if let Some(index_str) = self.get_index(path) {
+                    // For sequence mode, the index is already the number
+                    if self.mode == ImageIndexingMode::Sequence {
+                        format!("Image {}", index_str)
+                    } else {
+                        // For unique ID mode, find the sequence position
+                        let mut sorted_paths: Vec<_> = self.path_to_index.keys().collect();
+                        sorted_paths.sort();
+                        if let Some(pos) = sorted_paths.iter().position(|p| p.as_str() == path) {
+                            format!("Image {}", pos + 1)
+                        } else {
+                            format!("Image {}", index_str)
+                        }
+                    }
+                } else {
+                    // Fallback to filename if not found
+                    Path::new(path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(path)
+                        .to_string()
+                }
+            }
+        }
+    }
+
     /// Build index for a folder's images
     #[allow(dead_code)]
     pub fn build_folder_index(&mut self, folder_path: &str, image_paths: &[String]) {
@@ -243,5 +282,30 @@ mod tests {
         assert_eq!(base36_encode(35), "z");
         assert_eq!(base36_encode(36), "10");
         assert_eq!(base36_encode(1296), "100");
+    }
+
+    #[test]
+    fn test_display_names() {
+        // Test filename mode
+        let mut indexer = ImageIndexer::new(ImageIndexingMode::Filename);
+        let paths = vec!["folder/image.jpg".to_string(), "photo.png".to_string()];
+        indexer.build_index(&paths);
+
+        assert_eq!(indexer.get_display_name("folder/image.jpg"), "image.jpg");
+        assert_eq!(indexer.get_display_name("photo.png"), "photo.png");
+
+        // Test sequence mode
+        let mut indexer = ImageIndexer::new(ImageIndexingMode::Sequence);
+        indexer.build_index(&paths);
+
+        assert_eq!(indexer.get_display_name("folder/image.jpg"), "Image 1");
+        assert_eq!(indexer.get_display_name("photo.png"), "Image 2");
+
+        // Test unique ID mode
+        let mut indexer = ImageIndexer::new(ImageIndexingMode::UniqueId);
+        indexer.build_index(&paths);
+
+        assert_eq!(indexer.get_display_name("folder/image.jpg"), "Image 1");
+        assert_eq!(indexer.get_display_name("photo.png"), "Image 2");
     }
 }
