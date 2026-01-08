@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { ImageDetailData, Breadcrumb } from '../types/index.ts';
+import { ImageDetailData } from '../types/index.ts';
 import { useImageDetail } from '../hooks/useImageDetail.ts';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation.ts';
+import { useDelayedLoading } from '../hooks/useDelayedLoading.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
@@ -53,6 +54,9 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
   
   // Use initialData immediately if no other data is available
   const currentData = imageData || initialData;
+  
+  // Only show loading after 500ms delay
+  const showLoading = useDelayedLoading(loading && !currentData);
 
   // Enhanced navigation with SPA-style URL updates
   const handleNavigation = async (direction: 'prev' | 'next') => {
@@ -104,7 +108,7 @@ export function ImageDetailPage({ initialData, galleryUrl, hideMetadata = false 
     );
   }
 
-  if (!currentData) {
+  if (showLoading) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <p>Loading image...</p>

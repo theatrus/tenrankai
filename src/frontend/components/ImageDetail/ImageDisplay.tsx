@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ImageInfo } from '../../types/index.ts';
+import { useDelayedLoading } from '../../hooks/useDelayedLoading.ts';
 
 interface ImageDisplayProps {
   image: ImageInfo;
@@ -12,6 +13,9 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
   const [imageError, setImageError] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   const loadedImageRef = useRef<string | null>(null);
+  
+  // Only show loading indicator after 500ms
+  const showLoading = useDelayedLoading(imageLoading);
 
   useEffect(() => {
     console.log('ImageDisplay: Image path changed, checking if need to reload', {
@@ -64,7 +68,7 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
     setImageLoading(false);
   };
 
-  const handleImageError = (e) => {
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     console.log('ImageDisplay: Image failed to load', e);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setImageLoading(false);
@@ -88,7 +92,7 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
   return (
     <div className="image-container" 
          style={{ aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}` }}>
-      {imageLoading && (
+      {showLoading && (
         <div className="image-loading">
           <div className="loading-spinner">Loading...</div>
         </div>
