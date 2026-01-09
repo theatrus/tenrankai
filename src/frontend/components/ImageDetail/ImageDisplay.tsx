@@ -16,9 +16,46 @@ interface ZoomState {
   imageY: number;
 }
 
+// Helper function to calculate dimensions
+const calculateImageDimensions = (imageDimensions: number[], windowWidth: number, windowHeight: number) => {
+  const aspectRatio = imageDimensions[0] / imageDimensions[1];
+  const maxWidth = windowWidth * 0.95;
+  const maxHeight = windowHeight * 0.75 - 100;
+  
+  let width, height;
+  
+  if (maxWidth / maxHeight > aspectRatio) {
+    // Height constrained
+    height = maxHeight;
+    width = height * aspectRatio;
+  } else {
+    // Width constrained  
+    width = maxWidth;
+    height = width / aspectRatio;
+  }
+  
+  // On mobile, adjust constraints
+  if (windowWidth <= 768) {
+    width = windowWidth;
+    height = width / aspectRatio;
+    if (height > windowHeight * 0.6) {
+      height = windowHeight * 0.6;
+      width = height * aspectRatio;
+    }
+  }
+  
+  return { width, height };
+};
+
 export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  
+  // Calculate initial dimensions immediately to prevent flicker
+  const [dimensions, setDimensions] = useState(() => 
+    calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight)
+  );
+  
   const [zoomState, setZoomState] = useState<ZoomState>({
     isZooming: false,
     x: 0,
@@ -36,6 +73,27 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
 
+  // Calculate dimensions based on viewport and image aspect ratio
+  const calculateDimensions = () => {
+    const newDimensions = calculateImageDimensions(
+      image.dimensions, 
+      window.innerWidth, 
+      window.innerHeight
+    );
+    setDimensions(newDimensions);
+  };
+
+  // Recalculate on resize
+  useEffect(() => {
+    calculateDimensions();
+    
+    const handleResize = () => {
+      calculateDimensions();
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [image.dimensions]);
 
   useEffect(() => {
     if (!image.medium_url) {
@@ -153,35 +211,38 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
   };
 
   return (
-    <div 
-      ref={containerRef}
-      className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
-      style={{ 
-        aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
-        position: 'relative',
-        overflow: 'hidden'
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-    >
-      {showLoading && (
-        <div className="image-loading">
-          <div className="loading-spinner">Loading...</div>
-        </div>
-      )}
-      
-      {imageError ? (
-        <div className="image-error">
-          <p>Failed to load image</p>
-          <button onClick={() => window.location.reload()}>Retry</button>
-        </div>
-      ) : (
-        <>
-          <div
-            ref={imageRef}
-            className="image-display"
+    <div className="image-container-outer">
+      <div 
+        ref={containerRef}
+        className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
+        style={{ 
+          width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
+          height: dimensions.height > 0 ? `${dimensions.height}px` : undefined,
+          aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      >
+        {showLoading && (
+          <div className="image-loading">
+            <div className="loading-spinner">Loading...</div>
+          </div>
+        )}
+        
+        {imageError ? (
+          <div className="image-error">
+            <p>Failed to load image</p>
+            <button onClick={() => window.location.reload()}>Retry</button>
+          </div>
+        ) : (
+          <>
+            <div
+              ref={imageRef}
+              className="image-display"
             onClick={handleClick}
             style={{ 
               position: 'relative',
@@ -210,10 +271,11 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
                     url(${image.medium_url}) 1x,
                     url(${image.medium_url.replace('?size=medium', '?size=medium@2x')}) 2x
                   )`,
-                  backgroundSize: 'contain',
+                  backgroundSize: '100% 100%',
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat'
                 }}
+                key={image.path} // Force re-render with animation on image change
               />
             )}
             {/* Hidden img for loading detection */}
@@ -276,6 +338,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
           )}
         </>
       )}
+      </div>
     </div>
   );
 }

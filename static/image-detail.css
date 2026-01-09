@@ -7,11 +7,29 @@ body {
 
 .image-detail-container {
     background-color: var(--bg-primary);
+    padding-top: 0 !important;  /* Override container-lg padding */
+    padding-left: 0;
+    padding-right: 0;
+    position: relative;  /* For absolute positioning of nav */
+    min-height: 100vh;  /* Ensure full viewport height */
 }
 
 .image-detail-container .gallery-nav {
     font-size: 0.8rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
+    margin-top: 0;
+    padding: 0.5rem var(--spacing-xl);  /* Add more top padding */
+    padding-top: 1rem;  /* More top padding */
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;  /* Below mobile navigation (150) */
+    background-color: var(--bg-primary);  /* Ensure background to prevent transparency issues */
+    border-top: none;  /* Remove top border */
+    border-bottom: 1px solid var(--border-color);  /* Subtle bottom border */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .image-detail-container .nav-current {
@@ -20,38 +38,76 @@ body {
 }
 
 .image-detail-content {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: var(--spacing-xl);
-    align-items: start;
+    display: flex;
+    flex-direction: column;
+    padding-top: 3rem;  /* Account for absolutely positioned nav */
 }
 
-@media (max-width: 1400px) {
-    .image-detail-content {
-        grid-template-columns: 1fr 300px;
-        gap: var(--spacing-lg);
+/* New full-viewport image section */
+.image-viewer-section {
+    background-color: transparent;
+    padding: var(--spacing-md) var(--spacing-lg);
+    min-height: 70vh;
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;  /* Ensure proper stacking context */
+    margin-top: 0;  /* Prevent negative margins */
+}
+
+@media (min-width: 1024px) {
+    .image-viewer-section {
+        margin: 0 var(--spacing-md);
+        border-radius: 0;
+        box-shadow: none;
     }
 }
 
-@media (max-width: 1024px) {
-    .image-detail-content {
-        grid-template-columns: 1fr;
-    }
+.image-container-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    position: relative;
+}
+
+.swipeable-image-area {
+    text-align: center;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
 }
 
 .image-main {
     text-align: center;
 }
 
+/* Outer container for viewport constraints and centering */
+.image-container-outer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: calc(75vh - 100px);
+    max-height: calc(75vh - 100px);
+}
+
+/* Inner container - sized exactly by JavaScript with drop shadow */
 .image-container {
     display: inline-block;
-    width: 100%;
-    max-width: none;
     position: relative;
     background-color: var(--bg-secondary);
     border-radius: 0;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    /* Use max constraints to prevent oversizing during initial render */
+    max-width: 95vw;
+    max-height: calc(75vh - 100px);
 }
 
 .image-container img {
@@ -61,6 +117,18 @@ body {
     border-radius: 0;
     display: block;
     transition: opacity 0.3s ease;
+}
+
+/* Subtle fade-in for image background */
+.image-bg {
+    opacity: 0;
+    animation: imageFadeIn 0.3s ease forwards;
+}
+
+@keyframes imageFadeIn {
+    to {
+        opacity: 1;
+    }
 }
 
 /* Loading state */
@@ -356,36 +424,61 @@ dd {
     border: none;
 }
 
+/* Navigation overlays - removed to reduce distraction */
+
+
+/* Info section */
+.image-info-section {
+    padding: var(--spacing-lg) var(--spacing-xl);
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.image-header {
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--spacing-lg);
+}
+
 /* Mobile Navigation */
 .mobile-navigation {
     display: none;
-    position: relative;
+    position: absolute;  /* Absolute positioning relative to container */
+    top: 0.5rem;  /* Very high up on the page */
+    left: var(--spacing-sm);
+    right: var(--spacing-sm);
     justify-content: space-between;
-    margin-bottom: 1rem;
     gap: 1rem;
-    z-index: 10;
+    z-index: 150;  /* Higher than breadcrumbs (100) */
 }
 
 .mobile-nav-btn {
-    background: var(--bg-card);
-    border: 2px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.95);
+    border: 2px solid rgba(0, 0, 0, 0.1);
     border-radius: 50%;
-    width: 48px;
-    height: 48px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
-    color: var(--text-primary);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    color: #333;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    backdrop-filter: blur(8px);
 }
 
 .mobile-nav-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--border-hover);
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
 
 .mobile-nav-btn:active:not(:disabled) {
@@ -393,13 +486,14 @@ dd {
 }
 
 .mobile-nav-btn:disabled {
-    opacity: 0.3;
+    opacity: 0.4;
     cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.6);
 }
 
 .mobile-nav-btn svg {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
 }
 
 /* Swipeable Image Area */
@@ -410,10 +504,30 @@ dd {
     position: relative;
 }
 
+/* Mobile swipe hint */
+.mobile-swipe-hint {
+    display: none;
+    position: absolute;  /* Absolute positioning relative to container */
+    top: calc(0.5rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: none;  /* No background */
+    color: var(--text-muted);  /* Light gray from theme */
+    padding: 0;  /* No padding needed without background */
+    font-size: 0.65rem;  /* Small font */
+    z-index: 140;  /* Below navigation buttons */
+    font-weight: 300;  /* Light font weight */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);  /* Subtle shadow for readability */
+}
+
 /* Mobile-specific styles */
 @media (max-width: 768px) {
     .mobile-navigation {
         display: flex;
+    }
+    
+    .mobile-swipe-hint {
+        display: block;
     }
     
     /* Hide desktop navigation on mobile */
@@ -421,11 +535,40 @@ dd {
         display: none;
     }
     
-    /* Adjust image container for mobile */
-    .image-container {
-        border-radius: 8px;
-        margin: 0;
+    /* Full width image wrapper on mobile */
+    .image-container-wrapper {
+        padding: 0;
     }
+    
+    /* Adjust outer container for mobile */
+    .image-container-outer {
+        height: auto;
+        max-height: 60vh;
+    }
+    
+    /* Adjust image container for mobile - full width, no borders */
+    .image-container {
+        box-shadow: none;
+        background-color: transparent;
+    }
+    
+    /* Remove shadow and borders from image display on mobile */
+    .image-container .image-display {
+        box-shadow: none;
+        border-radius: 0;
+        background-color: transparent;
+    }
+    
+    /* Adjust image viewer section for mobile - add top padding for nav elements */
+    .image-viewer-section {
+        height: 60vh;
+        min-height: 60vh;
+        padding: 0;
+        padding-top: 4rem;  /* Space for navigation buttons and swipe hint */
+        margin: 0;
+        border-radius: 0;
+    }
+    
     
     /* Show swipe hint on mobile */
     .nav-hint {
@@ -453,12 +596,159 @@ dd {
     
     /* Mobile layout adjustments */
     .image-detail-container {
-        padding: 1rem;
+        padding: 0;  /* No padding on mobile either */
     }
     
     .image-detail-container .gallery-nav {
         font-size: 0.75rem;
-        margin-bottom: 0.75rem;
+        padding: 0.5rem var(--spacing-md);  /* Padding on mobile */
+        padding-top: 0.75rem;  /* Less top padding on mobile */
+    }
+    
+    /* Fix technical details overflow on mobile */
+    dl {
+        grid-template-columns: minmax(60px, auto) 1fr;
+        gap: 0.25rem 0.5rem;
+        font-size: 0.85rem;
+    }
+    
+    dt {
+        font-size: 0.75rem;
+    }
+    
+    dd {
+        font-size: 0.8rem;
+        overflow-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    /* Shrink metadata cards on mobile */
+    .image-metadata,
+    .camera-info,
+    .location-info {
+        padding: var(--spacing-sm);
+    }
+    
+    .image-info .card {
+        padding: var(--spacing-sm);
+    }
+    
+    /* Fix info section padding on mobile */
+    .image-info-section {
+        padding: var(--spacing-md) 0.5rem;
+    }
+    
+    /* Fix comment section overflow */
+    .metadata-comments {
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .comment {
+        padding: 0.75rem;
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .comment-header {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .comment-header-right {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+    
+    .comment-text {
+        font-size: 0.9rem;
+    }
+    
+    /* Fix comment form sizing on mobile */
+    .comment-form {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    .comment-textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        font-size: 16px;  /* Prevent zoom on iOS */
+    }
+    
+    .comment-actions {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    
+    .comment-submit,
+    .comment-cancel {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.8rem;
+    }
+    
+    .comment-hint {
+        display: none;  /* Hide hint on mobile to save space */
+    }
+    
+    /* Fix edit form sizing on mobile too */
+    .comment-edit-form {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    .comment-edit-form .comment-textarea {
+        font-size: 16px;  /* Prevent zoom on iOS */
+    }
+    
+    /* Ensure metadata grid doesn't overflow */
+    .metadata-grid {
+        padding: 0;
+        gap: var(--spacing-md);
+    }
+    
+    /* Prevent horizontal scroll on mobile - but not on the main container as it affects positioning */
+    .image-info-section,
+    .user-metadata,
+    .metadata-comments {
+        overflow-x: hidden;
+    }
+    
+    /* Fix user metadata section on mobile */
+    .user-metadata {
+        margin-left: 0;
+        margin-right: 0;
+        padding: 1rem 0.5rem;
+    }
+    
+    .metadata-controls {
+        margin-bottom: 1rem;
+    }
+    
+    .pick-controls {
+        gap: 0.5rem;
+    }
+    
+    .pick-btn,
+    .highlight-btn {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    /* Fix tag section on mobile */
+    .metadata-tags {
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .tags-container {
+        gap: 0.25rem;
+    }
+    
+    .tag {
+        font-size: 0.85rem;
+        padding: 0.2rem 0.6rem;
     }
 }
 
@@ -466,11 +756,6 @@ dd {
 @media (min-width: 769px) and (max-width: 1024px) {
     .mobile-navigation {
         display: flex;
-    }
-    
-    .mobile-nav-btn {
-        width: 56px;
-        height: 56px;
     }
 }/* User Metadata Component Styles */
 
@@ -905,6 +1190,11 @@ dd {
   -o-user-drag: none;
   user-drag: none;
   pointer-events: auto;
+}
+
+/* Ensure no background on image background div */
+.image-bg {
+  background-color: transparent !important;
 }
 
 .image-container {

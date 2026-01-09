@@ -26,9 +26,6 @@ export function ImageControls({ image, permissions }: ImageControlsProps) {
 
   return (
     <div className="control-buttons">
-      <a href={image.medium_url} target="_blank" rel="noopener noreferrer" className="btn">
-        View Medium Size
-      </a>
       <button 
         className="btn" 
         onClick={() => window.location.href = '/_login'}
