@@ -5,9 +5,11 @@ interface ImageNavigationProps {
   nextImage?: NavigationImage;
   galleryUrl: string;
   onNavigate?: (direction: 'prev' | 'next') => void;
+  title?: string;
+  description?: string;
 }
 
-export function ImageNavigation({ prevImage, nextImage, galleryUrl, onNavigate }: ImageNavigationProps) {
+export function ImageNavigation({ prevImage, nextImage, galleryUrl, onNavigate, title, description }: ImageNavigationProps) {
   if (!prevImage && !nextImage) {
     return null;
   }
@@ -55,6 +57,19 @@ export function ImageNavigation({ prevImage, nextImage, galleryUrl, onNavigate }
         </button>
       ) : (
         <div className="nav-spacer"></div>
+      )}
+      
+      {/* Image title and description - desktop only */}
+      {(title || description) && (
+        <div className="nav-image-info hide-mobile">
+          {title && <h2 className="nav-image-title">{title}</h2>}
+          {description && (
+            <div 
+              className="nav-image-description"
+              dangerouslySetInnerHTML={{ __html: description }}
+            />
+          )}
+        </div>
       )}
       
       {nextImage ? (
