@@ -107,6 +107,14 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
     if (filterMount && permissions?.can_read_metadata && !filterRootRef.current) {
       import('react-dom/client').then(({ createRoot }) => {
         filterRootRef.current = createRoot(filterMount);
+        // Initial render
+        filterRootRef.current.render(
+          <FilterBar
+            activeFilter={activeFilter}
+            onFilterChange={handleFilterChange}
+            counts={filterCounts}
+          />
+        );
       });
     }
     
@@ -119,7 +127,7 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
         }, 0);
       }
     };
-  }, [filterMount, permissions?.can_read_metadata]);
+  }, [filterMount, permissions?.can_read_metadata]); // Note: intentionally not including other deps to prevent remount
   
   // Update filter bar when props change
   React.useEffect(() => {
