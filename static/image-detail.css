@@ -434,9 +434,9 @@ dd {
 .mobile-navigation {
     display: none;
     position: absolute;
-    top: var(--spacing-lg);
-    left: var(--spacing-md);
-    right: var(--spacing-md);
+    top: var(--spacing-sm);
+    left: var(--spacing-sm);
+    right: var(--spacing-sm);
     justify-content: space-between;
     gap: 1rem;
     z-index: 20;
@@ -446,8 +446,8 @@ dd {
     background: rgba(255, 255, 255, 0.95);
     border: 2px solid rgba(0, 0, 0, 0.1);
     border-radius: 50%;
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -475,8 +475,8 @@ dd {
 }
 
 .mobile-nav-btn svg {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
 }
 
 /* Swipeable Image Area */
@@ -491,14 +491,14 @@ dd {
 .mobile-swipe-hint {
     display: none;
     position: absolute;
-    top: calc(var(--spacing-lg) + 60px);
+    top: calc(var(--spacing-sm) + 45px);
     left: 50%;
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.7);
     color: white;
-    padding: 0.25rem 0.75rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 20px;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     z-index: 15;
     backdrop-filter: blur(4px);
 }
@@ -594,11 +594,6 @@ dd {
 @media (min-width: 769px) and (max-width: 1024px) {
     .mobile-navigation {
         display: flex;
-    }
-    
-    .mobile-nav-btn {
-        width: 56px;
-        height: 56px;
     }
 }/* User Metadata Component Styles */
 
