@@ -511,13 +511,13 @@ dd {
     top: calc(0.5rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 0.2rem 0.6rem;
-    border-radius: 20px;
-    font-size: 0.7rem;
+    background: none;  /* No background */
+    color: var(--text-muted);  /* Light gray from theme */
+    padding: 0;  /* No padding needed without background */
+    font-size: 0.65rem;  /* Small font */
     z-index: 140;  /* Below navigation buttons */
-    backdrop-filter: blur(4px);
+    font-weight: 300;  /* Light font weight */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);  /* Subtle shadow for readability */
 }
 
 /* Mobile-specific styles */
@@ -662,6 +662,44 @@ dd {
     
     .comment-text {
         font-size: 0.9rem;
+    }
+    
+    /* Fix comment form sizing on mobile */
+    .comment-form {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    .comment-textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        font-size: 16px;  /* Prevent zoom on iOS */
+    }
+    
+    .comment-actions {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    
+    .comment-submit,
+    .comment-cancel {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.8rem;
+    }
+    
+    .comment-hint {
+        display: none;  /* Hide hint on mobile to save space */
+    }
+    
+    /* Fix edit form sizing on mobile too */
+    .comment-edit-form {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    .comment-edit-form .comment-textarea {
+        font-size: 16px;  /* Prevent zoom on iOS */
     }
     
     /* Ensure metadata grid doesn't overflow */
