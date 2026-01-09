@@ -59,6 +59,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    max-width: 100%;
 }
 
 .image-main {
@@ -68,8 +69,7 @@ body {
 /* Image container - uses aspect-ratio from React component */
 .image-container {
     display: inline-block;
-    width: auto;
-    height: auto;
+    width: 100%;
     max-width: 90%;
     max-height: calc(70vh - 150px);
     position: relative;
@@ -77,23 +77,6 @@ body {
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-
-/* When aspect-ratio is set, ensure proper sizing based on constraints */
-.image-container[style*="aspect-ratio"] {
-    /* For portrait images, constrain by height */
-    height: calc(70vh - 150px);
-    width: auto !important;
-    max-width: 90%;
-}
-
-/* For landscape/wide images, constrain by width */
-@media (min-aspect-ratio: 3/2) {
-    .image-container[style*="aspect-ratio"] {
-        width: 90%;
-        height: auto !important;
-        max-height: calc(70vh - 150px);
-    }
 }
 
 .image-container img {
