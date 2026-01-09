@@ -27,7 +27,6 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
     imageX: 0,
     imageY: 0
   });
-  const [largeImageSrc, setLargeImageSrc] = useState<string | null>(null);
   
   const timeoutRef = useRef<number | null>(null);
   const loadedImageRef = useRef<string | null>(null);
@@ -38,16 +37,6 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
 
-  // Preload large image when zoom is available
-  useEffect(() => {
-    if (canUseZoom && image.medium_url) {
-      // Construct large URL from medium URL by changing the size parameter
-      const largeUrl = image.medium_url.replace('?size=medium', '?size=large');
-      const img = new Image();
-      img.src = largeUrl;
-      img.onload = () => setLargeImageSrc(largeUrl);
-    }
-  }, [canUseZoom, image.medium_url]);
 
   useEffect(() => {
     if (!image.medium_url) {
@@ -102,7 +91,7 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!canUseZoom || !largeImageSrc) return;
+    if (!canUseZoom) return;
     
     e.preventDefault();
     const rect = containerRef.current?.getBoundingClientRect();
@@ -216,7 +205,7 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
           />
           
           {/* Zoom overlay */}
-          {canUseZoom && zoomState.isZooming && largeImageSrc && (
+          {canUseZoom && zoomState.isZooming && image.medium_url && (
             <div 
               className="zoom-overlay"
               style={{
@@ -224,8 +213,8 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
                 left: `${zoomState.x}px`,
                 top: `${zoomState.y}px`,
                 transform: 'translate(-50%, -50%)',
-                width: '300px',
-                height: '300px',
+                width: '250px',
+                height: '250px',
                 borderRadius: '50%',
                 overflow: 'hidden',
                 border: '2px solid rgba(255, 255, 255, 0.8)',
@@ -234,16 +223,16 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
                 zIndex: 10
               }}
             >
-              <img
-                src={largeImageSrc}
-                alt=""
+              <div
                 style={{
                   position: 'absolute',
-                  width: `${image.dimensions[0] * 2}px`,
-                  height: `${image.dimensions[1] * 2}px`,
-                  objectFit: 'contain',
-                  transform: `translate(-${zoomState.imageX}%, -${zoomState.imageY}%)`,
-                  maxWidth: 'none'
+                  width: '100%',
+                  height: '100%',
+                  backgroundImage: `url(${image.medium_url})`,
+                  backgroundSize: `${containerRef.current?.clientWidth ? containerRef.current.clientWidth * 2.5 : image.dimensions[0] * 2.5}px auto`,
+                  backgroundPosition: `${zoomState.imageX}% ${zoomState.imageY}%`,
+                  backgroundRepeat: 'no-repeat',
+                  imageRendering: '-webkit-optimize-contrast'
                 }}
               />
             </div>
