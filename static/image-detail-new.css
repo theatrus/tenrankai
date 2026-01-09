@@ -67,9 +67,20 @@ body {
 .image-container {
     position: relative;
     max-width: 100%;
-    max-height: 100%;
-    width: auto;
-    height: auto;
+    max-height: calc(100vh - 300px);
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Fix the aspect ratio container */
+.image-container[style*="aspect-ratio"] {
+    width: auto !important;
+    height: auto !important;
+    max-width: 100%;
+    max-height: calc(100vh - 300px);
 }
 
 /* Image display */
@@ -82,13 +93,16 @@ body {
     justify-content: center;
 }
 
-.image-display img,
+/* Ensure the background image shows */
 .image-bg {
-    max-width: 100%;
-    max-height: calc(100vh - 200px); /* Leave room for controls and info */
-    width: auto;
-    height: auto;
-    object-fit: contain;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: contain !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
 }
 
 @media (min-width: 1024px) {
@@ -146,6 +160,42 @@ body {
     align-items: center;
     gap: var(--spacing-md);
     padding: var(--spacing-md) 0;
+}
+
+/* Thumbnail navigation */
+.image-navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: var(--spacing-md) var(--spacing-lg);
+    gap: var(--spacing-md);
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.3s ease;
+    flex: 0 0 auto;
+    max-width: 250px;
+}
+
+.nav-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--border-hover);
+}
+
+.nav-spacer {
+    flex: 1;
 }
 
 /* Info section - below the image */
@@ -237,12 +287,15 @@ body {
 }
 
 /* Loading states */
-.image-container.loading::before {
-    content: '';
+.image-loading {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    z-index: 10;
+}
+
+.loading-spinner {
     width: 40px;
     height: 40px;
     border: 3px solid #666;
