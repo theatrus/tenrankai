@@ -451,7 +451,7 @@ dd {
 .mobile-navigation {
     display: none;
     position: absolute;  /* Absolute positioning relative to container */
-    top: 4rem;  /* Below the absolutely positioned nav */
+    top: 0.5rem;  /* Very high up on the page */
     left: var(--spacing-sm);
     right: var(--spacing-sm);
     justify-content: space-between;
@@ -508,7 +508,7 @@ dd {
 .mobile-swipe-hint {
     display: none;
     position: absolute;  /* Absolute positioning relative to container */
-    top: calc(4rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
+    top: calc(0.5rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
     left: 50%;
     transform: translate(-50%, -50%);
     background: rgba(0, 0, 0, 0.6);
