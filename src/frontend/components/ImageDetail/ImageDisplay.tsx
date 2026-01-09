@@ -154,34 +154,37 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
 
   return (
     <div 
-      ref={containerRef}
       className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
-      style={{ 
-        aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
-        position: 'relative',
-        overflow: 'hidden'
-      }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
-      {showLoading && (
-        <div className="image-loading">
-          <div className="loading-spinner">Loading...</div>
-        </div>
-      )}
-      
-      {imageError ? (
-        <div className="image-error">
-          <p>Failed to load image</p>
-          <button onClick={() => window.location.reload()}>Retry</button>
-        </div>
-      ) : (
-        <>
-          <div
-            ref={imageRef}
-            className="image-display"
+      <div
+        ref={containerRef}
+        className="image-inner"
+        style={{ 
+          aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        {showLoading && (
+          <div className="image-loading">
+            <div className="loading-spinner">Loading...</div>
+          </div>
+        )}
+        
+        {imageError ? (
+          <div className="image-error">
+            <p>Failed to load image</p>
+            <button onClick={() => window.location.reload()}>Retry</button>
+          </div>
+        ) : (
+          <>
+            <div
+              ref={imageRef}
+              className="image-display"
             onClick={handleClick}
             style={{ 
               position: 'relative',
@@ -276,6 +279,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
