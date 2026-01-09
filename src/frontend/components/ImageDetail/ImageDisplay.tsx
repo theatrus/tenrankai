@@ -5,18 +5,38 @@ import { useDelayedLoading } from '../../hooks/useDelayedLoading.ts';
 interface ImageDisplayProps {
   image: ImageInfo;
   hasDownloadPermission: boolean;
+  canUseZoom?: boolean;
   onImageClick?: () => void;
 }
 
-export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: ImageDisplayProps) {
+interface ZoomState {
+  isZooming: boolean;
+  x: number;
+  y: number;
+  imageX: number;
+  imageY: number;
+}
+
+export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false, onImageClick }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [zoomState, setZoomState] = useState<ZoomState>({
+    isZooming: false,
+    x: 0,
+    y: 0,
+    imageX: 0,
+    imageY: 0
+  });
+  
   const timeoutRef = useRef<number | null>(null);
   const loadedImageRef = useRef<string | null>(null);
   const isInitialMount = useRef(true);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
+
 
   useEffect(() => {
     if (!image.medium_url) {
@@ -70,21 +90,83 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
     setImageError(true);
   };
 
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canUseZoom) return;
+    
+    e.preventDefault();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const imageX = (x / rect.width) * 100;
+    const imageY = (y / rect.height) * 100;
+    
+    setZoomState({
+      isZooming: true,
+      x,
+      y,
+      imageX,
+      imageY
+    });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!zoomState.isZooming || !canUseZoom) return;
+    
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const imageX = (x / rect.width) * 100;
+    const imageY = (y / rect.height) * 100;
+    
+    setZoomState(prev => ({
+      ...prev,
+      x,
+      y,
+      imageX,
+      imageY
+    }));
+  };
+
+  const handleMouseUp = () => {
+    setZoomState(prev => ({
+      ...prev,
+      isZooming: false
+    }));
+  };
+
+  const handleMouseLeave = () => {
+    setZoomState(prev => ({
+      ...prev,
+      isZooming: false
+    }));
+  };
+
   const handleClick = () => {
+    // Only handle clicks for custom actions, never for downloading
     if (onImageClick) {
       onImageClick();
-    } else {
-      // Default behavior: open image in new tab
-      const fullSizeUrl = hasDownloadPermission 
-        ? image.medium_url.replace('?size=medium', '') 
-        : image.medium_url;
-      window.open(fullSizeUrl, '_blank');
     }
+    // No default behavior - downloading should use the download buttons
   };
 
   return (
-    <div className="image-container" 
-         style={{ aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}` }}>
+    <div 
+      ref={containerRef}
+      className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
+      style={{ 
+        aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
+        position: 'relative',
+        overflow: 'hidden'
+      }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+    >
       {showLoading && (
         <div className="image-loading">
           <div className="loading-spinner">Loading...</div>
@@ -97,27 +179,104 @@ export function ImageDisplay({ image, hasDownloadPermission, onImageClick }: Ima
           <button onClick={() => window.location.reload()}>Retry</button>
         </div>
       ) : (
-        <img 
-          src={image.medium_url}
-          srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('?size=medium', '?size=medium@2x')} 2x`}
-          alt={image.name}
-          width={image.dimensions[0]}
-          height={image.dimensions[1]}
-          loading="eager"
-          onLoadStart={() => {
-            // Start loading when the browser actually begins loading
-            if (!isInitialMount.current && loadedImageRef.current !== image.medium_url) {
-              setImageLoading(true);
-            }
-          }}
-          onLoad={handleImageLoad}
-          onError={handleImageError}
-          onClick={handleClick}
-          style={{ 
-            cursor: 'pointer',
-            display: imageLoading ? 'none' : 'block'
-          }}
-        />
+        <>
+          <div
+            ref={imageRef}
+            className="image-display"
+            onClick={handleClick}
+            style={{ 
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              cursor: canUseZoom ? 'zoom-in' : 'default',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              MozUserSelect: 'none',
+              msUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+              WebkitUserDrag: 'none'
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+            onDragStart={(e) => e.preventDefault()}
+            role="img"
+            aria-label={image.name}
+          >
+            {/* Image display with retina support */}
+            {!imageLoading && !imageError && (
+              <div 
+                className="image-bg"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  backgroundImage: `image-set(
+                    url(${image.medium_url}) 1x,
+                    url(${image.medium_url.replace('?size=medium', '?size=medium@2x')}) 2x
+                  )`,
+                  backgroundSize: 'contain',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat'
+                }}
+              />
+            )}
+            {/* Hidden img for loading detection */}
+            <img 
+              src={image.medium_url}
+              srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('?size=medium', '?size=medium@2x')} 2x`}
+              alt=""
+              style={{ display: 'none' }}
+              onLoad={handleImageLoad}
+              onError={handleImageError}
+            />
+            {/* Transparent overlay to prevent right-click */}
+            <div 
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 1,
+                backgroundColor: 'transparent'
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              onDragStart={(e) => e.preventDefault()}
+            />
+          </div>
+          
+          {/* Zoom overlay */}
+          {canUseZoom && zoomState.isZooming && image.medium_url && (
+            <div 
+              className="zoom-overlay"
+              style={{
+                position: 'absolute',
+                left: `${zoomState.x}px`,
+                top: `${zoomState.y}px`,
+                transform: 'translate(-50%, -50%)',
+                width: '300px',
+                height: '300px',
+                borderRadius: '50%',
+                overflow: 'hidden',
+                border: '2px solid rgba(255, 255, 255, 0.8)',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                pointerEvents: 'none',
+                zIndex: 10
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  width: '100%',
+                  height: '100%',
+                  backgroundImage: `url(${image.medium_url})`,
+                  backgroundSize: `${containerRef.current?.clientWidth ? containerRef.current.clientWidth * 1.8 : image.dimensions[0] * 1.8}px auto`,
+                  backgroundPosition: `${zoomState.imageX}% ${zoomState.imageY}%`,
+                  backgroundRepeat: 'no-repeat',
+                  imageRendering: '-webkit-optimize-contrast'
+                }}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

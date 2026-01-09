@@ -562,12 +562,35 @@ footer p {
 .image-link {
     display: block;
     position: relative;
+    width: 100%;
+    height: 100%;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 
+.gallery-image-container {
+    width: 100%;
+    height: 100%;
+    display: block;
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+    pointer-events: auto;
+}
+
+/* Legacy img styles for backward compatibility */
 .image-item img {
     width: 100%;
     height: auto;
     display: block;
+    pointer-events: none;
+    -webkit-user-drag: none;
 }
 
 /* Image metadata badges */

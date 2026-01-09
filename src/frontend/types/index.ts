@@ -47,7 +47,6 @@ export interface ImageInfo {
   thumbnail_url: string;
   gallery_url?: string;
   medium_url: string;
-  large_url?: string;
   camera_info?: CameraInfo;
   location_info?: LocationInfo;
   color_profile?: string;
@@ -84,6 +83,7 @@ export interface RolePermissions {
   can_add_tags: boolean;
   can_edit_any_comments: boolean;
   can_delete_any_comments: boolean;
+  can_use_zoom: boolean;
   owner_access: boolean;
 }
 

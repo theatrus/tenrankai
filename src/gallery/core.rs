@@ -529,6 +529,7 @@ impl Gallery {
                     can_add_tags: false,
                     can_edit_any_comments: false,
                     can_delete_any_comments: false,
+                    can_use_zoom: false,
                     owner_access: false,
                 }
             }
