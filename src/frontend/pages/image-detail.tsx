@@ -174,35 +174,6 @@ export function ImageDetailPage({
                 canUseZoom={currentData.permissions.can_use_zoom}
               />
             </div>
-            
-            {/* Desktop navigation overlays */}
-            {currentData.prev_image && (
-              <div className="image-nav-overlay prev">
-                <button 
-                  className="nav-overlay-btn"
-                  onClick={() => handleNavigation('prev')}
-                  aria-label="Previous image"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                </button>
-              </div>
-            )}
-            
-            {currentData.next_image && (
-              <div className="image-nav-overlay next">
-                <button 
-                  className="nav-overlay-btn"
-                  onClick={() => handleNavigation('next')}
-                  aria-label="Next image"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 18l6-6-6-6" />
-                  </svg>
-                </button>
-              </div>
-            )}
           </div>
           
           {/* Controls below image */}

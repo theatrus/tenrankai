@@ -74,7 +74,7 @@ body {
     max-height: calc(70vh - 150px);
     position: relative;
     background-color: var(--bg-secondary);
-    border-radius: 0;
+    border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
@@ -387,46 +387,7 @@ dd {
     border: none;
 }
 
-/* Navigation overlays */
-.image-nav-overlay {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 10;
-}
-
-.image-nav-overlay.prev {
-    left: var(--spacing-md);
-}
-
-.image-nav-overlay.next {
-    right: var(--spacing-md);
-}
-
-.nav-overlay-btn {
-    background: rgba(0, 0, 0, 0.6);
-    border: none;
-    color: white;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(4px);
-}
-
-.nav-overlay-btn:hover {
-    background: rgba(0, 0, 0, 0.8);
-    transform: scale(1.1);
-}
-
-.nav-overlay-btn svg {
-    width: 24px;
-    height: 24px;
-}
+/* Navigation overlays - removed to reduce distraction */
 
 /* Controls below image */
 .image-controls-bar {
@@ -522,10 +483,6 @@ dd {
         display: none;
     }
     
-    /* Hide desktop nav overlays on mobile */
-    .image-nav-overlay {
-        display: none !important;
-    }
     
     /* Adjust image container for mobile */
     .image-container {
