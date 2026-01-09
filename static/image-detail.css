@@ -483,24 +483,34 @@ dd {
         display: none;
     }
     
-    
-    /* Adjust image container for mobile */
-    .image-container {
-        border-radius: 8px;
-        margin: 0;
+    /* Full width image wrapper on mobile */
+    .image-container-wrapper {
+        padding: 0;
     }
     
-    /* Adjust image viewer section for mobile */
+    /* Adjust image container for mobile - full width, no borders */
+    .image-container {
+        border-radius: 0;
+        margin: 0;
+        max-width: 100%;
+        width: 100%;
+        box-shadow: none;
+    }
+    
+    /* Adjust image viewer section for mobile - no padding */
     .image-viewer-section {
         height: 60vh;
         min-height: 60vh;
-        padding: var(--spacing-md);
+        padding: 0;
+        margin: 0;
+        border-radius: 0;
     }
     
     /* Adjust image container height for mobile */
     .image-container[style*="aspect-ratio"] {
-        height: calc(50vh - 100px);
-        max-height: calc(50vh - 100px);
+        height: auto;
+        max-height: 60vh;
+        width: 100% !important;
     }
     
     /* Show swipe hint on mobile */
