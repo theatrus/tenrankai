@@ -196,20 +196,21 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
   };
 
   return (
-    <div 
-      ref={containerRef}
-      className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
-      style={{ 
-        width: `${dimensions.width}px`,
-        height: `${dimensions.height}px`,
-        position: 'relative',
-        overflow: 'hidden'
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-    >
+    <div className="image-container-outer">
+      <div 
+        ref={containerRef}
+        className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
+        style={{ 
+          width: `${dimensions.width}px`,
+          height: `${dimensions.height}px`,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      >
         {showLoading && (
           <div className="image-loading">
             <div className="loading-spinner">Loading...</div>
@@ -320,6 +321,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
