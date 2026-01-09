@@ -80,20 +80,12 @@ body {
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
-/* Default: constrain by width */
+/* Let aspect-ratio determine size naturally within constraints */
 .image-container[style*="aspect-ratio"] {
-    width: 95%;
+    width: auto;
     height: auto;
+    max-width: 95%;
     max-height: calc(75vh - 100px);
-}
-
-/* Only use height constraint when there's enough width */
-@media (min-width: 1200px) {
-    .image-container[style*="aspect-ratio"] {
-        width: auto;
-        height: calc(75vh - 100px);
-        max-width: 95%;
-    }
 }
 
 .image-container img {
