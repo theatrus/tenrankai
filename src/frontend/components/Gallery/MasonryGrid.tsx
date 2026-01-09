@@ -255,8 +255,8 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
                       width: '100%',
                       height: '100%',
                       backgroundImage: `image-set(
-                        url(${image.gallery_url || image.thumbnail_url || ''}) 1x,
-                        url(${(image.gallery_url || image.thumbnail_url || '').replace('?size=gallery', '?size=gallery@2x')}) 2x
+                        url("${image.gallery_url || image.thumbnail_url || ''}") 1x,
+                        url("${(image.gallery_url || image.thumbnail_url || '').replace('?size=gallery', '?size=gallery@2x')}") 2x
                       )`,
                       backgroundSize: 'cover',
                       backgroundPosition: 'center',
