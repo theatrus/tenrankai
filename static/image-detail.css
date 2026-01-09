@@ -69,29 +69,13 @@ body {
 /* Image container - uses aspect-ratio from React component */
 .image-container {
     display: inline-block;
-    max-width: calc(95% - 24px);  /* Reduced to account for shadow space */
-    max-height: calc(75vh - 124px);  /* Reduced to account for shadow space */
+    max-width: 95%;
+    max-height: calc(75vh - 100px);
     position: relative;
-    background-color: transparent;
+    background-color: var(--bg-secondary);
     border-radius: 0;
-    overflow: visible;  /* Changed to visible to allow drop-shadow */
-    box-shadow: none;   /* Removed box-shadow from container */
-    padding: 12px;  /* Add padding for shadow space */
-}
-
-/* Ensure aspect-ratio containers size properly */
-.image-container[style*="aspect-ratio"] {
-    height: calc(75vh - 124px);  /* Match container max-height */
-    width: auto;
-}
-
-/* On narrow screens, prioritize width for landscape images */
-@media (max-width: 1024px) {
-    .image-container[style*="aspect-ratio"] {
-        width: calc(95% - 24px);  /* Account for padding */
-        height: auto;
-        max-height: calc(75vh - 124px);
-    }
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 .image-container img {
@@ -523,13 +507,8 @@ dd {
         border-radius: 0;
         margin: 0;
         max-width: 100%;
-        width: auto;
-        padding: 0;  /* Remove padding on mobile */
-    }
-    
-    /* Remove drop-shadow on mobile */
-    .image-bg {
-        filter: none !important;
+        width: auto !important;
+        box-shadow: none;
     }
     
     /* Remove shadow and borders from image display on mobile */
@@ -1036,10 +1015,9 @@ dd {
   pointer-events: auto;
 }
 
-/* Apply drop-shadow to image background div */
+/* Ensure no background on image background div */
 .image-bg {
   background-color: transparent !important;
-  filter: drop-shadow(0px 2px 8px rgba(0, 0, 0, 0.15)) drop-shadow(0px 4px 16px rgba(0, 0, 0, 0.15));
 }
 
 .image-container {
