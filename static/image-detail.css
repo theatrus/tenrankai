@@ -16,6 +16,8 @@ body {
     margin-top: 0;
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
+    position: relative;
+    z-index: 10;  /* Below mobile navigation (150) */
 }
 
 .image-detail-container .nav-current {
@@ -621,6 +623,86 @@ dd {
     
     .image-info .card {
         padding: var(--spacing-sm);
+    }
+    
+    /* Fix info section padding on mobile */
+    .image-info-section {
+        padding: var(--spacing-md) 0.5rem;
+    }
+    
+    /* Fix comment section overflow */
+    .metadata-comments {
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .comment {
+        padding: 0.75rem;
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .comment-header {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .comment-header-right {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+    
+    .comment-text {
+        font-size: 0.9rem;
+    }
+    
+    /* Ensure metadata grid doesn't overflow */
+    .metadata-grid {
+        padding: 0;
+        gap: var(--spacing-md);
+    }
+    
+    /* Prevent horizontal scroll on mobile - but not on the main container as it affects positioning */
+    .image-info-section,
+    .user-metadata,
+    .metadata-comments {
+        overflow-x: hidden;
+    }
+    
+    /* Fix user metadata section on mobile */
+    .user-metadata {
+        margin-left: 0;
+        margin-right: 0;
+        padding: 1rem 0.5rem;
+    }
+    
+    .metadata-controls {
+        margin-bottom: 1rem;
+    }
+    
+    .pick-controls {
+        gap: 0.5rem;
+    }
+    
+    .pick-btn,
+    .highlight-btn {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    /* Fix tag section on mobile */
+    .metadata-tags {
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .tags-container {
+        gap: 0.25rem;
+    }
+    
+    .tag {
+        font-size: 0.85rem;
+        padding: 0.2rem 0.6rem;
     }
 }
 
