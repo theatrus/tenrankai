@@ -180,29 +180,54 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
         </div>
       ) : (
         <>
-          <img 
+          <div
             ref={imageRef}
-            src={image.medium_url}
-            srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('?size=medium', '?size=medium@2x')} 2x`}
-            alt={image.name}
-            width={image.dimensions[0]}
-            height={image.dimensions[1]}
-            loading="eager"
-            onLoadStart={() => {
-              // Start loading when the browser actually begins loading
-              if (!isInitialMount.current && loadedImageRef.current !== image.medium_url) {
-                setImageLoading(true);
-              }
-            }}
-            onLoad={handleImageLoad}
-            onError={handleImageError}
+            className="image-display"
             onClick={handleClick}
             style={{ 
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              backgroundImage: imageLoading || imageError ? 'none' : `url(${image.medium_url})`,
+              backgroundSize: 'contain',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
               cursor: canUseZoom ? 'zoom-in' : 'default',
-              display: imageLoading ? 'none' : 'block',
-              userSelect: 'none'
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              MozUserSelect: 'none',
+              msUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+              WebkitUserDrag: 'none'
             }}
-          />
+            onContextMenu={(e) => e.preventDefault()}
+            onDragStart={(e) => e.preventDefault()}
+            role="img"
+            aria-label={image.name}
+          >
+            {/* Hidden img for loading detection */}
+            <img 
+              src={image.medium_url}
+              alt=""
+              style={{ display: 'none' }}
+              onLoad={handleImageLoad}
+              onError={handleImageError}
+            />
+            {/* Transparent overlay to prevent right-click */}
+            <div 
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 1,
+                backgroundColor: 'transparent'
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              onDragStart={(e) => e.preventDefault()}
+            />
+          </div>
           
           {/* Zoom overlay */}
           {canUseZoom && zoomState.isZooming && image.medium_url && (

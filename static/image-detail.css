@@ -897,6 +897,31 @@ dd {
   cursor: zoom-in;
 }
 
+/* Prevent image saving/dragging */
+.image-display {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  pointer-events: auto;
+}
+
+.image-container {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Disable right-click on all images in detail view */
+.image-detail-container img {
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
 /* Zoom overlay animation */
 .zoom-overlay {
   animation: zoomFadeIn 0.15s ease-out;
