@@ -168,7 +168,7 @@ export function ImageDetailPage({
           />
           
           <div className="image-container-wrapper">
-            <div ref={imageContainerRef} className="image-container swipeable-image-area">
+            <div ref={imageContainerRef} className="swipeable-image-area">
               <ImageDisplay 
                 image={currentData.image} 
                 canUseZoom={currentData.permissions.can_use_zoom}

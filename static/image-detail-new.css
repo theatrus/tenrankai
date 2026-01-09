@@ -56,18 +56,18 @@ body {
 /* Image container - fills available space */
 .image-container-wrapper {
     width: 100%;
-    height: 100%;
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    flex: 1;
+    min-height: 400px; /* Ensure minimum height */
+    padding: var(--spacing-lg);
 }
 
-.image-container {
+/* Swipeable area */
+.swipeable-image-area {
     position: relative;
-    max-width: 100%;
-    max-height: calc(100vh - 300px);
     width: 100%;
     height: 100%;
     display: flex;
@@ -75,12 +75,19 @@ body {
     justify-content: center;
 }
 
-/* Fix the aspect ratio container */
+/* The actual image container from ImageDisplay component */
+.image-container {
+    position: relative;
+    max-width: 100%;
+    max-height: calc(100vh - 350px);
+}
+
+/* When aspect ratio is set, let it size naturally */
 .image-container[style*="aspect-ratio"] {
     width: auto !important;
     height: auto !important;
     max-width: 100%;
-    max-height: calc(100vh - 300px);
+    max-height: calc(100vh - 350px);
 }
 
 /* Image display - the actual container from ImageDisplay component */
@@ -262,9 +269,13 @@ body {
         display: none; /* Use swipe on mobile */
     }
     
-    .image-display img,
-    .image-bg {
+    .image-container {
         max-height: calc(70vh - 100px); /* Account for controls */
+    }
+    
+    .image-container-wrapper {
+        min-height: 300px;
+        padding: var(--spacing-md);
     }
     
     .image-info-section {
