@@ -14,7 +14,7 @@ pub async fn read_xmp_metadata(xmp_path: &Path) -> Option<XmpMetadata> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct XmpMetadata {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -60,6 +60,11 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
                     "exif:Model" => {
                         if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
                             metadata.camera_model = Some(value);
+                        }
+                    }
+                    "exif:LensModel" => {
+                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                            metadata.lens_model = Some(value);
                         }
                     }
                     "exif:ISOSpeedRatings" => {
@@ -285,4 +290,298 @@ pub fn merge_metadata_sources(
     };
 
     (final_camera_info, location_info)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_xmp_parsing_basic() {
+        let xmp_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 5.4.0">
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description rdf:about=""
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:exif="http://ns.adobe.com/exif/1.0/">
+            <dc:title>
+                <rdf:Alt>
+                    <rdf:li xml:lang="x-default">Test Image Title</rdf:li>
+                </rdf:Alt>
+            </dc:title>
+            <dc:description>
+                <rdf:Alt>
+                    <rdf:li xml:lang="x-default">Test image description</rdf:li>
+                </rdf:Alt>
+            </dc:description>
+            <exif:Make rdf:resource="Canon"/>
+            <exif:Model rdf:resource="Canon EOS R5"/>
+            <exif:ISOSpeedRatings rdf:resource="400"/>
+            <exif:FNumber rdf:resource="2.8"/>
+            <exif:ExposureTime rdf:resource="1/200"/>
+            <exif:FocalLength rdf:resource="85"/>
+            <exif:LensModel rdf:resource="Canon RF 85mm f/1.2L USM"/>
+        </rdf:Description>
+    </rdf:RDF>
+</x:xmpmeta>"#;
+
+        let metadata = parse_xmp_content(xmp_content).unwrap();
+
+        assert_eq!(metadata.title, Some("Test Image Title".to_string()));
+        assert_eq!(
+            metadata.description,
+            Some("Test image description".to_string())
+        );
+        assert_eq!(metadata.camera_make, Some("Canon".to_string()));
+        assert_eq!(metadata.camera_model, Some("Canon EOS R5".to_string()));
+        assert_eq!(
+            metadata.lens_model,
+            Some("Canon RF 85mm f/1.2L USM".to_string())
+        );
+        assert_eq!(metadata.iso, Some(400));
+        assert_eq!(metadata.aperture, Some("f/2.8".to_string()));
+        assert_eq!(metadata.shutter_speed, Some("1/200".to_string()));
+        assert_eq!(metadata.focal_length, Some("85 mm".to_string()));
+    }
+
+    #[test]
+    fn test_xmp_parsing_with_datetime() {
+        let xmp_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description rdf:about=""
+            xmlns:exif="http://ns.adobe.com/exif/1.0/">
+            <exif:DateTimeOriginal rdf:resource="2024-01-15T14:30:00+00:00"/>
+        </rdf:Description>
+    </rdf:RDF>
+</x:xmpmeta>"#;
+
+        let metadata = parse_xmp_content(xmp_content).unwrap();
+        assert!(metadata.capture_date.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_markdown_metadata_parsing() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let content = r#"+++
+title = "Andromeda Galaxy"
+telescope = "William Optics RedCat 51"
+mount = "Sky-Watcher EQ6-R Pro"
+filters = "Optolong L-eXtreme"
+total_exposure_time = 4.5
+ra = "00h 42m 44s"
+dec = "+41° 16' 09\""
+additional_details = "120x120s subs, Bortle 4"
+camera_make = "ZWO"
+camera_model = "ASI2600MC Pro"
+iso = 100
+latitude = 45.5231
+longitude = -122.6765
++++
+
+This is a beautiful capture of the Andromeda Galaxy (M31) taken from my backyard.
+
+The image shows the spiral structure clearly with visible dust lanes."#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        write!(temp_file, "{}", content).unwrap();
+        let path = temp_file.path();
+
+        let metadata = read_image_markdown_metadata(path).await.unwrap();
+
+        assert_eq!(metadata.config.title, Some("Andromeda Galaxy".to_string()));
+        assert_eq!(
+            metadata.config.telescope,
+            Some("William Optics RedCat 51".to_string())
+        );
+        assert_eq!(
+            metadata.config.mount,
+            Some("Sky-Watcher EQ6-R Pro".to_string())
+        );
+        assert_eq!(
+            metadata.config.filters,
+            Some("Optolong L-eXtreme".to_string())
+        );
+        assert_eq!(metadata.config.total_exposure_time, Some(4.5));
+        assert_eq!(metadata.config.ra, Some("00h 42m 44s".to_string()));
+        assert_eq!(metadata.config.dec, Some("+41° 16' 09\"".to_string()));
+        assert_eq!(
+            metadata.config.additional_details,
+            Some("120x120s subs, Bortle 4".to_string())
+        );
+        assert_eq!(metadata.config.camera_make, Some("ZWO".to_string()));
+        assert_eq!(
+            metadata.config.camera_model,
+            Some("ASI2600MC Pro".to_string())
+        );
+        assert_eq!(metadata.config.iso, Some(100));
+        assert_eq!(metadata.config.latitude, Some(45.5231));
+        assert_eq!(metadata.config.longitude, Some(-122.6765));
+        assert!(metadata.description_markdown.contains("beautiful capture"));
+    }
+
+    #[tokio::test]
+    async fn test_markdown_without_frontmatter() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let content = r#"# My Image Title
+
+This is just a regular markdown file without frontmatter."#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        write!(temp_file, "{}", content).unwrap();
+        let path = temp_file.path();
+
+        let metadata = read_image_markdown_metadata(path).await.unwrap();
+
+        assert!(metadata.config.title.is_none());
+        assert_eq!(metadata.description_markdown, content);
+    }
+
+    #[test]
+    fn test_metadata_merge_priority() {
+        // Create test data
+        let exif_camera = Some(CameraInfo {
+            camera_make: Some("Canon".to_string()),
+            camera_model: Some("EOS R5".to_string()),
+            lens_model: None,
+            iso: Some(200),
+            aperture: Some("f/4".to_string()),
+            shutter_speed: Some("1/100".to_string()),
+            focal_length: Some("50mm".to_string()),
+            telescope: None,
+            mount: None,
+            filters: None,
+            total_exposure_time: None,
+            ra: None,
+            dec: None,
+            additional_details: None,
+        });
+
+        let xmp = Some(XmpMetadata {
+            title: Some("XMP Title".to_string()),
+            description: Some("XMP Description".to_string()),
+            camera_make: Some("Canon Updated".to_string()), // Should override EXIF
+            camera_model: None,
+            lens_model: Some("Canon RF 50mm f/1.2L USM".to_string()),
+            iso: Some(400), // Should override EXIF
+            aperture: None,
+            shutter_speed: None,
+            focal_length: None,
+            capture_date: None,
+            latitude: Some(37.7749),
+            longitude: Some(-122.4194),
+        });
+
+        let markdown = Some(ImageMarkdownConfig {
+            title: Some("Markdown Title".to_string()), // Should override XMP
+            camera_make: None,
+            camera_model: Some("EOS R5 Mark II".to_string()), // Should override all
+            lens_model: None,
+            iso: Some(800),                      // Should override all
+            aperture: Some("f/2.8".to_string()), // Should override EXIF
+            shutter_speed: None,
+            focal_length: None,
+            telescope: Some("RedCat 51".to_string()),
+            mount: Some("EQ6-R Pro".to_string()),
+            filters: Some("L-eXtreme".to_string()),
+            total_exposure_time: Some(3.5),
+            ra: Some("00h 42m".to_string()),
+            dec: Some("+41° 16'".to_string()),
+            additional_details: Some("Test details".to_string()),
+            latitude: Some(40.7128),
+            longitude: Some(-74.0060),
+            capture_date: None,
+        });
+
+        let exif_location = Some(LocationInfo {
+            latitude: 34.0522,
+            longitude: -118.2437,
+            google_maps_url: "old_url".to_string(),
+            apple_maps_url: "old_url".to_string(),
+        });
+
+        let (camera, location) =
+            merge_metadata_sources(exif_camera, exif_location, xmp.clone(), markdown.clone());
+
+        let camera = camera.unwrap();
+
+        // Check priority: Markdown > XMP > EXIF
+        assert_eq!(camera.camera_make, Some("Canon Updated".to_string())); // From XMP
+        assert_eq!(camera.camera_model, Some("EOS R5 Mark II".to_string())); // From Markdown
+        assert_eq!(
+            camera.lens_model,
+            Some("Canon RF 50mm f/1.2L USM".to_string())
+        ); // From XMP
+        assert_eq!(camera.iso, Some(800)); // From Markdown
+        assert_eq!(camera.aperture, Some("f/2.8".to_string())); // From Markdown
+        assert_eq!(camera.shutter_speed, Some("1/100".to_string())); // From EXIF
+        assert_eq!(camera.focal_length, Some("50mm".to_string())); // From EXIF
+
+        // Astronomical fields only from markdown
+        assert_eq!(camera.telescope, Some("RedCat 51".to_string()));
+        assert_eq!(camera.mount, Some("EQ6-R Pro".to_string()));
+        assert_eq!(camera.filters, Some("L-eXtreme".to_string()));
+        assert_eq!(camera.total_exposure_time, Some(3.5));
+        assert_eq!(camera.ra, Some("00h 42m".to_string()));
+        assert_eq!(camera.dec, Some("+41° 16'".to_string()));
+        assert_eq!(camera.additional_details, Some("Test details".to_string()));
+
+        // Location priority: Markdown > XMP > EXIF
+        let location = location.unwrap();
+        assert_eq!(location.latitude, 40.7128); // From Markdown
+        assert_eq!(location.longitude, -74.0060); // From Markdown
+    }
+
+    #[test]
+    fn test_metadata_merge_empty_exif() {
+        let xmp = Some(XmpMetadata {
+            title: Some("XMP Title".to_string()),
+            description: None,
+            camera_make: Some("Sony".to_string()),
+            camera_model: Some("A7R V".to_string()),
+            lens_model: None,
+            iso: Some(100),
+            aperture: Some("f/1.4".to_string()),
+            shutter_speed: None,
+            focal_length: None,
+            capture_date: None,
+            latitude: None,
+            longitude: None,
+        });
+
+        let (camera, location) = merge_metadata_sources(None, None, xmp, None);
+
+        let camera = camera.unwrap();
+        assert_eq!(camera.camera_make, Some("Sony".to_string()));
+        assert_eq!(camera.camera_model, Some("A7R V".to_string()));
+        assert_eq!(camera.iso, Some(100));
+        assert_eq!(camera.aperture, Some("f/1.4".to_string()));
+
+        assert!(location.is_none());
+    }
+
+    #[test]
+    fn test_get_attribute_value() {
+        use quick_xml::events::Event;
+
+        let xml = r#"<exif:Make rdf:resource="Canon" other:attr="value"/>"#;
+        let mut reader = Reader::from_str(xml);
+
+        let mut buf = Vec::new();
+        if let Ok(Event::Empty(e)) = reader.read_event_into(&mut buf) {
+            assert_eq!(
+                get_attribute_value(&e, b"rdf:resource"),
+                Some("Canon".to_string())
+            );
+            assert_eq!(
+                get_attribute_value(&e, b"other:attr"),
+                Some("value".to_string())
+            );
+            assert_eq!(get_attribute_value(&e, b"nonexistent"), None);
+        }
+    }
 }
