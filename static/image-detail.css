@@ -482,15 +482,15 @@ dd {
 .mobile-swipe-hint {
     display: none;
     position: absolute;
-    top: 6rem;  /* Below mobile navigation buttons */
+    top: calc(3.5rem + 50px);  /* Below navigation buttons */
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.6);
     color: white;
     padding: 0.2rem 0.6rem;
     border-radius: 20px;
     font-size: 0.7rem;
-    z-index: 150;  /* Same as mobile navigation */
+    z-index: 140;  /* Below navigation buttons */
     backdrop-filter: blur(4px);
 }
 
@@ -533,11 +533,12 @@ dd {
         background-color: transparent;
     }
     
-    /* Adjust image viewer section for mobile - no padding */
+    /* Adjust image viewer section for mobile - add top padding for nav elements */
     .image-viewer-section {
         height: 60vh;
         min-height: 60vh;
         padding: 0;
+        padding-top: 5rem;  /* Space for navigation buttons and swipe hint */
         margin: 0;
         border-radius: 0;
     }
