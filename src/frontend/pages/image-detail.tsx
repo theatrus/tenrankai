@@ -167,6 +167,11 @@ export function ImageDetailPage({
             onNavigate={handleNavigation}
           />
           
+          {/* Swipe hint for mobile */}
+          <div className="mobile-swipe-hint">
+            <span>Swipe to navigate</span>
+          </div>
+          
           <div className="image-container-wrapper">
             <div ref={imageContainerRef} className="swipeable-image-area">
               <ImageDisplay 
@@ -176,11 +181,6 @@ export function ImageDetailPage({
             </div>
           </div>
           
-          {/* Controls below image */}
-          <div className="image-controls-bar">
-            <ImageControls image={currentData.image} permissions={currentData.permissions} />
-          </div>
-          
           {/* Thumbnail navigation */}
           <ImageNavigation
             prevImage={currentData.prev_image}
@@ -188,6 +188,11 @@ export function ImageDetailPage({
             galleryUrl={galleryUrl}
             onNavigate={handleNavigation}
           />
+          
+          {/* Controls below navigation */}
+          <div className="image-controls-bar">
+            <ImageControls image={currentData.image} permissions={currentData.permissions} />
+          </div>
           
           {(currentData.prev_image || currentData.next_image) && (
             <div className="nav-hint">

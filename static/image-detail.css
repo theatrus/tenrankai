@@ -73,26 +73,27 @@ body {
     max-width: 90%;
     max-height: calc(70vh - 150px);
     position: relative;
-    background-color: transparent;
-    border-radius: 8px;
-    overflow: visible;
-}
-
-/* When aspect-ratio is set, ensure proper sizing based on constraints */
-.image-container[style*="aspect-ratio"] {
-    /* Let the browser calculate the best fit within max constraints */
-    width: auto !important;
-    height: auto !important;
-    max-width: 90%;
-    max-height: calc(70vh - 150px);
-}
-
-/* Apply shadow and background to the actual image display */
-.image-container .image-display {
     background-color: var(--bg-secondary);
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* When aspect-ratio is set, ensure proper sizing based on constraints */
+.image-container[style*="aspect-ratio"] {
+    /* For portrait images, constrain by height */
+    height: calc(70vh - 150px);
+    width: auto !important;
+    max-width: 90%;
+}
+
+/* For landscape/wide images, constrain by width */
+@media (min-aspect-ratio: 3/2) {
+    .image-container[style*="aspect-ratio"] {
+        width: 90%;
+        height: auto !important;
+        max-height: calc(70vh - 150px);
+    }
 }
 
 .image-container img {
@@ -430,34 +431,34 @@ dd {
 .mobile-navigation {
     display: none;
     position: absolute;
-    top: var(--spacing-md);
+    top: var(--spacing-lg);
     left: var(--spacing-md);
     right: var(--spacing-md);
     justify-content: space-between;
     gap: 1rem;
-    z-index: 10;
+    z-index: 20;
 }
 
 .mobile-nav-btn {
-    background: var(--bg-card);
-    border: 2px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.95);
+    border: 2px solid rgba(0, 0, 0, 0.1);
     border-radius: 50%;
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
-    color: var(--text-primary);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    color: #333;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    backdrop-filter: blur(8px);
 }
 
 .mobile-nav-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--border-hover);
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
 
 .mobile-nav-btn:active:not(:disabled) {
@@ -465,8 +466,9 @@ dd {
 }
 
 .mobile-nav-btn:disabled {
-    opacity: 0.3;
+    opacity: 0.4;
     cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.6);
 }
 
 .mobile-nav-btn svg {
@@ -482,10 +484,30 @@ dd {
     position: relative;
 }
 
+/* Mobile swipe hint */
+.mobile-swipe-hint {
+    display: none;
+    position: absolute;
+    top: calc(var(--spacing-lg) + 60px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    z-index: 15;
+    backdrop-filter: blur(4px);
+}
+
 /* Mobile-specific styles */
 @media (max-width: 768px) {
     .mobile-navigation {
         display: flex;
+    }
+    
+    .mobile-swipe-hint {
+        display: block;
     }
     
     /* Hide desktop navigation on mobile */
