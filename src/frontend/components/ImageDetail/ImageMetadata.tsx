@@ -22,7 +22,7 @@ export function ImageMetadata({ image, hideMetadata, permissions }: ImageMetadat
         <dt>Filename</dt>
         <dd>{image.name}</dd>
         
-        {image.capture_date && permissions.can_see_exact_dates && (
+        {image.capture_date && (
           <>
             <dt>Capture Date</dt>
             <dd>{image.capture_date}</dd>
