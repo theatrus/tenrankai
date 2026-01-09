@@ -425,12 +425,12 @@ dd {
 .mobile-navigation {
     display: none;
     position: absolute;
-    top: var(--spacing-sm);
+    top: 3.5rem;  /* Below breadcrumbs */
     left: var(--spacing-sm);
     right: var(--spacing-sm);
     justify-content: space-between;
     gap: 1rem;
-    z-index: 20;
+    z-index: 150;  /* Higher than breadcrumbs (100) */
 }
 
 .mobile-nav-btn {
@@ -482,7 +482,7 @@ dd {
 .mobile-swipe-hint {
     display: none;
     position: absolute;
-    top: calc(var(--spacing-sm) + 45px);
+    top: 6rem;  /* Below mobile navigation buttons */
     left: 50%;
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.7);
@@ -490,7 +490,7 @@ dd {
     padding: 0.2rem 0.6rem;
     border-radius: 20px;
     font-size: 0.7rem;
-    z-index: 15;
+    z-index: 150;  /* Same as mobile navigation */
     backdrop-filter: blur(4px);
 }
 
