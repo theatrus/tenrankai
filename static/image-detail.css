@@ -1039,7 +1039,7 @@ dd {
 /* Apply drop-shadow to image background div */
 .image-bg {
   background-color: transparent !important;
-  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+  filter: drop-shadow(0px 2px 8px rgba(0, 0, 0, 0.15)) drop-shadow(0px 4px 16px rgba(0, 0, 0, 0.15));
 }
 
 .image-container {
