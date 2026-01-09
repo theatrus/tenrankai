@@ -77,9 +77,14 @@
                     <div class="masonry-column" data-column="1"></div>
                 </div>
                 
-                <!-- Hidden template for images -->
+                <!-- Hidden template for images (legacy) -->
                 <script type="application/json" id="gallery-images">
 {{ images_json }}
+                </script>
+                
+                <!-- Embedded gallery data for React component -->
+                <script type="application/json" id="gallery-data">
+{{ gallery_data_json }}
                 </script>
                 
                 <!-- Pagination -->

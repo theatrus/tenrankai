@@ -22,6 +22,11 @@ pub fn default_false() -> bool {
     false
 }
 
+/// Default true value for boolean configuration options
+pub fn default_true() -> bool {
+    true
+}
+
 /// Default image indexing mode (filename)
 pub fn default_image_indexing() -> ImageIndexingMode {
     ImageIndexingMode::Filename
@@ -103,10 +108,9 @@ impl Default for GallerySystemConfig {
             webp_quality: Some(85.0),
             pregenerate_cache: false,
             new_threshold_days: None,
-            approximate_dates_for_public: false,
             copyright_holder: None,
-            hide_location_from_public: false,
             image_indexing: default_image_indexing(),
+            permissions: Default::default(),
         }
     }
 }
@@ -149,10 +153,9 @@ impl Default for Config {
                 webp_quality: Some(85.0),
                 pregenerate_cache: false,
                 new_threshold_days: None,
-                approximate_dates_for_public: false,
                 copyright_holder: None,
-                hide_location_from_public: false,
                 image_indexing: default_image_indexing(),
+                permissions: Default::default(),
             }]),
             posts: None,
             email: None,

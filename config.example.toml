@@ -67,15 +67,47 @@ pregenerate_cache = false
 new_threshold_days = 7
 # Copyright holder name for watermarking medium-sized images
 copyright_holder = "Your Name"
-# When true, hide location/GPS information from non-authenticated users
-# Users must be logged in to see EXIF GPS coordinates and map information
-hide_location_from_public = false
 # Image indexing mode for gallery URLs
 # Options: "filename" (default), "sequence", "unique_id"
 # - filename: Use actual filename in URLs (e.g., /gallery/image/IMG_1234.jpg)
 # - sequence: Use sequential numbers (e.g., /gallery/image/1, /gallery/image/2)
 # - unique_id: Use base36 hash IDs (e.g., /gallery/image/a8k3m9)
 # image_indexing = "filename"
+
+# Permission configuration for this gallery
+# Default: If no permissions are configured, public users can view
+[galleries.permissions]
+# Role assigned to unauthenticated users (omit or use "none" for no public access)
+public_role = "viewer"
+# Role assigned to authenticated users without specific role assignments
+default_authenticated_role = "contributor"
+
+# Define the viewer role for public/unauthenticated users
+[galleries.permissions.roles.viewer]
+name = "viewer"
+permissions = { can_view = true, can_download_medium = true }
+# Note: By default, viewers cannot see exact dates, location, or technical details
+
+# Define the contributor role for authenticated users
+[galleries.permissions.roles.contributor]
+name = "contributor"
+# Inherits all permissions from viewer role
+inherits = "viewer"
+permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true }
+
+# Define an admin role with full access
+[galleries.permissions.roles.admin]
+name = "admin"
+permissions = { owner_access = true }  # Full access to everything
+
+# Assign roles to specific users
+[[galleries.permissions.user_roles]]
+username = "alice"
+roles = ["admin"]
+
+[[galleries.permissions.user_roles]]
+username = "bob"
+roles = ["contributor"]
 
 [galleries.thumbnail]
 width = 300
@@ -110,10 +142,36 @@ images_per_page = 20
 jpeg_quality = 90
 webp_quality = 90.0
 copyright_holder = "Your Portfolio Name"
-# Hide location information from public viewers for this portfolio
-hide_location_from_public = true
 # Use unique IDs for portfolio images for cleaner URLs
 image_indexing = "unique_id"
+
+# Restrict portfolio to authenticated users only
+[galleries.permissions]
+public_role = "none"  # No access for unauthenticated users
+default_authenticated_role = "none"  # Authenticated users need explicit role assignment
+
+# Client role - can view and download portfolio images
+[galleries.permissions.roles.client]
+name = "client"
+permissions = { can_view = true, can_see_technical_details = true, can_download_medium = true }
+
+# Portfolio owner role - full control
+[galleries.permissions.roles.owner]
+name = "owner"
+permissions = { owner_access = true }  # Full access to everything
+
+# Assign users to roles
+[[galleries.permissions.user_roles]]
+username = "client1"
+roles = ["client"]
+
+[[galleries.permissions.user_roles]]
+username = "client2"
+roles = ["client"]
+
+[[galleries.permissions.user_roles]]
+username = "owner"
+roles = ["owner"]
 
 # Example: Screenshots gallery
 [[galleries]]
@@ -125,6 +183,9 @@ images_per_page = 100
 # Custom templates can be specified
 # gallery_template = "modules/screenshot_gallery.html.liquid"
 # image_detail_template = "modules/screenshot_detail.html.liquid"
+
+# Public gallery with default permissions (everyone can view)
+# No permission configuration needed - defaults to public access
 
 # Optional: Configure multiple post systems
 # Each posts system has its own source directory and URL prefix

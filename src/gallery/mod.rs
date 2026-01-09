@@ -38,6 +38,7 @@ pub struct Gallery {
     pub(crate) metadata_cache_dirty: Arc<AtomicBool>,
     pub(crate) metadata_updates_since_save: Arc<AtomicUsize>,
     pub(crate) image_indexer: Arc<RwLock<indexing::ImageIndexer>>,
+    pub(crate) user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage>,
 }
 
 impl Gallery {
@@ -51,6 +52,11 @@ impl Gallery {
 
         let image_indexer = indexing::ImageIndexer::new(config.image_indexing);
 
+        // Create sidecar metadata storage for now
+        // TODO: Make this configurable through config
+        let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> =
+            Arc::new(crate::metadata_storage::SidecarMetadataStorage::new());
+
         Self {
             config,
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
@@ -58,6 +64,7 @@ impl Gallery {
             metadata_cache_dirty: Arc::new(AtomicBool::new(false)),
             metadata_updates_since_save: Arc::new(AtomicUsize::new(0)),
             image_indexer: Arc::new(RwLock::new(image_indexer)),
+            user_metadata_storage,
         }
     }
 

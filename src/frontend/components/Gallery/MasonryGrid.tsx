@@ -10,11 +10,18 @@ export interface GalleryImage {
   is_directory?: boolean;
   folder_item_count?: number;
   capture_date?: string;
+  user_metadata?: {
+    comments: Array<any>;
+    highlighted: boolean;
+    pick_status?: 'pick' | 'no_pick' | 'undecided';
+    tags: string[];
+  };
 }
 
 interface MasonryGridProps {
   images: GalleryImage[];
   galleryUrl: string;
+  permissions?: any;
 }
 
 interface DisplayDimensions {
@@ -22,7 +29,7 @@ interface DisplayDimensions {
   height: number;
 }
 
-export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl }) => {
+export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, permissions }) => {
   const [columnWidth, setColumnWidth] = useState(400);
   const [numColumns, setNumColumns] = useState(2);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -135,6 +142,77 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl }) 
 
   const columns = distributeImages();
 
+  // Function to render metadata badges
+  const renderBadges = (image: GalleryImage) => {
+    const badges = [];
+    
+    // Only show metadata if permissions allow
+    if (!permissions?.can_read_metadata) {
+      return null;
+    }
+    
+    const metadata = image.user_metadata;
+    if (!metadata) {
+      return null;
+    }
+    
+    // Comment count badge
+    if (metadata.comments && metadata.comments.length > 0) {
+      badges.push(
+        <span key="comments" className="image-badge badge-comments" title={`${metadata.comments.length} comment${metadata.comments.length > 1 ? 's' : ''}`}>
+          💬 {metadata.comments.length}
+        </span>
+      );
+    }
+    
+    // Highlighted/starred badge
+    if (metadata.highlighted) {
+      badges.push(
+        <span key="highlighted" className="image-badge badge-highlighted" title="Highlighted">
+          ⭐
+        </span>
+      );
+    }
+    
+    // Pick status badge
+    if (metadata.pick_status) {
+      if (metadata.pick_status === 'pick') {
+        badges.push(
+          <span key="pick" className="image-badge badge-pick" title="Pick">
+            ✓
+          </span>
+        );
+      } else if (metadata.pick_status === 'no_pick') {
+        badges.push(
+          <span key="reject" className="image-badge badge-reject" title="Rejected">
+            ✗
+          </span>
+        );
+      } else if (metadata.pick_status === 'undecided') {
+        badges.push(
+          <span key="undecided" className="image-badge badge-undecided" title="Undecided">
+            ?
+          </span>
+        );
+      }
+    }
+    
+    // Tags badge
+    if (metadata.tags && metadata.tags.length > 0) {
+      badges.push(
+        <span key="tags" className="image-badge badge-tags" title={`Tags: ${metadata.tags.join(', ')}`}>
+          🏷️ {metadata.tags.length}
+        </span>
+      );
+    }
+    
+    return badges.length > 0 ? (
+      <div className="image-badges">
+        {badges}
+      </div>
+    ) : null;
+  };
+
   return (
     <div className="image-grid" ref={gridRef}>
       {columns.map((column, columnIndex) => (
@@ -174,6 +252,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl }) 
                       objectFit: 'cover'
                     }}
                   />
+                  {renderBadges(image)}
                 </a>
               </div>
             );

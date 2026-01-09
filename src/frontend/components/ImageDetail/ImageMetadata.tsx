@@ -1,11 +1,12 @@
-import { ImageInfo } from '../../types/index.ts';
+import { ImageInfo, RolePermissions } from '../../types/index.ts';
 
 interface ImageMetadataProps {
   image: ImageInfo;
   hideMetadata?: boolean;
+  permissions: RolePermissions;
 }
 
-export function ImageMetadata({ image, hideMetadata }: ImageMetadataProps) {
+export function ImageMetadata({ image, hideMetadata, permissions }: ImageMetadataProps) {
   if (hideMetadata) {
     return null;
   }
@@ -21,7 +22,7 @@ export function ImageMetadata({ image, hideMetadata }: ImageMetadataProps) {
         <dt>Filename</dt>
         <dd>{image.name}</dd>
         
-        {image.capture_date && (
+        {image.capture_date && permissions.can_see_exact_dates && (
           <>
             <dt>Capture Date</dt>
             <dd>{image.capture_date}</dd>
@@ -37,7 +38,7 @@ export function ImageMetadata({ image, hideMetadata }: ImageMetadataProps) {
         <dt>File Size</dt>
         <dd>{fileSizeMB} MB</dd>
         
-        {image.color_profile && (
+        {image.color_profile && permissions.can_see_technical_details && (
           <>
             <dt>Color Profile</dt>
             <dd>{image.color_profile}</dd>
@@ -48,8 +49,8 @@ export function ImageMetadata({ image, hideMetadata }: ImageMetadataProps) {
   );
 }
 
-export function CameraMetadata({ image }: { image: ImageInfo }) {
-  if (!image.camera_info) {
+export function CameraMetadata({ image, permissions }: { image: ImageInfo; permissions: RolePermissions }) {
+  if (!image.camera_info || !permissions.can_see_technical_details) {
     return null;
   }
 
@@ -109,8 +110,8 @@ export function CameraMetadata({ image }: { image: ImageInfo }) {
   );
 }
 
-export function LocationMetadata({ image }: { image: ImageInfo }) {
-  if (!image.location_info) {
+export function LocationMetadata({ image, permissions }: { image: ImageInfo; permissions: RolePermissions }) {
+  if (!image.location_info || !permissions.can_see_location) {
     return null;
   }
 

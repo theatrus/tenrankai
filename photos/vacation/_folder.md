@@ -1,6 +1,17 @@
 +++
 title = "Vacation Memories"
-hide_technical_details = true
+
+# Example: Hide technical details from public viewers
+[permissions]
+public_role = "viewer_basic"
+
+[permissions.roles.viewer_basic]
+name = "viewer_basic"
+permissions = {
+    can_view = true,
+    can_see_technical_details = false,  # Replaces hide_technical_details = true
+    can_download_medium = true
+}
 +++
 
 # Vacation Memories

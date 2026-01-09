@@ -1,47 +1,17 @@
-import { useState, useEffect } from 'react';
-import { ImageInfo } from '../../types/index.ts';
-import { ImageDetailApiClient } from '../../api/image-detail.ts';
+import { ImageInfo, RolePermissions } from '../../types/index.ts';
 
 interface ImageControlsProps {
   image: ImageInfo;
+  permissions: RolePermissions;
 }
 
-export function ImageControls({ image }: ImageControlsProps) {
-  const [hasDownloadPermission, setHasDownloadPermission] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const checkPermission = async () => {
-      const apiClient = new ImageDetailApiClient();
-      try {
-        const hasPermission = await apiClient.checkDownloadPermission();
-        setHasDownloadPermission(hasPermission);
-      } catch (error) {
-        console.warn('Failed to check download permission:', error);
-        setHasDownloadPermission(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkPermission();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="control-buttons">
-        <div className="loading-text">Checking permissions...</div>
-      </div>
-    );
-  }
-
-  if (hasDownloadPermission === null) {
-    return null;
-  }
-
+export function ImageControls({ image, permissions }: ImageControlsProps) {
   const fullSizeUrl = image.medium_url.replace('?size=medium', '');
+  
+  // Check if user can download large images
+  const canDownloadLarge = permissions.can_download_large || permissions.can_download_original;
 
-  if (hasDownloadPermission) {
+  if (canDownloadLarge) {
     return (
       <div className="control-buttons">
         <a href={fullSizeUrl} target="_blank" rel="noopener noreferrer" className="btn">

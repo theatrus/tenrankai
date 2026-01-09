@@ -47,6 +47,7 @@ pub enum ApiResponse {
     ConfigurationError,
     TemplateRenderError,
     FileSystemError,
+    FeatureDisabled,
 
     // Gallery-specific errors
     GalleryNotFound,
@@ -108,6 +109,7 @@ impl ApiResponse {
             Self::ConfigurationError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::TemplateRenderError => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FileSystemError => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::FeatureDisabled => StatusCode::NOT_FOUND,
 
             // Gallery-specific errors
             Self::GalleryNotFound => StatusCode::NOT_FOUND,
@@ -169,6 +171,7 @@ impl ApiResponse {
             Self::ConfigurationError => "Server configuration error",
             Self::TemplateRenderError => "Template rendering failed",
             Self::FileSystemError => "File system operation failed",
+            Self::FeatureDisabled => "Feature not available",
 
             // Gallery-specific errors
             Self::GalleryNotFound => "Gallery not found",

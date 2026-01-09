@@ -11,10 +11,7 @@ use super::{
     PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest,
     StartAuthenticationRequest, UserPasskey,
 };
-use crate::{
-    AppState,
-    login::{AuthScope, get_authenticated_user},
-};
+use crate::{AppState, login::AuthScope};
 
 #[derive(Debug, serde::Serialize)]
 pub struct HasPasskeysResponse {
@@ -24,17 +21,13 @@ pub struct HasPasskeysResponse {
 
 pub async fn start_passkey_registration(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Json(_request): Json<RegisterPasskeyRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Starting passkey registration");
 
-    // Check if user is authenticated
-    let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-        .ok_or_else(|| {
-            error!("Passkey registration failed: user not authenticated");
-            StatusCode::UNAUTHORIZED
-        })?;
+    // Get authenticated username
+    let username = auth.username().to_string();
 
     info!("Passkey registration for user: {}", username);
 
@@ -129,7 +122,7 @@ pub async fn start_passkey_registration(
 
 pub async fn finish_passkey_registration(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Path(reg_id): Path<String>,
     body: String,
 ) -> Result<StatusCode, StatusCode> {
@@ -143,13 +136,8 @@ pub async fn finish_passkey_registration(
         StatusCode::BAD_REQUEST
     })?;
 
-    // Check if user is authenticated
-    let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-        .ok_or_else(|| {
-            error!("Finish registration failed: user not authenticated");
-            StatusCode::UNAUTHORIZED
-        })?;
-
+    // Get authenticated username
+    let username = auth.username().to_string();
     info!("Finishing registration for user: {}", username);
 
     // Get WebAuthn instance
@@ -395,11 +383,10 @@ pub async fn finish_passkey_authentication(
 
 pub async fn list_passkeys(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
 ) -> Result<Json<Vec<PasskeyInfo>>, StatusCode> {
-    // Check if user is authenticated
-    let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    // Get authenticated username
+    let username = auth.username();
 
     // Get user database manager
     let db_manager = app_state
@@ -415,7 +402,7 @@ pub async fn list_passkeys(
 
     // Get user and map passkeys to info
     let user = transaction
-        .get_user(&username)
+        .get_user(username)
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Map passkeys to info
@@ -435,12 +422,11 @@ pub async fn list_passkeys(
 
 pub async fn delete_passkey(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Path(passkey_id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    // Check if user is authenticated
-    let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    // Get authenticated username
+    let username = auth.username();
 
     // Get user database manager
     let db_manager = app_state
@@ -455,7 +441,7 @@ pub async fn delete_passkey(
     })?;
 
     // Remove passkey from user
-    let removed = if let Some(user) = transaction.get_user_mut(&username) {
+    let removed = if let Some(user) = transaction.get_user_mut(username) {
         user.remove_passkey(&passkey_id)
     } else {
         return Err(StatusCode::NOT_FOUND);
@@ -508,13 +494,12 @@ pub async fn check_user_has_passkeys(
 
 pub async fn update_passkey_name(
     State(app_state): State<AppState>,
-    headers: HeaderMap,
+    auth: crate::login::RequireAuth,
     Path(passkey_id): Path<Uuid>,
     Json(name): Json<String>,
 ) -> Result<StatusCode, StatusCode> {
-    // Check if user is authenticated
-    let username = get_authenticated_user(&headers, &app_state.config.app.cookie_secret)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    // Get authenticated username
+    let username = auth.username();
 
     // Get user database manager
     let db_manager = app_state
@@ -529,7 +514,7 @@ pub async fn update_passkey_name(
     })?;
 
     // Update passkey name
-    let updated = if let Some(user) = transaction.get_user_mut(&username) {
+    let updated = if let Some(user) = transaction.get_user_mut(username) {
         if let Some(passkey) = user.get_passkey_mut(&passkey_id) {
             passkey.name = name;
             true

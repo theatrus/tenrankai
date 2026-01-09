@@ -153,6 +153,9 @@ pub struct GalleryItem {
     pub dimensions: Option<(u32, u32)>,
     pub capture_date: Option<SystemTime>,
     pub is_new: bool,
+    /// User-editable metadata (comments, pick status, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_metadata: Option<crate::metadata_storage::ImageUserMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +175,9 @@ pub struct ImageInfo {
     pub capture_date: Option<String>,
     pub is_new: bool,
     pub color_profile: Option<String>,
+    /// User-editable metadata (comments, pick status, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_metadata: Option<crate::metadata_storage::ImageUserMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,29 +230,16 @@ pub(crate) struct ImageMetadata {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
     pub title: Option<String>,
 
-    // Access control fields
+    // Permission configuration for this folder
+    /// Folder-specific permission overrides
     #[serde(default)]
-    pub require_auth: bool,
-    pub allowed_users: Option<Vec<String>>,
-
-    // Location privacy fields
-    /// When true, hide location/GPS information from non-authenticated users for images in this folder
-    #[serde(default)]
-    pub hide_location_from_public: Option<bool>,
-
-    // Technical details privacy field
-    /// When true, hide technical details (camera info, metadata, etc.) from the image detail page
-    #[serde(default)]
-    pub hide_technical_details: bool,
-
-    // Image indexing mode for this folder (overrides gallery default)
-    #[allow(dead_code)]
-    pub image_indexing: Option<crate::config::ImageIndexingMode>,
+    pub permissions: crate::permissions::types::PermissionConfig,
 }
 
 #[derive(Debug, Clone)]

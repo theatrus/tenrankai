@@ -391,6 +391,7 @@ async fn test_composite_with_avif_images() {
             dimensions: Some((100, 100)),
             capture_date: None,
             is_new: false,
+            user_metadata: None,
         });
     }
 

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::SystemTime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Post {
     pub slug: String,
     pub path: PathBuf,
@@ -16,6 +17,7 @@ pub struct Post {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostMetadata {
     pub title: String,
     pub summary: String,
@@ -23,6 +25,7 @@ pub struct PostMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostSummary {
     pub slug: String,
     pub title: String,

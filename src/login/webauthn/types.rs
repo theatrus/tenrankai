@@ -3,6 +3,7 @@ use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UserPasskey {
     pub id: Uuid,
     pub name: String,
@@ -28,6 +29,7 @@ impl UserPasskey {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PasskeyRegistrationState {
     pub username: String,
     pub state: PasskeyRegistration,
@@ -35,17 +37,20 @@ pub struct PasskeyRegistrationState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PasskeyAuthenticationState {
     pub state: PasskeyAuthentication,
     pub expires_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegisterPasskeyRequest {
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartAuthenticationRequest {
     pub username: String,
 }

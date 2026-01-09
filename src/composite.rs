@@ -126,6 +126,7 @@ mod tests {
             dimensions: Some((800, 600)),
             capture_date: None,
             is_new: false,
+            user_metadata: None,
         }
     }
 

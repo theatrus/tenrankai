@@ -152,6 +152,7 @@ impl PostsManager {
         let markdown_content = parts[2].trim().to_string();
 
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct FrontMatter {
             title: String,
             summary: String,

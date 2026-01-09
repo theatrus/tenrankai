@@ -570,6 +570,56 @@ footer p {
     display: block;
 }
 
+/* Image metadata badges */
+.image-badges {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    pointer-events: none;
+}
+
+.image-badge {
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--text-white);
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    backdrop-filter: blur(4px);
+}
+
+/* Specific badge types */
+.badge-comments {
+    background: rgba(33, 150, 243, 0.85);
+}
+
+.badge-highlighted {
+    background: rgba(255, 193, 7, 0.85);
+}
+
+.badge-pick {
+    background: rgba(76, 175, 80, 0.85);
+}
+
+.badge-reject {
+    background: rgba(244, 67, 54, 0.85);
+}
+
+.badge-undecided {
+    background: rgba(158, 158, 158, 0.85);
+}
+
+.badge-tags {
+    background: rgba(156, 39, 176, 0.85);
+}
+
 .gallery-pagination {
     display: flex;
     justify-content: center;

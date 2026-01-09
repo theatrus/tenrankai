@@ -34,6 +34,39 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             },
             new_threshold_days: Some(7),
             image_indexing: ImageIndexingMode::Filename,
+            permissions: tenrankai::permissions::PermissionConfig {
+                public_role: Some("viewer".to_string()),
+                default_authenticated_role: Some("viewer".to_string()),
+                roles: {
+                    let mut roles = std::collections::HashMap::new();
+                    roles.insert(
+                        "viewer".to_string(),
+                        tenrankai::permissions::Role::new(
+                            "viewer".to_string(),
+                            tenrankai::permissions::RolePermissions {
+                                can_view: true,
+                                can_see_technical_details: true,
+                                can_see_exact_dates: true,
+                                can_see_location: true,
+                                can_download_medium: true,
+                                can_download_large: false,
+                                can_download_original: false,
+                                can_read_metadata: true, // Default to true for the gallery
+                                can_add_comments: false,
+                                can_edit_own_comments: false,
+                                can_delete_own_comments: false,
+                                can_set_picks: false,
+                                can_add_tags: false,
+                                can_edit_any_comments: false,
+                                can_delete_any_comments: false,
+                                owner_access: false,
+                            },
+                        ),
+                    );
+                    roles
+                },
+                user_roles: vec![],
+            },
             ..Default::default()
         },
         GallerySystemConfig {
@@ -619,10 +652,21 @@ async fn test_hide_technical_details_feature() {
     let visible_folder = root_dir.join("visible-details");
     std::fs::create_dir_all(&visible_folder).unwrap();
 
-    // Create folder configs
+    // Create folder configs using new permission system
     let hidden_folder_config = r#"+++
 title = "Portfolio with Hidden Details"
-hide_technical_details = true
+
+[permissions]
+public_role = "restricted_viewer"
+
+[permissions.roles.restricted_viewer]
+name = "restricted_viewer"
+
+[permissions.roles.restricted_viewer.permissions]
+can_view = true
+can_read_metadata = false  # This replaces hide_technical_details = true
+can_see_technical_details = false
+can_download_medium = true
 +++
 
 # Clean Portfolio
@@ -632,7 +676,18 @@ Professional presentation without technical metadata.
 
     let visible_folder_config = r#"+++
 title = "Technical Gallery"
-hide_technical_details = false
+
+[permissions]
+public_role = "full_viewer"
+
+[permissions.roles.full_viewer]
+name = "full_viewer"
+
+[permissions.roles.full_viewer.permissions]
+can_view = true
+can_read_metadata = true  # This replaces hide_technical_details = false
+can_see_technical_details = true
+can_download_medium = true
 +++
 
 # Technical Photography
@@ -667,17 +722,22 @@ Gallery showing full technical details.
     let api_response = server
         .get("/api/gallery/main/image/hidden-details/portfolio_image.jpg")
         .await;
-    let _api_json = api_response.text();
+    let api_json = api_response.text();
+    eprintln!("API response for hidden-details: {}", api_json);
 
-    // The API response should include the hide_technical_details flag
+    // The API response should include the permissions in JSON data
     // Since this is rendered by React, we check the JSON data instead of HTML
     assert!(html.contains("portfolio_image.jpg"));
 
-    // Verify that the template context has hide_technical_details set
-    // This is passed as a data attribute to React
-    assert!(
-        html.contains(r#"data-hide-metadata="true""#),
-        "Should have hide_technical_details flag set to true"
+    // Parse the JSON to check permissions
+    let json_value: serde_json::Value = serde_json::from_str(&api_json).unwrap();
+    let permissions = &json_value["permissions"];
+
+    // With the new permission system, the folder sets can_read_metadata = false
+    // which should hide metadata
+    assert_eq!(
+        permissions["can_read_metadata"], false,
+        "Folder with can_read_metadata = false should block metadata access"
     );
 
     // Test image detail page in folder with visible technical details
@@ -687,10 +747,26 @@ Gallery showing full technical details.
     assert_eq!(response.status_code(), StatusCode::OK);
 
     let html = response.text();
-    // When technical details are visible, hide_metadata should be false
+    // When technical details are visible, can_read_metadata should be true
     assert!(html.contains("technical_image.jpg"));
-    assert!(
-        html.contains(r#"data-hide-metadata="false""#) || html.contains(r#"data-hide-metadata="""#),
-        "Should have hide_technical_details flag set to false or empty"
+    // Check the API response for proper permissions
+    let api_response2 = server
+        .get("/api/gallery/main/image/visible-details/technical_image.jpg")
+        .await;
+    let api_json2 = api_response2.text();
+    eprintln!("API response for visible-details: {}", api_json2);
+
+    // Parse the JSON to check individual fields
+    let json_value: serde_json::Value = serde_json::from_str(&api_json2).unwrap();
+    let permissions = &json_value["permissions"];
+
+    // With the new permission system, the folder sets can_read_metadata = true
+    // which controls whether metadata (camera info, etc.) is shown
+    assert_eq!(
+        permissions["can_read_metadata"], true,
+        "Folder with can_read_metadata = true should allow metadata access"
     );
+
+    // Also verify that technical details are controlled by can_see_technical_details
+    // In the visible folder, this should be based on the permissions configuration
 }

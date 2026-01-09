@@ -1,6 +1,17 @@
 +++
 title = "Portrait Photography"
-hide_technical_details = false
+
+# Example: Allow public to see technical details
+[permissions]
+public_role = "viewer_with_tech"
+
+[permissions.roles.viewer_with_tech]
+name = "viewer_with_tech"
+permissions = {
+    can_view = true,
+    can_see_technical_details = true,
+    can_download_medium = true
+}
 +++
 
 # Portrait Photography
