@@ -459,13 +459,7 @@ impl Gallery {
 
         // Extract title and description from markdown and XMP metadata
         let (title, description) = {
-            // Build the markdown file path
             let image_full_path = self.config.source_directory.join(relative_path);
-            let markdown_path = if let Some(ext) = image_full_path.extension() {
-                image_full_path.with_extension(format!("{}.md", ext.to_string_lossy()))
-            } else {
-                image_full_path.with_extension("md")
-            };
 
             // Check for XMP sidecar file
             let xmp_path = image_full_path.with_extension("xmp");
@@ -475,78 +469,54 @@ impl Gallery {
                 None
             };
 
-            // Extract title and description from available sources
-            if markdown_path.exists() {
-                match super::metadata_sources::read_image_markdown_metadata(&markdown_path).await {
-                    Some(md_metadata) => {
-                        // Use title from frontmatter if available
-                        let title = md_metadata
-                            .config
-                            .title
-                            .or_else(|| {
-                                // Fall back to extracting title from markdown content
-                                md_metadata
-                                    .description_markdown
-                                    .lines()
-                                    .find(|line| line.trim().starts_with("# "))
-                                    .map(|line| line.trim_start_matches("# ").trim().to_string())
-                            })
-                            .or_else(|| {
-                                // Fall back to XMP title
-                                xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
-                            });
+            // Check for markdown metadata file (handles both image.jpg.md and image.md)
+            match super::metadata_sources::read_image_markdown_metadata(&image_full_path).await {
+                Some(md_metadata) => {
+                    // Use title from frontmatter if available
+                    let title = md_metadata
+                        .config
+                        .title
+                        .or_else(|| {
+                            // Fall back to extracting title from markdown content
+                            md_metadata
+                                .description_markdown
+                                .lines()
+                                .find(|line| line.trim().starts_with("# "))
+                                .map(|line| line.trim_start_matches("# ").trim().to_string())
+                        })
+                        .or_else(|| {
+                            // Fall back to XMP title
+                            xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
+                        });
 
-                        // Process markdown to HTML, removing title if present
-                        let content_without_title =
-                            if title.is_some() && md_metadata.description_markdown.contains("# ") {
-                                md_metadata
-                                    .description_markdown
-                                    .lines()
-                                    .skip_while(|line| !line.trim().starts_with("# "))
-                                    .skip(1)
-                                    .collect::<Vec<_>>()
-                                    .join("\n")
-                            } else {
-                                md_metadata.description_markdown.clone()
-                            };
+                    // Process markdown to HTML, removing title if present
+                    let content_without_title =
+                        if title.is_some() && md_metadata.description_markdown.contains("# ") {
+                            md_metadata
+                                .description_markdown
+                                .lines()
+                                .skip_while(|line| !line.trim().starts_with("# "))
+                                .skip(1)
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        } else {
+                            md_metadata.description_markdown.clone()
+                        };
 
-                        let parser = Parser::new(&content_without_title);
-                        let mut html_output = String::new();
-                        html::push_html(&mut html_output, parser);
+                    let parser = Parser::new(&content_without_title);
+                    let mut html_output = String::new();
+                    html::push_html(&mut html_output, parser);
 
-                        (title, Some(html_output))
-                    }
-                    None => {
-                        // Try legacy format
-                        let raw_markdown = self.read_sidecar_markdown_raw(relative_path).await;
-                        let title = raw_markdown
-                            .as_ref()
-                            .and_then(|content| {
-                                content
-                                    .lines()
-                                    .find(|line| line.trim().starts_with("# "))
-                                    .map(|line| line.trim_start_matches("# ").trim().to_string())
-                            })
-                            .or_else(|| {
-                                // Fall back to XMP title
-                                xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
-                            });
-
-                        let description =
-                            self.read_sidecar_markdown(relative_path).await.or_else(|| {
-                                xmp_metadata
-                                    .as_ref()
-                                    .and_then(|xmp| xmp.description.clone())
-                            });
-
-                        (title, description)
-                    }
+                    (title, Some(html_output))
                 }
-            } else if let Some(xmp) = xmp_metadata {
-                // No markdown, but we have XMP
-                (xmp.title, xmp.description)
-            } else {
-                (None, None)
+                None => {
+                    // Fall back to XMP title/description if no markdown exists
+                    let title = xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone());
+                    let description = xmp_metadata
+                        .as_ref()
+                        .and_then(|xmp| xmp.description.clone());
+                    (title, description)
+                }
             }
         };
 
@@ -781,44 +751,6 @@ impl Gallery {
             }
             Err(_) => None,
         }
-    }
-
-    async fn read_sidecar_markdown_raw(&self, image_path: &str) -> Option<String> {
-        let path = StdPath::new(image_path);
-        let stem = path.file_stem()?;
-        let parent = path.parent()?;
-
-        let md_filename = format!("{}.md", stem.to_str()?);
-        let md_path = self.config.source_directory.join(parent).join(md_filename);
-
-        (tokio::fs::read_to_string(&md_path).await).ok()
-    }
-
-    async fn read_sidecar_markdown(&self, image_path: &str) -> Option<String> {
-        let raw_content = self.read_sidecar_markdown_raw(image_path).await?;
-
-        // Extract title if present and remove it from the content
-        let _title_line = raw_content
-            .lines()
-            .find(|line| line.trim().starts_with("# "))?;
-
-        let content_without_title = raw_content
-            .lines()
-            .skip_while(|line| !line.trim().starts_with("# "))
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let content_to_process = if content_without_title.trim().is_empty() {
-            raw_content
-        } else {
-            content_without_title
-        };
-
-        let parser = Parser::new(&content_to_process);
-        let mut html_output = String::new();
-        html::push_html(&mut html_output, parser);
-        Some(html_output)
     }
 
     pub(crate) async fn get_image_metadata_cached(

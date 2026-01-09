@@ -127,8 +127,34 @@ fn get_attribute_value(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option
         .map(|a| String::from_utf8_lossy(&a.value).to_string())
 }
 
-/// Reads image markdown metadata file (e.g., image.jpg.md)
-pub async fn read_image_markdown_metadata(markdown_path: &Path) -> Option<ImageMarkdownMetadata> {
+/// Reads image markdown metadata file (e.g., image.jpg.md or image.md)
+pub async fn read_image_markdown_metadata(image_path: &Path) -> Option<ImageMarkdownMetadata> {
+    // First try IMAGE.jpg.md format
+    let full_extension_path = image_path.with_extension(format!(
+        "{}.md",
+        image_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+    ));
+
+    if full_extension_path.exists() {
+        return read_markdown_file(&full_extension_path).await;
+    }
+
+    // Then try IMAGE.md format
+    if let Some(stem) = image_path.file_stem() {
+        let simple_md_path = image_path.with_file_name(format!("{}.md", stem.to_string_lossy()));
+        if simple_md_path.exists() {
+            return read_markdown_file(&simple_md_path).await;
+        }
+    }
+
+    None
+}
+
+/// Internal helper to read and parse markdown file
+async fn read_markdown_file(markdown_path: &Path) -> Option<ImageMarkdownMetadata> {
     match tokio::fs::read_to_string(markdown_path).await {
         Ok(content) => {
             // Check if content starts with TOML front matter
@@ -361,11 +387,77 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_markdown_metadata_parsing() {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
+    async fn test_markdown_metadata_parsing_with_full_extension() {
+        use tempfile::TempDir;
 
-        let content = r#"+++
+        let dir = TempDir::new().unwrap();
+        let image_path = dir.path().join("test_image.jpg");
+        let markdown_path = dir.path().join("test_image.jpg.md");
+
+        let content = create_test_markdown_content();
+        std::fs::write(&markdown_path, content).unwrap();
+        std::fs::write(&image_path, b"fake image data").unwrap(); // Create dummy image file
+
+        let metadata = read_image_markdown_metadata(&image_path).await.unwrap();
+        verify_astronomical_metadata(&metadata);
+    }
+
+    #[tokio::test]
+    async fn test_markdown_metadata_parsing_simple_name() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let image_path = dir.path().join("test_image.jpg");
+        let markdown_path = dir.path().join("test_image.md");
+
+        let content = create_test_markdown_content();
+        std::fs::write(&markdown_path, content).unwrap();
+        std::fs::write(&image_path, b"fake image data").unwrap(); // Create dummy image file
+
+        let metadata = read_image_markdown_metadata(&image_path).await.unwrap();
+        verify_astronomical_metadata(&metadata);
+    }
+
+    #[tokio::test]
+    async fn test_markdown_priority_full_extension_over_simple() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let image_path = dir.path().join("test_image.jpg");
+        let full_ext_path = dir.path().join("test_image.jpg.md");
+        let simple_path = dir.path().join("test_image.md");
+
+        // Create both files with different content
+        let full_ext_content = r#"+++
+title = "Full Extension Title"
++++
+Full extension description"#;
+
+        let simple_content = r#"+++
+title = "Simple Name Title"
++++
+Simple name description"#;
+
+        std::fs::write(&full_ext_path, full_ext_content).unwrap();
+        std::fs::write(&simple_path, simple_content).unwrap();
+        std::fs::write(&image_path, b"fake image data").unwrap();
+
+        let metadata = read_image_markdown_metadata(&image_path).await.unwrap();
+
+        // Should prefer the full extension format
+        assert_eq!(
+            metadata.config.title,
+            Some("Full Extension Title".to_string())
+        );
+        assert!(
+            metadata
+                .description_markdown
+                .contains("Full extension description")
+        );
+    }
+
+    fn create_test_markdown_content() -> &'static str {
+        r#"+++
 title = "Andromeda Galaxy"
 telescope = "William Optics RedCat 51"
 mount = "Sky-Watcher EQ6-R Pro"
@@ -383,14 +475,10 @@ longitude = -122.6765
 
 This is a beautiful capture of the Andromeda Galaxy (M31) taken from my backyard.
 
-The image shows the spiral structure clearly with visible dust lanes."#;
+The image shows the spiral structure clearly with visible dust lanes."#
+    }
 
-        let mut temp_file = NamedTempFile::new().unwrap();
-        write!(temp_file, "{}", content).unwrap();
-        let path = temp_file.path();
-
-        let metadata = read_image_markdown_metadata(path).await.unwrap();
-
+    fn verify_astronomical_metadata(metadata: &ImageMarkdownMetadata) {
         assert_eq!(metadata.config.title, Some("Andromeda Galaxy".to_string()));
         assert_eq!(
             metadata.config.telescope,
@@ -424,18 +512,20 @@ The image shows the spiral structure clearly with visible dust lanes."#;
 
     #[tokio::test]
     async fn test_markdown_without_frontmatter() {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let image_path = dir.path().join("test_image.jpg");
+        let markdown_path = dir.path().join("test_image.md");
 
         let content = r#"# My Image Title
 
 This is just a regular markdown file without frontmatter."#;
 
-        let mut temp_file = NamedTempFile::new().unwrap();
-        write!(temp_file, "{}", content).unwrap();
-        let path = temp_file.path();
+        std::fs::write(&markdown_path, content).unwrap();
+        std::fs::write(&image_path, b"fake image data").unwrap();
 
-        let metadata = read_image_markdown_metadata(path).await.unwrap();
+        let metadata = read_image_markdown_metadata(&image_path).await.unwrap();
 
         assert!(metadata.config.title.is_none());
         assert_eq!(metadata.description_markdown, content);

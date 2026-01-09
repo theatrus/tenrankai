@@ -487,16 +487,8 @@ impl Gallery {
             None
         };
 
-        // Check for markdown metadata file (e.g., image.jpg.md)
-        let markdown_path = path.with_extension(format!(
-            "{}.md",
-            path.extension().and_then(|s| s.to_str()).unwrap_or("")
-        ));
-        let markdown_metadata = if markdown_path.exists() {
-            read_image_markdown_metadata(&markdown_path).await
-        } else {
-            None
-        };
+        // Check for markdown metadata file (e.g., image.jpg.md or image.md)
+        let markdown_metadata = read_image_markdown_metadata(path).await;
 
         // Merge metadata from all sources
         let (camera_info, location_info) = merge_metadata_sources(
