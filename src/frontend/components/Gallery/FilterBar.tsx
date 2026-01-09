@@ -45,16 +45,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({ activeFilter, onFilterChan
           );
         })}
       </div>
-      
-      {activeFilter !== 'all' && (
-        <button 
-          className="clear-filter-btn"
-          onClick={() => onFilterChange('all')}
-          title="Clear filter"
-        >
-          Clear filter
-        </button>
-      )}
     </div>
   );
 };

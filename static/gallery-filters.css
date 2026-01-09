@@ -99,21 +99,6 @@
     opacity: 1;
 }
 
-.clear-filter-btn {
-    padding: 4px 10px;
-    background: transparent;
-    border: 1px solid var(--border-color);
-    border-radius: 16px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    transition: all 0.2s ease;
-}
-
-.clear-filter-btn:hover {
-    border-color: var(--link-color);
-    color: var(--link-color);
-}
 
 /* Desktop - show labels on larger screens */
 @media (min-width: 1200px) {
@@ -162,11 +147,5 @@
     
     .filter-count {
         font-size: 0.7rem;
-    }
-    
-    .clear-filter-btn {
-        padding: 4px 8px;
-        font-size: 0.75rem;
-        flex-shrink: 0;
     }
 }
