@@ -74,8 +74,8 @@ body {
     position: relative;
     background-color: transparent;
     border-radius: 0;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    overflow: visible;  /* Changed to visible to allow drop-shadow */
+    box-shadow: none;   /* Removed box-shadow from container */
 }
 
 /* Ensure aspect-ratio containers size properly */
@@ -523,7 +523,11 @@ dd {
         margin: 0;
         max-width: 100%;
         width: auto;
-        box-shadow: none;
+    }
+    
+    /* Remove drop-shadow on mobile */
+    .image-bg {
+        filter: none !important;
     }
     
     /* Remove shadow and borders from image display on mobile */
@@ -1030,9 +1034,10 @@ dd {
   pointer-events: auto;
 }
 
-/* Ensure no background on image background div */
+/* Apply drop-shadow to image background div */
 .image-bg {
   background-color: transparent !important;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
 }
 
 .image-container {
