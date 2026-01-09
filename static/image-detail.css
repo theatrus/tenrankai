@@ -69,6 +69,8 @@ body {
 /* Image container - uses aspect-ratio from React component */
 .image-container {
     display: inline-block;
+    width: auto;
+    height: auto;
     max-width: 95%;
     max-height: calc(75vh - 100px);
     position: relative;
@@ -76,6 +78,25 @@ body {
     border-radius: 0;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Media query for different viewport sizes */
+@media (max-aspect-ratio: 1/1) {
+    /* Portrait viewports - constrain by width */
+    .image-container[style*="aspect-ratio"] {
+        width: 95%;
+        height: auto;
+    }
+}
+
+@media (min-aspect-ratio: 1/1) {
+    /* Landscape viewports - may need height constraint */
+    .image-container[style*="aspect-ratio"] {
+        max-width: 95%;
+        max-height: calc(75vh - 100px);
+        height: calc(75vh - 100px);
+        width: auto;
+    }
 }
 
 .image-container img {

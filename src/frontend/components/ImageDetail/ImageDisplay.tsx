@@ -152,29 +152,12 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
     // No default behavior - downloading should use the download buttons
   };
 
-  // Calculate exact dimensions to fit within constraints
-  const maxWidth = window.innerWidth * 0.95;
-  const maxHeight = (window.innerHeight * 0.75) - 100;
-  const aspectRatio = image.dimensions[0] / image.dimensions[1];
-  
-  let width, height;
-  if (maxWidth / maxHeight > aspectRatio) {
-    // Height constrained
-    height = maxHeight;
-    width = height * aspectRatio;
-  } else {
-    // Width constrained
-    width = maxWidth;
-    height = width / aspectRatio;
-  }
-
   return (
     <div 
       ref={containerRef}
       className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
       style={{ 
-        width: `${width}px`,
-        height: `${height}px`,
+        aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
         position: 'relative',
         overflow: 'hidden'
       }}
