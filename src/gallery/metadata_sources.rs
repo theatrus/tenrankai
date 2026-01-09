@@ -1,7 +1,7 @@
 use super::{CameraInfo, ImageMarkdownConfig, ImageMarkdownMetadata, LocationInfo};
 use chrono::DateTime;
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::path::Path;
 use std::time::SystemTime;
 use tracing::{debug, trace};
@@ -36,15 +36,15 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
     let mut metadata = XmpMetadata::default();
     let mut in_title = false;
     let mut in_description = false;
-    
+
     let mut buf = Vec::new();
-    
+
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 let tag_name = e.name();
                 let tag_str = String::from_utf8_lossy(tag_name.as_ref());
-                
+
                 match tag_str.as_ref() {
                     "dc:title" => {
                         in_title = true;
@@ -83,10 +83,10 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
                         }
                     }
                     "exif:DateTimeOriginal" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
-                            if let Ok(dt) = DateTime::parse_from_rfc3339(&value) {
-                                metadata.capture_date = Some(SystemTime::from(dt));
-                            }
+                        if let Some(value) = get_attribute_value(&e, b"rdf:resource")
+                            && let Ok(dt) = DateTime::parse_from_rfc3339(&value)
+                        {
+                            metadata.capture_date = Some(SystemTime::from(dt));
                         }
                     }
                     _ => {}
@@ -110,7 +110,7 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
         }
         buf.clear();
     }
-    
+
     trace!("Parsed XMP metadata: {:?}", metadata);
     Some(metadata)
 }
@@ -130,11 +130,11 @@ pub async fn read_image_markdown_metadata(markdown_path: &Path) -> Option<ImageM
             if content.trim_start().starts_with("+++") {
                 // Parse TOML front matter
                 let parts: Vec<&str> = content.splitn(3, "+++").collect();
-                
+
                 if parts.len() >= 3 {
                     let toml_content = parts[1];
                     let markdown_content = parts[2].trim_start();
-                    
+
                     match toml_edit::de::from_str::<ImageMarkdownConfig>(toml_content) {
                         Ok(config) => {
                             debug!("Successfully parsed image markdown config: {:?}", config);
@@ -181,7 +181,7 @@ pub fn merge_metadata_sources(
     xmp: Option<XmpMetadata>,
     markdown: Option<ImageMarkdownConfig>,
 ) -> (Option<CameraInfo>, Option<LocationInfo>) {
-    let mut camera_info = exif_camera.unwrap_or_else(|| CameraInfo {
+    let mut camera_info = exif_camera.unwrap_or(CameraInfo {
         camera_make: None,
         camera_model: None,
         lens_model: None,
@@ -197,7 +197,7 @@ pub fn merge_metadata_sources(
         dec: None,
         additional_details: None,
     });
-    
+
     // Apply XMP overrides
     if let Some(ref xmp_data) = xmp {
         camera_info.camera_make = xmp_data.camera_make.clone().or(camera_info.camera_make);
@@ -208,7 +208,7 @@ pub fn merge_metadata_sources(
         camera_info.shutter_speed = xmp_data.shutter_speed.clone().or(camera_info.shutter_speed);
         camera_info.focal_length = xmp_data.focal_length.clone().or(camera_info.focal_length);
     }
-    
+
     // Apply markdown overrides (highest priority)
     if let Some(ref md) = markdown {
         camera_info.camera_make = md.camera_make.clone().or(camera_info.camera_make);
@@ -218,7 +218,7 @@ pub fn merge_metadata_sources(
         camera_info.aperture = md.aperture.clone().or(camera_info.aperture);
         camera_info.shutter_speed = md.shutter_speed.clone().or(camera_info.shutter_speed);
         camera_info.focal_length = md.focal_length.clone().or(camera_info.focal_length);
-        
+
         // Astronomical fields (only from markdown)
         camera_info.telescope = md.telescope.clone();
         camera_info.mount = md.mount.clone();
@@ -228,38 +228,40 @@ pub fn merge_metadata_sources(
         camera_info.dec = md.dec.clone();
         camera_info.additional_details = md.additional_details.clone();
     }
-    
+
     // Handle location info
     let mut location_info = exif_location;
-    
+
     // Apply XMP location overrides
-    if let Some(ref xmp_data) = xmp {
-        if xmp_data.latitude.is_some() && xmp_data.longitude.is_some() {
-            let lat = xmp_data.latitude.unwrap();
-            let lon = xmp_data.longitude.unwrap();
-            location_info = Some(LocationInfo {
-                latitude: lat,
-                longitude: lon,
-                google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
-                apple_maps_url: format!("https://maps.apple.com/?ll={},{}", lat, lon),
-            });
-        }
+    if let Some(ref xmp_data) = xmp
+        && xmp_data.latitude.is_some()
+        && xmp_data.longitude.is_some()
+    {
+        let lat = xmp_data.latitude.unwrap();
+        let lon = xmp_data.longitude.unwrap();
+        location_info = Some(LocationInfo {
+            latitude: lat,
+            longitude: lon,
+            google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
+            apple_maps_url: format!("https://maps.apple.com/?ll={},{}", lat, lon),
+        });
     }
-    
+
     // Apply markdown location overrides (highest priority)
-    if let Some(ref md) = markdown {
-        if md.latitude.is_some() && md.longitude.is_some() {
-            let lat = md.latitude.unwrap();
-            let lon = md.longitude.unwrap();
-            location_info = Some(LocationInfo {
-                latitude: lat,
-                longitude: lon,
-                google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
-                apple_maps_url: format!("https://maps.apple.com/?ll={},{}", lat, lon),
-            });
-        }
+    if let Some(ref md) = markdown
+        && md.latitude.is_some()
+        && md.longitude.is_some()
+    {
+        let lat = md.latitude.unwrap();
+        let lon = md.longitude.unwrap();
+        location_info = Some(LocationInfo {
+            latitude: lat,
+            longitude: lon,
+            google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
+            apple_maps_url: format!("https://maps.apple.com/?ll={},{}", lat, lon),
+        });
     }
-    
+
     // Only return camera_info if it has at least one field set
     let has_camera_info = camera_info.camera_make.is_some()
         || camera_info.camera_model.is_some()
@@ -275,12 +277,12 @@ pub fn merge_metadata_sources(
         || camera_info.ra.is_some()
         || camera_info.dec.is_some()
         || camera_info.additional_details.is_some();
-    
+
     let final_camera_info = if has_camera_info {
         Some(camera_info)
     } else {
         None
     };
-    
+
     (final_camera_info, location_info)
 }

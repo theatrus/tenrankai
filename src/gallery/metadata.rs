@@ -1,5 +1,7 @@
+use super::metadata_sources::{
+    merge_metadata_sources, read_image_markdown_metadata, read_xmp_metadata,
+};
 use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
-use super::metadata_sources::{read_xmp_metadata, read_image_markdown_metadata, merge_metadata_sources};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::path::Path;
 use std::time::SystemTime;
@@ -474,7 +476,8 @@ impl Gallery {
         };
 
         // Extract EXIF data
-        let (capture_date, exif_camera_info, exif_location_info) = self.extract_all_exif_data(path).await;
+        let (capture_date, exif_camera_info, exif_location_info) =
+            self.extract_all_exif_data(path).await;
 
         // Check for XMP sidecar file
         let xmp_path = path.with_extension("xmp");
@@ -485,7 +488,10 @@ impl Gallery {
         };
 
         // Check for markdown metadata file (e.g., image.jpg.md)
-        let markdown_path = path.with_extension(format!("{}.md", path.extension().and_then(|s| s.to_str()).unwrap_or("")));
+        let markdown_path = path.with_extension(format!(
+            "{}.md",
+            path.extension().and_then(|s| s.to_str()).unwrap_or("")
+        ));
         let markdown_metadata = if markdown_path.exists() {
             read_image_markdown_metadata(&markdown_path).await
         } else {
