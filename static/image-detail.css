@@ -7,11 +7,15 @@ body {
 
 .image-detail-container {
     background-color: var(--bg-primary);
+    padding-top: 0.5rem;  /* Reduce top padding for more image space */
 }
 
 .image-detail-container .gallery-nav {
     font-size: 0.8rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;  /* Reduce bottom margin */
+    margin-top: 0;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
 }
 
 .image-detail-container .nav-current {
@@ -565,12 +569,42 @@ dd {
     
     /* Mobile layout adjustments */
     .image-detail-container {
-        padding: 1rem;
+        padding: 0.5rem;
+        padding-top: 0.25rem;
     }
     
     .image-detail-container .gallery-nav {
         font-size: 0.75rem;
-        margin-bottom: 0.75rem;
+        margin-bottom: 0.5rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    /* Fix technical details overflow on mobile */
+    dl {
+        grid-template-columns: minmax(60px, auto) 1fr;
+        gap: 0.25rem 0.5rem;
+        font-size: 0.85rem;
+    }
+    
+    dt {
+        font-size: 0.75rem;
+    }
+    
+    dd {
+        font-size: 0.8rem;
+        overflow-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    /* Shrink metadata cards on mobile */
+    .image-metadata,
+    .camera-info,
+    .location-info {
+        padding: var(--spacing-sm);
+    }
+    
+    .image-info .card {
+        padding: var(--spacing-sm);
     }
 }
 
