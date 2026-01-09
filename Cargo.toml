@@ -58,6 +58,7 @@ webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"]
 webauthn-rs-proto = "0.5"
 env_logger = "0.11"
 fnv = "1.0"
+quick-xml = "0.37"
 
 [profile.dev]
 opt-level = 2           # Enable optimizations (0 = none, 1 = basic, 2 = some, 3 = all)

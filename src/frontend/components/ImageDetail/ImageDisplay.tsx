@@ -48,7 +48,7 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
 };
 
 export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageDisplayProps) {
-  const [imageLoading, setImageLoading] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   
   // Calculate initial dimensions immediately to prevent flicker
@@ -261,23 +261,33 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
             aria-label={image.name}
           >
             {/* Image display with retina support */}
-            {!imageLoading && !imageError && (
-              <div 
-                className="image-bg"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  backgroundImage: `image-set(
-                    url(${image.medium_url}) 1x,
-                    url(${image.medium_url.replace('?size=medium', '?size=medium@2x')}) 2x
-                  )`,
-                  backgroundSize: '100% 100%',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat'
-                }}
-                key={image.path} // Force re-render with animation on image change
-              />
-            )}
+            {!imageLoading && !imageError && (() => {
+              // Use WebKit prefix and standard syntax with proper quoting
+              const bgStyle: React.CSSProperties = {
+                width: '100%',
+                height: '100%',
+                backgroundSize: '100% 100%',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+              };
+              
+              // Set both standard and WebKit prefixed versions
+              const imageSetValue = `image-set(
+                url("${image.medium_url}") 1x,
+                url("${image.medium_url.replace('?size=medium', '?size=medium@2x')}") 2x
+              )`;
+              
+              bgStyle.backgroundImage = imageSetValue;
+              (bgStyle as any).WebkitBackgroundImage = imageSetValue;
+              
+              return (
+                <div 
+                  className="image-bg"
+                  style={bgStyle}
+                  key={image.path} // Force re-render with animation on image change
+                />
+              );
+            })()}
             {/* Hidden img for loading detection */}
             <img 
               src={image.medium_url}
