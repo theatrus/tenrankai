@@ -19,6 +19,7 @@ interface ZoomState {
 export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [zoomState, setZoomState] = useState<ZoomState>({
     isZooming: false,
     x: 0,
@@ -36,6 +37,48 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
 
+  // Calculate dimensions based on viewport and image aspect ratio
+  const calculateDimensions = () => {
+    const aspectRatio = image.dimensions[0] / image.dimensions[1];
+    const maxWidth = window.innerWidth * 0.95;
+    const maxHeight = window.innerHeight * 0.75 - 100;
+    
+    let width, height;
+    
+    if (maxWidth / maxHeight > aspectRatio) {
+      // Height constrained
+      height = maxHeight;
+      width = height * aspectRatio;
+    } else {
+      // Width constrained  
+      width = maxWidth;
+      height = width / aspectRatio;
+    }
+    
+    // On mobile, adjust constraints
+    if (window.innerWidth <= 768) {
+      width = window.innerWidth;
+      height = width / aspectRatio;
+      if (height > window.innerHeight * 0.6) {
+        height = window.innerHeight * 0.6;
+        width = height * aspectRatio;
+      }
+    }
+    
+    setDimensions({ width, height });
+  };
+
+  // Recalculate on resize
+  useEffect(() => {
+    calculateDimensions();
+    
+    const handleResize = () => {
+      calculateDimensions();
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [image.dimensions]);
 
   useEffect(() => {
     if (!image.medium_url) {
@@ -154,21 +197,19 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
 
   return (
     <div 
+      ref={containerRef}
       className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
+      style={{ 
+        width: `${dimensions.width}px`,
+        height: `${dimensions.height}px`,
+        position: 'relative',
+        overflow: 'hidden'
+      }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
-      <div
-        ref={containerRef}
-        className="image-inner"
-        style={{ 
-          aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
         {showLoading && (
           <div className="image-loading">
             <div className="loading-spinner">Loading...</div>
@@ -279,7 +320,6 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
           )}
         </>
       )}
-      </div>
     </div>
   );
 }
