@@ -73,16 +73,26 @@ body {
     max-width: 90%;
     max-height: calc(70vh - 150px);
     position: relative;
+    background-color: transparent;
+    border-radius: 8px;
+    overflow: visible;
+}
+
+/* When aspect-ratio is set, ensure proper sizing based on constraints */
+.image-container[style*="aspect-ratio"] {
+    /* Let the browser calculate the best fit within max constraints */
+    width: auto !important;
+    height: auto !important;
+    max-width: 90%;
+    max-height: calc(70vh - 150px);
+}
+
+/* Apply shadow and background to the actual image display */
+.image-container .image-display {
     background-color: var(--bg-secondary);
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-
-/* When aspect-ratio is set, ensure proper sizing */
-.image-container[style*="aspect-ratio"] {
-    width: auto !important;
-    height: calc(70vh - 150px);
 }
 
 .image-container img {
@@ -494,7 +504,13 @@ dd {
         margin: 0;
         max-width: 100%;
         width: 100%;
+    }
+    
+    /* Remove shadow and borders from image display on mobile */
+    .image-container .image-display {
         box-shadow: none;
+        border-radius: 0;
+        background-color: transparent;
     }
     
     /* Adjust image viewer section for mobile - no padding */
