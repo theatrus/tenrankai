@@ -86,14 +86,14 @@ default_authenticated_role = "contributor"
 [galleries.permissions.roles.viewer]
 name = "viewer"
 permissions = { can_view = true, can_download_medium = true }
-# Note: By default, viewers cannot see exact dates, location, or technical details
+# Note: By default, viewers cannot see exact dates, location, technical details, or use zoom
 
 # Define the contributor role for authenticated users
 [galleries.permissions.roles.contributor]
 name = "contributor"
 # Inherits all permissions from viewer role
 inherits = "viewer"
-permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true }
+permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true, can_use_zoom = true }
 
 # Define an admin role with full access
 [galleries.permissions.roles.admin]

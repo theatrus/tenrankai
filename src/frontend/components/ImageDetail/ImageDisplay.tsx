@@ -40,12 +40,14 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
 
   // Preload large image when zoom is available
   useEffect(() => {
-    if (canUseZoom && image.large_url) {
+    if (canUseZoom && image.medium_url) {
+      // Construct large URL from medium URL by changing the size parameter
+      const largeUrl = image.medium_url.replace('?size=medium', '?size=large');
       const img = new Image();
-      img.src = image.large_url;
-      img.onload = () => setLargeImageSrc(image.large_url || null);
+      img.src = largeUrl;
+      img.onload = () => setLargeImageSrc(largeUrl);
     }
-  }, [canUseZoom, image.large_url]);
+  }, [canUseZoom, image.medium_url]);
 
   useEffect(() => {
     if (!image.medium_url) {

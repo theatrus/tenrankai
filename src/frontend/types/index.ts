@@ -47,7 +47,6 @@ export interface ImageInfo {
   thumbnail_url: string;
   gallery_url?: string;
   medium_url: string;
-  large_url?: string;
   camera_info?: CameraInfo;
   location_info?: LocationInfo;
   color_profile?: string;
