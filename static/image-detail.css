@@ -27,7 +27,7 @@ body {
 /* New full-viewport image section */
 .image-viewer-section {
     background-color: var(--bg-secondary);
-    padding: var(--spacing-xl);
+    padding: var(--spacing-md) var(--spacing-lg);
     min-height: 70vh;
     height: 80vh;
     display: flex;
@@ -37,9 +37,9 @@ body {
 
 @media (min-width: 1024px) {
     .image-viewer-section {
-        margin: var(--spacing-lg);
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        margin: 0 var(--spacing-md);
+        border-radius: 0;
+        box-shadow: none;
     }
 }
 
@@ -70,11 +70,11 @@ body {
 .image-container {
     display: inline-block;
     width: 100%;
-    max-width: 90%;
-    max-height: calc(70vh - 150px);
+    max-width: 95%;
+    max-height: calc(75vh - 100px);
     position: relative;
     background-color: var(--bg-secondary);
-    border-radius: 8px;
+    border-radius: 0;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
@@ -393,7 +393,7 @@ dd {
 
 /* Info section */
 .image-info-section {
-    padding: var(--spacing-xl);
+    padding: var(--spacing-lg) var(--spacing-md);
     max-width: 1200px;
     margin: 0 auto;
     width: 100%;
