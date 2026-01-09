@@ -6,7 +6,6 @@ import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation.ts';
 import { useDelayedLoading } from '../hooks/useDelayedLoading.ts';
 import { useSwipeGestures } from '../hooks/useSwipeGestures.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
-import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
@@ -159,62 +158,91 @@ export function ImageDetailPage({
       />
       
       <div className="image-detail-content">
-        <div className="image-main">
+        {/* Image viewer section - full viewport */}
+        <div className="image-viewer-section">
           <MobileNavigation
             prevImage={currentData.prev_image}
             nextImage={currentData.next_image}
             onNavigate={handleNavigation}
           />
           
-          <div ref={imageContainerRef} className="swipeable-image-area">
-            <ImageDisplay 
-              image={currentData.image} 
-              canUseZoom={currentData.permissions.can_use_zoom}
-            />
+          <div className="image-container-wrapper">
+            <div ref={imageContainerRef} className="image-container swipeable-image-area">
+              <ImageDisplay 
+                image={currentData.image} 
+                canUseZoom={currentData.permissions.can_use_zoom}
+              />
+              
+              {/* Desktop navigation overlays */}
+              {currentData.prev_image && (
+                <div className="image-nav-overlay prev">
+                  <button 
+                    className="nav-overlay-btn"
+                    onClick={() => handleNavigation('prev')}
+                    aria-label="Previous image"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              
+              {currentData.next_image && (
+                <div className="image-nav-overlay next">
+                  <button 
+                    className="nav-overlay-btn"
+                    onClick={() => handleNavigation('next')}
+                    aria-label="Next image"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           
-          <ImageNavigation
-            prevImage={currentData.prev_image}
-            nextImage={currentData.next_image}
-            galleryUrl={galleryUrl}
-            onNavigate={handleNavigation}
-          />
-          
-          <div className="image-controls">
+          {/* Controls below image */}
+          <div className="image-controls-bar">
             <ImageControls image={currentData.image} permissions={currentData.permissions} />
-            
-            {(currentData.prev_image || currentData.next_image) && (
-              <div className="nav-hint-container">
-                {currentData.prev_image && currentData.next_image ? (
-                  <span className="nav-hint">Use ← → keys to navigate between images</span>
-                ) : currentData.prev_image ? (
-                  <span className="nav-hint">Use ← key to go to previous image</span>
-                ) : (
-                  <span className="nav-hint">Use → key to go to next image</span>
-                )}
-              </div>
-            )}
           </div>
+          
+          {(currentData.prev_image || currentData.next_image) && (
+            <div className="nav-hint">
+              {currentData.prev_image && currentData.next_image ? (
+                <>Use ← → keys to navigate between images</>
+              ) : currentData.prev_image ? (
+                <>Use ← key to go to previous image</>
+              ) : (
+                <>Use → key to go to next image</>
+              )}
+            </div>
+          )}
         </div>
         
-        <div className="image-info">
-          {currentData.image.title && (
-            <h2 className="image-title">{currentData.image.title}</h2>
-          )}
-          
-          {currentData.image.description && (
-            <div 
-              className="image-description"
-              dangerouslySetInnerHTML={{ __html: currentData.image.description }}
-            />
-          )}
+        {/* Info section - below the image viewer */}
+        <div className="image-info-section">
+          <div className="image-header">
+            {currentData.image.title && (
+              <h1 className="image-title">{currentData.image.title}</h1>
+            )}
+            
+            {currentData.image.description && (
+              <div 
+                className="image-description"
+                dangerouslySetInnerHTML={{ __html: currentData.image.description }}
+              />
+            )}
+          </div>
           
           {!hideMetadata && (
-            <>
+            <div className="metadata-grid">
               <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} permissions={currentData.permissions} />
               <CameraMetadata image={currentData.image} permissions={currentData.permissions} />
               <LocationMetadata image={currentData.image} permissions={currentData.permissions} />
-            </>
+            </div>
           )}
           
           {currentData.permissions.can_read_metadata && (
