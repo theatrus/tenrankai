@@ -116,7 +116,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
     });
     
     return columns.map(col => col.images);
-  }, [filteredImages, columnWidth, numColumns]);
+  }, [images, columnWidth, numColumns]);
 
   // Generate clean ID from image name
   const generateCleanId = (name: string): string => {
