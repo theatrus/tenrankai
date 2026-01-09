@@ -69,27 +69,28 @@ body {
 /* Image container - uses aspect-ratio from React component */
 .image-container {
     display: inline-block;
-    max-width: 95%;
-    max-height: calc(75vh - 100px);
+    max-width: calc(95% - 24px);  /* Reduced to account for shadow space */
+    max-height: calc(75vh - 124px);  /* Reduced to account for shadow space */
     position: relative;
     background-color: transparent;
     border-radius: 0;
     overflow: visible;  /* Changed to visible to allow drop-shadow */
     box-shadow: none;   /* Removed box-shadow from container */
+    padding: 12px;  /* Add padding for shadow space */
 }
 
 /* Ensure aspect-ratio containers size properly */
 .image-container[style*="aspect-ratio"] {
-    height: calc(75vh - 100px);
+    height: calc(75vh - 124px);  /* Match container max-height */
     width: auto;
 }
 
 /* On narrow screens, prioritize width for landscape images */
 @media (max-width: 1024px) {
     .image-container[style*="aspect-ratio"] {
-        width: 95%;
+        width: calc(95% - 24px);  /* Account for padding */
         height: auto;
-        max-height: calc(75vh - 100px);
+        max-height: calc(75vh - 124px);
     }
 }
 
@@ -523,6 +524,7 @@ dd {
         margin: 0;
         max-width: 100%;
         width: auto;
+        padding: 0;  /* Remove padding on mobile */
     }
     
     /* Remove drop-shadow on mobile */
