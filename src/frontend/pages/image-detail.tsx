@@ -161,13 +161,13 @@ export function ImageDetailPage({
       <div className="image-detail-content">
         {/* Image viewer section - full viewport */}
         <div className="image-viewer-section">
+          <MobileNavigation
+            prevImage={currentData.prev_image}
+            nextImage={currentData.next_image}
+            onNavigate={handleNavigation}
+          />
+          
           <div className="image-container-wrapper">
-            <MobileNavigation
-              prevImage={currentData.prev_image}
-              nextImage={currentData.next_image}
-              onNavigate={handleNavigation}
-            />
-            
             <div ref={imageContainerRef} className="image-container swipeable-image-area">
               <ImageDisplay 
                 image={currentData.image} 

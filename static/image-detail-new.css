@@ -83,18 +83,17 @@ body {
     max-height: calc(100vh - 300px);
 }
 
-/* Image display */
+/* Image display - the actual container from ImageDisplay component */
 .image-display {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 /* Ensure the background image shows */
-.image-bg {
+.image-display .image-bg {
     position: absolute;
     top: 0;
     left: 0;
@@ -243,6 +242,11 @@ body {
     padding: var(--spacing-lg);
     border-radius: 8px;
     border: 1px solid var(--border-color);
+}
+
+/* Hide mobile navigation on desktop */
+.mobile-navigation {
+    display: none;
 }
 
 /* Mobile adjustments */
