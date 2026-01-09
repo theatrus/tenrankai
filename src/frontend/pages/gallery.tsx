@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { MasonryGrid } from '@components/Gallery/MasonryGrid';
+import { GalleryWithFilter } from '@components/Gallery/GalleryWithFilter';
 
 // Mount React masonry gallery on server-rendered page
 document.addEventListener('DOMContentLoaded', () => {
@@ -41,23 +41,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const galleryUrlElement = document.querySelector('[data-gallery-url]');
   const galleryUrl = galleryData?.gallery_url || galleryUrlElement?.getAttribute('data-gallery-url') || '/gallery';
 
-  // Find the container for React
-  const container = document.getElementById('gallery-grid');
-  if (!container) {
-    console.error('Gallery grid container not found');
+  // Find the container for React - use the parent gallery-images div
+  const galleryImages = document.querySelector('.gallery-images');
+  if (!galleryImages) {
+    console.error('Gallery images container not found');
     return;
   }
 
-  // Clear existing content
-  container.innerHTML = '';
+  // Find the filter mount point
+  const filterMount = document.getElementById('gallery-filter-mount');
+  
+  // Clear existing content (remove the static grid)
+  galleryImages.innerHTML = '';
   
   // Mount React component
-  const root = createRoot(container);
+  const root = createRoot(galleryImages);
   root.render(
-    <MasonryGrid 
+    <GalleryWithFilter 
       images={images}
       galleryUrl={galleryUrl}
       permissions={galleryData?.permissions}
+      filterMount={filterMount}
     />
   );
 });

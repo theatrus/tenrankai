@@ -93,6 +93,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
     };
   }, [calculateColumnWidth]);
 
+
   // Distribute images across columns with proper height tracking
   const distributeImages = useCallback(() => {
     const columns: Array<{ images: GalleryImage[]; height: number }> = 
