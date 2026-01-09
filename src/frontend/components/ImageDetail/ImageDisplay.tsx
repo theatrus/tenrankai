@@ -255,7 +255,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
                     url(${image.medium_url}) 1x,
                     url(${image.medium_url.replace('?size=medium', '?size=medium@2x')}) 2x
                   )`,
-                  backgroundSize: 'contain',
+                  backgroundSize: '100% 100%',
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat'
                 }}
