@@ -84,6 +84,15 @@ body {
     width: auto;
 }
 
+/* On narrow screens, prioritize width for landscape images */
+@media (max-width: 1024px) {
+    .image-container[style*="aspect-ratio"] {
+        width: 95%;
+        height: auto;
+        max-height: calc(75vh - 100px);
+    }
+}
+
 .image-container img {
     width: 100%;
     height: 100%;
@@ -1019,6 +1028,11 @@ dd {
   -o-user-drag: none;
   user-drag: none;
   pointer-events: auto;
+}
+
+/* Ensure no background on image background div */
+.image-bg {
+  background-color: transparent !important;
 }
 
 .image-container {
