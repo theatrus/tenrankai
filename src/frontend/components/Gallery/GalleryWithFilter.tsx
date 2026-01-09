@@ -99,32 +99,40 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
     });
   }, [images, activeFilter, permissions]);
 
-  // Render filter bar in the designated mount point if provided
+  // Create a ref to store the filter root
+  const filterRootRef = React.useRef<any>(null);
+  
+  // Mount filter bar only once
   React.useEffect(() => {
-    if (filterMount && permissions?.can_read_metadata) {
+    if (filterMount && permissions?.can_read_metadata && !filterRootRef.current) {
       import('react-dom/client').then(({ createRoot }) => {
-        const filterRoot = createRoot(filterMount);
-        filterRoot.render(
-          <FilterBar
-            activeFilter={activeFilter}
-            onFilterChange={handleFilterChange}
-            counts={filterCounts}
-          />
-        );
-        
-        // Store cleanup function
-        (filterMount as any)._filterCleanup = () => filterRoot.unmount();
+        filterRootRef.current = createRoot(filterMount);
       });
-      
-      return () => {
-        // Cleanup on unmount
-        const cleanup = (filterMount as any)?._filterCleanup;
-        if (cleanup) {
-          setTimeout(() => cleanup(), 0);
-        }
-      };
     }
-  }, [filterMount, permissions, activeFilter, filterCounts, handleFilterChange]);
+    
+    return () => {
+      // Cleanup on unmount
+      if (filterRootRef.current) {
+        setTimeout(() => {
+          filterRootRef.current?.unmount();
+          filterRootRef.current = null;
+        }, 0);
+      }
+    };
+  }, [filterMount, permissions?.can_read_metadata]);
+  
+  // Update filter bar when props change
+  React.useEffect(() => {
+    if (filterRootRef.current && permissions?.can_read_metadata) {
+      filterRootRef.current.render(
+        <FilterBar
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+          counts={filterCounts}
+        />
+      );
+    }
+  }, [activeFilter, filterCounts, handleFilterChange, permissions?.can_read_metadata]);
 
   return (
     <MasonryGrid 
