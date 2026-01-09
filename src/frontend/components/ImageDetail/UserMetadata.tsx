@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ImageUserMetadata, PickStatus } from '../../types';
+import { ImageUserMetadata, PickStatus, RolePermissions } from '../../types';
 
 interface UserMetadataProps {
   metadata?: ImageUserMetadata;
@@ -7,6 +7,7 @@ interface UserMetadataProps {
   galleryName: string;
   isAuthenticated: boolean;
   currentUser?: string;
+  permissions: RolePermissions;
   onUpdate: (updatedMetadata: ImageUserMetadata) => void;
 }
 
@@ -16,6 +17,7 @@ export function UserMetadata({
   galleryName,
   isAuthenticated,
   currentUser,
+  permissions,
   onUpdate 
 }: UserMetadataProps) {
   const [isEditing, setIsEditing] = useState(false);

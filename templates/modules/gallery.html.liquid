@@ -4,6 +4,7 @@
     {% assign page_title = "Gallery" %}
 {% endif %}
 {% assign meta_description = folder_description | default: "Browse the photo gallery on theatr.us" | strip_html | truncate: 160 %}
+{% assign page_css = "gallery-filters.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container gallery-container">

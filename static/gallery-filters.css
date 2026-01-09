@@ -1,0 +1,121 @@
+/* ==========================================================================
+   Gallery Filter Bar Styles
+   ========================================================================== */
+
+.gallery-filter-bar {
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-md) 0;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 6px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.filter-btn:hover:not(.disabled) {
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background: var(--link-color);
+    border-color: var(--link-color);
+    color: var(--bg-primary);
+}
+
+.filter-btn.active:hover {
+    background: var(--link-hover);
+    border-color: var(--link-hover);
+}
+
+.filter-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.filter-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.filter-label {
+    font-weight: 500;
+}
+
+.filter-count {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    margin-left: 2px;
+}
+
+.filter-btn.active .filter-count {
+    opacity: 1;
+}
+
+.clear-filter-btn {
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+}
+
+.clear-filter-btn:hover {
+    border-color: var(--link-color);
+    color: var(--link-color);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .gallery-filter-bar {
+        padding: var(--spacing-sm) 0;
+    }
+    
+    .filter-buttons {
+        gap: 6px;
+    }
+    
+    .filter-btn {
+        padding: 4px 10px;
+        font-size: 0.8rem;
+    }
+    
+    .filter-icon {
+        font-size: 0.9rem;
+    }
+    
+    .filter-count {
+        font-size: 0.75rem;
+    }
+    
+    .clear-filter-btn {
+        padding: 4px 12px;
+        font-size: 0.8rem;
+    }
+}

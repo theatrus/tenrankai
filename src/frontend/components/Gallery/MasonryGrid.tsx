@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { FilterBar, FilterType } from './FilterBar';
 
 export interface GalleryImage {
   path: string; // Contains the indexed identifier (filename, sequence, or unique_id)
@@ -32,8 +33,38 @@ interface DisplayDimensions {
 export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, permissions }) => {
   const [columnWidth, setColumnWidth] = useState(400);
   const [numColumns, setNumColumns] = useState(2);
+  
+  // Initialize filter from URL parameters
+  const getInitialFilter = (): FilterType => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const filter = params.get('filter');
+      if (filter && ['all', 'picks', 'rejects', 'highlighted', 'commented'].includes(filter)) {
+        return filter as FilterType;
+      }
+    }
+    return 'all';
+  };
+  
+  const [activeFilter, setActiveFilter] = useState<FilterType>(getInitialFilter());
   const gridRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<number>();
+  
+  // Update URL when filter changes
+  const handleFilterChange = useCallback((filter: FilterType) => {
+    setActiveFilter(filter);
+    
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (filter === 'all') {
+        url.searchParams.delete('filter');
+      } else {
+        url.searchParams.set('filter', filter);
+      }
+      // Update URL without page reload
+      window.history.pushState({}, '', url.toString());
+    }
+  }, []);
 
   // Calculate column width based on viewport
   const calculateColumnWidth = useCallback(() => {
@@ -93,12 +124,64 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
     };
   }, [calculateColumnWidth]);
 
+  // Filter images based on active filter
+  const filteredImages = useMemo(() => {
+    if (!permissions?.can_read_metadata || activeFilter === 'all') {
+      return images;
+    }
+
+    return images.filter((image) => {
+      const metadata = image.user_metadata;
+      if (!metadata) return false;
+
+      switch (activeFilter) {
+        case 'picks':
+          return metadata.pick_status === 'pick';
+        case 'rejects':
+          return metadata.pick_status === 'no_pick';
+        case 'highlighted':
+          return metadata.highlighted === true;
+        case 'commented':
+          return metadata.comments && metadata.comments.length > 0;
+        default:
+          return true;
+      }
+    });
+  }, [images, activeFilter, permissions]);
+
+  // Calculate filter counts
+  const filterCounts = useMemo(() => {
+    const counts = {
+      all: images.length,
+      picks: 0,
+      rejects: 0,
+      highlighted: 0,
+      commented: 0,
+    };
+
+    if (!permissions?.can_read_metadata) {
+      return counts;
+    }
+
+    images.forEach((image) => {
+      const metadata = image.user_metadata;
+      if (!metadata) return;
+
+      if (metadata.pick_status === 'pick') counts.picks++;
+      if (metadata.pick_status === 'no_pick') counts.rejects++;
+      if (metadata.highlighted) counts.highlighted++;
+      if (metadata.comments && metadata.comments.length > 0) counts.commented++;
+    });
+
+    return counts;
+  }, [images, permissions]);
+
   // Distribute images across columns with proper height tracking
   const distributeImages = useCallback(() => {
     const columns: Array<{ images: GalleryImage[]; height: number }> = 
       Array(numColumns).fill(null).map(() => ({ images: [], height: 0 }));
     
-    images.forEach((image) => {
+    filteredImages.forEach((image) => {
       // Use default dimensions if not available
       const width = image.dimensions?.[0] || 800;
       const height = image.dimensions?.[1] || 600;
@@ -115,7 +198,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
     });
     
     return columns.map(col => col.images);
-  }, [images, columnWidth, numColumns]);
+  }, [filteredImages, columnWidth, numColumns]);
 
   // Generate clean ID from image name
   const generateCleanId = (name: string): string => {
@@ -214,7 +297,15 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
   };
 
   return (
-    <div className="image-grid" ref={gridRef}>
+    <>
+      {permissions?.can_read_metadata && (
+        <FilterBar
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+          counts={filterCounts}
+        />
+      )}
+      <div className="image-grid" ref={gridRef}>
       {columns.map((column, columnIndex) => (
         <div 
           key={columnIndex} 
@@ -272,5 +363,6 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
         </div>
       ))}
     </div>
+    </>
   );
 };
