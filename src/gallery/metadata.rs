@@ -1,4 +1,5 @@
 use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
+use super::metadata_sources::{read_xmp_metadata, read_image_markdown_metadata, merge_metadata_sources};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::path::Path;
 use std::time::SystemTime;
@@ -139,6 +140,13 @@ impl Gallery {
             aperture: None,
             shutter_speed: None,
             focal_length: None,
+            telescope: None,
+            mount: None,
+            filters: None,
+            total_exposure_time: None,
+            ra: None,
+            dec: None,
+            additional_details: None,
         };
 
         let mut has_data = false;
@@ -466,7 +474,47 @@ impl Gallery {
         };
 
         // Extract EXIF data
-        let (capture_date, camera_info, location_info) = self.extract_all_exif_data(path).await;
+        let (capture_date, exif_camera_info, exif_location_info) = self.extract_all_exif_data(path).await;
+
+        // Check for XMP sidecar file
+        let xmp_path = path.with_extension("xmp");
+        let xmp_metadata = if xmp_path.exists() {
+            read_xmp_metadata(&xmp_path).await
+        } else {
+            None
+        };
+
+        // Check for markdown metadata file (e.g., image.jpg.md)
+        let markdown_path = path.with_extension(format!("{}.md", path.extension().and_then(|s| s.to_str()).unwrap_or("")));
+        let markdown_metadata = if markdown_path.exists() {
+            read_image_markdown_metadata(&markdown_path).await
+        } else {
+            None
+        };
+
+        // Merge metadata from all sources
+        let (camera_info, location_info) = merge_metadata_sources(
+            exif_camera_info,
+            exif_location_info,
+            xmp_metadata,
+            markdown_metadata.as_ref().map(|m| m.config.clone()),
+        );
+
+        // Override capture date if specified in markdown
+        let capture_date = if let Some(ref md) = markdown_metadata {
+            if let Some(ref date_str) = md.config.capture_date {
+                // Try to parse ISO 8601 date
+                if let Ok(dt) = DateTime::parse_from_rfc3339(date_str) {
+                    Some(SystemTime::from(dt))
+                } else {
+                    capture_date
+                }
+            } else {
+                capture_date
+            }
+        } else {
+            capture_date
+        };
 
         // Get file modification date
         let modification_date = tokio::fs::metadata(path)

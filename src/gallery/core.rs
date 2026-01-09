@@ -457,16 +457,84 @@ impl Gallery {
         let file_size = cached_metadata.file_size;
         let dimensions = cached_metadata.dimensions;
 
-        // Extract title and description from markdown
-        let raw_markdown = self.read_sidecar_markdown_raw(relative_path).await;
-        let title = raw_markdown.as_ref().and_then(|content| {
-            content
-                .lines()
-                .find(|line| line.trim().starts_with("# "))
-                .map(|line| line.trim_start_matches("# ").trim().to_string())
-        });
-
-        let description = self.read_sidecar_markdown(relative_path).await;
+        // Extract title and description from markdown and XMP metadata
+        let (title, description) = {
+            // Build the markdown file path
+            let image_full_path = self.config.source_directory.join(relative_path);
+            let markdown_path = if let Some(ext) = image_full_path.extension() {
+                image_full_path.with_extension(format!("{}.md", ext.to_string_lossy()))
+            } else {
+                image_full_path.with_extension("md")
+            };
+            
+            // Check for XMP sidecar file
+            let xmp_path = image_full_path.with_extension("xmp");
+            let xmp_metadata = if xmp_path.exists() {
+                super::metadata_sources::read_xmp_metadata(&xmp_path).await
+            } else {
+                None
+            };
+            
+            // Extract title and description from available sources
+            if markdown_path.exists() {
+                match super::metadata_sources::read_image_markdown_metadata(&markdown_path).await {
+                    Some(md_metadata) => {
+                        // Use title from frontmatter if available
+                        let title = md_metadata.config.title.or_else(|| {
+                            // Fall back to extracting title from markdown content
+                            md_metadata.description_markdown
+                                .lines()
+                                .find(|line| line.trim().starts_with("# "))
+                                .map(|line| line.trim_start_matches("# ").trim().to_string())
+                        }).or_else(|| {
+                            // Fall back to XMP title
+                            xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
+                        });
+                        
+                        // Process markdown to HTML, removing title if present
+                        let content_without_title = if title.is_some() && md_metadata.description_markdown.contains("# ") {
+                            md_metadata.description_markdown
+                                .lines()
+                                .skip_while(|line| !line.trim().starts_with("# "))
+                                .skip(1)
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        } else {
+                            md_metadata.description_markdown.clone()
+                        };
+                        
+                        let parser = Parser::new(&content_without_title);
+                        let mut html_output = String::new();
+                        html::push_html(&mut html_output, parser);
+                        
+                        (title, Some(html_output))
+                    }
+                    None => {
+                        // Try legacy format
+                        let raw_markdown = self.read_sidecar_markdown_raw(relative_path).await;
+                        let title = raw_markdown.as_ref().and_then(|content| {
+                            content
+                                .lines()
+                                .find(|line| line.trim().starts_with("# "))
+                                .map(|line| line.trim_start_matches("# ").trim().to_string())
+                        }).or_else(|| {
+                            // Fall back to XMP title
+                            xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
+                        });
+                        
+                        let description = self.read_sidecar_markdown(relative_path).await
+                            .or_else(|| xmp_metadata.as_ref().and_then(|xmp| xmp.description.clone()));
+                        
+                        (title, description)
+                    }
+                }
+            } else if let Some(xmp) = xmp_metadata {
+                // No markdown, but we have XMP
+                (xmp.title, xmp.description)
+            } else {
+                (None, None)
+            }
+        };
 
         // Get the indexed identifier for this image
         let url_identifier = {

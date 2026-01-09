@@ -59,10 +59,14 @@ export function CameraMetadata({ image, permissions }: { image: ImageInfo; permi
     camera.camera_make,
     camera.camera_model
   ].filter(Boolean).join(' ');
+  
+  // Check if this is an astronomical image
+  const isAstronomical = camera.telescope || camera.mount || camera.filters || 
+                        camera.total_exposure_time || camera.ra || camera.dec;
 
   return (
     <div className="camera-info card">
-      <h3>Camera Information</h3>
+      <h3>{isAstronomical ? 'Technical Information' : 'Camera Information'}</h3>
       <dl>
         {cameraName && (
           <>
@@ -75,6 +79,27 @@ export function CameraMetadata({ image, permissions }: { image: ImageInfo; permi
           <>
             <dt>Lens</dt>
             <dd>{camera.lens_model}</dd>
+          </>
+        )}
+        
+        {camera.telescope && (
+          <>
+            <dt>Telescope</dt>
+            <dd>{camera.telescope}</dd>
+          </>
+        )}
+        
+        {camera.mount && (
+          <>
+            <dt>Mount</dt>
+            <dd>{camera.mount}</dd>
+          </>
+        )}
+        
+        {camera.filters && (
+          <>
+            <dt>Filters</dt>
+            <dd>{camera.filters}</dd>
           </>
         )}
         
@@ -99,10 +124,38 @@ export function CameraMetadata({ image, permissions }: { image: ImageInfo; permi
           </>
         )}
         
+        {camera.total_exposure_time && (
+          <>
+            <dt>Total Exposure Time</dt>
+            <dd>{camera.total_exposure_time} hours</dd>
+          </>
+        )}
+        
         {camera.iso && (
           <>
             <dt>ISO</dt>
             <dd>{camera.iso}</dd>
+          </>
+        )}
+        
+        {camera.ra && (
+          <>
+            <dt>Right Ascension</dt>
+            <dd>{camera.ra}</dd>
+          </>
+        )}
+        
+        {camera.dec && (
+          <>
+            <dt>Declination</dt>
+            <dd>{camera.dec}</dd>
+          </>
+        )}
+        
+        {camera.additional_details && (
+          <>
+            <dt>Additional Details</dt>
+            <dd>{camera.additional_details}</dd>
           </>
         )}
       </dl>

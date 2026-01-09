@@ -189,6 +189,17 @@ pub struct CameraInfo {
     pub aperture: Option<String>,
     pub shutter_speed: Option<String>,
     pub focal_length: Option<String>,
+    
+    // Astronomical imaging fields
+    pub telescope: Option<String>,
+    pub mount: Option<String>,
+    pub filters: Option<String>,
+    pub total_exposure_time: Option<f32>, // in hours
+    pub ra: Option<String>,  // Right Ascension
+    pub dec: Option<String>, // Declination
+    
+    // Additional technical details that can be set via markdown
+    pub additional_details: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,5 +256,42 @@ pub(crate) struct FolderConfig {
 #[derive(Debug, Clone)]
 pub(crate) struct FolderMetadata {
     pub config: FolderConfig,
+    pub description_markdown: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ImageMarkdownConfig {
+    pub title: Option<String>,
+    
+    // Camera/technical info overrides
+    pub camera_make: Option<String>,
+    pub camera_model: Option<String>,
+    pub lens_model: Option<String>,
+    pub iso: Option<u32>,
+    pub aperture: Option<String>,
+    pub shutter_speed: Option<String>,
+    pub focal_length: Option<String>,
+    
+    // Astronomical fields
+    pub telescope: Option<String>,
+    pub mount: Option<String>,
+    pub filters: Option<String>,
+    pub total_exposure_time: Option<f32>,
+    pub ra: Option<String>,
+    pub dec: Option<String>,
+    
+    // Location overrides
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    
+    // Additional info
+    pub additional_details: Option<String>,
+    pub capture_date: Option<String>, // ISO 8601 format
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ImageMarkdownMetadata {
+    pub config: ImageMarkdownConfig,
     pub description_markdown: String,
 }

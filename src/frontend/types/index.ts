@@ -8,6 +8,17 @@ export interface CameraInfo {
   aperture?: string;
   shutter_speed?: string;
   focal_length?: string;
+  
+  // Astronomical imaging fields
+  telescope?: string;
+  mount?: string;
+  filters?: string;
+  total_exposure_time?: number; // in hours
+  ra?: string;  // Right Ascension
+  dec?: string; // Declination
+  
+  // Additional technical details
+  additional_details?: string;
 }
 
 export interface LocationInfo {

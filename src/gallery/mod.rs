@@ -6,6 +6,7 @@ mod handlers;
 pub mod image_processing;
 mod indexing;
 mod metadata;
+mod metadata_sources;
 mod types;
 
 // Re-export public items
