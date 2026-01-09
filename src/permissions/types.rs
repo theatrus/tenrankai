@@ -43,6 +43,10 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_delete_any_comments: bool,
 
+    // Interactive permissions
+    #[serde(default)]
+    pub can_use_zoom: bool,
+
     // Special permissions
     #[serde(default)]
     pub owner_access: bool, // Bypasses all restrictions
@@ -84,6 +88,8 @@ impl RolePermissions {
         self.can_edit_any_comments |= other.can_edit_any_comments;
         self.can_delete_any_comments |= other.can_delete_any_comments;
 
+        self.can_use_zoom |= other.can_use_zoom;
+
         self.owner_access |= other.owner_access;
     }
 
@@ -113,6 +119,8 @@ impl RolePermissions {
 
             self.can_edit_any_comments = true;
             self.can_delete_any_comments = true;
+
+            self.can_use_zoom = true;
         }
     }
 }

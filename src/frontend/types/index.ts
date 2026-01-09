@@ -84,6 +84,7 @@ export interface RolePermissions {
   can_add_tags: boolean;
   can_edit_any_comments: boolean;
   can_delete_any_comments: boolean;
+  can_use_zoom: boolean;
   owner_access: boolean;
 }
 
