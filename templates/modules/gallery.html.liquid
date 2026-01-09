@@ -22,15 +22,22 @@
         {% endfor %}
     </nav>
 
-    {% if folder_title %}
-        <h2>{{ folder_title }}</h2>
-    {% endif %}
-    
-    {% if folder_description %}
-        <div class="folder-description">
-            {{ folder_description }}
+    <div class="gallery-header">
+        <div class="gallery-title-section">
+            {% if folder_title %}
+                <h2>{{ folder_title }}</h2>
+            {% endif %}
+            
+            {% if folder_description %}
+                <div class="folder-description">
+                    {{ folder_description }}
+                </div>
+            {% endif %}
         </div>
-    {% endif %}
+        
+        <!-- Filter bar will be injected here by React if user has permissions -->
+        <div id="gallery-filter-mount"></div>
+    </div>
     
     {% if items.size > 0 %}
         <!-- Directory Navigation -->

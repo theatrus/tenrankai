@@ -2,15 +2,32 @@
    Gallery Filter Bar Styles
    ========================================================================== */
 
-.gallery-filter-bar {
-    margin-bottom: var(--spacing-lg);
-    padding: var(--spacing-md) 0;
-    border-bottom: 1px solid var(--border-color);
+/* Gallery header layout for title + filter */
+.gallery-header {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+}
+
+.gallery-title-section {
+    flex: 1;
+    min-width: 0;
+}
+
+.gallery-title-section h2 {
+    margin-top: 0;
+}
+
+#gallery-filter-mount {
+    flex-shrink: 0;
+}
+
+.gallery-filter-bar {
+    display: flex;
     align-items: center;
     gap: var(--spacing-md);
-    flex-wrap: wrap;
 }
 
 .filter-buttons {
@@ -22,13 +39,13 @@
 .filter-btn {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-sm);
-    padding: 6px 12px;
+    gap: 4px;
+    padding: 4px 10px;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 20px;
+    border-radius: 16px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     transition: all 0.2s ease;
     white-space: nowrap;
@@ -57,18 +74,25 @@
 }
 
 .filter-icon {
-    font-size: 1rem;
+    font-size: 0.85rem;
     line-height: 1;
 }
 
 .filter-label {
     font-weight: 500;
+    display: none; /* Hide labels for compact view */
+}
+
+/* Show labels on hover for better UX */
+.filter-btn:hover .filter-label {
+    display: inline;
 }
 
 .filter-count {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     opacity: 0.8;
     margin-left: 2px;
+    font-weight: 600;
 }
 
 .filter-btn.active .filter-count {
@@ -76,12 +100,12 @@
 }
 
 .clear-filter-btn {
-    padding: 6px 14px;
+    padding: 4px 10px;
     background: transparent;
     border: 1px solid var(--border-color);
-    border-radius: 20px;
+    border-radius: 16px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     transition: all 0.2s ease;
 }
@@ -91,31 +115,58 @@
     color: var(--link-color);
 }
 
+/* Desktop - show labels on larger screens */
+@media (min-width: 1200px) {
+    .filter-label {
+        display: inline;
+    }
+}
+
 /* Mobile responsiveness */
 @media (max-width: 768px) {
+    .gallery-header {
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    
+    #gallery-filter-mount {
+        width: 100%;
+    }
+    
     .gallery-filter-bar {
-        padding: var(--spacing-sm) 0;
+        width: 100%;
+        justify-content: flex-start;
     }
     
     .filter-buttons {
-        gap: 6px;
+        gap: 4px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    
+    .filter-buttons::-webkit-scrollbar {
+        display: none;
     }
     
     .filter-btn {
-        padding: 4px 10px;
-        font-size: 0.8rem;
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        flex-shrink: 0;
     }
     
     .filter-icon {
-        font-size: 0.9rem;
+        font-size: 0.8rem;
     }
     
     .filter-count {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
     }
     
     .clear-filter-btn {
-        padding: 4px 12px;
-        font-size: 0.8rem;
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        flex-shrink: 0;
     }
 }
