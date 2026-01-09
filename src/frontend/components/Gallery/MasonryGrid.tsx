@@ -239,18 +239,27 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
                   height: `${displayDimensions.height}px`
                 }}
               >
-                <a href={`${galleryUrl}/detail/${image.path}`} className="image-link">
-                  <img 
-                    src={image.gallery_url || image.thumbnail_url || ''}
-                    srcSet={`${image.gallery_url} 1x, ${image.gallery_url}@2x 2x`}
-                    alt={image.name}
-                    width={displayDimensions.width}
-                    height={displayDimensions.height}
+                <a 
+                  href={`${galleryUrl}/detail/${image.path}`} 
+                  className="image-link"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onDragStart={(e) => e.preventDefault()}
+                >
+                  <div 
+                    className="gallery-image-container"
                     style={{
                       width: '100%',
                       height: '100%',
-                      objectFit: 'cover'
+                      backgroundImage: `image-set(
+                        url(${image.gallery_url || image.thumbnail_url || ''}) 1x,
+                        url(${(image.gallery_url || image.thumbnail_url || '').replace('?size=gallery', '?size=gallery@2x')}) 2x
+                      )`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat'
                     }}
+                    role="img"
+                    aria-label={image.name}
                   />
                   {renderBadges(image)}
                 </a>
