@@ -7,17 +7,29 @@ body {
 
 .image-detail-container {
     background-color: var(--bg-primary);
-    padding-top: 0.5rem;  /* Reduce top padding for more image space */
+    padding-top: 0 !important;  /* Override container-lg padding */
+    padding-left: 0;
+    padding-right: 0;
+    position: relative;  /* For absolute positioning of nav */
+    min-height: 100vh;  /* Ensure full viewport height */
 }
 
 .image-detail-container .gallery-nav {
     font-size: 0.8rem;
-    margin-bottom: 0.5rem;  /* Reduce bottom margin */
+    margin-bottom: 0;
     margin-top: 0;
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
-    position: relative;
+    padding: 0.5rem var(--spacing-xl);  /* Add more top padding */
+    padding-top: 1rem;  /* More top padding */
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     z-index: 10;  /* Below mobile navigation (150) */
+    background-color: var(--bg-primary);  /* Ensure background to prevent transparency issues */
+    border-top: none;  /* Remove top border */
+    border-bottom: 1px solid var(--border-color);  /* Subtle bottom border */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .image-detail-container .nav-current {
@@ -28,6 +40,7 @@ body {
 .image-detail-content {
     display: flex;
     flex-direction: column;
+    padding-top: 3rem;  /* Account for absolutely positioned nav */
 }
 
 /* New full-viewport image section */
@@ -39,6 +52,8 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
+    position: relative;  /* Ensure proper stacking context */
+    margin-top: 0;  /* Prevent negative margins */
 }
 
 @media (min-width: 1024px) {
@@ -411,20 +426,14 @@ dd {
 
 /* Navigation overlays - removed to reduce distraction */
 
-/* Controls below image */
-.image-controls-bar {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) 0;
-}
 
 /* Info section */
 .image-info-section {
-    padding: var(--spacing-lg) var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-xl);
     max-width: 1200px;
     margin: 0 auto;
     width: 100%;
+    box-sizing: border-box;
 }
 
 .image-header {
@@ -441,8 +450,8 @@ dd {
 /* Mobile Navigation */
 .mobile-navigation {
     display: none;
-    position: absolute;
-    top: 3.5rem;  /* Below breadcrumbs */
+    position: absolute;  /* Absolute positioning relative to container */
+    top: 4rem;  /* Below the absolutely positioned nav */
     left: var(--spacing-sm);
     right: var(--spacing-sm);
     justify-content: space-between;
@@ -498,8 +507,8 @@ dd {
 /* Mobile swipe hint */
 .mobile-swipe-hint {
     display: none;
-    position: absolute;
-    top: calc(3.5rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
+    position: absolute;  /* Absolute positioning relative to container */
+    top: calc(4rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
     left: 50%;
     transform: translate(-50%, -50%);
     background: rgba(0, 0, 0, 0.6);
@@ -555,7 +564,7 @@ dd {
         height: 60vh;
         min-height: 60vh;
         padding: 0;
-        padding-top: 5rem;  /* Space for navigation buttons and swipe hint */
+        padding-top: 4rem;  /* Space for navigation buttons and swipe hint */
         margin: 0;
         border-radius: 0;
     }
@@ -587,14 +596,13 @@ dd {
     
     /* Mobile layout adjustments */
     .image-detail-container {
-        padding: 0.5rem;
-        padding-top: 0.25rem;
+        padding: 0;  /* No padding on mobile either */
     }
     
     .image-detail-container .gallery-nav {
         font-size: 0.75rem;
-        margin-bottom: 0.5rem;
-        padding: 0.25rem 0.5rem;
+        padding: 0.5rem var(--spacing-md);  /* Padding on mobile */
+        padding-top: 0.75rem;  /* Less top padding on mobile */
     }
     
     /* Fix technical details overflow on mobile */

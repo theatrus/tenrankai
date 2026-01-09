@@ -116,6 +116,8 @@
     
     #gallery-filter-mount {
         width: 100%;
+        padding-left: var(--spacing-md);
+        padding-right: var(--spacing-md);
     }
     
     .gallery-filter-bar {

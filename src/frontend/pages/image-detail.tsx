@@ -9,7 +9,6 @@ import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
-import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 
 interface ImageDetailPageProps {
@@ -189,10 +188,6 @@ export function ImageDetailPage({
             onNavigate={handleNavigation}
           />
           
-          {/* Controls below navigation */}
-          <div className="image-controls-bar">
-            <ImageControls image={currentData.image} permissions={currentData.permissions} />
-          </div>
           
           {(currentData.prev_image || currentData.next_image) && (
             <div className="nav-hint">
