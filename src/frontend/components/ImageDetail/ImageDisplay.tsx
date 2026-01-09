@@ -203,24 +203,20 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
           >
             {/* Image display with retina support */}
             {!imageLoading && !imageError && (
-              <>
-                <style dangerouslySetInnerHTML={{ __html: `
-                  .image-display-${image.path.replace(/[^a-zA-Z0-9]/g, '-')} {
-                    background-image: url(${image.medium_url});
-                    background-size: contain;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                    width: 100%;
-                    height: 100%;
-                  }
-                  @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-                    .image-display-${image.path.replace(/[^a-zA-Z0-9]/g, '-')} {
-                      background-image: url(${image.medium_url.replace('?size=medium', '?size=medium@2x')});
-                    }
-                  }
-                `}} />
-                <div className={`image-display-${image.path.replace(/[^a-zA-Z0-9]/g, '-')}`} />
-              </>
+              <div 
+                className="image-bg"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  backgroundImage: `image-set(
+                    url(${image.medium_url}) 1x,
+                    url(${image.medium_url.replace('?size=medium', '?size=medium@2x')}) 2x
+                  )`,
+                  backgroundSize: 'contain',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat'
+                }}
+              />
             )}
             {/* Hidden img for loading detection */}
             <img 
