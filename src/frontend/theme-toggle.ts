@@ -134,7 +134,7 @@ class ThemeManager {
         this.setTheme(this.currentTheme);
         
         // Listen for OS theme changes when in auto mode
-        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
             if (this.currentTheme === 'auto') {
                 // Just update the button, the CSS will handle the theme change
                 this.updateToggleButton();
@@ -179,20 +179,6 @@ class ThemeManager {
         this.updateToggleButton();
     }
 
-    /**
-     * SVG icons for different states
-     */
-    private getSunIcon(): string {
-        return `<circle cx="12" cy="12" r="4" fill="currentColor"/>`;
-    }
-
-    private getMoonIcon(): string {
-        return `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/>`;
-    }
-
-    private getAutoIcon(): string {
-        return `<rect x="6" y="6" width="12" height="12" fill="currentColor"/>`;
-    }
 }
 
 // Initialize theme manager

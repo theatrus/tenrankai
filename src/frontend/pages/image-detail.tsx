@@ -169,7 +169,6 @@ export function ImageDetailPage({
           <div ref={imageContainerRef} className="swipeable-image-area">
             <ImageDisplay 
               image={currentData.image} 
-              hasDownloadPermission={currentData.permissions.can_download_large || currentData.permissions.can_download_original}
               canUseZoom={currentData.permissions.can_use_zoom}
             />
           </div>

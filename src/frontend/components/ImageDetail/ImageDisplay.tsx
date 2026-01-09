@@ -4,7 +4,6 @@ import { useDelayedLoading } from '../../hooks/useDelayedLoading.ts';
 
 interface ImageDisplayProps {
   image: ImageInfo;
-  hasDownloadPermission: boolean;
   canUseZoom?: boolean;
   onImageClick?: () => void;
 }
@@ -17,7 +16,7 @@ interface ZoomState {
   imageY: number;
 }
 
-export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false, onImageClick }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [zoomState, setZoomState] = useState<ZoomState>({
@@ -193,8 +192,7 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
               WebkitUserSelect: 'none',
               MozUserSelect: 'none',
               msUserSelect: 'none',
-              WebkitTouchCallout: 'none',
-              WebkitUserDrag: 'none'
+              WebkitTouchCallout: 'none'
             }}
             onContextMenu={(e) => e.preventDefault()}
             onDragStart={(e) => e.preventDefault()}
