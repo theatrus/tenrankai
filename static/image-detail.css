@@ -528,8 +528,14 @@ dd {
         border-radius: 0;
         margin: 0;
         max-width: 100%;
-        width: auto !important;
         box-shadow: none;
+    }
+    
+    /* Override media queries for mobile to use width constraint */
+    .image-container[style*="aspect-ratio"] {
+        width: 100%;
+        height: auto;
+        max-height: 60vh;
     }
     
     /* Remove shadow and borders from image display on mobile */
@@ -548,13 +554,6 @@ dd {
         border-radius: 0;
     }
     
-    /* Adjust image container height for mobile */
-    .image-container[style*="aspect-ratio"] {
-        height: auto;
-        width: auto;
-        max-height: 60vh;
-        max-width: 100%;
-    }
     
     /* Show swipe hint on mobile */
     .nav-hint {
