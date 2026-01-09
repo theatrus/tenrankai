@@ -206,6 +206,19 @@ export function ImageDetailPage({
         
         {/* Info section - below the image viewer */}
         <div className="image-info-section">
+          {/* Image title and description - mobile only */}
+          <div className="image-header-mobile">
+            {currentData.image.title && (
+              <h1 className="image-title">{currentData.image.title}</h1>
+            )}
+            {currentData.image.description && (
+              <div 
+                className="image-description"
+                dangerouslySetInnerHTML={{ __html: currentData.image.description }}
+              />
+            )}
+          </div>
+          
           {!hideMetadata && (
             <div className="metadata-grid">
               <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} permissions={currentData.permissions} />
