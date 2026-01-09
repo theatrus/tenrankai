@@ -88,6 +88,9 @@ body {
     border-radius: 0;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    /* Use max constraints to prevent oversizing during initial render */
+    max-width: 95vw;
+    max-height: calc(75vh - 100px);
 }
 
 .image-container img {
@@ -97,6 +100,18 @@ body {
     border-radius: 0;
     display: block;
     transition: opacity 0.3s ease;
+}
+
+/* Subtle fade-in for image background */
+.image-bg {
+    opacity: 0;
+    animation: imageFadeIn 0.3s ease forwards;
+}
+
+@keyframes imageFadeIn {
+    to {
+        opacity: 1;
+    }
 }
 
 /* Loading state */
@@ -482,9 +497,9 @@ dd {
 .mobile-swipe-hint {
     display: none;
     position: absolute;
-    top: calc(3.5rem + 50px);  /* Below navigation buttons */
+    top: calc(3.5rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
     background: rgba(0, 0, 0, 0.6);
     color: white;
     padding: 0.2rem 0.6rem;

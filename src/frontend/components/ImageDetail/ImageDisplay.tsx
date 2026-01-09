@@ -16,10 +16,46 @@ interface ZoomState {
   imageY: number;
 }
 
+// Helper function to calculate dimensions
+const calculateImageDimensions = (imageDimensions: number[], windowWidth: number, windowHeight: number) => {
+  const aspectRatio = imageDimensions[0] / imageDimensions[1];
+  const maxWidth = windowWidth * 0.95;
+  const maxHeight = windowHeight * 0.75 - 100;
+  
+  let width, height;
+  
+  if (maxWidth / maxHeight > aspectRatio) {
+    // Height constrained
+    height = maxHeight;
+    width = height * aspectRatio;
+  } else {
+    // Width constrained  
+    width = maxWidth;
+    height = width / aspectRatio;
+  }
+  
+  // On mobile, adjust constraints
+  if (windowWidth <= 768) {
+    width = windowWidth;
+    height = width / aspectRatio;
+    if (height > windowHeight * 0.6) {
+      height = windowHeight * 0.6;
+      width = height * aspectRatio;
+    }
+  }
+  
+  return { width, height };
+};
+
 export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  
+  // Calculate initial dimensions immediately to prevent flicker
+  const [dimensions, setDimensions] = useState(() => 
+    calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight)
+  );
+  
   const [zoomState, setZoomState] = useState<ZoomState>({
     isZooming: false,
     x: 0,
@@ -39,33 +75,12 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
 
   // Calculate dimensions based on viewport and image aspect ratio
   const calculateDimensions = () => {
-    const aspectRatio = image.dimensions[0] / image.dimensions[1];
-    const maxWidth = window.innerWidth * 0.95;
-    const maxHeight = window.innerHeight * 0.75 - 100;
-    
-    let width, height;
-    
-    if (maxWidth / maxHeight > aspectRatio) {
-      // Height constrained
-      height = maxHeight;
-      width = height * aspectRatio;
-    } else {
-      // Width constrained  
-      width = maxWidth;
-      height = width / aspectRatio;
-    }
-    
-    // On mobile, adjust constraints
-    if (window.innerWidth <= 768) {
-      width = window.innerWidth;
-      height = width / aspectRatio;
-      if (height > window.innerHeight * 0.6) {
-        height = window.innerHeight * 0.6;
-        width = height * aspectRatio;
-      }
-    }
-    
-    setDimensions({ width, height });
+    const newDimensions = calculateImageDimensions(
+      image.dimensions, 
+      window.innerWidth, 
+      window.innerHeight
+    );
+    setDimensions(newDimensions);
   };
 
   // Recalculate on resize
@@ -201,8 +216,9 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
         ref={containerRef}
         className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
         style={{ 
-          width: `${dimensions.width}px`,
-          height: `${dimensions.height}px`,
+          width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
+          height: dimensions.height > 0 ? `${dimensions.height}px` : undefined,
+          aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
           position: 'relative',
           overflow: 'hidden'
         }}
@@ -259,6 +275,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick }: ImageD
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat'
                 }}
+                key={image.path} // Force re-render with animation on image change
               />
             )}
             {/* Hidden img for loading detection */}
