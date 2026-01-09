@@ -26,7 +26,7 @@ body {
 
 /* New full-viewport image section */
 .image-viewer-section {
-    background-color: var(--bg-secondary);
+    background-color: transparent;
     padding: var(--spacing-md) var(--spacing-lg);
     min-height: 70vh;
     height: 80vh;
@@ -69,14 +69,19 @@ body {
 /* Image container - uses aspect-ratio from React component */
 .image-container {
     display: inline-block;
-    width: 100%;
     max-width: 95%;
     max-height: calc(75vh - 100px);
     position: relative;
-    background-color: var(--bg-secondary);
+    background-color: transparent;
     border-radius: 0;
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Ensure aspect-ratio containers size properly */
+.image-container[style*="aspect-ratio"] {
+    height: calc(75vh - 100px);
+    width: auto;
 }
 
 .image-container img {
@@ -508,7 +513,8 @@ dd {
         border-radius: 0;
         margin: 0;
         max-width: 100%;
-        width: 100%;
+        width: auto;
+        box-shadow: none;
     }
     
     /* Remove shadow and borders from image display on mobile */
@@ -530,8 +536,9 @@ dd {
     /* Adjust image container height for mobile */
     .image-container[style*="aspect-ratio"] {
         height: auto;
+        width: auto;
         max-height: 60vh;
-        width: 100% !important;
+        max-width: 100%;
     }
     
     /* Show swipe hint on mobile */
