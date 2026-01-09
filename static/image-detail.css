@@ -453,6 +453,36 @@ dd {
     gap: var(--spacing-lg);
 }
 
+/* Mobile-only image header */
+.image-header-mobile {
+    display: none;
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.image-header-mobile .image-title {
+    font-size: 1.5rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-md) 0;
+    line-height: 1.3;
+}
+
+.image-header-mobile .image-description {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    padding: 0 var(--spacing-md);
+}
+
+.image-header-mobile .image-description p {
+    margin: 0 0 var(--spacing-sm) 0;
+}
+
+.image-header-mobile .image-description p:last-child {
+    margin-bottom: 0;
+}
+
 /* Mobile Navigation */
 .mobile-navigation {
     display: none;
@@ -719,6 +749,11 @@ dd {
     .user-metadata,
     .metadata-comments {
         overflow-x: hidden;
+    }
+    
+    /* Show mobile image header */
+    .image-header-mobile {
+        display: block;
     }
     
     /* Fix user metadata section on mobile */
