@@ -80,22 +80,19 @@ body {
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
-/* Media query for different viewport sizes */
-@media (max-aspect-ratio: 1/1) {
-    /* Portrait viewports - constrain by width */
-    .image-container[style*="aspect-ratio"] {
-        width: 95%;
-        height: auto;
-    }
+/* Default: constrain by width */
+.image-container[style*="aspect-ratio"] {
+    width: 95%;
+    height: auto;
+    max-height: calc(75vh - 100px);
 }
 
-@media (min-aspect-ratio: 1/1) {
-    /* Landscape viewports - may need height constraint */
+/* Only use height constraint when there's enough width */
+@media (min-width: 1200px) {
     .image-container[style*="aspect-ratio"] {
-        max-width: 95%;
-        max-height: calc(75vh - 100px);
-        height: calc(75vh - 100px);
         width: auto;
+        height: calc(75vh - 100px);
+        max-width: 95%;
     }
 }
 
