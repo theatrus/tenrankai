@@ -188,10 +188,6 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
               position: 'relative',
               width: '100%',
               height: '100%',
-              backgroundImage: imageLoading || imageError ? 'none' : `url(${image.medium_url})`,
-              backgroundSize: 'contain',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
               cursor: canUseZoom ? 'zoom-in' : 'default',
               userSelect: 'none',
               WebkitUserSelect: 'none',
@@ -205,9 +201,31 @@ export function ImageDisplay({ image, hasDownloadPermission, canUseZoom = false,
             role="img"
             aria-label={image.name}
           >
+            {/* Image display with retina support */}
+            {!imageLoading && !imageError && (
+              <>
+                <style dangerouslySetInnerHTML={{ __html: `
+                  .image-display-${image.path.replace(/[^a-zA-Z0-9]/g, '-')} {
+                    background-image: url(${image.medium_url});
+                    background-size: contain;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    width: 100%;
+                    height: 100%;
+                  }
+                  @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+                    .image-display-${image.path.replace(/[^a-zA-Z0-9]/g, '-')} {
+                      background-image: url(${image.medium_url.replace('?size=medium', '?size=medium@2x')});
+                    }
+                  }
+                `}} />
+                <div className={`image-display-${image.path.replace(/[^a-zA-Z0-9]/g, '-')}`} />
+              </>
+            )}
             {/* Hidden img for loading detection */}
             <img 
               src={image.medium_url}
+              srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('?size=medium', '?size=medium@2x')} 2x`}
               alt=""
               style={{ display: 'none' }}
               onLoad={handleImageLoad}
