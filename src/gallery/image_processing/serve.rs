@@ -51,11 +51,17 @@ impl Gallery {
             if let Some(parsed_size) = crate::gallery::types::ImageSize::parse(size_to_parse) {
                 if let crate::gallery::types::ImageSize::Tile(x, y) = parsed_size {
                     // Handle tile request with retina support
-                    let cache_filename = self.generate_cache_filename(
+                    let tile_size = self.config.tiles.as_ref()
+                        .map(|tc| tc.tile_size)
+                        .unwrap_or(1024);
+                    
+                    let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
                         relative_path,
-                        size, // Use original size with @2x if present
+                        x,
+                        y,
+                        tile_size,
+                        is_retina_tile,
                         output_format.extension(),
-                        false, // No watermark on tiles
                     );
                     let cache_path = self.config.cache_directory.join(&cache_filename);
                     

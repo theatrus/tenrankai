@@ -146,12 +146,15 @@ impl Gallery {
         #[cfg(not(feature = "avif"))]
         let output_format = OutputFormat::WebP; // Fallback to WebP if AVIF is disabled
 
-        // Generate cache filename for this specific tile (includes tile size)
-        let cache_filename = self.generate_cache_filename(
+        // Generate cache filename for this specific tile
+        let is_retina = false; // This function handles base tiles, not retina
+        let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
             relative_path,
-            &format!("tile_{}_{}_{}", tile_x, tile_y, tile_size),
+            tile_x,
+            tile_y,
+            tile_size,
+            is_retina,
             output_format.extension(),
-            false, // No watermark on tiles
         );
         let cache_path = self.config.cache_directory.join(&cache_filename);
 
@@ -425,14 +428,6 @@ fn save_image(
     }
 }
 
-/// Generate a cache key for a tile
-fn generate_tile_cache_key(path: &str, tile_x: u32, tile_y: u32, tile_size: u32) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(path);
-    hasher.update(format!("tile_{}_{}_{}", tile_x, tile_y, tile_size));
-    format!("{:x}", hasher.finalize())
-}
 
 /// Process all tiles for an image at once
 fn process_all_tiles_for_image(
@@ -537,20 +532,6 @@ fn process_all_tiles_for_image(
     // Generate all tiles for this image
     for tile_y in 0..grid_height {
         for tile_x in 0..grid_width {
-            // Generate cache filename using same pattern as Gallery::generate_cache_filename
-            let cache_filename = format!(
-                "{}.{}",
-                generate_tile_cache_key(relative_path, tile_x, tile_y, tile_size),
-                output_format.extension()
-            );
-            let cache_path = cache_dir.join(&cache_filename);
-            
-            // Skip if this tile already exists
-            if cache_path.exists() {
-                skipped_count += 1;
-                continue;
-            }
-            
             // Calculate tile boundaries using the fixed tile size
             let tile_start_x = tile_x * tile_size;
             let tile_start_y = tile_y * tile_size;
@@ -559,7 +540,7 @@ fn process_all_tiles_for_image(
             let tile_actual_width = tile_size.min(resized_width.saturating_sub(tile_start_x));
             let tile_actual_height = tile_size.min(resized_height.saturating_sub(tile_start_y));
             
-            // Extract the tile region
+            // Extract the tile region once
             if tile_actual_width > 0 && tile_actual_height > 0 {
                 let tile_img = resized.crop_imm(
                     tile_start_x,
@@ -567,7 +548,6 @@ fn process_all_tiles_for_image(
                     tile_actual_width,
                     tile_actual_height,
                 );
-        
                 
                 // Extract corresponding gain map tile if present
                 #[cfg(feature = "avif")]
@@ -602,24 +582,42 @@ fn process_all_tiles_for_image(
                         }
                     }
                 }
-        
                 
-                // Save the tile with preserved ICC profile and HDR info
-                // For AVIF tiles, use high quality settings
-                save_image(
-                    &tile_img,
-                    &cache_path,
-                    output_format,
-                    90, // High quality for JPEG fallback
-                    90.0, // High quality for WebP fallback
-                    icc_profile.as_deref(), // Preserve ICC profile
-                    #[cfg(feature = "avif")]
-                    tile_avif_info.as_ref(), // Preserve HDR/gain map info for tile
-                    #[cfg(not(feature = "avif"))]
-                    None,
-                )?;
-                
-                generated_count += 1;
+                // Save both regular and @2x versions of this tile
+                for is_retina in [false, true] {
+                    let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
+                        relative_path,
+                        tile_x,
+                        tile_y,
+                        tile_size,
+                        is_retina,
+                        output_format.extension(),
+                    );
+                    let cache_path = cache_dir.join(&cache_filename);
+                    
+                    // Skip if this tile already exists
+                    if cache_path.exists() {
+                        skipped_count += 1;
+                        continue;
+                    }
+                    
+                    // Save the tile with preserved ICC profile and HDR info
+                    // For AVIF tiles, use high quality settings
+                    save_image(
+                        &tile_img,
+                        &cache_path,
+                        output_format,
+                        90, // High quality for JPEG fallback
+                        90.0, // High quality for WebP fallback
+                        icc_profile.as_deref(), // Preserve ICC profile
+                        #[cfg(feature = "avif")]
+                        tile_avif_info.as_ref(), // Preserve HDR/gain map info for tile
+                        #[cfg(not(feature = "avif"))]
+                        None,
+                    )?;
+                    
+                    generated_count += 1;
+                }
             }
         }
     }

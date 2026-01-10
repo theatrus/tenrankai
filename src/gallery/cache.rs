@@ -6,6 +6,36 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
+/// Generate a tile cache filename that includes readable tile coordinates
+pub(crate) fn generate_tile_cache_filename(
+    path: &str,
+    tile_x: u32,
+    tile_y: u32,
+    tile_size: u32,
+    is_retina: bool,
+    format: &str,
+) -> String {
+    use sha2::{Digest, Sha256};
+    
+    // Build the tile spec
+    let tile_spec = if is_retina {
+        format!("tile_{}_{}_{}", tile_x, tile_y, tile_size) + "@2x"
+    } else {
+        format!("tile_{}_{}_{}", tile_x, tile_y, tile_size)
+    };
+    
+    // Match the exact pattern used by Gallery::generate_image_cache_key
+    let cache_key = format!("{}_{}", tile_spec, format);
+    
+    let mut hasher = Sha256::new();
+    hasher.update(path);
+    hasher.update(&cache_key);
+    let hash = format!("{:x}", hasher.finalize());
+    
+    // Make the filename somewhat readable
+    format!("tile_{}_{}{}.{}.{}", tile_x, tile_y, if is_retina { "@2x" } else { "" }, hash, format)
+}
+
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
         let current_version = env!("CARGO_PKG_VERSION");
