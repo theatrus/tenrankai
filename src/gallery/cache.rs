@@ -374,57 +374,26 @@ impl Gallery {
         #[cfg(not(feature = "avif"))]
         let formats = vec![OutputFormat::WebP]; // Fallback to WebP if AVIF is disabled
 
-        let mut total_generated = 0;
-
-        // Generate tiles for each format
-        for format in formats {
-            // Generate all tiles in the grid
-            for y in 0..grid_height {
-                for x in 0..grid_width {
-                    // Check if tile already exists
-                    let cache_filename = self.generate_cache_filename(
-                        relative_path,
-                        &format!("tile_{}_{}", x, y),
-                        format.extension(),
-                        false, // No watermark on tiles
-                    );
-                    let cache_path = self.config.cache_directory.join(&cache_filename);
-
-                    if cache_path.exists() {
-                        // Tile already cached
-                        continue;
+        // Generate all tiles at once by requesting any tile
+        // The tile generation function will generate all tiles for the image
+        if grid_width > 0 && grid_height > 0 {
+            // Just request tile 0,0 - the backend will generate all tiles
+            for format in &formats {
+                match self.get_image_tile(&full_path, relative_path, 0, 0, *format).await {
+                    Ok(_) => {
+                        info!(
+                            "Pre-generated all tiles ({}x{} grid) for {}",
+                            grid_width, grid_height, relative_path
+                        );
                     }
-
-                    // Generate the tile
-                    match self.get_image_tile(&full_path, relative_path, x, y, format).await {
-                        Ok(_) => {
-                            debug!(
-                                "Pre-generated tile ({},{}) {} for {}",
-                                x, y,
-                                format.extension(),
-                                relative_path
-                            );
-                            total_generated += 1;
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to pre-generate tile ({},{}) {} for {}: {}",
-                                x, y,
-                                format.extension(),
-                                relative_path,
-                                e
-                            );
-                        }
+                    Err(e) => {
+                        warn!(
+                            "Failed to pre-generate tiles for {}: {}",
+                            relative_path, e
+                        );
                     }
                 }
             }
-        }
-
-        if total_generated > 0 {
-            info!(
-                "Pre-generated {} tiles for {}",
-                total_generated, relative_path
-            );
         }
 
         Ok(())

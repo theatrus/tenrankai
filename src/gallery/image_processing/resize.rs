@@ -3,7 +3,7 @@ use crate::gallery::types::ImageSize as SizeVariant;
 use crate::gallery::{Gallery, GalleryError};
 use image::{DynamicImage, ImageFormat, imageops::FilterType};
 use std::path::{Path, PathBuf};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use super::formats;
 #[cfg(feature = "avif")]
@@ -146,10 +146,10 @@ impl Gallery {
         #[cfg(not(feature = "avif"))]
         let output_format = OutputFormat::WebP; // Fallback to WebP if AVIF is disabled
 
-        // Generate cache filename for this specific tile
+        // Generate cache filename for this specific tile (includes tile size)
         let cache_filename = self.generate_cache_filename(
             relative_path,
-            &format!("tile_{}_{}", tile_x, tile_y),
+            &format!("tile_{}_{}_{}", tile_x, tile_y, tile_size),
             output_format.extension(),
             false, // No watermark on tiles
         );
@@ -163,16 +163,17 @@ impl Gallery {
         // Ensure cache directory exists
         tokio::fs::create_dir_all(&self.config.cache_directory).await?;
 
-        // Process tile in blocking thread
+        // Process all tiles for this image in blocking thread
+        // This ensures we load the source image only once
         let original_path = original_path.to_path_buf();
-        let cache_path_clone = cache_path.clone();
+        let cache_dir = self.config.cache_directory.clone();
+        let relative_path_owned = relative_path.to_string();
 
         tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-            process_tile(
+            process_all_tiles_for_image(
                 &original_path,
-                &cache_path_clone,
-                tile_x,
-                tile_y,
+                &cache_dir,
+                &relative_path_owned,
                 tile_size,
                 output_format,
             )
@@ -424,15 +425,25 @@ fn save_image(
     }
 }
 
-/// Process and extract a specific tile from an image
-fn process_tile(
+/// Generate a cache key for a tile
+fn generate_tile_cache_key(path: &str, tile_x: u32, tile_y: u32, tile_size: u32) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(path);
+    hasher.update(format!("tile_{}_{}_{}", tile_x, tile_y, tile_size));
+    format!("{:x}", hasher.finalize())
+}
+
+/// Process all tiles for an image at once
+fn process_all_tiles_for_image(
     original_path: &Path,
-    cache_path: &Path,
-    tile_x: u32,
-    tile_y: u32,
+    cache_dir: &Path,
+    relative_path: &str,
     tile_size: u32,
     output_format: OutputFormat,
 ) -> Result<(), GalleryError> {
+    debug!("Loading image once to generate all tiles for: {:?}", original_path);
+    
     // Detect format and extract ICC profile
     #[allow(unused_variables)] // Used in avif feature
     let (icc_profile, detected_format) = extract_image_info(original_path)?;
@@ -513,90 +524,111 @@ fn process_tile(
         }
     }
     
-    // Calculate tile boundaries using the fixed tile size
-    let tile_start_x = tile_x * tile_size;
-    let tile_start_y = tile_y * tile_size;
+    // Calculate grid dimensions
+    let grid_width = (resized_width + tile_size - 1) / tile_size;
+    let grid_height = (resized_height + tile_size - 1) / tile_size;
     
-    // Don't go beyond image boundaries
-    let tile_actual_width = tile_size.min(resized_width.saturating_sub(tile_start_x));
-    let tile_actual_height = tile_size.min(resized_height.saturating_sub(tile_start_y));
+    debug!("Generating {} tiles ({}x{} grid) for image", 
+           grid_width * grid_height, grid_width, grid_height);
     
-    debug!("Extracting tile ({}, {}) from {}x{} image: start=({}, {}), size=({}, {})", 
-           tile_x, tile_y, resized_width, resized_height,
-           tile_start_x, tile_start_y, tile_actual_width, tile_actual_height);
+    let mut generated_count = 0;
+    let mut skipped_count = 0;
     
-    // Extract the tile region
-    if tile_actual_width > 0 && tile_actual_height > 0 {
-        let tile_img = resized.crop_imm(
-            tile_start_x,
-            tile_start_y,
-            tile_actual_width,
-            tile_actual_height,
-        );
+    // Generate all tiles for this image
+    for tile_y in 0..grid_height {
+        for tile_x in 0..grid_width {
+            // Generate cache filename using same pattern as Gallery::generate_cache_filename
+            let cache_filename = format!(
+                "{}.{}",
+                generate_tile_cache_key(relative_path, tile_x, tile_y, tile_size),
+                output_format.extension()
+            );
+            let cache_path = cache_dir.join(&cache_filename);
+            
+            // Skip if this tile already exists
+            if cache_path.exists() {
+                skipped_count += 1;
+                continue;
+            }
+            
+            // Calculate tile boundaries using the fixed tile size
+            let tile_start_x = tile_x * tile_size;
+            let tile_start_y = tile_y * tile_size;
+            
+            // Don't go beyond image boundaries
+            let tile_actual_width = tile_size.min(resized_width.saturating_sub(tile_start_x));
+            let tile_actual_height = tile_size.min(resized_height.saturating_sub(tile_start_y));
+            
+            // Extract the tile region
+            if tile_actual_width > 0 && tile_actual_height > 0 {
+                let tile_img = resized.crop_imm(
+                    tile_start_x,
+                    tile_start_y,
+                    tile_actual_width,
+                    tile_actual_height,
+                );
         
-        // Extract corresponding gain map tile if present
-        #[cfg(feature = "avif")]
-        let mut tile_avif_info = resized_avif_info.clone();
-        #[cfg(not(feature = "avif"))]
-        let _tile_avif_info: AvifInfoOption = None;
-        
-        #[cfg(feature = "avif")]
-        if let Some(ref mut info) = tile_avif_info
-            && let Some(ref gm_info) = info.gain_map_info
-            && let Some(ref gm_image) = gm_info.gain_map_image
-        {
-            // Calculate gain map tile coordinates proportionally
-            let gm_scale_x = gm_image.width() as f32 / resized_width as f32;
-            let gm_scale_y = gm_image.height() as f32 / resized_height as f32;
-            
-            let gm_tile_x = (tile_start_x as f32 * gm_scale_x).round() as u32;
-            let gm_tile_y = (tile_start_y as f32 * gm_scale_y).round() as u32;
-            let gm_tile_width = (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
-            let gm_tile_height = (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
-            
-            // Ensure we don't exceed gain map boundaries
-            let gm_tile_width = gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
-            let gm_tile_height = gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
-            
-            if gm_tile_width > 0 && gm_tile_height > 0 {
-                let gm_tile = gm_image.crop_imm(gm_tile_x, gm_tile_y, gm_tile_width, gm_tile_height);
                 
-                // Update the gain map info with tile
-                if let Some(ref mut gm_info_mut) = info.gain_map_info {
-                    gm_info_mut.gain_map_image = Some(gm_tile);
+                // Extract corresponding gain map tile if present
+                #[cfg(feature = "avif")]
+                let mut tile_avif_info = resized_avif_info.clone();
+                #[cfg(not(feature = "avif"))]
+                let _tile_avif_info: AvifInfoOption = None;
+                
+                #[cfg(feature = "avif")]
+                if let Some(ref mut info) = tile_avif_info
+                    && let Some(ref gm_info) = info.gain_map_info
+                    && let Some(ref gm_image) = gm_info.gain_map_image
+                {
+                    // Calculate gain map tile coordinates proportionally
+                    let gm_scale_x = gm_image.width() as f32 / resized_width as f32;
+                    let gm_scale_y = gm_image.height() as f32 / resized_height as f32;
+                    
+                    let gm_tile_x = (tile_start_x as f32 * gm_scale_x).round() as u32;
+                    let gm_tile_y = (tile_start_y as f32 * gm_scale_y).round() as u32;
+                    let gm_tile_width = (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
+                    let gm_tile_height = (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
+                    
+                    // Ensure we don't exceed gain map boundaries
+                    let gm_tile_width = gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
+                    let gm_tile_height = gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
+                    
+                    if gm_tile_width > 0 && gm_tile_height > 0 {
+                        let gm_tile = gm_image.crop_imm(gm_tile_x, gm_tile_y, gm_tile_width, gm_tile_height);
+                        
+                        // Update the gain map info with tile
+                        if let Some(ref mut gm_info_mut) = info.gain_map_info {
+                            gm_info_mut.gain_map_image = Some(gm_tile);
+                        }
+                    }
                 }
+        
+                
+                // Save the tile with preserved ICC profile and HDR info
+                // For AVIF tiles, use high quality settings
+                save_image(
+                    &tile_img,
+                    &cache_path,
+                    output_format,
+                    90, // High quality for JPEG fallback
+                    90.0, // High quality for WebP fallback
+                    icc_profile.as_deref(), // Preserve ICC profile
+                    #[cfg(feature = "avif")]
+                    tile_avif_info.as_ref(), // Preserve HDR/gain map info for tile
+                    #[cfg(not(feature = "avif"))]
+                    None,
+                )?;
+                
+                generated_count += 1;
             }
         }
-        
-        // Save the tile with preserved ICC profile and HDR info
-        // For AVIF tiles, use high quality settings
-        save_image(
-            &tile_img,
-            cache_path,
-            output_format,
-            90, // High quality for JPEG fallback
-            90.0, // High quality for WebP fallback
-            icc_profile.as_deref(), // Preserve ICC profile
-            #[cfg(feature = "avif")]
-            tile_avif_info.as_ref(), // Preserve HDR/gain map info for tile
-            #[cfg(not(feature = "avif"))]
-            None,
-        )?;
-    } else {
-        // Create an empty tile if coordinates are out of bounds
-        let empty_tile = DynamicImage::new_rgb8(1, 1);
-        save_image(
-            &empty_tile,
-            cache_path,
-            output_format,
-            90,
-            90.0,
-            None,
-            #[cfg(feature = "avif")]
-            None,
-            #[cfg(not(feature = "avif"))]
-            None,
-        )?;
+    }
+    
+    if generated_count > 0 {
+        info!("Generated {} tiles for image, skipped {} existing tiles", 
+              generated_count, skipped_count);
+    } else if skipped_count > 0 {
+        debug!("All {} tiles already exist for image", skipped_count);
     }
     
     Ok(())
