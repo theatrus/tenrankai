@@ -12,6 +12,7 @@ use super::AuthScope;
 use crate::{
     ApiResponse, AppState,
     api::{create_signed_cookie, get_scoped_cookie_value},
+    api_response::no_cache_headers,
 };
 
 use super::{LoginError, LoginRequest, LoginResponse};
@@ -73,6 +74,9 @@ pub async fn login_page(
             headers.insert(SET_COOKIE, cookie.parse().unwrap());
         }
     }
+    
+    // Add no-cache headers for security
+    headers.extend(no_cache_headers());
 
     Ok((headers, Html(html)))
 }
@@ -259,6 +263,9 @@ pub async fn verify_login(
         return_url.unwrap_or_else(|| "/gallery".to_string())
     };
 
+    // Add no-cache headers for security
+    headers.extend(no_cache_headers());
+
     Ok((headers, Redirect::to(&redirect_url)))
 }
 
@@ -267,11 +274,14 @@ pub async fn logout() -> impl IntoResponse {
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, cookie.parse().unwrap());
+    
+    // Add no-cache headers for security
+    headers.extend(no_cache_headers());
 
     (headers, Redirect::to("/"))
 }
 
-pub async fn login_success(State(app_state): State<AppState>) -> Result<Html<String>, StatusCode> {
+pub async fn login_success(State(app_state): State<AppState>) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
         "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
     });
@@ -281,7 +291,11 @@ pub async fn login_success(State(app_state): State<AppState>) -> Result<Html<Str
         .render_template(crate::TemplateType::LoginSuccess.path(), globals)
         .await
     {
-        Ok(html) => Ok(Html(html)),
+        Ok(html) => {
+            let mut headers = HeaderMap::new();
+            headers.extend(no_cache_headers());
+            Ok((headers, Html(html)))
+        },
         Err(e) => {
             error!("Failed to render login success page: {}", e);
             Err(ApiResponse::TemplateRenderError.status_code())

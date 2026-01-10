@@ -1,4 +1,4 @@
-use crate::{ApiResponse, AppState};
+use crate::{ApiResponse, AppState, api_response::no_cache_headers};
 use axum::{
     extract::{Path, Query, State},
     response::{Html, IntoResponse},
@@ -186,15 +186,20 @@ pub async fn refresh_posts_handler(
     let posts_manager = match app_state.posts_managers.get(&posts_name) {
         Some(manager) => manager,
         None => {
-            return ApiResponse::PostNotFound.into_response();
+            let mut response = ApiResponse::PostNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
         }
     };
 
-    match posts_manager.refresh_posts().await {
+    let mut response = match posts_manager.refresh_posts().await {
         Ok(_) => ApiResponse::Ok.with_message("Posts refreshed successfully"),
         Err(e) => {
             error!("Failed to refresh posts: {}", e);
             ApiResponse::ProcessingError.with_message("Failed to refresh posts")
         }
-    }
+    };
+    
+    response.headers_mut().extend(no_cache_headers());
+    response
 }

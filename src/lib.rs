@@ -419,7 +419,7 @@ pub async fn create_app(
                     let name = name.clone();
                     move |state, path: Path<String>, query, auth| {
                         let gallery_path = path.0;
-                        api::gallery_api_handler_for_named(
+                        api::gallery_api_handler_for_named_http(
                             state,
                             Path((name, gallery_path)),
                             query,
@@ -436,7 +436,7 @@ pub async fn create_app(
                     let name = name.clone();
                     move |state, path: Path<String>, auth| {
                         let image_path = path.0;
-                        api::image_detail_api_handler_for_named(
+                        api::image_detail_api_handler_for_named_http(
                             state,
                             Path((name, image_path)),
                             auth,
