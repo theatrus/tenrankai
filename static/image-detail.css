@@ -161,6 +161,10 @@ body {
     to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
+@keyframes spinOnly {
+    to { transform: rotate(360deg); }
+}
+
 .image-navigation {
     display: flex;
     justify-content: space-between;

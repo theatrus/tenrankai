@@ -611,12 +611,13 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
               {tileConfig ? (
                 <div
                   style={{
-                    position: 'relative',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
                     width: '100%',
                     height: '100%',
                     backgroundColor: 'rgba(0, 0, 0, 0.05)', // Very subtle background
-                    overflow: 'hidden',
-                    borderRadius: '50%' // Ensure content is clipped to circle
+                    overflow: 'hidden'
                   }}
                 >
                   {/* Show underlying image with blur while tiles are loading */}
@@ -655,7 +656,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                           border: '3px solid rgba(255, 255, 255, 0.3)',
                           borderTop: '3px solid rgba(255, 255, 255, 0.9)',
                           borderRadius: '50%',
-                          animation: 'spin 0.8s linear infinite',
+                          animation: 'spinOnly 0.8s linear infinite',
                           position: 'absolute',
                           top: 0,
                           left: 0
