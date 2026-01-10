@@ -236,6 +236,10 @@ export function ImageDetailPage({
               currentUser={currentUser}
               permissions={currentData.permissions}
               onUpdate={(updatedMetadata) => updateMetadata(updatedMetadata)}
+              image={{
+                medium_url: currentData.image.medium_url,
+                dimensions: currentData.image.dimensions
+              }}
             />
           )}
         </div>

@@ -34,6 +34,14 @@ export interface Comment {
   text: string;
   created_at: string;
   edited_at?: string;
+  image_area?: ImageArea;
+}
+
+export interface ImageArea {
+  x: number;       // Percentage (0-100)
+  y: number;       // Percentage (0-100)
+  width: number;   // Percentage (0-100)
+  height: number;  // Percentage (0-100)
 }
 
 export type PickStatus = 'pick' | 'no_pick';

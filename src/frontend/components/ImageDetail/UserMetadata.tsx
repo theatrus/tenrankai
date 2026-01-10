@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { ImageUserMetadata, PickStatus, RolePermissions } from '../../types';
+import { ImageUserMetadata, PickStatus, RolePermissions, ImageArea } from '../../types';
+import { AreaSelector } from './AreaSelector.tsx';
 
 interface UserMetadataProps {
   metadata?: ImageUserMetadata;
@@ -9,6 +10,10 @@ interface UserMetadataProps {
   currentUser?: string;
   permissions: RolePermissions;
   onUpdate: (updatedMetadata: ImageUserMetadata) => void;
+  image?: {
+    medium_url: string;
+    dimensions: [number, number];
+  };
 }
 
 export function UserMetadata({ 
@@ -18,7 +23,8 @@ export function UserMetadata({
   isAuthenticated,
   currentUser,
   permissions,
-  onUpdate 
+  onUpdate,
+  image
 }: UserMetadataProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [newComment, setNewComment] = useState('');
@@ -27,6 +33,10 @@ export function UserMetadata({
   const [showTagInput, setShowTagInput] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState('');
+  const [editingCommentArea, setEditingCommentArea] = useState<ImageArea | null>(null);
+  const [showAreaSelector, setShowAreaSelector] = useState(false);
+  const [showEditAreaSelector, setShowEditAreaSelector] = useState(false);
+  const [selectedArea, setSelectedArea] = useState<ImageArea | null>(null);
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Common photography-related tags
@@ -151,6 +161,7 @@ export function UserMetadata({
         },
         body: JSON.stringify({
           text: newComment.trim(),
+          image_area: selectedArea,
         }),
       });
 
@@ -159,6 +170,8 @@ export function UserMetadata({
         onUpdate(serverResponse.metadata);
         setNewComment('');
         setIsEditing(false);
+        setSelectedArea(null);
+        setShowAreaSelector(false);
       }
     } catch (error) {
       console.error('Failed to add comment:', error);
@@ -176,6 +189,7 @@ export function UserMetadata({
         },
         body: JSON.stringify({
           text: editingCommentText.trim(),
+          image_area: editingCommentArea,
         }),
       });
 
@@ -184,6 +198,8 @@ export function UserMetadata({
         onUpdate(serverResponse.metadata);
         setEditingCommentId(null);
         setEditingCommentText('');
+        setEditingCommentArea(null);
+        setShowEditAreaSelector(false);
       }
     } catch (error) {
       console.error('Failed to edit comment:', error);
@@ -436,6 +452,7 @@ export function UserMetadata({
                               onClick={() => {
                                 setEditingCommentId(comment.id);
                                 setEditingCommentText(comment.text);
+                                setEditingCommentArea(comment.image_area || null);
                               }}
                               title="Edit comment"
                             >
@@ -456,34 +473,126 @@ export function UserMetadata({
                 </div>
                 {editingCommentId === comment.id ? (
                   <div className="comment-edit-form">
-                    <textarea
-                      className="comment-textarea"
-                      value={editingCommentText}
-                      onChange={(e) => setEditingCommentText(e.target.value)}
-                      rows={3}
-                      autoFocus
-                    />
-                    <div className="comment-actions">
-                      <button
-                        className="comment-submit"
-                        onClick={() => handleEditComment(comment.id)}
-                        disabled={!editingCommentText.trim() || editingCommentText.trim() === comment.text}
-                      >
-                        Save
-                      </button>
-                      <button
-                        className="comment-cancel"
-                        onClick={() => {
-                          setEditingCommentId(null);
-                          setEditingCommentText('');
-                        }}
-                      >
-                        Cancel
-                      </button>
+                    <div className="comment-edit-wrapper">
+                      <textarea
+                        className="comment-textarea"
+                        value={editingCommentText}
+                        onChange={(e) => setEditingCommentText(e.target.value)}
+                        rows={3}
+                        autoFocus
+                      />
+                      
+                      {/* Area selector option for editing */}
+                      {image && (
+                        <div className="comment-area-options">
+                          {!showEditAreaSelector && !editingCommentArea && (
+                            <button
+                              className="area-select-btn"
+                              onClick={() => setShowEditAreaSelector(true)}
+                              type="button"
+                            >
+                              📍 Add area selection
+                            </button>
+                          )}
+                          
+                          {editingCommentArea && !showEditAreaSelector && (
+                            <div className="selected-area-info">
+                              <span>✓ Area selected</span>
+                              <button
+                                className="area-clear-btn"
+                                onClick={() => setEditingCommentArea(null)}
+                                type="button"
+                              >
+                                Clear
+                              </button>
+                              <button
+                                className="area-clear-btn"
+                                onClick={() => setShowEditAreaSelector(true)}
+                                type="button"
+                              >
+                                Change
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {showEditAreaSelector && image && (
+                        <div className="area-selector-modal">
+                          <AreaSelector
+                            imageUrl={image.medium_url}
+                            dimensions={image.dimensions}
+                            onAreaSelected={(area) => {
+                              setEditingCommentArea(area);
+                              setShowEditAreaSelector(false);
+                            }}
+                            existingArea={editingCommentArea}
+                          />
+                          <button
+                            className="area-selector-close"
+                            onClick={() => setShowEditAreaSelector(false)}
+                          >
+                            Close
+                          </button>
+                        </div>
+                      )}
+                      
+                      <div className="comment-actions">
+                        <button
+                          className="comment-submit"
+                          onClick={() => handleEditComment(comment.id)}
+                          disabled={!editingCommentText.trim() || (editingCommentText.trim() === comment.text && editingCommentArea === comment.image_area)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          className="comment-cancel"
+                          onClick={() => {
+                            setEditingCommentId(null);
+                            setEditingCommentText('');
+                            setEditingCommentArea(null);
+                            setShowEditAreaSelector(false);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="comment-text">{comment.text}</div>
+                  <>
+                    <div className="comment-text">{comment.text}</div>
+                    {comment.image_area && image && (
+                      <div className="comment-area-preview">
+                        <div
+                          className="area-preview-image"
+                          style={{
+                            width: '200px',
+                            height: `${200 / (image.dimensions[0] / image.dimensions[1])}px`,
+                            backgroundImage: `url(${image.medium_url})`,
+                            backgroundSize: 'contain',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
+                            position: 'relative',
+                            marginTop: '8px'
+                          }}
+                        >
+                          <div
+                            className="area-highlight"
+                            style={{
+                              position: 'absolute',
+                              left: `${comment.image_area.x}%`,
+                              top: `${comment.image_area.y}%`,
+                              width: `${comment.image_area.width}%`,
+                              height: `${comment.image_area.height}%`,
+                              border: '2px solid rgba(59, 130, 246, 0.8)',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
@@ -509,6 +618,55 @@ export function UserMetadata({
                     }
                   }}
                 />
+                
+                {/* Area selector option */}
+                {image && (
+                  <div className="comment-area-options">
+                    {!showAreaSelector && !selectedArea && (
+                      <button
+                        className="area-select-btn"
+                        onClick={() => setShowAreaSelector(true)}
+                        type="button"
+                      >
+                        📍 Select area on image
+                      </button>
+                    )}
+                    
+                    {selectedArea && !showAreaSelector && (
+                      <div className="selected-area-info">
+                        <span>✓ Area selected</span>
+                        <button
+                          className="area-clear-btn"
+                          onClick={() => setSelectedArea(null)}
+                          type="button"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {showAreaSelector && image && (
+                  <div className="area-selector-modal">
+                    <AreaSelector
+                      imageUrl={image.medium_url}
+                      dimensions={image.dimensions}
+                      onAreaSelected={(area) => {
+                        setSelectedArea(area);
+                        setShowAreaSelector(false);
+                      }}
+                      existingArea={selectedArea}
+                    />
+                    <button
+                      className="area-selector-close"
+                      onClick={() => setShowAreaSelector(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+                
                 <div className="comment-actions">
                   <button
                     className="comment-submit"
@@ -522,6 +680,8 @@ export function UserMetadata({
                     onClick={() => {
                       setNewComment('');
                       setIsEditing(false);
+                      setSelectedArea(null);
+                      setShowAreaSelector(false);
                     }}
                   >
                     Cancel
