@@ -2,8 +2,10 @@ use super::Gallery;
 use super::image_processing::OutputFormat;
 use super::types::ImageSize;
 use crate::{CacheType, FormatCoverage};
+use futures::stream::{self, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{debug, error, info, warn};
 
 /// Generate a tile cache filename that includes readable tile coordinates
@@ -449,9 +451,8 @@ impl Gallery {
 
     /// Pre-generate cache for all images in the gallery
     /// 
-    /// Note: Currently processes images sequentially. Each image loads once and generates
-    /// all variants (sizes/formats) in a batch, but multiple images are not processed in parallel.
-    /// This could be improved by using futures::stream::FuturesUnordered or similar.
+    /// Processes images in parallel using up to the number of CPU cores available.
+    /// Each image loads once and generates all variants (sizes/formats) in a batch.
     pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
         info!(
             "Starting cache pre-generation for gallery '{}'",
@@ -465,34 +466,77 @@ impl Gallery {
         };
 
         let total_images = image_paths.len();
-        info!("Found {} images to pre-generate cache for", total_images);
-
-        for (index, image_path) in image_paths.into_iter().enumerate() {
-            if let Err(e) = self.pregenerate_image_cache(&image_path).await {
-                error!("Failed to pre-generate cache for {}: {}", image_path, e);
-            }
-
-            // Also pre-generate tiles if configured and enabled
-            if let Some(tile_config) = &self.config.tiles
-                && tile_config.pregenerate
-                && let Err(e) = self.pregenerate_tiles_for_image(&image_path).await
-            {
-                error!("Failed to pre-generate tiles for {}: {}", image_path, e);
-            }
-
-            if (index + 1) % 10 == 0 || index + 1 == total_images {
-                info!(
-                    "Pre-generated cache for {}/{} images",
-                    index + 1,
-                    total_images
-                );
-            }
-        }
-
+        let num_cores = num_cpus::get();
         info!(
-            "Completed cache pre-generation for gallery '{}'",
-            self.config.name
+            "Found {} images to pre-generate cache for (using {} parallel workers)",
+            total_images, num_cores
         );
+
+        // Track progress across threads
+        let completed = Arc::new(AtomicUsize::new(0));
+        let failed = Arc::new(AtomicUsize::new(0));
+
+        // Process images in parallel with concurrency limit
+        let _results: Vec<_> = stream::iter(image_paths)
+            .enumerate()
+            .map(|(index, image_path)| {
+                let gallery = self.clone();
+                let completed = completed.clone();
+                let failed = failed.clone();
+                
+                async move {
+                    let result = gallery.pregenerate_image_cache(&image_path).await;
+                    
+                    // Also pre-generate tiles if configured and enabled
+                    if result.is_ok() {
+                        if let Some(tile_config) = &gallery.config.tiles
+                            && tile_config.pregenerate
+                        {
+                            if let Err(e) = gallery.pregenerate_tiles_for_image(&image_path).await {
+                                error!("Failed to pre-generate tiles for {}: {}", image_path, e);
+                                failed.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                    
+                    match &result {
+                        Ok(_) => {
+                            let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                            if count % 10 == 0 || count == total_images {
+                                info!(
+                                    "Pre-generated cache for {}/{} images",
+                                    count,
+                                    total_images
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to pre-generate cache for {}: {}", image_path, e);
+                            failed.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    
+                    (index, image_path, result)
+                }
+            })
+            .buffer_unordered(num_cores)
+            .collect()
+            .await;
+
+        let total_failed = failed.load(Ordering::Relaxed);
+        let total_completed = completed.load(Ordering::Relaxed);
+        
+        info!(
+            "Completed cache pre-generation for gallery '{}': {} succeeded, {} failed",
+            self.config.name,
+            total_completed,
+            total_failed
+        );
+        
+        if total_failed > 0 {
+            warn!("{} images failed during cache pre-generation", total_failed);
+        }
+        
         Ok(())
     }
 
@@ -579,27 +623,55 @@ impl Gallery {
         }
 
         let unique_image_count = unique_images.len();
-        let mut processed_count = 0;
+        let num_cores = num_cpus::get();
+        
+        info!(
+            "Processing {} images with missing formats (using {} parallel workers)",
+            unique_image_count, num_cores
+        );
+        
+        // Track progress
+        let completed = Arc::new(AtomicUsize::new(0));
+        let failed = Arc::new(AtomicUsize::new(0));
 
-        for image_path in unique_images {
-            if let Err(e) = self
-                .pregenerate_image_cache_selective(&image_path, true)
-                .await
-            {
-                error!(
-                    "Failed to generate missing formats for {}: {}",
-                    image_path, e
-                );
-            }
-
-            processed_count += 1;
-            if processed_count % 10 == 0 || processed_count == unique_image_count {
-                info!(
-                    "Generated missing formats for {}/{} images",
-                    processed_count, unique_image_count
-                );
-            }
-        }
+        // Process images in parallel
+        let _results: Vec<_> = stream::iter(unique_images)
+            .map(|image_path| {
+                let gallery = self.clone();
+                let completed = completed.clone();
+                let failed = failed.clone();
+                let total = unique_image_count;
+                
+                async move {
+                    let result = gallery
+                        .pregenerate_image_cache_selective(&image_path, true)
+                        .await;
+                    
+                    match &result {
+                        Ok(_) => {
+                            let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                            if count % 10 == 0 || count == total {
+                                info!(
+                                    "Generated missing formats for {}/{} images",
+                                    count, total
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to generate missing formats for {}: {}",
+                                image_path, e
+                            );
+                            failed.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    
+                    (image_path, result)
+                }
+            })
+            .buffer_unordered(num_cores)
+            .collect()
+            .await;
 
         info!(
             "Completed missing format generation for gallery '{}'",

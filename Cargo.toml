@@ -59,6 +59,8 @@ webauthn-rs-proto = "0.5"
 env_logger = "0.11"
 fnv = "1.0"
 quick-xml = "0.37"
+futures = "0.3"
+num_cpus = "1.16"
 
 [profile.dev]
 opt-level = 2           # Enable optimizations (0 = none, 1 = basic, 2 = some, 3 = all)
