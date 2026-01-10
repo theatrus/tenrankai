@@ -491,6 +491,7 @@ where
 #[derive(Debug, Deserialize)]
 pub struct AddCommentRequest {
     pub text: String,
+    pub image_area: Option<crate::metadata_storage::types::ImageArea>,
 }
 
 #[derive(Debug, Serialize)]
@@ -756,7 +757,7 @@ pub async fn add_comment_handler(
     };
 
     // Add comment
-    metadata.add_comment(user, request.text);
+    metadata.add_comment(user, request.text, request.image_area);
 
     // Save metadata
     match gallery

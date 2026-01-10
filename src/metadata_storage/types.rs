@@ -51,6 +51,23 @@ pub struct Comment {
     /// Previous versions of the comment (for edit history)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<CommentVersion>,
+
+    /// Optional selected area on the image (percentage coordinates)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_area: Option<ImageArea>,
+}
+
+/// Represents a selected area on an image with percentage-based coordinates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageArea {
+    /// X coordinate as percentage (0-100)
+    pub x: f32,
+    /// Y coordinate as percentage (0-100)
+    pub y: f32,
+    /// Width as percentage (0-100)
+    pub width: f32,
+    /// Height as percentage (0-100)
+    pub height: f32,
 }
 
 /// A previous version of a comment
@@ -102,7 +119,12 @@ impl ImageUserMetadata {
     }
 
     /// Add a new comment to the thread
-    pub fn add_comment(&mut self, author: String, text: String) -> String {
+    pub fn add_comment(
+        &mut self,
+        author: String,
+        text: String,
+        image_area: Option<ImageArea>,
+    ) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         let comment = Comment {
             id: id.clone(),
@@ -111,6 +133,7 @@ impl ImageUserMetadata {
             created_at: Utc::now(),
             edited_at: None,
             versions: Vec::new(),
+            image_area,
         };
         self.comments.push(comment);
         self.update_modified(Some(author));
@@ -178,6 +201,20 @@ impl Comment {
             created_at: Utc::now(),
             edited_at: None,
             versions: Vec::new(),
+            image_area: None,
+        }
+    }
+
+    /// Create a new comment with an image area
+    pub fn new_with_area(author: String, text: String, image_area: ImageArea) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            author,
+            text,
+            created_at: Utc::now(),
+            edited_at: None,
+            versions: Vec::new(),
+            image_area: Some(image_area),
         }
     }
 }
