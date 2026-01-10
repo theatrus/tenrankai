@@ -776,6 +776,7 @@ pub async fn add_comment_handler(
 #[derive(Debug, Deserialize)]
 pub struct EditCommentRequest {
     pub text: String,
+    pub image_area: Option<crate::metadata_storage::types::ImageArea>,
 }
 
 /// Edit a comment
@@ -863,7 +864,7 @@ pub async fn edit_comment_handler(
     }
 
     // Edit comment
-    match metadata.edit_comment(&comment_id, user, request.text) {
+    match metadata.edit_comment(&comment_id, user, request.text, request.image_area) {
         Ok(()) => {}
         Err(e) => return ApiResponse::BadRequest.with_message(&e),
     }

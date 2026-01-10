@@ -146,6 +146,7 @@ impl ImageUserMetadata {
         comment_id: &str,
         editor: &str,
         new_text: String,
+        new_image_area: Option<ImageArea>,
     ) -> Result<(), String> {
         let comment = self
             .comments
@@ -167,6 +168,7 @@ impl ImageUserMetadata {
 
         // Update the comment
         comment.text = new_text;
+        comment.image_area = new_image_area;
         comment.edited_at = Some(Utc::now());
 
         self.update_modified(Some(editor.to_string()));

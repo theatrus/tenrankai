@@ -1194,6 +1194,31 @@ dd {
 
 .comment-edit-form {
   margin-top: 0.5rem;
+  max-width: 100%;
+}
+
+.comment-edit-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.comment-edit-form .comment-textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.comment-edit-form .comment-area-options {
+  margin-top: 0;
+}
+
+.comment-edit-form .selected-area-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .no-comments {
