@@ -82,31 +82,53 @@ impl Gallery {
             return Ok(cache_path);
         }
 
-        // Ensure cache directory exists
-        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        // Use deduplicator to ensure we only process each image/size/format combo once
+        let task_key = format!(
+            "resize:{}:{}:{}:{}",
+            relative_path,
+            size,
+            output_format.extension(),
+            apply_watermark
+        );
+        let handle = self.task_deduplicator.should_execute(task_key).await;
 
-        // Process image in blocking thread
-        let original_path = original_path.to_path_buf();
-        let cache_path_clone = cache_path.clone();
-        let copyright_holder = self.config.copyright_holder.clone();
-        let static_dir = std::path::PathBuf::from("static"); // TODO: Make configurable
-        let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
-        let webp_quality = self.config.webp_quality.unwrap_or(85.0);
+        if handle.is_executor() {
+            // We're the executor, generate the image
 
-        tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-            process_image(
-                &original_path,
-                &cache_path_clone,
-                dimensions,
-                output_format,
-                apply_watermark,
-                copyright_holder,
-                &static_dir,
-                jpeg_quality,
-                webp_quality,
-            )
-        })
-        .await??;
+            // Ensure cache directory exists
+            tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+
+            // Process image in blocking thread
+            let original_path = original_path.to_path_buf();
+            let cache_path_clone = cache_path.clone();
+            let copyright_holder = self.config.copyright_holder.clone();
+            let static_dir = std::path::PathBuf::from("static"); // TODO: Make configurable
+            let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
+            let webp_quality = self.config.webp_quality.unwrap_or(85.0);
+
+            let result = tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                process_image(
+                    &original_path,
+                    &cache_path_clone,
+                    dimensions,
+                    output_format,
+                    apply_watermark,
+                    copyright_holder,
+                    &static_dir,
+                    jpeg_quality,
+                    webp_quality,
+                )
+            })
+            .await?;
+
+            // Mark task as complete
+            handle.complete().await;
+
+            result?;
+        } else {
+            // We're a waiter, wait for the executor to finish
+            handle.wait().await;
+        }
 
         Ok(cache_path)
     }
@@ -179,25 +201,41 @@ impl Gallery {
             return Ok(cache_path);
         }
 
-        // Ensure cache directory exists
-        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        // Use deduplicator to ensure we only generate tiles once per image
+        let task_key = format!("tile_generation:{}:{}", relative_path, tile_size);
+        let handle = self.task_deduplicator.should_execute(task_key).await;
 
-        // Process all tiles for this image in blocking thread
-        // This ensures we load the source image only once
-        let original_path = original_path.to_path_buf();
-        let cache_dir = self.config.cache_directory.clone();
-        let relative_path_owned = relative_path.to_string();
+        if handle.is_executor() {
+            // We're the executor, generate all tiles for this image
 
-        tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-            process_all_tiles_for_image(
-                &original_path,
-                &cache_dir,
-                &relative_path_owned,
-                tile_size,
-                output_format,
-            )
-        })
-        .await??;
+            // Ensure cache directory exists
+            tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+
+            // Process all tiles for this image in blocking thread
+            // This ensures we load the source image only once
+            let original_path = original_path.to_path_buf();
+            let cache_dir = self.config.cache_directory.clone();
+            let relative_path_owned = relative_path.to_string();
+
+            let result = tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                process_all_tiles_for_image(
+                    &original_path,
+                    &cache_dir,
+                    &relative_path_owned,
+                    tile_size,
+                    output_format,
+                )
+            })
+            .await?;
+
+            // Mark task as complete
+            handle.complete().await;
+
+            result?;
+        } else {
+            // We're a waiter, wait for the executor to finish
+            handle.wait().await;
+        }
 
         Ok(cache_path)
     }

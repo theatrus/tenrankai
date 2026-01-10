@@ -7,6 +7,7 @@ pub mod image_processing;
 mod indexing;
 mod metadata;
 mod metadata_sources;
+mod task_deduplicator;
 mod types;
 
 // Re-export public items
@@ -30,6 +31,8 @@ use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
 
+use self::task_deduplicator::TaskDeduplicator;
+
 pub type SharedGallery = Arc<Gallery>;
 
 pub struct Gallery {
@@ -40,6 +43,7 @@ pub struct Gallery {
     pub(crate) metadata_updates_since_save: Arc<AtomicUsize>,
     pub(crate) image_indexer: Arc<RwLock<indexing::ImageIndexer>>,
     pub(crate) user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage>,
+    pub(crate) task_deduplicator: TaskDeduplicator,
 }
 
 impl Gallery {
@@ -66,6 +70,7 @@ impl Gallery {
             metadata_updates_since_save: Arc::new(AtomicUsize::new(0)),
             image_indexer: Arc::new(RwLock::new(image_indexer)),
             user_metadata_storage,
+            task_deduplicator: TaskDeduplicator::new(),
         }
     }
 
