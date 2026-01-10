@@ -157,7 +157,7 @@ impl Gallery {
         &self,
         path: &Path,
         content_type: &str,
-        was_cached: bool,
+        _was_cached: bool,
     ) -> Response {
         match File::open(path).await {
             Ok(file) => {
@@ -176,18 +176,11 @@ impl Gallery {
                     metadata.len().to_string().parse().unwrap(),
                 );
 
-                // Add cache headers
-                if was_cached {
-                    headers.insert(
-                        header::CACHE_CONTROL,
-                        "public, max-age=31536000, immutable".parse().unwrap(),
-                    );
-                } else {
-                    headers.insert(
-                        header::CACHE_CONTROL,
-                        "public, max-age=86400".parse().unwrap(),
-                    );
-                }
+                // Add cache headers - max 1 day for all images
+                headers.insert(
+                    header::CACHE_CONTROL,
+                    "public, max-age=86400".parse().unwrap(),
+                );
 
                 (StatusCode::OK, headers, body).into_response()
             }
@@ -298,7 +291,7 @@ impl Gallery {
         );
         headers.insert(
             header::CACHE_CONTROL,
-            "public, max-age=31536000, immutable".parse().unwrap(),
+            "public, max-age=86400".parse().unwrap(),
         );
 
         Ok((StatusCode::OK, headers, Body::from(image_data)).into_response())
