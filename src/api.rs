@@ -91,6 +91,16 @@ pub struct ImageDetailApiResponse {
     pub prev_image: Option<crate::gallery::NavigationImage>,
     pub next_image: Option<crate::gallery::NavigationImage>,
     pub permissions: crate::permissions::RolePermissions,
+    pub tile_config: Option<TileConfigInfo>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct TileConfigInfo {
+    pub tile_size: u32,
+    pub grid_width: u32,
+    pub grid_height: u32,
+    pub tiled_width: u32,
+    pub tiled_height: u32,
 }
 
 // Named gallery API handlers for multiple gallery support
@@ -436,6 +446,39 @@ pub async fn image_detail_api_handler_for_named(
         }
     };
 
+    // Include tile configuration if zoom is allowed and tiles are configured
+    let tile_config = if user_permissions.permissions.can_use_zoom {
+        gallery.config.tiles.as_ref().map(|tc| {
+            // Calculate the actual dimensions of the tiled image
+            // The backend scales proportionally if max dimension > 8192
+            let max_dimension = image_info.dimensions.0.max(image_info.dimensions.1);
+            let (tiled_width, tiled_height) = if max_dimension > 8192 {
+                // Scale proportionally
+                let scale = 8192.0 / max_dimension as f32;
+                let new_width = (image_info.dimensions.0 as f32 * scale).round() as u32;
+                let new_height = (image_info.dimensions.1 as f32 * scale).round() as u32;
+                (new_width, new_height)
+            } else {
+                // No scaling needed
+                (image_info.dimensions.0, image_info.dimensions.1)
+            };
+            
+            // Calculate grid size based on tiled dimensions and fixed tile size
+            let grid_width = (tiled_width + tc.tile_size - 1) / tc.tile_size; // Round up
+            let grid_height = (tiled_height + tc.tile_size - 1) / tc.tile_size; // Round up
+            
+            TileConfigInfo {
+                tile_size: tc.tile_size, // Always the configured tile size
+                grid_width,
+                grid_height,
+                tiled_width,
+                tiled_height,
+            }
+        })
+    } else {
+        None
+    };
+
     Ok(Json(ImageDetailApiResponse {
         gallery_name,
         image: image_info,
@@ -443,6 +486,7 @@ pub async fn image_detail_api_handler_for_named(
         prev_image,
         next_image,
         permissions: user_permissions.permissions,
+        tile_config,
     }))
 }
 
@@ -1118,6 +1162,7 @@ roles = ["viewer"]
             },
             image_indexing: crate::config::ImageIndexingMode::Filename,
             permissions: Default::default(),
+            tiles: None,
         };
 
         let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config));

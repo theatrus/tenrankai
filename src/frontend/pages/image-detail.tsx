@@ -176,6 +176,8 @@ export function ImageDetailPage({
               <ImageDisplay 
                 image={currentData.image} 
                 canUseZoom={currentData.permissions.can_use_zoom}
+                tileConfig={currentData.tile_config}
+                galleryName={currentData.gallery_name}
               />
             </div>
           </div>

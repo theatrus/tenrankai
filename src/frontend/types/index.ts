@@ -106,6 +106,14 @@ export interface RolePermissions {
   owner_access: boolean;
 }
 
+export interface TileConfig {
+  tile_size: number;       // Size of each tile in pixels
+  grid_width: number;      // Number of tiles horizontally
+  grid_height: number;     // Number of tiles vertically  
+  tiled_width: number;     // Actual width of the tiled area (capped at 8192)
+  tiled_height: number;    // Actual height of the tiled area (capped at 8192)
+}
+
 export interface ImageDetailData {
   gallery_name: string;
   image: ImageInfo;
@@ -113,6 +121,7 @@ export interface ImageDetailData {
   prev_image?: NavigationImage;
   next_image?: NavigationImage;
   permissions: RolePermissions;
+  tile_config?: TileConfig;
 }
 
 export interface GalleryItem {

@@ -97,6 +97,7 @@ body {
     max-height: calc(75vh - 100px);
 }
 
+
 /* Inner container - sized exactly by JavaScript with drop shadow */
 .image-container {
     display: inline-block;

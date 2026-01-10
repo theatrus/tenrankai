@@ -88,6 +88,21 @@ pub fn default_preview_config() -> PreviewConfig {
     }
 }
 
+/// Default tile size in pixels (1024x1024)
+pub fn default_tile_size() -> u32 {
+    1024
+}
+
+/// Default tiles require authentication (true for security)
+pub fn default_tiles_require_auth() -> bool {
+    true
+}
+
+/// Default tiles pregeneration (false to save space)
+pub fn default_tiles_pregenerate() -> bool {
+    false
+}
+
 impl Default for GallerySystemConfig {
     fn default() -> Self {
         Self {
@@ -111,6 +126,7 @@ impl Default for GallerySystemConfig {
             copyright_holder: None,
             image_indexing: default_image_indexing(),
             permissions: Default::default(),
+            tiles: None,
         }
     }
 }
@@ -156,6 +172,7 @@ impl Default for Config {
                 copyright_holder: None,
                 image_indexing: default_image_indexing(),
                 permissions: Default::default(),
+                tiles: None,
             }]),
             posts: None,
             email: None,

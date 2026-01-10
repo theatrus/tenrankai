@@ -545,9 +545,11 @@ pub async fn image_handler_for_named(
     let resolved_path = {
         let indexer = gallery.image_indexer.read().await;
         if let Some(actual_path) = indexer.get_path(&path) {
+            debug!("Resolved path '{}' to actual path '{}'", path, actual_path);
             actual_path.to_string()
         } else {
             // Fall back to treating it as a direct path (for backward compatibility)
+            debug!("Could not resolve path '{}', using as-is", path);
             path.clone()
         }
     };
@@ -596,6 +598,19 @@ pub async fn image_handler_for_named(
                     ImageSize::Large | ImageSize::LargeRetina => {
                         user_permissions.permissions.can_download_large
                     }
+                    ImageSize::Tile(_, _) => {
+                        // Tiles require permission based on gallery config
+                        if let Some(tile_config) = &gallery.config.tiles {
+                            if tile_config.require_auth {
+                                user_permissions.permissions.can_use_zoom
+                            } else {
+                                user_permissions.permissions.can_view
+                            }
+                        } else {
+                            // No tile config means tiles are not available
+                            false
+                        }
+                    }
                 };
 
                 if !has_permission {
@@ -635,6 +650,7 @@ pub async fn image_handler_for_named(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
+    debug!("Serving image with resolved_path: {}, size: {:?}", resolved_path, query.size);
     gallery
         .serve_image(&resolved_path, query.size, accept_header)
         .await

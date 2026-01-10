@@ -142,14 +142,14 @@ async fn test_watermark_only_applied_to_medium_size() {
     for &size in sizes {
         let key_with_copyright = gallery.generate_image_cache_key(
             path,
-            size.as_str(),
+            &size.as_str(),
             format,
             size.supports_watermark(), // Only medium should have watermark
         );
 
         // Disable copyright to compare
         let key_without_copyright =
-            gallery.generate_image_cache_key(path, size.as_str(), format, false);
+            gallery.generate_image_cache_key(path, &size.as_str(), format, false);
 
         if size.supports_watermark() {
             // Medium size keys should be different when watermark is enabled

@@ -87,6 +87,9 @@ pub struct GallerySystemConfig {
     pub large: ImageSizeConfig,
     #[serde(default = "super::defaults::default_preview_config")]
     pub preview: PreviewConfig,
+    /// Tile configuration for protected zoom feature
+    #[serde(default)]
+    pub tiles: Option<TileConfig>,
     pub cache_refresh_interval_minutes: Option<u64>,
     pub jpeg_quality: Option<u8>,
     pub webp_quality: Option<f32>,
@@ -132,6 +135,21 @@ pub struct PreviewConfig {
     pub max_images: usize,
     pub max_depth: usize,
     pub max_per_folder: usize,
+}
+
+/// Tile configuration for protected zoom feature
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TileConfig {
+    /// Size of each tile in pixels (e.g., 1024 for 1024x1024 tiles)
+    #[serde(default = "super::defaults::default_tile_size")]
+    pub tile_size: u32,
+    /// Whether tiles require authentication
+    #[serde(default = "super::defaults::default_tiles_require_auth")]
+    pub require_auth: bool,
+    /// Whether to pre-generate tiles during cache pre-generation
+    #[serde(default = "super::defaults::default_tiles_pregenerate")]
+    pub pregenerate: bool,
 }
 
 /// Posts system configuration for markdown-based content
