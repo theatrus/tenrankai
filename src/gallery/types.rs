@@ -110,20 +110,20 @@ impl ImageSize {
             "large@2x" => Some(ImageSize::LargeRetina),
             _ => {
                 // Try to parse tile format "tile_x_y" or "tile_x_y@2x"
-                if s.starts_with("tile_") {
+                if let Some(stripped) = s.strip_prefix("tile_") {
                     let (tile_part, _is_retina) = if s.ends_with("@2x") {
-                        (&s[5..s.len()-3], true)
+                        (&stripped[..stripped.len() - 3], true)
                     } else {
-                        (&s[5..], false)
+                        (stripped, false)
                     };
-                    
+
                     let parts: Vec<&str> = tile_part.split('_').collect();
-                    if parts.len() == 2 {
-                        if let (Ok(x), Ok(y)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                            // For now, we handle retina tiles by returning the same tile
-                            // The resize logic will handle the 2x scaling
-                            return Some(ImageSize::Tile(x, y));
-                        }
+                    if parts.len() == 2
+                        && let (Ok(x), Ok(y)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+                    {
+                        // For now, we handle retina tiles by returning the same tile
+                        // The resize logic will handle the 2x scaling
+                        return Some(ImageSize::Tile(x, y));
                     }
                 }
                 None

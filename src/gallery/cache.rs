@@ -16,24 +16,31 @@ pub(crate) fn generate_tile_cache_filename(
     format: &str,
 ) -> String {
     use sha2::{Digest, Sha256};
-    
+
     // Build the tile spec
     let tile_spec = if is_retina {
         format!("tile_{}_{}_{}", tile_x, tile_y, tile_size) + "@2x"
     } else {
         format!("tile_{}_{}_{}", tile_x, tile_y, tile_size)
     };
-    
+
     // Match the exact pattern used by Gallery::generate_image_cache_key
     let cache_key = format!("{}_{}", tile_spec, format);
-    
+
     let mut hasher = Sha256::new();
     hasher.update(path);
     hasher.update(&cache_key);
     let hash = format!("{:x}", hasher.finalize());
-    
+
     // Make the filename somewhat readable
-    format!("tile_{}_{}{}.{}.{}", tile_x, tile_y, if is_retina { "@2x" } else { "" }, hash, format)
+    format!(
+        "tile_{}_{}{}.{}.{}",
+        tile_x,
+        tile_y,
+        if is_retina { "@2x" } else { "" },
+        hash,
+        format
+    )
 }
 
 impl Gallery {
@@ -388,14 +395,14 @@ impl Gallery {
             Some(meta) => meta,
             None => return Ok(()), // No metadata available
         };
-        
+
         let (width, height) = image_metadata.dimensions;
-        
+
         // Calculate grid size based on image dimensions and tile size
         // Cap at 8192px maximum dimension for tiles
         let max_dimension = width.max(height).min(8192);
-        let grid_width = (max_dimension + tile_size - 1) / tile_size;
-        let grid_height = (max_dimension + tile_size - 1) / tile_size;
+        let grid_width = max_dimension.div_ceil(tile_size);
+        let grid_height = max_dimension.div_ceil(tile_size);
         drop(metadata);
 
         // Tiles are always AVIF for best compression and quality
@@ -409,7 +416,10 @@ impl Gallery {
         if grid_width > 0 && grid_height > 0 {
             // Just request tile 0,0 - the backend will generate all tiles
             for format in &formats {
-                match self.get_image_tile(&full_path, relative_path, 0, 0, *format).await {
+                match self
+                    .get_image_tile(&full_path, relative_path, 0, 0, *format)
+                    .await
+                {
                     Ok(_) => {
                         info!(
                             "Pre-generated all tiles ({}x{} grid) for {}",
@@ -417,10 +427,7 @@ impl Gallery {
                         );
                     }
                     Err(e) => {
-                        warn!(
-                            "Failed to pre-generate tiles for {}: {}",
-                            relative_path, e
-                        );
+                        warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
                     }
                 }
             }
@@ -451,12 +458,11 @@ impl Gallery {
             }
 
             // Also pre-generate tiles if configured and enabled
-            if let Some(tile_config) = &self.config.tiles {
-                if tile_config.pregenerate {
-                    if let Err(e) = self.pregenerate_tiles_for_image(&image_path).await {
-                        error!("Failed to pre-generate tiles for {}: {}", image_path, e);
-                    }
-                }
+            if let Some(tile_config) = &self.config.tiles
+                && tile_config.pregenerate
+                && let Err(e) = self.pregenerate_tiles_for_image(&image_path).await
+            {
+                error!("Failed to pre-generate tiles for {}: {}", image_path, e);
             }
 
             if (index + 1) % 10 == 0 || index + 1 == total_images {

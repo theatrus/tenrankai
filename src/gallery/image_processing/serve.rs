@@ -43,18 +43,21 @@ impl Gallery {
             // Check if this is a tile request (including @2x)
             let is_retina_tile = size.ends_with("@2x") && size.starts_with("tile_");
             let size_to_parse = if is_retina_tile {
-                &size[..size.len()-3] // Remove @2x suffix
+                &size[..size.len() - 3] // Remove @2x suffix
             } else {
                 size
             };
-            
+
             if let Some(parsed_size) = crate::gallery::types::ImageSize::parse(size_to_parse) {
                 if let crate::gallery::types::ImageSize::Tile(x, y) = parsed_size {
                     // Handle tile request with retina support
-                    let tile_size = self.config.tiles.as_ref()
+                    let tile_size = self
+                        .config
+                        .tiles
+                        .as_ref()
                         .map(|tc| tc.tile_size)
                         .unwrap_or(1024);
-                    
+
                     let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
                         relative_path,
                         x,
@@ -64,18 +67,20 @@ impl Gallery {
                         output_format.extension(),
                     );
                     let cache_path = self.config.cache_directory.join(&cache_filename);
-                    
+
                     // Check if already cached
-                    if self.is_cache_valid(&cache_path, &full_path).await.unwrap_or(false) {
-                        return self
-                            .serve_file_with_cache_header(&cache_path, true)
-                            .await;
+                    if self
+                        .is_cache_valid(&cache_path, &full_path)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        return self.serve_file_with_cache_header(&cache_path, true).await;
                     }
-                    
+
                     // Generate the tile
                     // Note: For retina, we use the same tile coordinates but cache with @2x suffix
                     debug!("Generating tile ({}, {}) retina={}", x, y, is_retina_tile);
-                    
+
                     match self
                         .get_image_tile(&full_path, relative_path, x, y, output_format)
                         .await

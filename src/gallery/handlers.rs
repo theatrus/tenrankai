@@ -650,7 +650,10 @@ pub async fn image_handler_for_named(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    debug!("Serving image with resolved_path: {}, size: {:?}", resolved_path, query.size);
+    debug!(
+        "Serving image with resolved_path: {}, size: {:?}",
+        resolved_path, query.size
+    );
     gallery
         .serve_image(&resolved_path, query.size, accept_header)
         .await

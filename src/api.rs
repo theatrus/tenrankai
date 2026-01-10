@@ -462,11 +462,11 @@ pub async fn image_detail_api_handler_for_named(
                 // No scaling needed
                 (image_info.dimensions.0, image_info.dimensions.1)
             };
-            
+
             // Calculate grid size based on tiled dimensions and fixed tile size
-            let grid_width = (tiled_width + tc.tile_size - 1) / tc.tile_size; // Round up
-            let grid_height = (tiled_height + tc.tile_size - 1) / tc.tile_size; // Round up
-            
+            let grid_width = tiled_width.div_ceil(tc.tile_size);
+            let grid_height = tiled_height.div_ceil(tc.tile_size);
+
             TileConfigInfo {
                 tile_size: tc.tile_size, // Always the configured tile size
                 grid_width,
