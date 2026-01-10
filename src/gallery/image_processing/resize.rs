@@ -70,11 +70,25 @@ impl Gallery {
             
             let paths = tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
                 // Load image once with all metadata
+                debug!("Loading image for batch processing: {:?}", original_path);
                 let loaded_image = LoadedImage::load(&original_path)?;
                 let mut paths = Vec::new();
                 
+                let total_variants = variant_configs.len();
+                info!("Processing {} variants for image: {:?}", total_variants, original_path.file_name());
+                
                 // Process each variant
-                for (_size_str, dimensions, apply_watermark, output_format, cache_path) in variant_configs {
+                for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in variant_configs.into_iter().enumerate() {
+                    debug!("  [{}/{}] Generating {} {}x{} (format: {}, watermark: {})", 
+                        idx + 1, 
+                        total_variants,
+                        size_str,
+                        dimensions.width,
+                        dimensions.height,
+                        output_format.extension(),
+                        apply_watermark
+                    );
+                    
                     // Clone the loaded image for this variant
                     let mut variant_image = loaded_image.clone();
                     
@@ -94,6 +108,7 @@ impl Gallery {
                     paths.push(cache_path);
                 }
                 
+                debug!("Completed batch processing for {:?}", original_path.file_name());
                 Ok(paths)
             })
             .await??;

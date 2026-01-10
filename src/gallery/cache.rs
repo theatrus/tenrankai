@@ -341,18 +341,23 @@ impl Gallery {
         }
 
         // Use batch processing to generate all variants at once
+        info!("Pre-generating {} variants for: {}", variants.len(), relative_path);
+        let start = std::time::Instant::now();
+        
         match self.process_image_batch(&full_path, relative_path, variants).await {
             Ok(paths) => {
+                let elapsed = start.elapsed();
                 let action = if only_missing {
                     "Generated missing"
                 } else {
                     "Pre-generated"
                 };
-                debug!(
-                    "{} {} cache entries for {}",
+                info!(
+                    "{} {} cache entries for {} in {:.2}s",
                     action,
                     paths.len(),
-                    relative_path
+                    relative_path,
+                    elapsed.as_secs_f32()
                 );
             }
             Err(e) => {
@@ -443,6 +448,10 @@ impl Gallery {
     }
 
     /// Pre-generate cache for all images in the gallery
+    /// 
+    /// Note: Currently processes images sequentially. Each image loads once and generates
+    /// all variants (sizes/formats) in a batch, but multiple images are not processed in parallel.
+    /// This could be improved by using futures::stream::FuturesUnordered or similar.
     pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
         info!(
             "Starting cache pre-generation for gallery '{}'",
