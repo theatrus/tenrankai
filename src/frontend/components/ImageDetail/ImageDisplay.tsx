@@ -615,7 +615,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                     width: '100%',
                     height: '100%',
                     backgroundColor: 'rgba(0, 0, 0, 0.05)', // Very subtle background
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    borderRadius: '50%' // Ensure content is clipped to circle
                   }}
                 >
                   {/* Show underlying image with blur while tiles are loading */}
@@ -642,18 +643,22 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                         top: '50%',
                         left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        zIndex: 20
+                        zIndex: 20,
+                        width: '40px',
+                        height: '40px'
                       }}
                     >
                       <div
-                        className="loading-spinner"
                         style={{
                           width: '40px',
                           height: '40px',
                           border: '3px solid rgba(255, 255, 255, 0.3)',
                           borderTop: '3px solid rgba(255, 255, 255, 0.9)',
                           borderRadius: '50%',
-                          animation: 'spin 0.8s linear infinite'
+                          animation: 'spin 0.8s linear infinite',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0
                         }}
                       />
                     </div>
