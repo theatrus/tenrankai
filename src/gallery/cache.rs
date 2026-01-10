@@ -6,6 +6,43 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
+/// Generate a tile cache filename that includes readable tile coordinates
+pub(crate) fn generate_tile_cache_filename(
+    path: &str,
+    tile_x: u32,
+    tile_y: u32,
+    tile_size: u32,
+    is_retina: bool,
+    format: &str,
+) -> String {
+    use sha2::{Digest, Sha256};
+
+    // Build the tile spec
+    let tile_spec = if is_retina {
+        format!("tile_{}_{}_{}", tile_x, tile_y, tile_size) + "@2x"
+    } else {
+        format!("tile_{}_{}_{}", tile_x, tile_y, tile_size)
+    };
+
+    // Match the exact pattern used by Gallery::generate_image_cache_key
+    let cache_key = format!("{}_{}", tile_spec, format);
+
+    let mut hasher = Sha256::new();
+    hasher.update(path);
+    hasher.update(&cache_key);
+    let hash = format!("{:x}", hasher.finalize());
+
+    // Make the filename somewhat readable
+    format!(
+        "tile_{}_{}{}.{}.{}",
+        tile_x,
+        tile_y,
+        if is_retina { "@2x" } else { "" },
+        hash,
+        format
+    )
+}
+
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
         let current_version = env!("CARGO_PKG_VERSION");
@@ -283,7 +320,7 @@ impl Gallery {
 
             for format in formats_to_generate {
                 match self
-                    .get_resized_image(&full_path, relative_path, size.as_str(), format)
+                    .get_resized_image(&full_path, relative_path, &size.as_str(), format)
                     .await
                 {
                     Ok(_) => {
@@ -330,6 +367,75 @@ impl Gallery {
         Ok(())
     }
 
+    /// Pre-generate tiles for a single image
+    pub async fn pregenerate_tiles_for_image(
+        &self,
+        relative_path: &str,
+    ) -> Result<(), super::GalleryError> {
+        // Check if tiles are configured
+        let tile_config = match &self.config.tiles {
+            Some(config) => config,
+            None => return Ok(()), // No tiles configured, nothing to do
+        };
+
+        if !self.is_image(relative_path) {
+            return Ok(());
+        }
+
+        let full_path = self.config.source_directory.join(relative_path);
+        if !full_path.exists() {
+            return Ok(());
+        }
+
+        let tile_size = tile_config.tile_size;
+
+        // Get image dimensions to calculate grid size
+        let metadata = self.metadata_cache.read().await;
+        let image_metadata = match metadata.get(relative_path) {
+            Some(meta) => meta,
+            None => return Ok(()), // No metadata available
+        };
+
+        let (width, height) = image_metadata.dimensions;
+
+        // Calculate grid size based on image dimensions and tile size
+        // Cap at 8192px maximum dimension for tiles
+        let max_dimension = width.max(height).min(8192);
+        let grid_width = max_dimension.div_ceil(tile_size);
+        let grid_height = max_dimension.div_ceil(tile_size);
+        drop(metadata);
+
+        // Tiles are always AVIF for best compression and quality
+        #[cfg(feature = "avif")]
+        let formats = vec![OutputFormat::Avif];
+        #[cfg(not(feature = "avif"))]
+        let formats = vec![OutputFormat::WebP]; // Fallback to WebP if AVIF is disabled
+
+        // Generate all tiles at once by requesting any tile
+        // The tile generation function will generate all tiles for the image
+        if grid_width > 0 && grid_height > 0 {
+            // Just request tile 0,0 - the backend will generate all tiles
+            for format in &formats {
+                match self
+                    .get_image_tile(&full_path, relative_path, 0, 0, *format)
+                    .await
+                {
+                    Ok(_) => {
+                        info!(
+                            "Pre-generated all tiles ({}x{} grid) for {}",
+                            grid_width, grid_height, relative_path
+                        );
+                    }
+                    Err(e) => {
+                        warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Pre-generate cache for all images in the gallery
     pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
         info!(
@@ -349,6 +455,14 @@ impl Gallery {
         for (index, image_path) in image_paths.into_iter().enumerate() {
             if let Err(e) = self.pregenerate_image_cache(&image_path).await {
                 error!("Failed to pre-generate cache for {}: {}", image_path, e);
+            }
+
+            // Also pre-generate tiles if configured and enabled
+            if let Some(tile_config) = &self.config.tiles
+                && tile_config.pregenerate
+                && let Err(e) = self.pregenerate_tiles_for_image(&image_path).await
+            {
+                error!("Failed to pre-generate tiles for {}: {}", image_path, e);
             }
 
             if (index + 1) % 10 == 0 || index + 1 == total_images {
@@ -508,7 +622,7 @@ impl Gallery {
 
             let cache_filename = self.generate_cache_filename(
                 relative_path,
-                size.as_str(),
+                &size.as_str(),
                 format.extension(),
                 apply_watermark,
             );
@@ -680,7 +794,7 @@ impl Gallery {
         info!("Total images: {}", total_images);
 
         for &size in sizes {
-            if let Some(format_counts) = coverage_stats.get(size.as_str()) {
+            if let Some(format_counts) = coverage_stats.get(&size.as_str()) {
                 info!("Size '{}' coverage:", size.as_str());
 
                 for (format, &count) in format_counts {
@@ -735,8 +849,8 @@ mod tests {
 
     #[test]
     fn test_cache_key_consistency() {
-        let default_config = crate::Config::default();
-        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
+        let gallery_config = crate::config::GallerySystemConfig::default();
+        let gallery = Gallery::new(gallery_config);
 
         // Test regular image cache keys
         let path = "vacation/beach.jpg";
@@ -779,8 +893,8 @@ mod tests {
     #[test]
     fn test_improved_composite_cache_structure() {
         use base64::{Engine as _, engine::general_purpose};
-        let default_config = crate::Config::default();
-        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
+        let gallery_config = crate::config::GallerySystemConfig::default();
+        let gallery = Gallery::new(gallery_config);
 
         // Test safe path key generation
         let safe_key_simple = gallery.generate_safe_path_key("vacation/2024");
@@ -820,8 +934,8 @@ mod tests {
 
     #[test]
     fn test_cache_filename_generation() {
-        let default_config = crate::Config::default();
-        let gallery = Gallery::new(default_config.galleries.unwrap()[0].clone());
+        let gallery_config = crate::config::GallerySystemConfig::default();
+        let gallery = Gallery::new(gallery_config);
 
         let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp", false);
         assert!(

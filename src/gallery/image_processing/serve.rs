@@ -40,37 +40,98 @@ impl Gallery {
 
         // Handle resized images
         if let Some(size) = size.as_deref() {
-            // Determine if this size would have a watermark
-            let (_, is_medium) = match self.parse_size(size) {
-                Ok(result) => result,
-                Err(_) => {
-                    return ApiResponse::InvalidSizeParameter.into_response();
-                }
+            // Check if this is a tile request (including @2x)
+            let is_retina_tile = size.ends_with("@2x") && size.starts_with("tile_");
+            let size_to_parse = if is_retina_tile {
+                &size[..size.len() - 3] // Remove @2x suffix
+            } else {
+                size
             };
-            let apply_watermark = is_medium && self.config.copyright_holder.is_some();
 
-            let cache_filename = self.generate_cache_filename(
-                relative_path,
-                size,
-                output_format.extension(),
-                apply_watermark,
-            );
-            let cache_path = self.config.cache_directory.join(&cache_filename);
-            let was_cached = cache_path.exists();
+            if let Some(parsed_size) = crate::gallery::types::ImageSize::parse(size_to_parse) {
+                if let crate::gallery::types::ImageSize::Tile(x, y) = parsed_size {
+                    // Handle tile request with retina support
+                    let tile_size = self
+                        .config
+                        .tiles
+                        .as_ref()
+                        .map(|tc| tc.tile_size)
+                        .unwrap_or(1024);
 
-            match self
-                .get_resized_image(&full_path, relative_path, size, output_format)
-                .await
-            {
-                Ok(cached_path) => {
-                    return self
-                        .serve_file_with_cache_header(&cached_path, was_cached)
-                        .await;
+                    let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
+                        relative_path,
+                        x,
+                        y,
+                        tile_size,
+                        is_retina_tile,
+                        output_format.extension(),
+                    );
+                    let cache_path = self.config.cache_directory.join(&cache_filename);
+
+                    // Check if already cached
+                    if self
+                        .is_cache_valid(&cache_path, &full_path)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        return self.serve_file_with_cache_header(&cache_path, true).await;
+                    }
+
+                    // Generate the tile
+                    // Note: For retina, we use the same tile coordinates but cache with @2x suffix
+                    debug!("Generating tile ({}, {}) retina={}", x, y, is_retina_tile);
+
+                    match self
+                        .get_image_tile(&full_path, relative_path, x, y, output_format)
+                        .await
+                    {
+                        Ok(generated_path) => {
+                            return self
+                                .serve_file_with_cache_header(&generated_path, false)
+                                .await;
+                        }
+                        Err(e) => {
+                            error!("Failed to generate tile: {}", e);
+                            return ApiResponse::InternalServerError.into_response();
+                        }
+                    }
+                } else {
+                    // Regular size request
+                    // Determine if this size would have a watermark
+                    let (_, is_medium) = match self.parse_size(size) {
+                        Ok(result) => result,
+                        Err(_) => {
+                            return ApiResponse::InvalidSizeParameter.into_response();
+                        }
+                    };
+                    let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+
+                    let cache_filename = self.generate_cache_filename(
+                        relative_path,
+                        size,
+                        output_format.extension(),
+                        apply_watermark,
+                    );
+                    let cache_path = self.config.cache_directory.join(&cache_filename);
+                    let was_cached = cache_path.exists();
+
+                    match self
+                        .get_resized_image(&full_path, relative_path, size, output_format)
+                        .await
+                    {
+                        Ok(cached_path) => {
+                            return self
+                                .serve_file_with_cache_header(&cached_path, was_cached)
+                                .await;
+                        }
+                        Err(e) => {
+                            error!("Failed to resize image: {}", e);
+                            // Fall through to serve original
+                        }
+                    }
                 }
-                Err(e) => {
-                    error!("Failed to resize image: {}", e);
-                    // Fall through to serve original
-                }
+            } else {
+                return ApiResponse::InvalidSizeParameter.into_response();
             }
         }
 

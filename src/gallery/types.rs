@@ -12,6 +12,8 @@ pub enum ImageSize {
     MediumRetina,
     Large,
     LargeRetina,
+    /// Tile at specific coordinates (x, y) for protected zoom
+    Tile(u32, u32),
 }
 
 impl ImageSize {
@@ -48,6 +50,7 @@ impl ImageSize {
             ImageSize::Gallery | ImageSize::GalleryRetina => ImageSize::Gallery,
             ImageSize::Medium | ImageSize::MediumRetina => ImageSize::Medium,
             ImageSize::Large | ImageSize::LargeRetina => ImageSize::Large,
+            ImageSize::Tile(x, y) => ImageSize::Tile(*x, *y),
         }
     }
 
@@ -89,7 +92,12 @@ impl ImageSize {
         if self.is_retina() { 2.0 } else { 1.0 }
     }
 
-    /// Parse from string (e.g., "medium", "medium@2x")
+    /// Check if this is a tile variant
+    pub fn is_tile(&self) -> bool {
+        matches!(self, ImageSize::Tile(_, _))
+    }
+
+    /// Parse from string (e.g., "medium", "medium@2x", "tile_5_10")
     pub fn parse(s: &str) -> Option<ImageSize> {
         match s {
             "thumbnail" => Some(ImageSize::Thumbnail),
@@ -100,26 +108,46 @@ impl ImageSize {
             "medium@2x" => Some(ImageSize::MediumRetina),
             "large" => Some(ImageSize::Large),
             "large@2x" => Some(ImageSize::LargeRetina),
-            _ => None,
+            _ => {
+                // Try to parse tile format "tile_x_y" or "tile_x_y@2x"
+                if let Some(stripped) = s.strip_prefix("tile_") {
+                    let (tile_part, _is_retina) = if s.ends_with("@2x") {
+                        (&stripped[..stripped.len() - 3], true)
+                    } else {
+                        (stripped, false)
+                    };
+
+                    let parts: Vec<&str> = tile_part.split('_').collect();
+                    if parts.len() == 2
+                        && let (Ok(x), Ok(y)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+                    {
+                        // For now, we handle retina tiles by returning the same tile
+                        // The resize logic will handle the 2x scaling
+                        return Some(ImageSize::Tile(x, y));
+                    }
+                }
+                None
+            }
         }
     }
 
     /// Convert to string representation
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> String {
         match self {
-            ImageSize::Thumbnail => "thumbnail",
-            ImageSize::ThumbnailRetina => "thumbnail@2x",
-            ImageSize::Gallery => "gallery",
-            ImageSize::GalleryRetina => "gallery@2x",
-            ImageSize::Medium => "medium",
-            ImageSize::MediumRetina => "medium@2x",
-            ImageSize::Large => "large",
-            ImageSize::LargeRetina => "large@2x",
+            ImageSize::Thumbnail => "thumbnail".to_string(),
+            ImageSize::ThumbnailRetina => "thumbnail@2x".to_string(),
+            ImageSize::Gallery => "gallery".to_string(),
+            ImageSize::GalleryRetina => "gallery@2x".to_string(),
+            ImageSize::Medium => "medium".to_string(),
+            ImageSize::MediumRetina => "medium@2x".to_string(),
+            ImageSize::Large => "large".to_string(),
+            ImageSize::LargeRetina => "large@2x".to_string(),
+            ImageSize::Tile(x, y) => format!("tile_{}_{}", x, y),
         }
     }
 
     /// Get all base size strings for validation messages
-    pub fn base_size_names() -> Vec<&'static str> {
+    pub fn base_size_names() -> Vec<String> {
         Self::BASE_SIZES.iter().map(|s| s.as_str()).collect()
     }
 }

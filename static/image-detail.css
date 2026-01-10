@@ -97,6 +97,7 @@ body {
     max-height: calc(75vh - 100px);
 }
 
+
 /* Inner container - sized exactly by JavaScript with drop shadow */
 .image-container {
     display: inline-block;
@@ -158,6 +159,10 @@ body {
 
 @keyframes spin {
     to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes spinOnly {
+    to { transform: rotate(360deg); }
 }
 
 .image-navigation {
@@ -1256,6 +1261,15 @@ dd {
   -o-user-drag: none;
   user-drag: none;
   pointer-events: auto;
+}
+
+/* Ensure img elements display properly */
+.image-display img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 /* Ensure no background on image background div */

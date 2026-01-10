@@ -43,6 +43,7 @@ fn create_test_gallery_config(name: &str) -> GallerySystemConfig {
         image_indexing: crate::config::ImageIndexingMode::Filename,
         permissions: Default::default(),
         cache_refresh_interval_minutes: Some(60),
+        tiles: None,
     }
 }
 
