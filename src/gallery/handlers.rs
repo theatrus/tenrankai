@@ -671,11 +671,11 @@ pub async fn image_handler_for_named_v2(
     // Parse the path to extract identifier and size
     // The full_path is like "vacation/photo.jpg/medium" or "vacation/abc123/thumbnail"
     let parts: Vec<&str> = full_path.split('/').collect();
-    
+
     if parts.is_empty() {
         return (StatusCode::BAD_REQUEST, "Invalid image path").into_response();
     }
-    
+
     // The last part is the size, everything before is the identifier
     let size = parts.last().copied();
     let identifier = if parts.len() > 1 {
@@ -684,7 +684,7 @@ pub async fn image_handler_for_named_v2(
         // No size specified, treat entire path as identifier
         full_path.clone()
     };
-    
+
     // If size is actually part of the filename (e.g., "photo.jpg"), then there's no size
     let (actual_identifier, size_param) = if let Some(s) = size {
         if s.contains('.') || ImageSize::parse(s).is_none() {
@@ -696,13 +696,13 @@ pub async fn image_handler_for_named_v2(
     } else {
         (identifier, None)
     };
-    
+
     // Create a query struct with the size parameter
     let query = GalleryQuery {
         page: None,
         size: size_param.map(String::from),
     };
-    
+
     // Call the original handler with the parsed parameters
     image_handler_for_named(
         State(app_state),

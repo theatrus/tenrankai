@@ -394,9 +394,11 @@ Regular markdown image (not a gallery reference):
         );
 
         assert!(post.html_content.contains(r#"<a href="/my-portfolio/detail/projects%2Fapp-screenshot.png" class="gallery-image-link">"#));
-        assert!(post.html_content.contains(
-            r#"<img src="/my-portfolio/_image/projects%2Fapp-screenshot.png/medium""#
-        ));
+        assert!(
+            post.html_content.contains(
+                r#"<img src="/my-portfolio/_image/projects%2Fapp-screenshot.png/medium""#
+            )
+        );
         assert!(
             post.html_content
                 .contains(r#"class="gallery-image gallery-image-medium""#)

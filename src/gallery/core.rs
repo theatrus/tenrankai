@@ -94,13 +94,11 @@ impl Gallery {
 
                 let thumbnail_url = format!(
                     "{}/_image/{}/thumbnail",
-                    self.config.url_prefix,
-                    url_identifier
+                    self.config.url_prefix, url_identifier
                 );
                 let gallery_url = format!(
                     "{}/_image/{}/gallery",
-                    self.config.url_prefix,
-                    url_identifier
+                    self.config.url_prefix, url_identifier
                 );
 
                 // Get metadata from cache if available
@@ -427,8 +425,7 @@ impl Gallery {
                 };
                 let thumbnail_url = format!(
                     "{}/_image/{}/thumbnail",
-                    self.config.url_prefix,
-                    url_identifier
+                    self.config.url_prefix, url_identifier
                 );
                 preview_images.push(thumbnail_url);
             }
@@ -622,25 +619,18 @@ impl Gallery {
                 .to_string(),
             title,
             path: relative_path.to_string(),
-            url: format!(
-                "{}/_image/{}",
-                self.config.url_prefix,
-                url_identifier
-            ),
+            url: format!("{}/_image/{}", self.config.url_prefix, url_identifier),
             thumbnail_url: format!(
                 "{}/_image/{}/thumbnail",
-                self.config.url_prefix,
-                url_identifier
+                self.config.url_prefix, url_identifier
             ),
             gallery_url: format!(
                 "{}/_image/{}/gallery",
-                self.config.url_prefix,
-                url_identifier
+                self.config.url_prefix, url_identifier
             ),
             medium_url: format!(
                 "{}/_image/{}/medium",
-                self.config.url_prefix,
-                url_identifier
+                self.config.url_prefix, url_identifier
             ),
             description,
             camera_info,
