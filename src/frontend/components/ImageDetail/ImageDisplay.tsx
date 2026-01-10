@@ -611,21 +611,26 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
               {tileConfig ? (
                 <div
                   style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
+                    position: 'relative',
                     width: '100%',
                     height: '100%',
                     backgroundColor: 'rgba(0, 0, 0, 0.05)', // Very subtle background
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    borderRadius: '50%', // Ensure circular clipping
+                    // Force a new stacking context to contain the blur
+                    transform: 'translateZ(0)',
+                    WebkitTransform: 'translateZ(0)'
                   }}
                 >
                   {/* Show underlying image with blur while tiles are loading */}
                   <div
                     style={{
                       position: 'absolute',
-                      width: '100%',
-                      height: '100%',
+                      // Make it larger to account for blur edge effects
+                      top: '-10px',
+                      left: '-10px',
+                      width: 'calc(100% + 20px)',
+                      height: 'calc(100% + 20px)',
                       backgroundImage: `url(${image.medium_url})`,
                       backgroundSize: `${containerRef.current?.clientWidth ? containerRef.current.clientWidth * 1.8 : image.dimensions[0] * 1.8}px auto`,
                       backgroundPosition: `${zoomState.imageX}% ${zoomState.imageY}%`,
