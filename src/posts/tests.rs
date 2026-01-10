@@ -374,7 +374,7 @@ Regular markdown image (not a gallery reference):
         ));
         assert!(
             post.html_content
-                .contains(r#"<img src="/gallery/image/vacation%2Fbeach.jpg?size=thumbnail""#)
+                .contains(r#"<img src="/gallery/_image/vacation%2Fbeach.jpg/thumbnail""#)
         );
         assert!(
             post.html_content
@@ -386,7 +386,7 @@ Regular markdown image (not a gallery reference):
         ));
         assert!(
             post.html_content
-                .contains(r#"<img src="/gallery/image/vacation%2Fsunset.jpg?size=gallery""#)
+                .contains(r#"<img src="/gallery/_image/vacation%2Fsunset.jpg/gallery""#)
         );
         assert!(
             post.html_content
@@ -394,9 +394,11 @@ Regular markdown image (not a gallery reference):
         );
 
         assert!(post.html_content.contains(r#"<a href="/my-portfolio/detail/projects%2Fapp-screenshot.png" class="gallery-image-link">"#));
-        assert!(post.html_content.contains(
-            r#"<img src="/my-portfolio/image/projects%2Fapp-screenshot.png?size=medium""#
-        ));
+        assert!(
+            post.html_content.contains(
+                r#"<img src="/my-portfolio/_image/projects%2Fapp-screenshot.png/medium""#
+            )
+        );
         assert!(
             post.html_content
                 .contains(r#"class="gallery-image gallery-image-medium""#)

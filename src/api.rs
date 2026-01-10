@@ -1,4 +1,8 @@
-use crate::{ApiResponse, login::AuthScope, api_response::{no_cache_headers, short_cache_headers}};
+use crate::{
+    ApiResponse,
+    api_response::{no_cache_headers, short_cache_headers},
+    login::AuthScope,
+};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -217,7 +221,8 @@ pub async fn refresh_static_versions(
     let mut response = Json(RefreshResponse {
         success: true,
         message: "Static file versions refreshed successfully".to_string(),
-    }).into_response();
+    })
+    .into_response();
     response.headers_mut().extend(no_cache_headers());
     Ok(response)
 }
@@ -311,8 +316,9 @@ pub async fn gallery_api_handler_for_named_http(
         Path((gallery_name, path)),
         Query(query),
         auth,
-    ).await?;
-    
+    )
+    .await?;
+
     let mut response = json_response.into_response();
     // Add short cache headers (60 seconds)
     response.headers_mut().extend(short_cache_headers(60));
@@ -523,12 +529,10 @@ pub async fn image_detail_api_handler_for_named_http(
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Response, StatusCode> {
-    let json_response = image_detail_api_handler_for_named(
-        State(app_state),
-        Path((gallery_name, path)),
-        auth,
-    ).await?;
-    
+    let json_response =
+        image_detail_api_handler_for_named(State(app_state), Path((gallery_name, path)), auth)
+            .await?;
+
     let mut response = json_response.into_response();
     // Add short cache headers (60 seconds) - metadata can change
     response.headers_mut().extend(short_cache_headers(60));
@@ -647,7 +651,8 @@ pub async fn get_metadata_handler(
 
     // Check if user can read metadata
     if !user_permissions.permissions.can_read_metadata {
-        let mut response = ApiResponse::Forbidden.with_message("You do not have permission to read metadata");
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to read metadata");
         response.headers_mut().extend(no_cache_headers());
         return response;
     }
@@ -663,14 +668,15 @@ pub async fn get_metadata_handler(
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
             response
-        },
+        }
         Ok(None) => {
             let mut response = Json(MetadataResponse {
                 metadata: crate::metadata_storage::ImageUserMetadata::default(),
-            }).into_response();
+            })
+            .into_response();
             response.headers_mut().extend(no_cache_headers());
             response
-        },
+        }
         Err(e) => {
             error!("Failed to load metadata: {}", e);
             let mut response = ApiResponse::InternalServerError.into_response();
@@ -742,21 +748,22 @@ pub async fn update_metadata_handler(
 
     // Check appropriate permissions based on what's being updated
     if request.pick_status.is_some() && !user_permissions.permissions.can_set_picks {
-        let mut response = ApiResponse::Forbidden
-            .with_message("You do not have permission to set pick status");
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to set pick status");
         response.headers_mut().extend(no_cache_headers());
         return response;
     }
 
     if request.tags.is_some() && !user_permissions.permissions.can_add_tags {
-        let mut response = ApiResponse::Forbidden.with_message("You do not have permission to modify tags");
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to modify tags");
         response.headers_mut().extend(no_cache_headers());
         return response;
     }
 
     if request.highlighted.is_some() && !user_permissions.permissions.can_read_metadata {
-        let mut response = ApiResponse::Forbidden
-            .with_message("You do not have permission to modify metadata");
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to modify metadata");
         response.headers_mut().extend(no_cache_headers());
         return response;
     }
@@ -805,7 +812,7 @@ pub async fn update_metadata_handler(
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
             response
-        },
+        }
         Err(e) => {
             error!("Failed to save metadata: {}", e);
             let mut response = ApiResponse::InternalServerError.into_response();
@@ -875,7 +882,8 @@ pub async fn add_comment_handler(
 
     // Check if user can add comments
     if !user_permissions.permissions.can_add_comments {
-        let mut response = ApiResponse::Forbidden.with_message("You do not have permission to add comments");
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to add comments");
         response.headers_mut().extend(no_cache_headers());
         return response;
     }
@@ -886,7 +894,7 @@ pub async fn add_comment_handler(
             let mut response = ApiResponse::Unauthorized.into_response();
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
     };
 
     // Metadata feature check removed - now controlled by permissions above
@@ -917,7 +925,7 @@ pub async fn add_comment_handler(
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
             response
-        },
+        }
         Err(e) => {
             error!("Failed to save metadata: {}", e);
             let mut response = ApiResponse::InternalServerError.into_response();
@@ -1003,7 +1011,7 @@ pub async fn edit_comment_handler(
             let mut response = ApiResponse::NotFound.into_response();
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
         Err(e) => {
             error!("Failed to load metadata: {}", e);
             return ApiResponse::InternalServerError.into_response();
@@ -1025,7 +1033,7 @@ pub async fn edit_comment_handler(
             let mut response = ApiResponse::Unauthorized.into_response();
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
     };
 
     // Check if user can edit this comment
@@ -1033,8 +1041,8 @@ pub async fn edit_comment_handler(
         || user_permissions.permissions.can_edit_any_comments;
 
     if !can_edit {
-        let mut response = ApiResponse::Forbidden
-            .with_message("You do not have permission to edit this comment");
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to edit this comment");
         response.headers_mut().extend(no_cache_headers());
         return response;
     }
@@ -1046,7 +1054,7 @@ pub async fn edit_comment_handler(
             let mut response = ApiResponse::BadRequest.with_message(&e);
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
     }
 
     // Save metadata
@@ -1059,7 +1067,7 @@ pub async fn edit_comment_handler(
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
             response
-        },
+        }
         Err(e) => {
             error!("Failed to save metadata: {}", e);
             let mut response = ApiResponse::InternalServerError.into_response();
@@ -1138,7 +1146,7 @@ pub async fn delete_comment_handler(
             let mut response = ApiResponse::NotFound.into_response();
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
         Err(e) => {
             error!("Failed to load metadata: {}", e);
             return ApiResponse::InternalServerError.into_response();
@@ -1160,7 +1168,7 @@ pub async fn delete_comment_handler(
             let mut response = ApiResponse::Unauthorized.into_response();
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
     };
 
     // Check if user can delete this comment
@@ -1182,7 +1190,7 @@ pub async fn delete_comment_handler(
             let mut response = ApiResponse::BadRequest.with_message(&e);
             response.headers_mut().extend(no_cache_headers());
             return response;
-        },
+        }
     }
 
     // Save metadata
@@ -1195,7 +1203,7 @@ pub async fn delete_comment_handler(
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
             response
-        },
+        }
         Err(e) => {
             error!("Failed to save metadata: {}", e);
             let mut response = ApiResponse::InternalServerError.into_response();
@@ -1673,11 +1681,10 @@ roles = ["viewer"]
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
     }
 
-
     #[tokio::test]
     async fn test_gallery_preview_has_no_cache_headers() {
         let (app_state, _temp_dir) = create_test_app_state().await;
-        
+
         let result = gallery_preview_handler_for_named(
             axum::extract::State(app_state),
             axum::extract::Path("test".to_string()),
@@ -1687,7 +1694,7 @@ roles = ["viewer"]
 
         assert!(result.is_ok());
         let response = result.unwrap();
-        
+
         // Check for no-cache headers
         let headers = response.headers();
         assert_eq!(
@@ -1707,7 +1714,7 @@ roles = ["viewer"]
     #[tokio::test]
     async fn test_no_cache_headers_function() {
         let headers = no_cache_headers();
-        
+
         assert_eq!(
             headers.get("cache-control").map(|v| v.to_str().unwrap()),
             Some("no-cache, no-store, must-revalidate")
@@ -1725,7 +1732,7 @@ roles = ["viewer"]
     #[tokio::test]
     async fn test_short_cache_headers_function() {
         let headers = short_cache_headers(60);
-        
+
         assert_eq!(
             headers.get("cache-control").map(|v| v.to_str().unwrap()),
             Some("public, max-age=60")
@@ -1748,7 +1755,7 @@ roles = ["viewer"]
 
         assert!(result.is_ok());
         let response = result.unwrap();
-        
+
         // Check for short cache headers (60 seconds)
         let headers = response.headers();
         assert_eq!(
@@ -1772,7 +1779,7 @@ roles = ["viewer"]
 
         assert!(result.is_ok());
         let response = result.unwrap();
-        
+
         // Check for short cache headers (60 seconds)
         let headers = response.headers();
         assert_eq!(
@@ -1798,7 +1805,7 @@ roles = ["viewer"]
         // Check the response
         let response = response.into_response();
         let headers = response.headers();
-        
+
         // The response should have no-cache headers regardless of success or error
         assert_eq!(
             headers.get("cache-control").map(|v| v.to_str().unwrap()),

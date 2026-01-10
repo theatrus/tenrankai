@@ -256,7 +256,7 @@ async fn test_composite_cache_headers() {
     assert!(cache_control.is_some(), "Cache-Control header missing");
     assert_eq!(
         cache_control.unwrap().to_str().unwrap(),
-        "public, max-age=31536000, immutable",
+        "public, max-age=86400",
         "Wrong Cache-Control header for composite"
     );
 

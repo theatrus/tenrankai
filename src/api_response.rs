@@ -1,6 +1,9 @@
 use axum::{
     body::Body,
-    http::{HeaderMap, StatusCode, header::{CACHE_CONTROL, PRAGMA, EXPIRES}},
+    http::{
+        HeaderMap, StatusCode,
+        header::{CACHE_CONTROL, EXPIRES, PRAGMA},
+    },
     response::{Html, IntoResponse, Response},
 };
 
@@ -270,7 +273,10 @@ impl ApiResponse {
 /// Used for dynamic content that should never be cached
 pub fn no_cache_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(CACHE_CONTROL, "no-cache, no-store, must-revalidate".parse().unwrap());
+    headers.insert(
+        CACHE_CONTROL,
+        "no-cache, no-store, must-revalidate".parse().unwrap(),
+    );
     headers.insert(PRAGMA, "no-cache".parse().unwrap());
     headers.insert(EXPIRES, "0".parse().unwrap());
     headers
@@ -281,8 +287,8 @@ pub fn no_cache_headers() -> HeaderMap {
 pub fn short_cache_headers(seconds: u32) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
-        CACHE_CONTROL, 
-        format!("public, max-age={}", seconds).parse().unwrap()
+        CACHE_CONTROL,
+        format!("public, max-age={}", seconds).parse().unwrap(),
     );
     headers
 }
@@ -293,7 +299,7 @@ pub fn long_cache_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
         CACHE_CONTROL,
-        "public, max-age=31536000, immutable".parse().unwrap()
+        "public, max-age=31536000, immutable".parse().unwrap(),
     );
     headers
 }

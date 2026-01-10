@@ -199,7 +199,7 @@ pub async fn refresh_posts_handler(
             ApiResponse::ProcessingError.with_message("Failed to refresh posts")
         }
     };
-    
+
     response.headers_mut().extend(no_cache_headers());
     response
 }

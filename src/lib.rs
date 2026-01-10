@@ -353,7 +353,7 @@ pub async fn create_app(
                 }),
             );
 
-            // Image serving
+            // Image serving (legacy query parameter format)
             router = router.route(
                 &format!("{}/image/{{*path}}", prefix),
                 axum::routing::get({
@@ -364,6 +364,23 @@ pub async fn create_app(
                             state,
                             Path((name, image_path)),
                             query,
+                            headers,
+                            auth,
+                        )
+                    }
+                }),
+            );
+
+            // Image serving (new path-based format)
+            router = router.route(
+                &format!("{}/_image/{{*path}}", prefix),
+                axum::routing::get({
+                    let name = name.clone();
+                    move |state, path: Path<String>, headers, auth| {
+                        let full_path = path.0;
+                        gallery::image_handler_for_named_v2(
+                            state,
+                            Path((name, full_path)),
                             headers,
                             auth,
                         )
