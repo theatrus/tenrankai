@@ -474,12 +474,13 @@ fn process_all_tiles_for_image(
 
             // Extract the tile region once
             if tile_actual_width > 0 && tile_actual_height > 0 {
-                // Extract tile from the loaded image
-                let tile_img = loaded_image.extract_tile(
+                // Extract tile from the loaded image - use actual dimensions, not minimum
+                let tile_img = loaded_image.image.crop_imm(
                     tile_start_x,
                     tile_start_y,
-                    tile_size.min(tile_actual_width).min(tile_actual_height)
-                )?;
+                    tile_actual_width,
+                    tile_actual_height
+                );
 
                 // Create a new LoadedImage for the tile with preserved metadata
                 let mut tile_loaded_image = LoadedImage::new(
