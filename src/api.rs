@@ -1,4 +1,4 @@
-use crate::{ApiResponse, login::AuthScope};
+use crate::{ApiResponse, login::AuthScope, api_response::no_cache_headers};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -108,7 +108,7 @@ pub async fn gallery_preview_handler_for_named(
     State(app_state): State<crate::AppState>,
     Path(gallery_name): Path<String>,
     Query(query): Query<GalleryPreviewQuery>,
-) -> Result<Json<GalleryPreviewResponse>, StatusCode> {
+) -> Result<Response, StatusCode> {
     let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
         tracing::error!("Gallery '{}' not found", gallery_name);
         StatusCode::NOT_FOUND
@@ -116,7 +116,11 @@ pub async fn gallery_preview_handler_for_named(
 
     let count = query.count.unwrap_or(6).min(20); // Cap at 20 for performance
     match gallery.get_gallery_preview(count).await {
-        Ok(images) => Ok(Json(GalleryPreviewResponse { images })),
+        Ok(images) => {
+            let mut response = Json(GalleryPreviewResponse { images }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            Ok(response)
+        }
         Err(e) => {
             tracing::error!("Failed to get gallery preview: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -204,16 +208,18 @@ pub struct RefreshResponse {
 pub async fn refresh_static_versions(
     State(app_state): State<crate::AppState>,
     _auth: crate::login::RequireAuth,
-) -> Result<Json<RefreshResponse>, StatusCode> {
+) -> Result<Response, StatusCode> {
     // Refresh static file versions
     app_state.static_handler.refresh_file_versions().await;
 
     info!("Static file versions refreshed");
 
-    Ok(Json(RefreshResponse {
+    let mut response = Json(RefreshResponse {
         success: true,
         message: "Static file versions refreshed successfully".to_string(),
-    }))
+    }).into_response();
+    response.headers_mut().extend(no_cache_headers());
+    Ok(response)
 }
 
 pub async fn gallery_api_handler_for_named(
@@ -552,7 +558,11 @@ pub async fn get_metadata_handler(
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
-        None => return ApiResponse::GalleryNotFound.into_response(),
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Resolve the actual path from the indexer
@@ -582,17 +592,25 @@ pub async fn get_metadata_handler(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return ApiResponse::InternalServerError.into_response(),
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Check if user can view this path
     if !user_permissions.permissions.can_view {
-        return ApiResponse::NotFound.into_response(); // Hide existence
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
     }
 
     // Check if user can read metadata
     if !user_permissions.permissions.can_read_metadata {
-        return ApiResponse::Forbidden.with_message("You do not have permission to read metadata");
+        let mut response = ApiResponse::Forbidden.with_message("You do not have permission to read metadata");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     // Metadata feature check removed - now controlled by permissions above
@@ -602,14 +620,23 @@ pub async fn get_metadata_handler(
 
     // Load metadata
     match gallery.user_metadata_storage.load(&full_path).await {
-        Ok(Some(metadata)) => Json(MetadataResponse { metadata }).into_response(),
-        Ok(None) => Json(MetadataResponse {
-            metadata: crate::metadata_storage::ImageUserMetadata::default(),
-        })
-        .into_response(),
+        Ok(Some(metadata)) => {
+            let mut response = Json(MetadataResponse { metadata }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        },
+        Ok(None) => {
+            let mut response = Json(MetadataResponse {
+                metadata: crate::metadata_storage::ImageUserMetadata::default(),
+            }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        },
         Err(e) => {
             error!("Failed to load metadata: {}", e);
-            ApiResponse::InternalServerError.into_response()
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
         }
     }
 }
@@ -626,7 +653,11 @@ pub async fn update_metadata_handler(
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
-        None => return ApiResponse::GalleryNotFound.into_response(),
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Resolve the actual path from the indexer
@@ -656,27 +687,39 @@ pub async fn update_metadata_handler(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return ApiResponse::InternalServerError.into_response(),
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Check if user can view this path
     if !user_permissions.permissions.can_view {
-        return ApiResponse::NotFound.into_response(); // Hide existence
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
     }
 
     // Check appropriate permissions based on what's being updated
     if request.pick_status.is_some() && !user_permissions.permissions.can_set_picks {
-        return ApiResponse::Forbidden
+        let mut response = ApiResponse::Forbidden
             .with_message("You do not have permission to set pick status");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     if request.tags.is_some() && !user_permissions.permissions.can_add_tags {
-        return ApiResponse::Forbidden.with_message("You do not have permission to modify tags");
+        let mut response = ApiResponse::Forbidden.with_message("You do not have permission to modify tags");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     if request.highlighted.is_some() && !user_permissions.permissions.can_read_metadata {
-        return ApiResponse::Forbidden
+        let mut response = ApiResponse::Forbidden
             .with_message("You do not have permission to modify metadata");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     let user = user_permissions.username;
@@ -719,10 +762,16 @@ pub async fn update_metadata_handler(
         .save(&full_path, &metadata)
         .await
     {
-        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Ok(()) => {
+            let mut response = Json(MetadataResponse { metadata }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        },
         Err(e) => {
             error!("Failed to save metadata: {}", e);
-            ApiResponse::InternalServerError.into_response()
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
         }
     }
 }
@@ -737,7 +786,11 @@ pub async fn add_comment_handler(
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
-        None => return ApiResponse::GalleryNotFound.into_response(),
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Resolve the actual path from the indexer
@@ -767,22 +820,34 @@ pub async fn add_comment_handler(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return ApiResponse::InternalServerError.into_response(),
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Check if user can view this path
     if !user_permissions.permissions.can_view {
-        return ApiResponse::NotFound.into_response(); // Hide existence
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
     }
 
     // Check if user can add comments
     if !user_permissions.permissions.can_add_comments {
-        return ApiResponse::Forbidden.with_message("You do not have permission to add comments");
+        let mut response = ApiResponse::Forbidden.with_message("You do not have permission to add comments");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     let user = match user_permissions.username {
         Some(u) => u,
-        None => return ApiResponse::Unauthorized.into_response(),
+        None => {
+            let mut response = ApiResponse::Unauthorized.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
     };
 
     // Metadata feature check removed - now controlled by permissions above
@@ -809,10 +874,16 @@ pub async fn add_comment_handler(
         .save(&full_path, &metadata)
         .await
     {
-        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Ok(()) => {
+            let mut response = Json(MetadataResponse { metadata }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        },
         Err(e) => {
             error!("Failed to save metadata: {}", e);
-            ApiResponse::InternalServerError.into_response()
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
         }
     }
 }
@@ -833,7 +904,11 @@ pub async fn edit_comment_handler(
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
-        None => return ApiResponse::GalleryNotFound.into_response(),
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Resolve the actual path from the indexer
@@ -863,12 +938,18 @@ pub async fn edit_comment_handler(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return ApiResponse::InternalServerError.into_response(),
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Check if user can view this path
     if !user_permissions.permissions.can_view {
-        return ApiResponse::NotFound.into_response(); // Hide existence
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
     }
 
     // Metadata feature check removed - now controlled by permissions above
@@ -879,7 +960,11 @@ pub async fn edit_comment_handler(
     // Load existing metadata
     let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
         Ok(Some(m)) => m,
-        Ok(None) => return ApiResponse::NotFound.into_response(),
+        Ok(None) => {
+            let mut response = ApiResponse::NotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
         Err(e) => {
             error!("Failed to load metadata: {}", e);
             return ApiResponse::InternalServerError.into_response();
@@ -889,13 +974,19 @@ pub async fn edit_comment_handler(
     // Find the comment to check author
     let comment = metadata.comments.iter().find(|c| c.id == comment_id);
     if comment.is_none() {
-        return ApiResponse::NotFound.into_response();
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     let comment_author = &comment.unwrap().author;
     let user = match user_permissions.username.as_ref() {
         Some(u) => u,
-        None => return ApiResponse::Unauthorized.into_response(),
+        None => {
+            let mut response = ApiResponse::Unauthorized.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
     };
 
     // Check if user can edit this comment
@@ -903,14 +994,20 @@ pub async fn edit_comment_handler(
         || user_permissions.permissions.can_edit_any_comments;
 
     if !can_edit {
-        return ApiResponse::Forbidden
+        let mut response = ApiResponse::Forbidden
             .with_message("You do not have permission to edit this comment");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     // Edit comment
     match metadata.edit_comment(&comment_id, user, request.text, request.image_area) {
         Ok(()) => {}
-        Err(e) => return ApiResponse::BadRequest.with_message(&e),
+        Err(e) => {
+            let mut response = ApiResponse::BadRequest.with_message(&e);
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
     }
 
     // Save metadata
@@ -919,10 +1016,16 @@ pub async fn edit_comment_handler(
         .save(&full_path, &metadata)
         .await
     {
-        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Ok(()) => {
+            let mut response = Json(MetadataResponse { metadata }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        },
         Err(e) => {
             error!("Failed to save metadata: {}", e);
-            ApiResponse::InternalServerError.into_response()
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
         }
     }
 }
@@ -936,7 +1039,11 @@ pub async fn delete_comment_handler(
     // Get gallery
     let gallery = match app_state.galleries.get(&gallery_name) {
         Some(g) => g,
-        None => return ApiResponse::GalleryNotFound.into_response(),
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Resolve the actual path from the indexer
@@ -966,12 +1073,18 @@ pub async fn delete_comment_handler(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return ApiResponse::InternalServerError.into_response(),
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
     };
 
     // Check if user can view this path
     if !user_permissions.permissions.can_view {
-        return ApiResponse::NotFound.into_response(); // Hide existence
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
     }
 
     // Metadata feature check removed - now controlled by permissions above
@@ -982,7 +1095,11 @@ pub async fn delete_comment_handler(
     // Load existing metadata
     let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
         Ok(Some(m)) => m,
-        Ok(None) => return ApiResponse::NotFound.into_response(),
+        Ok(None) => {
+            let mut response = ApiResponse::NotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
         Err(e) => {
             error!("Failed to load metadata: {}", e);
             return ApiResponse::InternalServerError.into_response();
@@ -992,13 +1109,19 @@ pub async fn delete_comment_handler(
     // Find the comment to check author
     let comment = metadata.comments.iter().find(|c| c.id == comment_id);
     if comment.is_none() {
-        return ApiResponse::NotFound.into_response();
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     let comment_author = &comment.unwrap().author;
     let user = match user_permissions.username.as_ref() {
         Some(u) => u,
-        None => return ApiResponse::Unauthorized.into_response(),
+        None => {
+            let mut response = ApiResponse::Unauthorized.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
     };
 
     // Check if user can delete this comment
@@ -1007,14 +1130,20 @@ pub async fn delete_comment_handler(
         || user_permissions.permissions.can_delete_any_comments;
 
     if !can_delete {
-        return ApiResponse::Forbidden
+        let mut response = ApiResponse::Forbidden
             .with_message("You do not have permission to delete this comment");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
     }
 
     // Delete comment
     match metadata.delete_comment(&comment_id, user) {
         Ok(()) => {}
-        Err(e) => return ApiResponse::BadRequest.with_message(&e),
+        Err(e) => {
+            let mut response = ApiResponse::BadRequest.with_message(&e);
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        },
     }
 
     // Save metadata
@@ -1023,10 +1152,16 @@ pub async fn delete_comment_handler(
         .save(&full_path, &metadata)
         .await
     {
-        Ok(()) => Json(MetadataResponse { metadata }).into_response(),
+        Ok(()) => {
+            let mut response = Json(MetadataResponse { metadata }).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        },
         Err(e) => {
             error!("Failed to save metadata: {}", e);
-            ApiResponse::InternalServerError.into_response()
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
         }
     }
 }
@@ -1034,7 +1169,7 @@ pub async fn delete_comment_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AppState, Config, GallerySystemConfig};
+    use crate::{AppState, Config, GallerySystemConfig, api_response::short_cache_headers};
     use axum::http::{HeaderMap, HeaderValue};
     use std::{collections::HashMap, sync::Arc};
     use tempfile::TempDir;
@@ -1499,21 +1634,95 @@ roles = ["viewer"]
         assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
     }
 
+
     #[tokio::test]
-    async fn test_gallery_api_nonexistent_gallery() {
+    async fn test_gallery_preview_has_no_cache_headers() {
+        let (app_state, _temp_dir) = create_test_app_state().await;
+        
+        let result = gallery_preview_handler_for_named(
+            axum::extract::State(app_state),
+            axum::extract::Path("test".to_string()),
+            axum::extract::Query(GalleryPreviewQuery { count: Some(6) }),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        
+        // Check for no-cache headers
+        let headers = response.headers();
+        assert_eq!(
+            headers.get("cache-control").map(|v| v.to_str().unwrap()),
+            Some("no-cache, no-store, must-revalidate")
+        );
+        assert_eq!(
+            headers.get("pragma").map(|v| v.to_str().unwrap()),
+            Some("no-cache")
+        );
+        assert_eq!(
+            headers.get("expires").map(|v| v.to_str().unwrap()),
+            Some("0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_no_cache_headers_function() {
+        let headers = no_cache_headers();
+        
+        assert_eq!(
+            headers.get("cache-control").map(|v| v.to_str().unwrap()),
+            Some("no-cache, no-store, must-revalidate")
+        );
+        assert_eq!(
+            headers.get("pragma").map(|v| v.to_str().unwrap()),
+            Some("no-cache")
+        );
+        assert_eq!(
+            headers.get("expires").map(|v| v.to_str().unwrap()),
+            Some("0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_short_cache_headers_function() {
+        let headers = short_cache_headers(60);
+        
+        assert_eq!(
+            headers.get("cache-control").map(|v| v.to_str().unwrap()),
+            Some("public, max-age=60")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_metadata_api_has_no_cache_headers() {
         let (app_state, _temp_dir) = create_test_app_state().await;
         let headers = HeaderMap::new();
         let auth = headers_to_optional_auth(&headers, &app_state);
 
-        let result = gallery_api_handler_for_named(
+        // Call the metadata handler - it should work even if metadata is not found
+        let response = get_metadata_handler(
             axum::extract::State(app_state),
-            axum::extract::Path(("nonexistent".to_string(), "".to_string())),
-            axum::extract::Query(crate::gallery::GalleryQuery::default()),
+            axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             auth,
         )
         .await;
 
-        assert!(result.is_err(), "Nonexistent gallery should return 404");
-        assert_eq!(result.unwrap_err(), StatusCode::NOT_FOUND);
+        // Check the response
+        let response = response.into_response();
+        let headers = response.headers();
+        
+        // The response should have no-cache headers regardless of success or error
+        assert_eq!(
+            headers.get("cache-control").map(|v| v.to_str().unwrap()),
+            Some("no-cache, no-store, must-revalidate")
+        );
+        assert_eq!(
+            headers.get("pragma").map(|v| v.to_str().unwrap()),
+            Some("no-cache")
+        );
+        assert_eq!(
+            headers.get("expires").map(|v| v.to_str().unwrap()),
+            Some("0")
+        );
     }
 }

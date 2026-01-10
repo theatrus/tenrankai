@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, header::{CACHE_CONTROL, PRAGMA, EXPIRES}},
     response::{Html, IntoResponse, Response},
 };
 
@@ -264,6 +264,38 @@ impl ApiResponse {
         Self::ProcessingError,
         Self::TemplateNotFound,
     ];
+}
+
+/// Create headers that prevent caching entirely
+/// Used for dynamic content that should never be cached
+pub fn no_cache_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(CACHE_CONTROL, "no-cache, no-store, must-revalidate".parse().unwrap());
+    headers.insert(PRAGMA, "no-cache".parse().unwrap());
+    headers.insert(EXPIRES, "0".parse().unwrap());
+    headers
+}
+
+/// Create headers for short-term caching
+/// Used for content that changes occasionally but can be cached briefly
+pub fn short_cache_headers(seconds: u32) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CACHE_CONTROL, 
+        format!("public, max-age={}", seconds).parse().unwrap()
+    );
+    headers
+}
+
+/// Create headers for long-term caching with immutable flag
+/// Used for content that never changes (like processed images with hash-based names)
+pub fn long_cache_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CACHE_CONTROL,
+        "public, max-age=31536000, immutable".parse().unwrap()
+    );
+    headers
 }
 
 #[cfg(test)]
