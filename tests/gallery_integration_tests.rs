@@ -269,7 +269,7 @@ async fn test_gallery_opengraph_with_single_image() {
     let html = response.text();
     // Should use the single image for OpenGraph
     assert!(html.contains(r#"property="og:image""#));
-    assert!(html.contains("/gallery/image/test_000.jpg?size=gallery"));
+    assert!(html.contains("/gallery/_image/test_000.jpg/gallery"));
 }
 
 #[tokio::test]
@@ -492,7 +492,7 @@ async fn test_image_detail_page() {
         "Breadcrumb should link to gallery"
     );
     assert!(
-        html.contains("/gallery/image/test_001.jpg"),
+        html.contains("/gallery/_image/test_001.jpg"),
         "Should have correct image URL"
     );
 
