@@ -98,26 +98,41 @@ body {
 }
 
 
-/* Inner container - sized exactly by JavaScript with drop shadow */
+/* Inner container - sized exactly by JavaScript to match image dimensions */
 .image-container {
     display: inline-block;
     position: relative;
-    background-color: var(--bg-secondary);
+    background-color: transparent;
     border-radius: 0;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    overflow: visible;
     /* Use max constraints to prevent oversizing during initial render */
     max-width: 95vw;
     max-height: calc(75vh - 100px);
+    /* Beautiful box shadow on the container */
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 .image-container img {
     width: 100%;
-    height: 100%;
-    object-fit: contain;
+    height: auto;
     border-radius: 0;
     display: block;
     transition: opacity 0.3s ease;
+    position: relative;
+    z-index: 1;
+}
+
+/* Image display wrapper */
+.image-container .image-display {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+@media (max-width: 768px) {
+    .image-container {
+        box-shadow: none;
+    }
 }
 
 /* Subtle fade-in for image background */
