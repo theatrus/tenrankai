@@ -608,42 +608,20 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             role="img"
             aria-label={image.name}
           >
-            {/* Image display with retina support */}
-            {!imageLoading && !imageError && (() => {
-              // Use WebKit prefix and standard syntax with proper quoting
-              const bgStyle: React.CSSProperties = {
-                width: '100%',
-                height: '100%',
-                backgroundSize: '100% 100%',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat'
-              };
-              
-              // Set both standard and WebKit prefixed versions
-              const imageSetValue = `image-set(
-                url("${image.medium_url}") 1x,
-                url("${image.medium_url.replace('?size=medium', '?size=medium@2x')}") 2x
-              )`;
-              
-              bgStyle.backgroundImage = imageSetValue;
-              (bgStyle as any).WebkitBackgroundImage = imageSetValue;
-              
-              return (
-                <div 
-                  className="image-bg"
-                  style={bgStyle}
-                  key={image.path} // Force re-render with animation on image change
-                />
-              );
-            })()}
-            {/* Hidden img for loading detection */}
+            {/* Image display with retina support - using img element for HDR compatibility */}
             <img 
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('?size=medium', '?size=medium@2x')} 2x`}
-              alt=""
-              style={{ display: 'none' }}
+              alt={image.name}
+              style={{ 
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                display: imageLoading || imageError ? 'none' : 'block'
+              }}
               onLoad={handleImageLoad}
               onError={handleImageError}
+              key={image.path} // Force re-render on image change
             />
             {/* Transparent overlay to prevent right-click */}
             <div 

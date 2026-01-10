@@ -1259,6 +1259,15 @@ dd {
   pointer-events: auto;
 }
 
+/* Ensure img elements display properly */
+.image-display img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
 /* Ensure no background on image background div */
 .image-bg {
   background-color: transparent !important;
