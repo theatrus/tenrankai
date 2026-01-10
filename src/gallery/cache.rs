@@ -288,8 +288,9 @@ impl Gallery {
         }
 
         let sizes = ImageSize::ALL;
-        let mut total_generated = 0;
+        let mut variants = Vec::new();
 
+        // Collect all variants to generate
         for &size in sizes {
             let formats_to_generate = if only_missing {
                 // Only generate missing formats
@@ -318,52 +319,57 @@ impl Gallery {
                 formats
             };
 
-            for format in formats_to_generate {
-                match self
-                    .get_resized_image(&full_path, relative_path, &size.as_str(), format)
-                    .await
-                {
-                    Ok(_) => {
-                        let action = if only_missing {
-                            "Generated missing"
-                        } else {
-                            "Pre-generated"
-                        };
-                        debug!(
-                            "{} {} {} for {}",
-                            action,
-                            size,
-                            format.extension(),
-                            relative_path
-                        );
-                        total_generated += 1;
-                    }
-                    Err(e) => {
-                        let action = if only_missing {
-                            "generate missing"
-                        } else {
-                            "pre-generate"
-                        };
-                        error!(
-                            "Failed to {} {} {} for {}: {}",
-                            action,
-                            size,
-                            format.extension(),
-                            relative_path,
-                            e
-                        );
-                    }
+            // Parse size and determine watermark
+            let (dimensions, supports_watermark) = match self.parse_size(&size.as_str()) {
+                Ok(dims) => dims,
+                Err(e) => {
+                    debug!("Failed to parse size {} for {}: {}", size, relative_path, e);
+                    continue;
                 }
+            };
+            
+            let apply_watermark = supports_watermark && self.config.copyright_holder.is_some();
+
+            // Add each format as a variant
+            for format in formats_to_generate {
+                variants.push((size.as_str().to_string(), dimensions.clone(), apply_watermark, format));
             }
         }
 
-        if only_missing && total_generated > 0 {
-            info!(
-                "Generated {} missing format variants for {}",
-                total_generated, relative_path
-            );
+        if variants.is_empty() {
+            return Ok(());
         }
 
+        // Use batch processing to generate all variants at once
+        match self.process_image_batch(&full_path, relative_path, variants).await {
+            Ok(paths) => {
+                let action = if only_missing {
+                    "Generated missing"
+                } else {
+                    "Pre-generated"
+                };
+                debug!(
+                    "{} {} cache entries for {}",
+                    action,
+                    paths.len(),
+                    relative_path
+                );
+            }
+            Err(e) => {
+                let action = if only_missing {
+                    "generate missing formats"
+                } else {
+                    "pre-generate cache"
+                };
+                error!(
+                    "Failed to {} for {}: {}",
+                    action,
+                    relative_path,
+                    e
+                );
+            }
+        }
+        
         Ok(())
     }
 
