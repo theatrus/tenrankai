@@ -75,7 +75,7 @@ export class ImageDetail {
     
     if (hasDownloadPermission) {
       // Get the full-size image URL by modifying the current src
-      const fullSizeUrl = this.mainImage.src.replace('?size=medium', '');
+      const fullSizeUrl = this.mainImage.src.replace('/medium', '');
       
       controlButtons.innerHTML = `
         <a href="${fullSizeUrl}" target="_blank" class="btn">View Full Size</a>
@@ -127,12 +127,12 @@ export class ImageDetail {
     // Preload adjacent images for faster navigation
     if (this.config.prevImagePath) {
       const prevImg = new Image();
-      prevImg.src = `${this.config.galleryUrl}/image/${this.config.prevImagePath}?size=medium`;
+      prevImg.src = `${this.config.galleryUrl}/_image/${this.config.prevImagePath}/medium`;
     }
     
     if (this.config.nextImagePath) {
       const nextImg = new Image();
-      nextImg.src = `${this.config.galleryUrl}/image/${this.config.nextImagePath}?size=medium`;
+      nextImg.src = `${this.config.galleryUrl}/_image/${this.config.nextImagePath}/medium`;
     }
   }
 }

@@ -323,7 +323,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
         
         if (tileX >= 0 && tileX < tileConfig.grid_width && 
             tileY >= 0 && tileY < tileConfig.grid_height) {
-          const tileUrl = `/gallery/image/${imageId}?size=tile_${tileX}_${tileY}`;
+          const tileUrl = `/gallery/_image/${imageId}/tile_${tileX}_${tileY}`;
           
           // Only preload if we haven't already
           if (!preloadedTilesRef.current.has(tileUrl)) {
@@ -358,7 +358,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
       
       // Also preload 2x version for retina displays
       if (window.devicePixelRatio > 1) {
-        const url2x = url.replace(/\?size=tile_/, '?size=tile_') + '@2x';
+        const url2x = url.replace(/\/tile_/, '/tile_') + '@2x';
         setLoadingTiles(prev => new Set(prev).add(url2x));
         
         const img2x = new Image();
@@ -383,8 +383,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
   
   // Extract the image identifier from a URL
   const getImageIdentifierFromUrl = (url: string): string => {
-    // Extract the part between /image/ and ?size=
-    const match = url.match(/\/image\/([^?]+)\?size=/);
+    // Extract the part between /_image/ and the size
+    const match = url.match(/\/_image\/(.+)\/[^/]+$/);
     return match ? match[1] : image.path;
   };
   
@@ -474,8 +474,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
       <>
         {tilesToRender.map(tile => {
           // Create image-set for retina support
-          const tileUrl = `/gallery/image/${imageId}?size=tile_${tile.x}_${tile.y}`;
-          const tileUrl2x = `/gallery/image/${imageId}?size=tile_${tile.x}_${tile.y}@2x`;
+          const tileUrl = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}`;
+          const tileUrl2x = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}@2x`;
           const imageSetValue = `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`;
           
           const tileStyle: React.CSSProperties = {
@@ -561,7 +561,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             {/* Image display with retina support - using img element for HDR compatibility */}
             <img 
               src={image.medium_url}
-              srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('?size=medium', '?size=medium@2x')} 2x`}
+              srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
               alt={image.name}
               style={{ 
                 width: '100%',

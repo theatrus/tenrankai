@@ -93,13 +93,13 @@ impl Gallery {
                 };
 
                 let thumbnail_url = format!(
-                    "/{}/image/{}?size=thumbnail",
-                    self.config.url_prefix.trim_start_matches('/'),
+                    "{}/_image/{}/thumbnail",
+                    self.config.url_prefix,
                     url_identifier
                 );
                 let gallery_url = format!(
-                    "/{}/image/{}?size=gallery",
-                    self.config.url_prefix.trim_start_matches('/'),
+                    "{}/_image/{}/gallery",
+                    self.config.url_prefix,
                     url_identifier
                 );
 
@@ -426,8 +426,8 @@ impl Gallery {
                         .unwrap_or_else(|| urlencoding::encode(&path_string).to_string())
                 };
                 let thumbnail_url = format!(
-                    "/{}/image/{}?size=thumbnail",
-                    self.config.url_prefix.trim_start_matches('/'),
+                    "{}/_image/{}/thumbnail",
+                    self.config.url_prefix,
                     url_identifier
                 );
                 preview_images.push(thumbnail_url);
@@ -623,23 +623,23 @@ impl Gallery {
             title,
             path: relative_path.to_string(),
             url: format!(
-                "/{}/image/{}",
-                self.config.url_prefix.trim_start_matches('/'),
+                "{}/_image/{}",
+                self.config.url_prefix,
                 url_identifier
             ),
             thumbnail_url: format!(
-                "/{}/image/{}?size=thumbnail",
-                self.config.url_prefix.trim_start_matches('/'),
+                "{}/_image/{}/thumbnail",
+                self.config.url_prefix,
                 url_identifier
             ),
             gallery_url: format!(
-                "/{}/image/{}?size=gallery",
-                self.config.url_prefix.trim_start_matches('/'),
+                "{}/_image/{}/gallery",
+                self.config.url_prefix,
                 url_identifier
             ),
             medium_url: format!(
-                "/{}/image/{}?size=medium",
-                self.config.url_prefix.trim_start_matches('/'),
+                "{}/_image/{}/medium",
+                self.config.url_prefix,
                 url_identifier
             ),
             description,

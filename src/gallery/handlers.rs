@@ -4,7 +4,7 @@ use crate::{ApiResponse, AppState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Response},
 };
 use tracing::{debug, error};
 
@@ -657,4 +657,60 @@ pub async fn image_handler_for_named(
     gallery
         .serve_image(&resolved_path, query.size, accept_header)
         .await
+}
+
+/// New image handler that uses path-based URLs instead of query parameters
+/// URL format: /gallery/_image/{path}/{size}
+/// Example: /gallery/_image/vacation/photo.jpg/medium
+pub async fn image_handler_for_named_v2(
+    State(app_state): State<AppState>,
+    Path((gallery_name, full_path)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
+    auth: crate::login::OptionalAuth,
+) -> Response {
+    // Parse the path to extract identifier and size
+    // The full_path is like "vacation/photo.jpg/medium" or "vacation/abc123/thumbnail"
+    let parts: Vec<&str> = full_path.split('/').collect();
+    
+    if parts.is_empty() {
+        return (StatusCode::BAD_REQUEST, "Invalid image path").into_response();
+    }
+    
+    // The last part is the size, everything before is the identifier
+    let size = parts.last().copied();
+    let identifier = if parts.len() > 1 {
+        parts[..parts.len() - 1].join("/")
+    } else {
+        // No size specified, treat entire path as identifier
+        full_path.clone()
+    };
+    
+    // If size is actually part of the filename (e.g., "photo.jpg"), then there's no size
+    let (actual_identifier, size_param) = if let Some(s) = size {
+        if s.contains('.') || ImageSize::parse(s).is_none() {
+            // The "size" is actually part of the filename
+            (full_path.clone(), None)
+        } else {
+            (identifier, size)
+        }
+    } else {
+        (identifier, None)
+    };
+    
+    // Create a query struct with the size parameter
+    let query = GalleryQuery {
+        page: None,
+        size: size_param.map(String::from),
+    };
+    
+    // Call the original handler with the parsed parameters
+    image_handler_for_named(
+        State(app_state),
+        Path((gallery_name, actual_identifier)),
+        Query(query),
+        headers,
+        auth,
+    )
+    .await
+    .into_response()
 }

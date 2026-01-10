@@ -378,7 +378,7 @@ impl PostsManager {
         // Generate URLs
         let encoded_path = urlencoding::encode(image_path);
         let image_url = format!(
-            "{}/image/{}?size={}",
+            "{}/_image/{}/{}",
             gallery_config.url_prefix, encoded_path, size
         );
         let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded_path);
