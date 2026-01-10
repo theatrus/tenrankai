@@ -1,4 +1,4 @@
-use crate::{ApiResponse, login::AuthScope, api_response::no_cache_headers};
+use crate::{ApiResponse, login::AuthScope, api_response::{no_cache_headers, short_cache_headers}};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -222,6 +222,7 @@ pub async fn refresh_static_versions(
     Ok(response)
 }
 
+/// Gallery API handler that returns JSON data for internal use
 pub async fn gallery_api_handler_for_named(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
@@ -296,6 +297,26 @@ pub async fn gallery_api_handler_for_named(
         folder_description,
         permissions: user_permissions.permissions,
     }))
+}
+
+/// Gallery API handler wrapper for HTTP endpoints (adds cache headers)
+pub async fn gallery_api_handler_for_named_http(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, path)): Path<(String, String)>,
+    Query(query): Query<crate::gallery::GalleryQuery>,
+    auth: crate::login::OptionalAuth,
+) -> Result<Response, StatusCode> {
+    let json_response = gallery_api_handler_for_named(
+        State(app_state),
+        Path((gallery_name, path)),
+        Query(query),
+        auth,
+    ).await?;
+    
+    let mut response = json_response.into_response();
+    // Add short cache headers (60 seconds)
+    response.headers_mut().extend(short_cache_headers(60));
+    Ok(response)
 }
 
 pub async fn image_detail_api_handler_for_named(
@@ -494,6 +515,24 @@ pub async fn image_detail_api_handler_for_named(
         permissions: user_permissions.permissions,
         tile_config,
     }))
+}
+
+/// Image detail API handler wrapper for HTTP endpoints (adds cache headers)
+pub async fn image_detail_api_handler_for_named_http(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+) -> Result<Response, StatusCode> {
+    let json_response = image_detail_api_handler_for_named(
+        State(app_state),
+        Path((gallery_name, path)),
+        auth,
+    ).await?;
+    
+    let mut response = json_response.into_response();
+    // Add short cache headers (60 seconds) - metadata can change
+    response.headers_mut().extend(short_cache_headers(60));
+    Ok(response)
 }
 
 // Metadata API handlers
@@ -1687,6 +1726,55 @@ roles = ["viewer"]
     async fn test_short_cache_headers_function() {
         let headers = short_cache_headers(60);
         
+        assert_eq!(
+            headers.get("cache-control").map(|v| v.to_str().unwrap()),
+            Some("public, max-age=60")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_gallery_api_http_has_cache_headers() {
+        let (app_state, _temp_dir) = create_test_app_state().await;
+        let headers = HeaderMap::new();
+        let auth = headers_to_optional_auth(&headers, &app_state);
+
+        let result = gallery_api_handler_for_named_http(
+            axum::extract::State(app_state),
+            axum::extract::Path(("test".to_string(), "".to_string())),
+            axum::extract::Query(crate::gallery::GalleryQuery::default()),
+            auth,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        
+        // Check for short cache headers (60 seconds)
+        let headers = response.headers();
+        assert_eq!(
+            headers.get("cache-control").map(|v| v.to_str().unwrap()),
+            Some("public, max-age=60")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_image_detail_api_http_has_cache_headers() {
+        let (app_state, _temp_dir) = create_test_app_state().await;
+        let headers = HeaderMap::new();
+        let auth = headers_to_optional_auth(&headers, &app_state);
+
+        let result = image_detail_api_handler_for_named_http(
+            axum::extract::State(app_state),
+            axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
+            auth,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        
+        // Check for short cache headers (60 seconds)
+        let headers = response.headers();
         assert_eq!(
             headers.get("cache-control").map(|v| v.to_str().unwrap()),
             Some("public, max-age=60")
