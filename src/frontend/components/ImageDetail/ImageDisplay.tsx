@@ -51,7 +51,7 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
-export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConfig, galleryName }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConfig }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   
@@ -381,49 +381,6 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     });
   }, [tileConfig, image.medium_url]);
   
-  // Calculate background position for tile zoom
-  const calculateTileBackgroundPosition = () => {
-    if (!tileConfig || zoomState.tileX === undefined || zoomState.tileY === undefined) {
-      return 'center';
-    }
-
-    const zoomScale = 1.0; // No additional zoom since tiles are already high-res
-    
-    // Map from display percentage to tiled coordinates
-    const imgX = (zoomState.imageX / 100) * image.dimensions[0];
-    const imgY = (zoomState.imageY / 100) * image.dimensions[1];
-    
-    const scaleX = tileConfig.tiled_width / image.dimensions[0];
-    const scaleY = tileConfig.tiled_height / image.dimensions[1];
-    
-    const tiledX = imgX * scaleX;
-    const tiledY = imgY * scaleY;
-    
-    // Position within the current tile (0 to tile_size)
-    const tileLocalX = tiledX - (zoomState.tileX * tileConfig.tile_size);
-    const tileLocalY = tiledY - (zoomState.tileY * tileConfig.tile_size);
-    
-    // Calculate pixel offsets for the zoomed tile
-    // We want to center the point we're looking at
-    const offsetX = -(tileLocalX * zoomScale - 150); // 150 is half of 300px loupe size
-    const offsetY = -(tileLocalY * zoomScale - 150);
-    
-    // Debug logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Tile zoom calculation:', {
-        imagePercent: `${zoomState.imageX.toFixed(1)}%,${zoomState.imageY.toFixed(1)}%`,
-        imageDimensions: `${image.dimensions[0]}x${image.dimensions[1]}`,
-        tiledDimensions: `${tileConfig.tiled_width}x${tileConfig.tiled_height}`,
-        tiledPos: `${tiledX.toFixed(1)},${tiledY.toFixed(1)}`,
-        currentTile: `${zoomState.tileX},${zoomState.tileY}`,
-        tileLocal: `${tileLocalX.toFixed(1)},${tileLocalY.toFixed(1)}`,
-        offset: `${offsetX.toFixed(1)},${offsetY.toFixed(1)}`
-      });
-    }
-    
-    return `${offsetX}px ${offsetY}px`;
-  };
-  
   // Extract the image identifier from a URL
   const getImageIdentifierFromUrl = (url: string): string => {
     // Extract the part between /image/ and ?size=
@@ -438,7 +395,6 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     }
     
     const zoomScale = 1.0; // No additional zoom since tiles are already high-res
-    const isRetina = window.devicePixelRatio > 1;
     
     // Map from display percentage to tiled coordinates
     const imgX = (zoomState.imageX / 100) * image.dimensions[0];
@@ -539,17 +495,11 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
           (tileStyle as any).WebkitBackgroundImage = imageSetValue;
           
           const tileKey = `tile_${tile.x}_${tile.y}`;
-          const isLoading = loadingTiles.has(tileUrl) || loadingTiles.has(tileUrl2x);
           
           return (
             <div
               key={tileKey}
-              style={{
-                ...tileStyle,
-                filter: isLoading ? 'blur(8px)' : 'none',
-                transition: 'filter 0.3s ease-out',
-                opacity: isLoading ? 0.7 : 1
-              }}
+              style={tileStyle}
             />
           );
         })}
@@ -664,10 +614,55 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                     position: 'relative',
                     width: '100%',
                     height: '100%',
-                    backgroundColor: 'rgba(0, 0, 0, 0.1)' // Subtle background for loading
+                    backgroundColor: 'rgba(0, 0, 0, 0.05)', // Very subtle background
+                    overflow: 'hidden'
                   }}
                 >
-                  {renderZoomTiles()}
+                  {/* Show underlying image with blur while tiles are loading */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      backgroundImage: `url(${image.medium_url})`,
+                      backgroundSize: `${containerRef.current?.clientWidth ? containerRef.current.clientWidth * 1.8 : image.dimensions[0] * 1.8}px auto`,
+                      backgroundPosition: `${zoomState.imageX}% ${zoomState.imageY}%`,
+                      backgroundRepeat: 'no-repeat',
+                      imageRendering: 'auto',
+                      filter: loadingTiles.size > 0 ? 'blur(4px)' : 'none',
+                      transition: 'filter 0.3s ease-out'
+                    }}
+                  />
+                  
+                  {/* Loading spinner overlay */}
+                  {loadingTiles.size > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 20
+                      }}
+                    >
+                      <div
+                        className="loading-spinner"
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          border: '3px solid rgba(255, 255, 255, 0.3)',
+                          borderTop: '3px solid rgba(255, 255, 255, 0.9)',
+                          borderRadius: '50%',
+                          animation: 'spin 0.8s linear infinite'
+                        }}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Render tiles on top */}
+                  <div style={{ position: 'relative', zIndex: 10 }}>
+                    {renderZoomTiles()}
+                  </div>
                 </div>
               ) : (
                 <div
