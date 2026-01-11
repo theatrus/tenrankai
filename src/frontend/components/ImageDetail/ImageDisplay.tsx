@@ -795,66 +795,62 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     const imageId = getImageIdentifierFromUrl(image.medium_url);
     const tiles: JSX.Element[] = [];
 
-    // Calculate the visible area in image coordinates
-    const viewCenterX = window.innerWidth / 2 - pinchZoom.translateX;
-    const viewCenterY = window.innerHeight / 2 - pinchZoom.translateY;
-
-    // Map view center to image coordinates
+    // Calculate base image display size (before zoom scale)
     const imgAspect = image.dimensions[0] / image.dimensions[1];
     const viewAspect = window.innerWidth / window.innerHeight;
+    const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
 
-    let imgDisplayWidth: number, imgDisplayHeight: number;
-    if (imgAspect > viewAspect) {
-      imgDisplayWidth = window.innerWidth;
-      imgDisplayHeight = window.innerWidth / imgAspect;
-    } else {
-      imgDisplayHeight = window.innerHeight;
-      imgDisplayWidth = window.innerHeight * imgAspect;
-    }
+    // Scale from original image to displayed size
+    const imgToDisplayScale = baseImgWidth / image.dimensions[0];
 
-    // Scale factor from display to original image
-    const displayToImgScale = image.dimensions[0] / imgDisplayWidth;
+    // Scale from tiled coordinates to displayed coordinates (before zoom)
+    const tiledToDisplay = imgToDisplayScale * (image.dimensions[0] / tileConfig.tiled_width);
 
-    // Center of view in original image coordinates
-    const imgCenterX = (viewCenterX - (window.innerWidth - imgDisplayWidth) / 2) * displayToImgScale / pinchZoom.scale;
-    const imgCenterY = (viewCenterY - (window.innerHeight - imgDisplayHeight) / 2) * displayToImgScale / pinchZoom.scale;
+    // Tile size in the container (after zoom)
+    const tileDisplaySize = tileConfig.tile_size * tiledToDisplay * pinchZoom.scale;
 
-    // Map to tiled coordinates
-    const scaleToTiled = tileConfig.tiled_width / image.dimensions[0];
-    const tiledCenterX = imgCenterX * scaleToTiled;
-    const tiledCenterY = imgCenterY * scaleToTiled;
+    // Visible center in container coordinates
+    const containerWidth = tileConfig.tiled_width * tiledToDisplay * pinchZoom.scale;
+    const containerHeight = tileConfig.tiled_height * tiledToDisplay * pinchZoom.scale;
 
-    // Calculate which tiles are visible
-    const visibleWidth = (window.innerWidth / pinchZoom.scale) * displayToImgScale * scaleToTiled;
-    const visibleHeight = (window.innerHeight / pinchZoom.scale) * displayToImgScale * scaleToTiled;
+    // View center relative to container center (accounting for pan)
+    const viewCenterInContainer = {
+      x: containerWidth / 2 - pinchZoom.translateX,
+      y: containerHeight / 2 - pinchZoom.translateY
+    };
 
-    const startTileX = Math.max(0, Math.floor((tiledCenterX - visibleWidth / 2) / tileConfig.tile_size) - 1);
-    const endTileX = Math.min(tileConfig.grid_width - 1, Math.ceil((tiledCenterX + visibleWidth / 2) / tileConfig.tile_size) + 1);
-    const startTileY = Math.max(0, Math.floor((tiledCenterY - visibleHeight / 2) / tileConfig.tile_size) - 1);
-    const endTileY = Math.min(tileConfig.grid_height - 1, Math.ceil((tiledCenterY + visibleHeight / 2) / tileConfig.tile_size) + 1);
+    // Convert to tiled pixel coordinates
+    const tiledCenterX = viewCenterInContainer.x / (tiledToDisplay * pinchZoom.scale);
+    const tiledCenterY = viewCenterInContainer.y / (tiledToDisplay * pinchZoom.scale);
 
-    // Scale from tiled coordinates to screen pixels
-    const tiledToScreen = pinchZoom.scale * imgDisplayWidth / tileConfig.tiled_width;
+    // Visible area in tiled coordinates
+    const visibleTiledWidth = window.innerWidth / (tiledToDisplay * pinchZoom.scale);
+    const visibleTiledHeight = window.innerHeight / (tiledToDisplay * pinchZoom.scale);
+
+    // Calculate which tiles to render
+    const startTileX = Math.max(0, Math.floor((tiledCenterX - visibleTiledWidth / 2) / tileConfig.tile_size) - 1);
+    const endTileX = Math.min(tileConfig.grid_width - 1, Math.ceil((tiledCenterX + visibleTiledWidth / 2) / tileConfig.tile_size) + 1);
+    const startTileY = Math.max(0, Math.floor((tiledCenterY - visibleTiledHeight / 2) / tileConfig.tile_size) - 1);
+    const endTileY = Math.min(tileConfig.grid_height - 1, Math.ceil((tiledCenterY + visibleTiledHeight / 2) / tileConfig.tile_size) + 1);
 
     for (let ty = startTileY; ty <= endTileY; ty++) {
       for (let tx = startTileX; tx <= endTileX; tx++) {
         const tileUrl = `/gallery/_image/${imageId}/tile_${tx}_${ty}`;
         const tileUrl2x = `/gallery/_image/${imageId}/tile_${tx}_${ty}@2x`;
 
-        // Position tile in screen coordinates
-        const tileScreenX = tx * tileConfig.tile_size * tiledToScreen;
-        const tileScreenY = ty * tileConfig.tile_size * tiledToScreen;
-        const tileScreenSize = tileConfig.tile_size * tiledToScreen;
+        // Position tile within container
+        const tileX = tx * tileDisplaySize;
+        const tileY = ty * tileDisplaySize;
 
         tiles.push(
           <div
             key={`tile_${tx}_${ty}`}
             style={{
               position: 'absolute',
-              left: `${tileScreenX}px`,
-              top: `${tileScreenY}px`,
-              width: `${tileScreenSize}px`,
-              height: `${tileScreenSize}px`,
+              left: `${tileX}px`,
+              top: `${tileY}px`,
+              width: `${tileDisplaySize}px`,
+              height: `${tileDisplaySize}px`,
               backgroundImage: `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`,
               backgroundSize: '100% 100%',
               backgroundRepeat: 'no-repeat'
@@ -954,30 +950,46 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             />
 
             {/* Tile overlay for high-res zoom (only when scale > 1.5 and tiles available) */}
-            {tileConfig && pinchZoom.scale > 1.5 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: `${(() => {
-                    const imgAspect = image.dimensions[0] / image.dimensions[1];
-                    const viewAspect = window.innerWidth / window.innerHeight;
-                    return imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
-                  })() * pinchZoom.scale}px`,
-                  height: `${(() => {
-                    const imgAspect = image.dimensions[0] / image.dimensions[1];
-                    const viewAspect = window.innerWidth / window.innerHeight;
-                    return imgAspect > viewAspect ? window.innerWidth / imgAspect : window.innerHeight;
-                  })() * pinchZoom.scale}px`,
-                  overflow: 'hidden',
-                  pointerEvents: 'none'
-                }}
-              >
-                {renderMobileZoomTiles()}
-              </div>
-            )}
+            {tileConfig && pinchZoom.scale > 1.5 && (() => {
+              // Calculate base image display size (before zoom scale)
+              const imgAspect = image.dimensions[0] / image.dimensions[1];
+              const viewAspect = window.innerWidth / window.innerHeight;
+              const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
+
+              // Scale from original image to displayed size
+              const imgToDisplayScale = baseImgWidth / image.dimensions[0];
+
+              // Scale from tiled coordinates to displayed coordinates (before zoom)
+              const tiledToDisplay = imgToDisplayScale * (image.dimensions[0] / tileConfig.tiled_width);
+
+              // Calculate tile container size based on tiled dimensions
+              const tileContainerWidth = tileConfig.tiled_width * tiledToDisplay * pinchZoom.scale;
+              const tileContainerHeight = tileConfig.tiled_height * tiledToDisplay * pinchZoom.scale;
+
+              // Tile container should align with top-left of actual image content
+              // Since tiled dimensions may be padded, we center on the original image area
+              const paddingRight = tileConfig.tiled_width - image.dimensions[0];
+              const paddingBottom = tileConfig.tiled_height - image.dimensions[1];
+              const offsetX = (paddingRight / 2) * tiledToDisplay * pinchZoom.scale;
+              const offsetY = (paddingBottom / 2) * tiledToDisplay * pinchZoom.scale;
+
+              return (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: `translate(calc(-50% - ${offsetX}px), calc(-50% - ${offsetY}px))`,
+                    width: `${tileContainerWidth}px`,
+                    height: `${tileContainerHeight}px`,
+                    overflow: 'hidden',
+                    pointerEvents: 'none'
+                  }}
+                >
+                  {renderMobileZoomTiles()}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Zoom level indicator */}
