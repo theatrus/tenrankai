@@ -110,7 +110,10 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
 
   // Calculate pan limits based on image size and scale
   const calculatePanLimits = (scale: number) => {
-    const imgAspect = image.dimensions[0] / image.dimensions[1];
+    // Use tiled dimensions if available for consistency with tile overlay
+    const imgAspect = tileConfig
+      ? tileConfig.tiled_width / tileConfig.tiled_height
+      : image.dimensions[0] / image.dimensions[1];
     const viewAspect = window.innerWidth / window.innerHeight;
 
     // Base image display size (fits within viewport)
@@ -702,14 +705,15 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     
     const zoomScale = 1.0; // No additional zoom since tiles are already high-res
 
-    // Map from display percentage to image pixel coordinates
-    // Original image is at (0,0) in tiled image, so image coords = tiled coords
+    // Map from display percentage to tiled coordinates
     const imgX = (zoomState.imageX / 100) * image.dimensions[0];
     const imgY = (zoomState.imageY / 100) * image.dimensions[1];
 
-    // Tiled coordinates are the same as image coordinates (image at origin)
-    const tiledX = imgX;
-    const tiledY = imgY;
+    const scaleX = tileConfig.tiled_width / image.dimensions[0];
+    const scaleY = tileConfig.tiled_height / image.dimensions[1];
+
+    const tiledX = imgX * scaleX;
+    const tiledY = imgY * scaleY;
     
     // Calculate which tiles we need to render (could be up to 4 at corners)
     const tilesToRender: Array<{x: number, y: number}> = [];
@@ -783,28 +787,14 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
           const tileUrl2x = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}@2x`;
           const imageSetValue = `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`;
 
-          // Calculate actual tile dimensions (edge tiles may be smaller)
-          const tileStartX = tile.x * tileConfig.tile_size;
-          const tileStartY = tile.y * tileConfig.tile_size;
-          const tileEndX = Math.min((tile.x + 1) * tileConfig.tile_size, tileConfig.tiled_width);
-          const tileEndY = Math.min((tile.y + 1) * tileConfig.tile_size, tileConfig.tiled_height);
-          const actualTileWidth = tileEndX - tileStartX;
-          const actualTileHeight = tileEndY - tileStartY;
-
-          const isEdgeTileX = actualTileWidth < tileConfig.tile_size;
-          const isEdgeTileY = actualTileHeight < tileConfig.tile_size;
-
           const tileStyle: React.CSSProperties = {
             position: 'absolute',
-            left: `${offsetX + tileStartX * zoomScale}px`,
-            top: `${offsetY + tileStartY * zoomScale}px`,
-            width: `${actualTileWidth * zoomScale}px`,
-            height: `${actualTileHeight * zoomScale}px`,
-            // For edge tiles, show at natural size (don't stretch)
-            backgroundSize: (isEdgeTileX || isEdgeTileY)
-              ? `${tileConfig.tile_size * zoomScale}px ${tileConfig.tile_size * zoomScale}px`
-              : '100% 100%',
-            backgroundPosition: 'top left',
+            left: `${offsetX + tile.x * tileConfig.tile_size * zoomScale}px`,
+            top: `${offsetY + tile.y * tileConfig.tile_size * zoomScale}px`,
+            width: `${tileConfig.tile_size * zoomScale}px`,
+            height: `${tileConfig.tile_size * zoomScale}px`,
+            backgroundSize: '100% 100%',
+            backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
             imageRendering: 'auto'
           };
@@ -835,23 +825,25 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     const tiles: JSX.Element[] = [];
 
     // Calculate base image display size (before zoom scale)
-    const imgAspect = image.dimensions[0] / image.dimensions[1];
+    // Use tiled image aspect ratio since tiles are in that coordinate space
+    const tiledAspect = tileConfig.tiled_width / tileConfig.tiled_height;
     const viewAspect = window.innerWidth / window.innerHeight;
-    const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
+    const baseImgWidth = tiledAspect > viewAspect ? window.innerWidth : window.innerHeight * tiledAspect;
 
-    // Scale from original image to display coordinates
-    const imgScale = baseImgWidth / image.dimensions[0];
+    // Scale from tiled image coordinates to display coordinates
+    // Tiles are generated from the tiled image (capped at 8192px), not the original
+    const imgScale = baseImgWidth / tileConfig.tiled_width;
 
-    // Visible viewport in original image pixel coordinates
+    // Visible viewport in tiled image pixel coordinates
     const visibleImgWidth = window.innerWidth / (imgScale * pinchZoom.scale);
     const visibleImgHeight = window.innerHeight / (imgScale * pinchZoom.scale);
 
-    // Center of visible area in original image coordinates (accounting for pan)
+    // Center of visible area in tiled image coordinates (accounting for pan)
     const panInImgX = -pinchZoom.translateX / (imgScale * pinchZoom.scale);
     const panInImgY = -pinchZoom.translateY / (imgScale * pinchZoom.scale);
 
-    const imgCenterX = image.dimensions[0] / 2 + panInImgX;
-    const imgCenterY = image.dimensions[1] / 2 + panInImgY;
+    const imgCenterX = tileConfig.tiled_width / 2 + panInImgX;
+    const imgCenterY = tileConfig.tiled_height / 2 + panInImgY;
 
     // Calculate which tiles to render (with buffer)
     // Tiles are in tiled coordinates, but original image starts at (0,0)
@@ -980,7 +972,10 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
           >
             {/* Scaling container - wraps image and tiles together */}
             {(() => {
-              const imgAspect = image.dimensions[0] / image.dimensions[1];
+              // Use tiled dimensions if available for consistency with tile overlay
+              const imgAspect = tileConfig
+                ? tileConfig.tiled_width / tileConfig.tiled_height
+                : image.dimensions[0] / image.dimensions[1];
               const viewAspect = window.innerWidth / window.innerHeight;
               const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
               const baseImgHeight = imgAspect > viewAspect ? window.innerWidth / imgAspect : window.innerHeight;
