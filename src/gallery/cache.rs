@@ -3,7 +3,7 @@ use super::image_processing::OutputFormat;
 use super::types::ImageSize;
 use crate::{CacheType, FormatCoverage};
 use futures::stream::{self, StreamExt};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, error, info, warn};
@@ -280,20 +280,10 @@ impl Gallery {
         format!("composite_{}_{}", self.config.name, path_key)
     }
 
-    /// Pre-generate cache for a single image (always checks for missing formats only)
+    /// Pre-generate cache for a single image (only generates missing formats)
     pub async fn pregenerate_image_cache(
         &self,
         relative_path: &str,
-    ) -> Result<(), super::GalleryError> {
-        self.pregenerate_image_cache_selective(relative_path, true)
-            .await
-    }
-
-    /// Pre-generate cache for a single image with option to only generate missing formats
-    pub async fn pregenerate_image_cache_selective(
-        &self,
-        relative_path: &str,
-        only_missing: bool,
     ) -> Result<(), super::GalleryError> {
         // Check for cancellation (both pregeneration and shutdown)
         if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
@@ -312,33 +302,17 @@ impl Gallery {
         let sizes = ImageSize::ALL;
         let mut variants = Vec::new();
 
-        // Collect all variants to generate
+        // Collect all missing variants to generate
         for &size in sizes {
-            let formats_to_generate = if only_missing {
-                // Only generate missing formats
-                match self.check_format_coverage(relative_path, size).await {
-                    Ok(coverage) => coverage.missing_formats(relative_path),
-                    Err(e) => {
-                        debug!(
-                            "Failed to check format coverage for {} {}: {}",
-                            relative_path, size, e
-                        );
-                        continue;
-                    }
+            let formats_to_generate = match self.check_format_coverage(relative_path, size).await {
+                Ok(coverage) => coverage.missing_formats(relative_path),
+                Err(e) => {
+                    debug!(
+                        "Failed to check format coverage for {} {}: {}",
+                        relative_path, size, e
+                    );
+                    continue;
                 }
-            } else {
-                // Generate all expected formats
-                let mut formats = vec![OutputFormat::Jpeg];
-
-                // Skip WebP for PNG sources to preserve transparency
-                if !relative_path.to_lowercase().ends_with(".png") {
-                    formats.push(OutputFormat::WebP);
-                }
-
-                #[cfg(feature = "avif")]
-                formats.push(OutputFormat::Avif);
-
-                formats
             };
 
             // Parse size and determine watermark
@@ -363,34 +337,22 @@ impl Gallery {
         }
 
         // Use batch processing to generate all variants at once
-        info!("Pre-generating {} variants for: {}", variants.len(), relative_path);
+        info!("Generating {} missing variants for: {}", variants.len(), relative_path);
         let start = std::time::Instant::now();
-        
+
         match self.process_image_batch(&full_path, relative_path, variants).await {
             Ok(paths) => {
                 let elapsed = start.elapsed();
-                let action = if only_missing {
-                    "Generated missing"
-                } else {
-                    "Pre-generated"
-                };
                 info!(
-                    "{} {} cache entries for {} in {:.2}s",
-                    action,
+                    "Generated {} cache entries for {} in {:.2}s",
                     paths.len(),
                     relative_path,
                     elapsed.as_secs_f32()
                 );
             }
             Err(e) => {
-                let action = if only_missing {
-                    "generate missing formats"
-                } else {
-                    "pre-generate cache"
-                };
                 error!(
-                    "Failed to {} for {}: {}",
-                    action,
+                    "Failed to generate cache for {}: {}",
                     relative_path,
                     e
                 );
@@ -657,127 +619,6 @@ impl Gallery {
         Ok(())
     }
 
-    /// Generate missing formats for all images in the gallery
-    pub async fn generate_all_missing_formats(self: Arc<Self>) -> Result<(), super::GalleryError> {
-        info!(
-            "Starting missing format generation for gallery '{}'",
-            self.config.name
-        );
-
-        // First, validate and clean up outdated cache entries
-        if let Err(e) = self.clone().validate_and_cleanup_cache().await {
-            debug!("Failed to validate and cleanup cache: {}", e);
-        }
-
-        // Then, report current format coverage
-        if let Err(e) = self.report_format_coverage().await {
-            debug!("Failed to report format coverage: {}", e);
-        }
-
-        // Finally, analyze what formats are missing
-        let missing_formats_map = self.analyze_missing_formats().await?;
-        let total_missing_variants = missing_formats_map.len();
-
-        if total_missing_variants == 0 {
-            info!("No missing formats found in gallery '{}'", self.config.name);
-            return Ok(());
-        }
-
-        info!(
-            "Found {} missing format variants to generate",
-            total_missing_variants
-        );
-
-        // Get unique image paths that have missing formats
-        let mut unique_images: HashSet<String> = HashSet::new();
-        for (image_path, _size) in missing_formats_map.keys() {
-            unique_images.insert(image_path.clone());
-        }
-
-        let unique_image_count = unique_images.len();
-        let num_cores = num_cpus::get();
-        
-        info!(
-            "Processing {} images with missing formats (using {} parallel workers)",
-            unique_image_count, num_cores
-        );
-
-        // Get cancellation tokens (both pregeneration and shutdown)
-        let pregen_token = self.pregeneration_token.lock().await.clone();
-        let shutdown_token = self.shutdown_token.clone();
-
-        // Track progress
-        let completed = Arc::new(AtomicUsize::new(0));
-        let failed = Arc::new(AtomicUsize::new(0));
-        let cancelled = Arc::new(AtomicBool::new(false));
-
-        // Process images in parallel
-        let _results: Vec<_> = stream::iter(unique_images)
-            .map(|image_path| {
-                let gallery = self.clone();
-                let completed = completed.clone();
-                let failed = failed.clone();
-                let cancelled = cancelled.clone();
-                let pregen_token = pregen_token.clone();
-                let shutdown_token = shutdown_token.clone();
-                let total = unique_image_count;
-
-                async move {
-                    // Helper to check if cancelled
-                    let is_cancelled = || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
-
-                    // Check for cancellation
-                    if is_cancelled() {
-                        cancelled.store(true, Ordering::Relaxed);
-                        return (image_path, Err(super::GalleryError::InvalidPath));
-                    }
-
-                    let result = gallery
-                        .pregenerate_image_cache_selective(&image_path, true)
-                        .await;
-
-                    match &result {
-                        Ok(_) => {
-                            let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
-                            if count % 10 == 0 || count == total {
-                                info!(
-                                    "Generated missing formats for {}/{} images",
-                                    count, total
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            if !is_cancelled() {
-                                error!(
-                                    "Failed to generate missing formats for {}: {}",
-                                    image_path, e
-                                );
-                                failed.fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
-                    }
-
-                    (image_path, result)
-                }
-            })
-            .buffer_unordered(num_cores)
-            .take_while(|_| {
-                let check_cancelled = pregen_token.is_cancelled() || shutdown_token.is_cancelled();
-                if check_cancelled {
-                    cancelled.store(true, Ordering::Relaxed);
-                }
-                async move { !check_cancelled }
-            })
-            .collect()
-            .await;
-
-        info!(
-            "Completed missing format generation for gallery '{}'",
-            self.config.name
-        );
-        Ok(())
-    }
-
     /// Check what formats are available for a specific image and size in cache
     pub async fn check_format_coverage(
         &self,
@@ -895,15 +736,6 @@ impl Gallery {
         }
 
         Ok(missing_formats)
-    }
-
-    /// Generate only missing formats for a specific image
-    pub async fn generate_missing_formats(
-        &self,
-        relative_path: &str,
-    ) -> Result<(), super::GalleryError> {
-        self.pregenerate_image_cache_selective(relative_path, true)
-            .await
     }
 
     /// Analyze and report format coverage statistics for the gallery

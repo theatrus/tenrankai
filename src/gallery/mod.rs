@@ -129,6 +129,11 @@ impl Gallery {
         // First refresh metadata
         self.clone().refresh_all_metadata().await?;
 
+        // Report format coverage status
+        if let Err(e) = self.report_format_coverage().await {
+            error!("Failed to report format coverage: {}", e);
+        }
+
         // Pre-generate missing formats if enabled
         if pregenerate {
             info!("Spawning background task for cache pre-generation (missing formats only)");

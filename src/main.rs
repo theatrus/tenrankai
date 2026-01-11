@@ -59,6 +59,10 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
+
+    /// Cache management commands
+    #[command(subcommand)]
+    Cache(CacheCommands),
 }
 
 #[derive(Subcommand, Debug)]
@@ -99,6 +103,22 @@ enum UserCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum CacheCommands {
+    /// Report format coverage for a gallery's image cache
+    Report {
+        /// Gallery name to analyze
+        #[arg(short, long)]
+        gallery: String,
+    },
+    /// Validate and clean up outdated cache entries
+    Cleanup {
+        /// Gallery name to clean up
+        #[arg(short, long)]
+        gallery: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -130,6 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
+        Some(Commands::Cache(cache_cmd)) => handle_cache_command(cache_cmd, config).await,
         #[cfg(feature = "avif")]
         Some(Commands::AvifDebug {
             image_path,
@@ -235,6 +256,63 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
                 eprintln!("Error: User '{}' not found", username);
                 std::process::exit(1);
             }
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_cache_command(
+    cmd: CacheCommands,
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Find the gallery configuration
+    let gallery_configs = config.galleries.as_ref().ok_or("No galleries configured")?;
+
+    match cmd {
+        CacheCommands::Report { gallery: gallery_name } => {
+            let gallery_config = gallery_configs
+                .iter()
+                .find(|g| g.name == gallery_name)
+                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
+
+            let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+
+            // Initialize gallery to load metadata cache
+            if let Err(e) = gallery.initialize_and_check_version().await {
+                eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
+            }
+
+            // If cache is empty, refresh metadata first
+            if gallery.is_metadata_cache_empty().await {
+                println!("Metadata cache is empty, refreshing...");
+                gallery.clone().refresh_all_metadata().await?;
+            }
+
+            // Run the coverage report
+            gallery.report_format_coverage().await?;
+        }
+        CacheCommands::Cleanup { gallery: gallery_name } => {
+            let gallery_config = gallery_configs
+                .iter()
+                .find(|g| g.name == gallery_name)
+                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
+
+            let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+
+            // Initialize gallery to load metadata cache
+            if let Err(e) = gallery.initialize_and_check_version().await {
+                eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
+            }
+
+            // If cache is empty, refresh metadata first
+            if gallery.is_metadata_cache_empty().await {
+                println!("Metadata cache is empty, refreshing...");
+                gallery.clone().refresh_all_metadata().await?;
+            }
+
+            // Run cache validation and cleanup
+            gallery.validate_and_cleanup_cache().await?;
         }
     }
 
