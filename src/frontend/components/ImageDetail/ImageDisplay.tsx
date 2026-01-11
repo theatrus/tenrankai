@@ -826,34 +826,23 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     const viewAspect = window.innerWidth / window.innerHeight;
     const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
 
-    // Scale from original image to displayed size
-    const imgToDisplayScale = baseImgWidth / image.dimensions[0];
+    // Scale from tiled coordinates to base display coordinates (parent applies zoom scale)
+    const tileScale = baseImgWidth / tileConfig.tiled_width;
+    const tileDisplaySize = tileConfig.tile_size * tileScale;
 
-    // Scale from tiled coordinates to displayed coordinates (before zoom)
-    const tiledToDisplay = imgToDisplayScale * (image.dimensions[0] / tileConfig.tiled_width);
+    // Visible viewport in tiled pixel coordinates
+    const visibleTiledWidth = window.innerWidth / (tileScale * pinchZoom.scale);
+    const visibleTiledHeight = window.innerHeight / (tileScale * pinchZoom.scale);
 
-    // Tile size in the container (after zoom)
-    const tileDisplaySize = tileConfig.tile_size * tiledToDisplay * pinchZoom.scale;
+    // Center of visible area in tiled coordinates (accounting for pan)
+    // Pan is in screen pixels, convert to tiled coordinates
+    const panInTiledX = -pinchZoom.translateX / (tileScale * pinchZoom.scale);
+    const panInTiledY = -pinchZoom.translateY / (tileScale * pinchZoom.scale);
 
-    // Visible center in container coordinates
-    const containerWidth = tileConfig.tiled_width * tiledToDisplay * pinchZoom.scale;
-    const containerHeight = tileConfig.tiled_height * tiledToDisplay * pinchZoom.scale;
+    const tiledCenterX = tileConfig.tiled_width / 2 + panInTiledX;
+    const tiledCenterY = tileConfig.tiled_height / 2 + panInTiledY;
 
-    // View center relative to container center (accounting for pan)
-    const viewCenterInContainer = {
-      x: containerWidth / 2 - pinchZoom.translateX,
-      y: containerHeight / 2 - pinchZoom.translateY
-    };
-
-    // Convert to tiled pixel coordinates
-    const tiledCenterX = viewCenterInContainer.x / (tiledToDisplay * pinchZoom.scale);
-    const tiledCenterY = viewCenterInContainer.y / (tiledToDisplay * pinchZoom.scale);
-
-    // Visible area in tiled coordinates
-    const visibleTiledWidth = window.innerWidth / (tiledToDisplay * pinchZoom.scale);
-    const visibleTiledHeight = window.innerHeight / (tiledToDisplay * pinchZoom.scale);
-
-    // Calculate which tiles to render
+    // Calculate which tiles to render (with buffer)
     const startTileX = Math.max(0, Math.floor((tiledCenterX - visibleTiledWidth / 2) / tileConfig.tile_size) - 1);
     const endTileX = Math.min(tileConfig.grid_width - 1, Math.ceil((tiledCenterX + visibleTiledWidth / 2) / tileConfig.tile_size) + 1);
     const startTileY = Math.max(0, Math.floor((tiledCenterY - visibleTiledHeight / 2) / tileConfig.tile_size) - 1);
@@ -864,7 +853,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
         const tileUrl = `/gallery/_image/${imageId}/tile_${tx}_${ty}`;
         const tileUrl2x = `/gallery/_image/${imageId}/tile_${tx}_${ty}@2x`;
 
-        // Position tile within container
+        // Position tile within container (in base display coordinates, parent scales)
         const tileX = tx * tileDisplaySize;
         const tileY = ty * tileDisplaySize;
 
@@ -947,7 +936,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             ×
           </button>
 
-          {/* Zoomed content container */}
+          {/* Zoomed content container - handles pan */}
           <div
             style={{
               position: 'absolute',
@@ -958,61 +947,68 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
               transition: pinchZoom.isTransitioning ? 'transform 0.3s ease-out' : 'none'
             }}
           >
-            {/* Base image layer (scaled) */}
-            <img
-              src={image.medium_url}
-              srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
-              alt={image.name}
-              style={{
-                maxWidth: '100vw',
-                maxHeight: '100vh',
-                objectFit: 'contain',
-                transform: `scale(${pinchZoom.scale})`,
-                transformOrigin: 'center center',
-                transition: pinchZoom.isTransitioning ? 'transform 0.3s ease-out' : 'none'
-              }}
-              onContextMenu={(e) => e.preventDefault()}
-              onDragStart={(e) => e.preventDefault()}
-            />
-
-            {/* Tile overlay for high-res zoom (only when scale > 1.5 and tiles available) */}
-            {tileConfig && pinchZoom.scale > 1.5 && (() => {
-              // Calculate base image display size (before zoom scale)
+            {/* Scaling container - wraps image and tiles together */}
+            {(() => {
               const imgAspect = image.dimensions[0] / image.dimensions[1];
               const viewAspect = window.innerWidth / window.innerHeight;
               const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
-
-              // Scale from original image to displayed size
-              const imgToDisplayScale = baseImgWidth / image.dimensions[0];
-
-              // Scale from tiled coordinates to displayed coordinates (before zoom)
-              const tiledToDisplay = imgToDisplayScale * (image.dimensions[0] / tileConfig.tiled_width);
-
-              // Calculate tile container size based on tiled dimensions
-              const tileContainerWidth = tileConfig.tiled_width * tiledToDisplay * pinchZoom.scale;
-              const tileContainerHeight = tileConfig.tiled_height * tiledToDisplay * pinchZoom.scale;
-
-              // Tile container should align with top-left of actual image content
-              // Since tiled dimensions may be padded, we center on the original image area
-              const paddingRight = tileConfig.tiled_width - image.dimensions[0];
-              const paddingBottom = tileConfig.tiled_height - image.dimensions[1];
-              const offsetX = (paddingRight / 2) * tiledToDisplay * pinchZoom.scale;
-              const offsetY = (paddingBottom / 2) * tiledToDisplay * pinchZoom.scale;
+              const baseImgHeight = imgAspect > viewAspect ? window.innerWidth / imgAspect : window.innerHeight;
 
               return (
                 <div
                   style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: `translate(calc(-50% - ${offsetX}px), calc(-50% - ${offsetY}px))`,
-                    width: `${tileContainerWidth}px`,
-                    height: `${tileContainerHeight}px`,
-                    overflow: 'hidden',
-                    pointerEvents: 'none'
+                    position: 'relative',
+                    width: `${baseImgWidth}px`,
+                    height: `${baseImgHeight}px`,
+                    transform: `scale(${pinchZoom.scale})`,
+                    transformOrigin: 'center center',
+                    transition: pinchZoom.isTransitioning ? 'transform 0.3s ease-out' : 'none'
                   }}
                 >
-                  {renderMobileZoomTiles()}
+                  {/* Base image layer */}
+                  <img
+                    src={image.medium_url}
+                    srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
+                    alt={image.name}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain'
+                    }}
+                    onContextMenu={(e) => e.preventDefault()}
+                    onDragStart={(e) => e.preventDefault()}
+                  />
+
+                  {/* Tile overlay - positioned exactly over base image */}
+                  {tileConfig && pinchZoom.scale > 1.5 && (() => {
+                    // Scale from tiled to base image display coordinates
+                    const tileScale = baseImgWidth / tileConfig.tiled_width;
+
+                    // Offset to align tiles with actual image content (not padding)
+                    const paddingLeft = (tileConfig.tiled_width - image.dimensions[0]) / 2;
+                    const paddingTop = (tileConfig.tiled_height - image.dimensions[1]) / 2;
+                    const offsetX = -paddingLeft * tileScale;
+                    const offsetY = -paddingTop * tileScale;
+
+                    return (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: `${tileConfig.tiled_width * tileScale}px`,
+                          height: `${tileConfig.tiled_height * tileScale}px`,
+                          transform: `translate(${offsetX}px, ${offsetY}px)`,
+                          pointerEvents: 'none'
+                        }}
+                      >
+                        {renderMobileZoomTiles()}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}
