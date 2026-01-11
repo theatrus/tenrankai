@@ -165,32 +165,76 @@ When `enable_background_analysis = true`:
 
 ### OpenAI API Request
 
-Using GPT-5.2 with structured output:
+Using GPT-5.2 with the Responses API (recommended over legacy Chat Completions API):
+
+**Endpoint:** `POST https://api.openai.com/v1/responses`
 
 ```json
 {
   "model": "gpt-5.2",
-  "messages": [
+  "input": [
     {
       "role": "user",
       "content": [
         {
-          "type": "text",
-          "text": "Analyze this image and provide:\n1. A list of 5-10 descriptive keywords\n2. Alt-text suitable for screen readers (1-2 sentences)\n\nRespond in JSON format:\n{\"keywords\": [...], \"alt_text\": \"...\"}"
+          "type": "input_text",
+          "text": "Analyze this image and provide descriptive keywords and alt-text for accessibility."
         },
         {
-          "type": "image_url",
-          "image_url": {
-            "url": "data:image/jpeg;base64,{base64_image}",
-            "detail": "low"
-          }
+          "type": "input_image",
+          "image_url": "data:image/jpeg;base64,{base64_image}",
+          "detail": "auto"
         }
       ]
     }
   ],
-  "max_tokens": 300
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "name": "image_analysis",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "5-10 descriptive keywords for the image"
+          },
+          "alt_text": {
+            "type": "string",
+            "description": "1-2 sentence description suitable for screen readers"
+          }
+        },
+        "required": ["keywords", "alt_text"],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  },
+  "max_output_tokens": 300
 }
 ```
+
+**Response Format:**
+```json
+{
+  "id": "resp_...",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"keywords\": [\"sunset\", \"beach\", \"ocean\", \"silhouette\", \"tropical\"], \"alt_text\": \"A silhouette of a person walking along a tropical beach at sunset, with orange and purple clouds reflected in calm ocean water.\"}"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Note:** The Responses API uses `input` instead of `messages`, `input_image`/`input_text` content types, and `max_output_tokens` instead of `max_tokens`. Structured outputs ensure consistent JSON parsing.
 
 ### Permission System
 
