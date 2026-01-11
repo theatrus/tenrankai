@@ -27,7 +27,7 @@ use std::{
     },
     time::SystemTime,
 };
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;

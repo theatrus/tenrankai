@@ -270,7 +270,9 @@ async fn handle_cache_command(
     let gallery_configs = config.galleries.as_ref().ok_or("No galleries configured")?;
 
     match cmd {
-        CacheCommands::Report { gallery: gallery_name } => {
+        CacheCommands::Report {
+            gallery: gallery_name,
+        } => {
             let gallery_config = gallery_configs
                 .iter()
                 .find(|g| g.name == gallery_name)
@@ -292,7 +294,9 @@ async fn handle_cache_command(
             // Run the coverage report
             gallery.report_format_coverage().await?;
         }
-        CacheCommands::Cleanup { gallery: gallery_name } => {
+        CacheCommands::Cleanup {
+            gallery: gallery_name,
+        } => {
             let gallery_config = gallery_configs
                 .iter()
                 .find(|g| g.name == gallery_name)
@@ -509,7 +513,10 @@ async fn run_server(
         if let Err(e) = gallery.save_caches().await {
             tracing::error!("Failed to save metadata cache on shutdown: {}", e);
         } else {
-            info!("Metadata cache saved successfully for gallery '{}'", gallery.get_config().name);
+            info!(
+                "Metadata cache saved successfully for gallery '{}'",
+                gallery.get_config().name
+            );
         }
     }
 

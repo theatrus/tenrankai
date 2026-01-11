@@ -286,7 +286,9 @@ impl Gallery {
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
         // Check for cancellation (both pregeneration and shutdown)
-        if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
+        if self.pregeneration_token.lock().await.is_cancelled()
+            || self.shutdown_token.is_cancelled()
+        {
             return Ok(());
         }
 
@@ -323,12 +325,17 @@ impl Gallery {
                     continue;
                 }
             };
-            
+
             let apply_watermark = supports_watermark && self.config.copyright_holder.is_some();
 
             // Add each format as a variant
             for format in formats_to_generate {
-                variants.push((size.as_str().to_string(), dimensions.clone(), apply_watermark, format));
+                variants.push((
+                    size.as_str().to_string(),
+                    dimensions.clone(),
+                    apply_watermark,
+                    format,
+                ));
             }
         }
 
@@ -337,10 +344,17 @@ impl Gallery {
         }
 
         // Use batch processing to generate all variants at once
-        info!("Generating {} missing variants for: {}", variants.len(), relative_path);
+        info!(
+            "Generating {} missing variants for: {}",
+            variants.len(),
+            relative_path
+        );
         let start = std::time::Instant::now();
 
-        match self.process_image_batch(&full_path, relative_path, variants).await {
+        match self
+            .process_image_batch(&full_path, relative_path, variants)
+            .await
+        {
             Ok(paths) => {
                 let elapsed = start.elapsed();
                 info!(
@@ -351,14 +365,10 @@ impl Gallery {
                 );
             }
             Err(e) => {
-                error!(
-                    "Failed to generate cache for {}: {}",
-                    relative_path,
-                    e
-                );
+                error!("Failed to generate cache for {}: {}", relative_path, e);
             }
         }
-        
+
         Ok(())
     }
 
@@ -368,7 +378,9 @@ impl Gallery {
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
         // Check for cancellation (both pregeneration and shutdown)
-        if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
+        if self.pregeneration_token.lock().await.is_cancelled()
+            || self.shutdown_token.is_cancelled()
+        {
             return Ok(());
         }
 
@@ -417,7 +429,9 @@ impl Gallery {
             // Just request tile 0,0 - the backend will generate all tiles
             for format in &formats {
                 // Check for cancellation before each format (both pregeneration and shutdown)
-                if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
+                if self.pregeneration_token.lock().await.is_cancelled()
+                    || self.shutdown_token.is_cancelled()
+                {
                     return Ok(());
                 }
 
@@ -442,7 +456,7 @@ impl Gallery {
     }
 
     /// Pre-generate cache for all images in the gallery
-    /// 
+    ///
     /// Processes images in parallel using up to the number of CPU cores available.
     /// Only generates missing formats - skips files that already exist in cache.
     /// Each image loads once and generates all missing variants (sizes/formats) in a batch.
@@ -487,7 +501,8 @@ impl Gallery {
 
                 async move {
                     // Helper to check if cancelled
-                    let is_cancelled = || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+                    let is_cancelled =
+                        || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
 
                     // Check for cancellation before processing
                     if is_cancelled() {
@@ -502,28 +517,22 @@ impl Gallery {
                         cancelled.store(true, Ordering::Relaxed);
                         return (index, image_path, Err(super::GalleryError::InvalidPath));
                     }
-                    
+
                     // Also pre-generate tiles if configured and enabled
-                    if result.is_ok() {
-                        if let Some(tile_config) = &gallery.config.tiles
-                            && tile_config.pregenerate
-                        {
-                            if let Err(e) = gallery.pregenerate_tiles_for_image(&image_path).await {
-                                error!("Failed to pre-generate tiles for {}: {}", image_path, e);
-                                failed.fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
+                    if result.is_ok()
+                        && let Some(tile_config) = &gallery.config.tiles
+                        && tile_config.pregenerate
+                        && let Err(e) = gallery.pregenerate_tiles_for_image(&image_path).await
+                    {
+                        error!("Failed to pre-generate tiles for {}: {}", image_path, e);
+                        failed.fetch_add(1, Ordering::Relaxed);
                     }
-                    
+
                     match &result {
                         Ok(_) => {
                             let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
-                            if count % 10 == 0 || count == total_images {
-                                info!(
-                                    "Pre-generated cache for {}/{} images",
-                                    count,
-                                    total_images
-                                );
+                            if count.is_multiple_of(10) || count == total_images {
+                                info!("Pre-generated cache for {}/{} images", count, total_images);
                             }
                         }
                         Err(e) => {
@@ -551,26 +560,23 @@ impl Gallery {
         let total_failed = failed.load(Ordering::Relaxed);
         let total_completed = completed.load(Ordering::Relaxed);
         let was_cancelled = cancelled.load(Ordering::Relaxed);
-        
+
         if was_cancelled {
             info!(
                 "Cache pre-generation cancelled for gallery '{}': {} completed before cancellation",
-                self.config.name,
-                total_completed
+                self.config.name, total_completed
             );
         } else {
             info!(
                 "Completed cache pre-generation for gallery '{}': {} succeeded, {} failed",
-                self.config.name,
-                total_completed,
-                total_failed
+                self.config.name, total_completed, total_failed
             );
         }
-        
+
         if total_failed > 0 && !was_cancelled {
             warn!("{} images failed during cache pre-generation", total_failed);
         }
-        
+
         Ok(())
     }
 

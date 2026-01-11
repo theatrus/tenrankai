@@ -416,9 +416,7 @@ impl Gallery {
                 all_image_paths.push(relative_str.clone());
 
                 // Check if we need to refresh this file's metadata
-                let needs_refresh = self
-                    .needs_metadata_refresh(path, &relative_str)
-                    .await;
+                let needs_refresh = self.needs_metadata_refresh(path, &relative_str).await;
 
                 if needs_refresh {
                     // Extract metadata for this image
@@ -495,16 +493,13 @@ impl Gallery {
 
         // Check XMP sidecar file
         let xmp_path = path.with_extension("xmp");
-        if xmp_path.exists() {
-            if let Ok(meta) = tokio::fs::metadata(&xmp_path).await {
-                if let Ok(xmp_mtime) = meta.modified() {
-                    if let Some(cached) = cached_mtime {
-                        if xmp_mtime > cached {
-                            return true;
-                        }
-                    }
-                }
-            }
+        if xmp_path.exists()
+            && let Ok(meta) = tokio::fs::metadata(&xmp_path).await
+            && let Ok(xmp_mtime) = meta.modified()
+            && let Some(cached) = cached_mtime
+            && xmp_mtime > cached
+        {
+            return true;
         }
 
         // Check markdown sidecar files (image.jpg.md or image.md)
@@ -515,16 +510,13 @@ impl Gallery {
         let md_path2 = path.with_extension("md");
 
         for md_path in [md_path1, md_path2] {
-            if md_path.exists() {
-                if let Ok(meta) = tokio::fs::metadata(&md_path).await {
-                    if let Ok(md_mtime) = meta.modified() {
-                        if let Some(cached) = cached_mtime {
-                            if md_mtime > cached {
-                                return true;
-                            }
-                        }
-                    }
-                }
+            if md_path.exists()
+                && let Ok(meta) = tokio::fs::metadata(&md_path).await
+                && let Ok(md_mtime) = meta.modified()
+                && let Some(cached) = cached_mtime
+                && md_mtime > cached
+            {
+                return true;
             }
         }
 

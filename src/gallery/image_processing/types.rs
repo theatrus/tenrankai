@@ -35,7 +35,7 @@ impl LoadedImage {
     /// Load an image from disk with all metadata preserved
     pub fn load(path: &std::path::Path) -> Result<Self, GalleryError> {
         use std::io::BufReader;
-        
+
         // First detect the format and extract ICC profile
         let file = std::fs::File::open(path)?;
         let buf_reader = BufReader::new(file);
@@ -44,10 +44,16 @@ impl LoadedImage {
 
         // Extract ICC profile based on format
         let icc_profile = match detected_format {
-            Some(ImageFormat::Jpeg) => crate::gallery::image_processing::formats::jpeg::extract_icc_profile(path),
-            Some(ImageFormat::Png) => crate::gallery::image_processing::formats::png::extract_icc_profile(path),
+            Some(ImageFormat::Jpeg) => {
+                crate::gallery::image_processing::formats::jpeg::extract_icc_profile(path)
+            }
+            Some(ImageFormat::Png) => {
+                crate::gallery::image_processing::formats::png::extract_icc_profile(path)
+            }
             #[cfg(feature = "avif")]
-            Some(ImageFormat::Avif) => crate::gallery::image_processing::formats::avif::extract_icc_profile(path),
+            Some(ImageFormat::Avif) => {
+                crate::gallery::image_processing::formats::avif::extract_icc_profile(path)
+            }
             _ => None,
         };
 
@@ -58,14 +64,17 @@ impl LoadedImage {
             match crate::gallery::image_processing::formats::avif::read_avif_info(path) {
                 Ok((img, info)) => (img, Some(info)),
                 Err(e) => {
-                    tracing::debug!("Failed to read AVIF with custom reader: {}, falling back", e);
+                    tracing::debug!(
+                        "Failed to read AVIF with custom reader: {}, falling back",
+                        e
+                    );
                     (image::open(path)?, None)
                 }
             }
         } else {
             (image::open(path)?, None)
         };
-        
+
         #[cfg(not(feature = "avif"))]
         let image = image::open(path)?;
 
@@ -89,7 +98,9 @@ impl LoadedImage {
         use image::DynamicImage;
         matches!(
             self.image,
-            DynamicImage::ImageRgba8(_) | DynamicImage::ImageRgba16(_) | DynamicImage::ImageRgba32F(_)
+            DynamicImage::ImageRgba8(_)
+                | DynamicImage::ImageRgba16(_)
+                | DynamicImage::ImageRgba32F(_)
         )
     }
 
@@ -97,17 +108,19 @@ impl LoadedImage {
     /// This also resizes any associated gain maps proportionally
     pub fn resize(&mut self, max_width: u32, max_height: u32) -> Result<(), GalleryError> {
         use image::imageops::FilterType;
-        
+
         let (orig_width, orig_height) = (self.image.width(), self.image.height());
-        
+
         // Don't upscale - if requested dimensions are larger than original, keep original
         let final_width = max_width.min(orig_width);
         let final_height = max_height.min(orig_height);
 
         // Only resize if dimensions are different
         if final_width != orig_width || final_height != orig_height {
-            self.image = self.image.resize(final_width, final_height, FilterType::Lanczos3);
-            
+            self.image = self
+                .image
+                .resize(final_width, final_height, FilterType::Lanczos3);
+
             // Resize gain map if present (AVIF only)
             #[cfg(feature = "avif")]
             if let Some(ref mut avif_info) = self.avif_info {
@@ -124,13 +137,16 @@ impl LoadedImage {
 
                         tracing::debug!(
                             "Resizing gain map from {}x{} to {}x{}",
-                            gm_width, gm_height, new_gm_width, new_gm_height
+                            gm_width,
+                            gm_height,
+                            new_gm_width,
+                            new_gm_height
                         );
 
                         let resized_gain_map = gm_image.resize_exact(
-                            new_gm_width, 
-                            new_gm_height, 
-                            FilterType::Lanczos3
+                            new_gm_width,
+                            new_gm_height,
+                            FilterType::Lanczos3,
                         );
 
                         // Update the gain map info with resized image
@@ -141,18 +157,18 @@ impl LoadedImage {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Apply watermark to the image
     pub fn apply_watermark(
-        &mut self, 
+        &mut self,
         copyright_holder: &str,
         font_path: &std::path::Path,
     ) -> Result<(), GalleryError> {
         use crate::copyright::{CopyrightConfig, add_copyright_notice};
-        
+
         if !font_path.exists() {
             tracing::debug!("Font file not found at {:?}, skipping watermark", font_path);
             return Ok(());
@@ -178,34 +194,28 @@ impl LoadedImage {
 
     /// Save the image to a file in the specified format
     pub fn save_as(
-        &self, 
+        &self,
         path: &std::path::Path,
         format: OutputFormat,
         jpeg_quality: u8,
         webp_quality: f32,
     ) -> Result<(), GalleryError> {
         use crate::gallery::image_processing::formats;
-        
+
         match format {
-            OutputFormat::Jpeg => {
-                formats::jpeg::save_with_profile(
-                    &self.image, 
-                    path, 
-                    jpeg_quality, 
-                    self.icc_profile.as_deref()
-                )
-            }
-            OutputFormat::WebP => {
-                formats::webp::save_with_profile(
-                    &self.image, 
-                    path, 
-                    webp_quality, 
-                    self.icc_profile.as_deref()
-                )
-            }
-            OutputFormat::Png => {
-                formats::png::save(&self.image, path)
-            }
+            OutputFormat::Jpeg => formats::jpeg::save_with_profile(
+                &self.image,
+                path,
+                jpeg_quality,
+                self.icc_profile.as_deref(),
+            ),
+            OutputFormat::WebP => formats::webp::save_with_profile(
+                &self.image,
+                path,
+                webp_quality,
+                self.icc_profile.as_deref(),
+            ),
+            OutputFormat::Png => formats::png::save(&self.image, path),
             #[cfg(feature = "avif")]
             OutputFormat::Avif => {
                 // Use the preserved AVIF info if available
@@ -221,12 +231,12 @@ impl LoadedImage {
                             | DynamicImage::ImageRgba16(_)
                     );
                     formats::avif::save_with_profile(
-                        &self.image, 
-                        path, 
-                        85, 
-                        6, 
-                        self.icc_profile.as_deref(), 
-                        preserve_hdr
+                        &self.image,
+                        path,
+                        85,
+                        6,
+                        self.icc_profile.as_deref(),
+                        preserve_hdr,
                     )
                 }
             }
@@ -235,17 +245,16 @@ impl LoadedImage {
 
     /// Extract a tile from the image
     pub fn extract_tile(&self, x: u32, y: u32, size: u32) -> Result<DynamicImage, GalleryError> {
-        
         let (width, height) = self.dimensions();
-        
+
         // Ensure tile doesn't go out of bounds
         let tile_width = size.min(width.saturating_sub(x));
         let tile_height = size.min(height.saturating_sub(y));
-        
+
         if tile_width == 0 || tile_height == 0 {
             return Err(GalleryError::InvalidPath);
         }
-        
+
         Ok(self.image.crop_imm(x, y, tile_width, tile_height))
     }
 }

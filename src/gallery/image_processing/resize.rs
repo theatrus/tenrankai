@@ -15,7 +15,7 @@ impl Gallery {
         variants: Vec<(String, ImageSize, bool, OutputFormat)>, // (size_str, dimensions, apply_watermark, format)
     ) -> Result<Vec<PathBuf>, GalleryError> {
         use super::types::LoadedImage;
-        
+
         // Generate batch deduplication key
         let variants_hash = {
             use std::collections::hash_map::DefaultHasher;
@@ -30,25 +30,25 @@ impl Gallery {
             }
             hasher.finish()
         };
-        
+
         let task_key = format!("batch:{}:{}", relative_path, variants_hash);
         let handle = self.task_deduplicator.should_execute(task_key).await;
-        
+
         let mut result_paths = Vec::new();
-        
+
         if handle.is_executor() {
             // We're the executor, process all variants
-            
+
             // Ensure cache directory exists
             tokio::fs::create_dir_all(&self.config.cache_directory).await?;
-            
+
             // Process in blocking thread
             let original_path = original_path.to_path_buf();
             let copyright_holder = self.config.copyright_holder.clone();
             let static_dir = std::path::PathBuf::from("static");
             let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
             let webp_quality = self.config.webp_quality.unwrap_or(85.0);
-            
+
             // Pre-generate cache filenames and paths
             let mut variant_configs = Vec::new();
             for (size_str, dimensions, apply_watermark, output_format) in &variants {
@@ -72,74 +72,92 @@ impl Gallery {
             let pregen_token = self.pregeneration_token.lock().await.clone();
             let shutdown_token = self.shutdown_token.clone();
 
-            let paths = tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
-                // Helper to check if cancelled
-                let is_cancelled = || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+            let paths =
+                tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
+                    // Helper to check if cancelled
+                    let is_cancelled =
+                        || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
 
-                // Check cancellation before loading
-                if is_cancelled() {
-                    debug!("Batch processing cancelled before loading image");
-                    return Ok(Vec::new());
-                }
-
-                // Load image once with all metadata
-                debug!("Loading image for batch processing: {:?}", original_path);
-                let loaded_image = LoadedImage::load(&original_path)?;
-                let mut paths = Vec::new();
-
-                let total_variants = variant_configs.len();
-                info!("Processing {} variants for image: {:?}", total_variants, original_path.file_name());
-
-                // Process each variant
-                for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in variant_configs.into_iter().enumerate() {
-                    // Check cancellation between variants
+                    // Check cancellation before loading
                     if is_cancelled() {
-                        info!("Batch processing cancelled after {}/{} variants", idx, total_variants);
-                        break;
+                        debug!("Batch processing cancelled before loading image");
+                        return Ok(Vec::new());
                     }
 
-                    debug!("  [{}/{}] Generating {} {}x{} (format: {}, watermark: {})",
-                        idx + 1,
+                    // Load image once with all metadata
+                    debug!("Loading image for batch processing: {:?}", original_path);
+                    let loaded_image = LoadedImage::load(&original_path)?;
+                    let mut paths = Vec::new();
+
+                    let total_variants = variant_configs.len();
+                    info!(
+                        "Processing {} variants for image: {:?}",
                         total_variants,
-                        size_str,
-                        dimensions.width,
-                        dimensions.height,
-                        output_format.extension(),
-                        apply_watermark
+                        original_path.file_name()
                     );
 
-                    // Clone the loaded image for this variant
-                    let mut variant_image = loaded_image.clone();
+                    // Process each variant
+                    for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in
+                        variant_configs.into_iter().enumerate()
+                    {
+                        // Check cancellation between variants
+                        if is_cancelled() {
+                            info!(
+                                "Batch processing cancelled after {}/{} variants",
+                                idx, total_variants
+                            );
+                            break;
+                        }
 
-                    // Resize to target dimensions
-                    variant_image.resize(dimensions.width, dimensions.height)?;
+                        debug!(
+                            "  [{}/{}] Generating {} {}x{} (format: {}, watermark: {})",
+                            idx + 1,
+                            total_variants,
+                            size_str,
+                            dimensions.width,
+                            dimensions.height,
+                            output_format.extension(),
+                            apply_watermark
+                        );
 
-                    // Apply watermark if needed
-                    if apply_watermark {
-                        if let Some(ref holder) = copyright_holder {
+                        // Clone the loaded image for this variant
+                        let mut variant_image = loaded_image.clone();
+
+                        // Resize to target dimensions
+                        variant_image.resize(dimensions.width, dimensions.height)?;
+
+                        // Apply watermark if needed
+                        if apply_watermark && let Some(ref holder) = copyright_holder {
                             let font_path = static_dir.join("DejaVuSans.ttf");
                             variant_image.apply_watermark(holder, &font_path)?;
                         }
+
+                        // Save the variant
+                        variant_image.save_as(
+                            &cache_path,
+                            output_format,
+                            jpeg_quality,
+                            webp_quality,
+                        )?;
+                        paths.push(cache_path);
                     }
 
-                    // Save the variant
-                    variant_image.save_as(&cache_path, output_format, jpeg_quality, webp_quality)?;
-                    paths.push(cache_path);
-                }
-                
-                debug!("Completed batch processing for {:?}", original_path.file_name());
-                Ok(paths)
-            })
-            .await??;
-            
+                    debug!(
+                        "Completed batch processing for {:?}",
+                        original_path.file_name()
+                    );
+                    Ok(paths)
+                })
+                .await??;
+
             // Mark task as complete
             handle.complete().await;
-            
+
             result_paths = paths;
         } else {
             // We're a waiter, wait for the executor to finish
             handle.wait().await;
-            
+
             // Reconstruct the paths that should have been generated
             for (size_str, _, apply_watermark, output_format) in &variants {
                 let cache_filename = self.generate_cache_filename(
@@ -152,7 +170,7 @@ impl Gallery {
                 result_paths.push(cache_path);
             }
         }
-        
+
         Ok(result_paths)
     }
     /// Parse size string and determine dimensions
@@ -415,27 +433,24 @@ fn process_image(
     webp_quality: f32,
 ) -> Result<(), GalleryError> {
     use super::types::LoadedImage;
-    
+
     // Load image with all metadata
     let mut loaded_image = LoadedImage::load(original_path)?;
-    
+
     // Resize the image (this also handles gain maps)
     loaded_image.resize(dimensions.width, dimensions.height)?;
-    
+
     // Apply watermark if needed
-    if apply_watermark {
-        if let Some(holder) = copyright_holder {
-            let font_path = static_dir.join("DejaVuSans.ttf");
-            loaded_image.apply_watermark(&holder, &font_path)?;
-        }
+    if apply_watermark && let Some(holder) = copyright_holder {
+        let font_path = static_dir.join("DejaVuSans.ttf");
+        loaded_image.apply_watermark(&holder, &font_path)?;
     }
-    
+
     // Save in requested format
     loaded_image.save_as(cache_path, output_format, jpeg_quality, webp_quality)?;
-    
+
     Ok(())
 }
-
 
 /// Process all tiles for an image at once
 fn process_all_tiles_for_image(
@@ -446,7 +461,7 @@ fn process_all_tiles_for_image(
     output_format: OutputFormat,
 ) -> Result<(), GalleryError> {
     use super::types::LoadedImage;
-    
+
     debug!(
         "Loading image once to generate all tiles for: {:?}",
         original_path
@@ -454,7 +469,7 @@ fn process_all_tiles_for_image(
 
     // Load image with all metadata preserved
     let mut loaded_image = LoadedImage::load(original_path)?;
-    
+
     let (img_width, img_height) = loaded_image.dimensions();
 
     // Resize the image if it's too large - we don't want to serve full resolution tiles
@@ -513,15 +528,13 @@ fn process_all_tiles_for_image(
                     tile_start_x,
                     tile_start_y,
                     tile_actual_width,
-                    tile_actual_height
+                    tile_actual_height,
                 );
 
                 // Create a new LoadedImage for the tile with preserved metadata
-                let mut tile_loaded_image = LoadedImage::new(
-                    tile_img, 
-                    loaded_image.source_path.clone()
-                );
-                
+                let mut tile_loaded_image =
+                    LoadedImage::new(tile_img, loaded_image.source_path.clone());
+
                 // Preserve ICC profile
                 tile_loaded_image.icc_profile = loaded_image.icc_profile.clone();
                 tile_loaded_image.format = loaded_image.format;
@@ -531,7 +544,7 @@ fn process_all_tiles_for_image(
                 if let Some(ref avif_info) = loaded_image.avif_info {
                     // Clone the AVIF info for the tile
                     let mut tile_avif_info = avif_info.clone();
-                    
+
                     // Extract corresponding gain map tile if present
                     if let Some(ref gm_info) = avif_info.gain_map_info {
                         if let Some(ref gm_image) = gm_info.gain_map_image {
@@ -541,16 +554,25 @@ fn process_all_tiles_for_image(
 
                             let gm_tile_x = (tile_start_x as f32 * gm_scale_x).round() as u32;
                             let gm_tile_y = (tile_start_y as f32 * gm_scale_y).round() as u32;
-                            let gm_tile_width = (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
-                            let gm_tile_height = (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
+                            let gm_tile_width =
+                                (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
+                            let gm_tile_height =
+                                (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
 
                             // Ensure we don't exceed gain map boundaries
-                            let gm_tile_width = gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
-                            let gm_tile_height = gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
+                            let gm_tile_width =
+                                gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
+                            let gm_tile_height =
+                                gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
 
                             if gm_tile_width > 0 && gm_tile_height > 0 {
-                                let gm_tile = gm_image.crop_imm(gm_tile_x, gm_tile_y, gm_tile_width, gm_tile_height);
-                                
+                                let gm_tile = gm_image.crop_imm(
+                                    gm_tile_x,
+                                    gm_tile_y,
+                                    gm_tile_width,
+                                    gm_tile_height,
+                                );
+
                                 // Update the gain map info with tile
                                 if let Some(ref mut gm_info_mut) = tile_avif_info.gain_map_info {
                                     gm_info_mut.gain_map_image = Some(gm_tile);
@@ -558,7 +580,7 @@ fn process_all_tiles_for_image(
                             }
                         }
                     }
-                    
+
                     tile_loaded_image.avif_info = Some(tile_avif_info);
                 }
 
