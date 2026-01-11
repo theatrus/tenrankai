@@ -371,6 +371,7 @@ impl Gallery {
             let original_path = original_path.to_path_buf();
             let cache_dir = self.config.cache_directory.clone();
             let relative_path_owned = relative_path.to_string();
+            let shutdown_flag = self.shutdown_flag.clone();
 
             let result = tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
                 process_all_tiles_for_image(
@@ -379,6 +380,7 @@ impl Gallery {
                     &relative_path_owned,
                     tile_size,
                     output_format,
+                    &shutdown_flag,
                 )
             })
             .await?;
@@ -459,6 +461,7 @@ fn process_all_tiles_for_image(
     relative_path: &str,
     tile_size: u32,
     output_format: OutputFormat,
+    shutdown_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), GalleryError> {
     use super::types::LoadedImage;
 
@@ -512,6 +515,15 @@ fn process_all_tiles_for_image(
 
     // Generate all tiles for this image
     for tile_y in 0..grid_height {
+        // Check for shutdown at the start of each row
+        if shutdown_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            info!(
+                "Tile generation cancelled for {} after {} tiles",
+                relative_path, generated_count
+            );
+            return Ok(());
+        }
+
         for tile_x in 0..grid_width {
             // Calculate tile boundaries using the fixed tile size
             let tile_start_x = tile_x * tile_size;

@@ -49,6 +49,8 @@ pub struct Gallery {
     pub(crate) shutdown_token: CancellationToken,
     /// Token for cancelling pre-generation tasks
     pub(crate) pregeneration_token: Arc<Mutex<CancellationToken>>,
+    /// Atomic flag for synchronous cancellation checks (e.g., in spawn_blocking)
+    pub(crate) shutdown_flag: Arc<AtomicBool>,
 }
 
 impl Gallery {
@@ -78,6 +80,7 @@ impl Gallery {
             task_deduplicator: TaskDeduplicator::new(),
             shutdown_token: CancellationToken::new(),
             pregeneration_token: Arc::new(Mutex::new(CancellationToken::new())),
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -166,6 +169,9 @@ impl Gallery {
     /// Trigger shutdown of all background tasks
     pub async fn shutdown(&self) {
         info!("Shutting down gallery '{}'", self.config.name);
+        // Set atomic flag for synchronous code (e.g., blocking tile generation)
+        self.shutdown_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.shutdown_token.cancel();
         // Also cancel any running pre-generation tasks
         self.pregeneration_token.lock().await.cancel();
