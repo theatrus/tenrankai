@@ -314,19 +314,21 @@ pub struct AuthStatusResponse {
 pub async fn check_auth_status(
     State(app_state): State<AppState>,
     auth: crate::login::OptionalAuth,
-) -> Json<AuthStatusResponse> {
-    // If no user database is configured, return not authorized
-    if app_state.config.app.user_database.is_none() {
-        return Json(AuthStatusResponse {
+) -> impl IntoResponse {
+    let response = if app_state.config.app.user_database.is_none() {
+        // If no user database is configured, return not authorized
+        AuthStatusResponse {
             authorized: false,
             username: None,
-        });
-    }
+        }
+    } else {
+        AuthStatusResponse {
+            authorized: auth.is_authenticated(),
+            username: auth.username().map(|s| s.to_string()),
+        }
+    };
 
-    Json(AuthStatusResponse {
-        authorized: auth.is_authenticated(),
-        username: auth.username().map(|s| s.to_string()),
-    })
+    (no_cache_headers(), Json(response))
 }
 
 pub async fn passkey_enrollment_page(
