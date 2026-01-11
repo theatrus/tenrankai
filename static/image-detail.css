@@ -1,5 +1,9 @@
 /* Image Detail Page Specific Styles */
 
+html, body {
+    touch-action: auto;  /* Override global pan-only to allow pinch zoom on this page */
+}
+
 body {
     background-color: var(--bg-primary);
     color: var(--text-primary);

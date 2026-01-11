@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ImageDetailData } from '../types/index.ts';
 import { useImageDetail } from '../hooks/useImageDetail.ts';
@@ -77,6 +77,9 @@ export function ImageDetailPage({
   // Ref for swipe gestures
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
+  // Track zoom state to disable swipe navigation when zoomed
+  const [isImageZoomed, setIsImageZoomed] = useState(false);
+
   // Enhanced navigation with SPA-style URL updates
   const handleNavigation = async (direction: 'prev' | 'next') => {
     if (!currentData) return;
@@ -117,7 +120,7 @@ export function ImageDetailPage({
     }
   });
 
-  // Add swipe gesture support
+  // Add swipe gesture support (disabled when image is zoomed)
   useSwipeGestures(imageContainerRef, {
     onSwipeLeft: () => {
       if (currentData?.next_image) {
@@ -129,7 +132,7 @@ export function ImageDetailPage({
         handleNavigation('prev');
       }
     }
-  });
+  }, { disabled: isImageZoomed });
 
   if (error) {
     return (
@@ -168,16 +171,23 @@ export function ImageDetailPage({
           
           {/* Swipe hint for mobile */}
           <div className="mobile-swipe-hint">
-            <span>Swipe to navigate</span>
+            <span>
+              {isImageZoomed
+                ? 'Pinch out to exit zoom'
+                : currentData.permissions.can_use_zoom
+                  ? 'Pinch to zoom • Swipe to navigate'
+                  : 'Swipe to navigate'}
+            </span>
           </div>
           
           <div className="image-container-wrapper">
             <div ref={imageContainerRef} className="swipeable-image-area">
-              <ImageDisplay 
-                image={currentData.image} 
+              <ImageDisplay
+                image={currentData.image}
                 canUseZoom={currentData.permissions.can_use_zoom}
                 tileConfig={currentData.tile_config}
                 galleryName={currentData.gallery_name}
+                onZoomStateChange={setIsImageZoomed}
               />
             </div>
           </div>

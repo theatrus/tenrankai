@@ -16,12 +16,19 @@ interface TouchPoint {
 export function useSwipeGestures(
   elementRef: React.RefObject<HTMLElement>,
   handlers: SwipeHandlers,
-  options = {
-    minSwipeDistance: 50,
-    maxSwipeTime: 300,
-    preventDefaultTouchEvents: true
-  }
+  options: {
+    minSwipeDistance?: number;
+    maxSwipeTime?: number;
+    preventDefaultTouchEvents?: boolean;
+    disabled?: boolean;
+  } = {}
 ) {
+  const {
+    minSwipeDistance = 50,
+    maxSwipeTime = 300,
+    preventDefaultTouchEvents = true,
+    disabled = false
+  } = options;
   const touchStart = useRef<TouchPoint | null>(null);
   const isSwipingHorizontally = useRef<boolean>(false);
 
@@ -30,6 +37,7 @@ export function useSwipeGestures(
     if (!element) return;
 
     const handleTouchStart = (e: TouchEvent) => {
+      if (disabled) return;
       const touch = e.touches[0];
       touchStart.current = {
         x: touch.clientX,
@@ -50,7 +58,7 @@ export function useSwipeGestures(
       // This allows vertical scrolling to work normally
       if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
         isSwipingHorizontally.current = true;
-        if (options.preventDefaultTouchEvents) {
+        if (preventDefaultTouchEvents) {
           e.preventDefault();
         }
       }
@@ -69,21 +77,21 @@ export function useSwipeGestures(
       isSwipingHorizontally.current = false;
 
       // Check if it's a valid swipe (quick enough)
-      if (deltaTime > options.maxSwipeTime) return;
+      if (deltaTime > maxSwipeTime) return;
 
       // Calculate absolute distances
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
 
       // Determine if it's a horizontal or vertical swipe
-      if (absX > absY && absX > options.minSwipeDistance) {
+      if (absX > absY && absX > minSwipeDistance) {
         // Horizontal swipe
         if (deltaX > 0) {
           handlers.onSwipeRight?.();
         } else {
           handlers.onSwipeLeft?.();
         }
-      } else if (absY > absX && absY > options.minSwipeDistance) {
+      } else if (absY > absX && absY > minSwipeDistance) {
         // Vertical swipe
         if (deltaY > 0) {
           handlers.onSwipeDown?.();
@@ -104,5 +112,5 @@ export function useSwipeGestures(
       element.removeEventListener('touchmove', handleTouchMove);
       element.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [elementRef, handlers, options.minSwipeDistance, options.maxSwipeTime, options.preventDefaultTouchEvents]);
+  }, [elementRef, handlers, minSwipeDistance, maxSwipeTime, preventDefaultTouchEvents, disabled]);
 }
