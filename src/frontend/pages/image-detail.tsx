@@ -196,6 +196,8 @@ export function ImageDetailPage({
           <ImageNavigation
             prevImage={currentData.prev_image}
             nextImage={currentData.next_image}
+            prevImages={currentData.prev_images || []}
+            nextImages={currentData.next_images || []}
             galleryUrl={galleryUrl}
             onNavigate={handleNavigation}
             title={currentData.image.title}

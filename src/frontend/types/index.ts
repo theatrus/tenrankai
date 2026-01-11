@@ -121,6 +121,10 @@ export interface ImageDetailData {
   breadcrumbs: BreadcrumbItem[];
   prev_image?: NavigationImage;
   next_image?: NavigationImage;
+  /** Extended navigation: multiple previous images (closest first) */
+  prev_images: NavigationImage[];
+  /** Extended navigation: multiple next images (closest first) */
+  next_images: NavigationImage[];
   permissions: RolePermissions;
   tile_config?: TileConfig;
 }
