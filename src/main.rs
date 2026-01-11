@@ -421,15 +421,22 @@ async fn run_server(
         tracing::error!("Server error: {}", e);
     }
 
-    // Save caches on shutdown
-    info!("Shutting down - saving metadata caches...");
+    // Shutdown galleries and save caches
+    info!("Shutting down - stopping background tasks and saving metadata caches...");
     for gallery in galleries_for_shutdown {
+        // Trigger shutdown of background tasks
+        gallery.shutdown();
+        
+        // Save caches
         if let Err(e) = gallery.save_caches().await {
             tracing::error!("Failed to save metadata cache on shutdown: {}", e);
         } else {
-            info!("Metadata cache saved successfully");
+            info!("Metadata cache saved successfully for gallery '{}'", gallery.get_config().name);
         }
     }
+    
+    // Give background tasks a moment to shut down cleanly
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     Ok(())
 }

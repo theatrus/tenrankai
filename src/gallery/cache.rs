@@ -5,7 +5,7 @@ use crate::{CacheType, FormatCoverage};
 use futures::stream::{self, StreamExt};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, error, info, warn};
 
 /// Generate a tile cache filename that includes readable tile coordinates
@@ -101,22 +101,30 @@ impl Gallery {
     }
 
     pub fn start_background_cache_refresh(gallery: super::SharedGallery, interval_minutes: u64) {
+        let shutdown_token = gallery.shutdown_token.clone();
         tokio::spawn(async move {
             let mut interval =
                 tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
             interval.tick().await; // Skip the first immediate tick
 
             loop {
-                interval.tick().await;
-                info!("Starting scheduled metadata cache refresh");
+                tokio::select! {
+                    _ = shutdown_token.cancelled() => {
+                        info!("Background cache refresh task shutting down");
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        info!("Starting scheduled metadata cache refresh");
 
-                let pregenerate = gallery.config.pregenerate_cache;
-                if let Err(e) = gallery
-                    .clone()
-                    .refresh_metadata_and_pregenerate_cache(pregenerate)
-                    .await
-                {
-                    error!("Failed to refresh metadata cache: {}", e);
+                        let pregenerate = gallery.config.pregenerate_cache;
+                        if let Err(e) = gallery
+                            .clone()
+                            .refresh_metadata_and_pregenerate_cache(pregenerate)
+                            .await
+                        {
+                            error!("Failed to refresh metadata cache: {}", e);
+                        }
+                    }
                 }
             }
         });
@@ -125,27 +133,34 @@ impl Gallery {
     pub fn start_periodic_cache_save(gallery: super::SharedGallery, interval_minutes: u64) {
         use std::sync::atomic::Ordering;
 
+        let shutdown_token = gallery.shutdown_token.clone();
         tokio::spawn(async move {
             let mut interval =
                 tokio::time::interval(tokio::time::Duration::from_secs(interval_minutes * 60));
             interval.tick().await; // Skip the first immediate tick
 
             loop {
-                interval.tick().await;
+                tokio::select! {
+                    _ = shutdown_token.cancelled() => {
+                        info!("Periodic cache save task shutting down");
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        // Check if cache is dirty
+                        if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
+                            debug!("Cache is dirty, saving to disk");
 
-                // Check if cache is dirty
-                if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
-                    debug!("Cache is dirty, saving to disk");
-
-                    if let Err(e) = gallery.save_metadata_cache().await {
-                        error!("Failed to save metadata cache: {}", e);
-                    } else {
-                        // Reset dirty flag and update counter
-                        gallery.metadata_cache_dirty.store(false, Ordering::Relaxed);
-                        gallery
-                            .metadata_updates_since_save
-                            .store(0, Ordering::Relaxed);
-                        info!("Periodic metadata cache save completed");
+                            if let Err(e) = gallery.save_metadata_cache().await {
+                                error!("Failed to save metadata cache: {}", e);
+                            } else {
+                                // Reset dirty flag and update counter
+                                gallery.metadata_cache_dirty.store(false, Ordering::Relaxed);
+                                gallery
+                                    .metadata_updates_since_save
+                                    .store(0, Ordering::Relaxed);
+                                info!("Periodic metadata cache save completed");
+                            }
+                        }
                     }
                 }
             }
@@ -265,12 +280,12 @@ impl Gallery {
         format!("composite_{}_{}", self.config.name, path_key)
     }
 
-    /// Pre-generate cache for a single image
+    /// Pre-generate cache for a single image (always checks for missing formats only)
     pub async fn pregenerate_image_cache(
         &self,
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
-        self.pregenerate_image_cache_selective(relative_path, false)
+        self.pregenerate_image_cache_selective(relative_path, true)
             .await
     }
 
@@ -452,10 +467,11 @@ impl Gallery {
     /// Pre-generate cache for all images in the gallery
     /// 
     /// Processes images in parallel using up to the number of CPU cores available.
-    /// Each image loads once and generates all variants (sizes/formats) in a batch.
+    /// Only generates missing formats - skips files that already exist in cache.
+    /// Each image loads once and generates all missing variants (sizes/formats) in a batch.
     pub async fn pregenerate_all_images_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
         info!(
-            "Starting cache pre-generation for gallery '{}'",
+            "Starting cache pre-generation for gallery '{}' (missing formats only)",
             self.config.name
         );
 
@@ -468,13 +484,17 @@ impl Gallery {
         let total_images = image_paths.len();
         let num_cores = num_cpus::get();
         info!(
-            "Found {} images to pre-generate cache for (using {} parallel workers)",
+            "Checking {} images for missing cache formats (using {} parallel workers)",
             total_images, num_cores
         );
 
+        // Get cancellation token
+        let cancel_token = self.pregeneration_token.lock().await.clone();
+        
         // Track progress across threads
         let completed = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
 
         // Process images in parallel with concurrency limit
         let _results: Vec<_> = stream::iter(image_paths)
@@ -483,9 +503,23 @@ impl Gallery {
                 let gallery = self.clone();
                 let completed = completed.clone();
                 let failed = failed.clone();
+                let cancelled = cancelled.clone();
+                let cancel_token = cancel_token.clone();
                 
                 async move {
+                    // Check for cancellation before processing
+                    if cancel_token.is_cancelled() {
+                        cancelled.store(true, Ordering::Relaxed);
+                        return (index, image_path, Err(super::GalleryError::InvalidPath));
+                    }
+                    
                     let result = gallery.pregenerate_image_cache(&image_path).await;
+                    
+                    // Check for cancellation between operations
+                    if cancel_token.is_cancelled() {
+                        cancelled.store(true, Ordering::Relaxed);
+                        return (index, image_path, Err(super::GalleryError::InvalidPath));
+                    }
                     
                     // Also pre-generate tiles if configured and enabled
                     if result.is_ok() {
@@ -511,8 +545,10 @@ impl Gallery {
                             }
                         }
                         Err(e) => {
-                            error!("Failed to pre-generate cache for {}: {}", image_path, e);
-                            failed.fetch_add(1, Ordering::Relaxed);
+                            if !cancel_token.is_cancelled() {
+                                error!("Failed to pre-generate cache for {}: {}", image_path, e);
+                                failed.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
                     }
                     
@@ -520,20 +556,36 @@ impl Gallery {
                 }
             })
             .buffer_unordered(num_cores)
+            .take_while(|_| {
+                let is_cancelled = cancel_token.is_cancelled();
+                if is_cancelled {
+                    cancelled.store(true, Ordering::Relaxed);
+                }
+                async move { !is_cancelled }
+            })
             .collect()
             .await;
 
         let total_failed = failed.load(Ordering::Relaxed);
         let total_completed = completed.load(Ordering::Relaxed);
+        let was_cancelled = cancelled.load(Ordering::Relaxed);
         
-        info!(
-            "Completed cache pre-generation for gallery '{}': {} succeeded, {} failed",
-            self.config.name,
-            total_completed,
-            total_failed
-        );
+        if was_cancelled {
+            info!(
+                "Cache pre-generation cancelled for gallery '{}': {} completed before cancellation",
+                self.config.name,
+                total_completed
+            );
+        } else {
+            info!(
+                "Completed cache pre-generation for gallery '{}': {} succeeded, {} failed",
+                self.config.name,
+                total_completed,
+                total_failed
+            );
+        }
         
-        if total_failed > 0 {
+        if total_failed > 0 && !was_cancelled {
             warn!("{} images failed during cache pre-generation", total_failed);
         }
         
@@ -630,9 +682,13 @@ impl Gallery {
             unique_image_count, num_cores
         );
         
+        // Get cancellation token
+        let cancel_token = self.pregeneration_token.lock().await.clone();
+        
         // Track progress
         let completed = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
 
         // Process images in parallel
         let _results: Vec<_> = stream::iter(unique_images)
@@ -640,9 +696,17 @@ impl Gallery {
                 let gallery = self.clone();
                 let completed = completed.clone();
                 let failed = failed.clone();
+                let cancelled = cancelled.clone();
+                let cancel_token = cancel_token.clone();
                 let total = unique_image_count;
                 
                 async move {
+                    // Check for cancellation
+                    if cancel_token.is_cancelled() {
+                        cancelled.store(true, Ordering::Relaxed);
+                        return (image_path, Err(super::GalleryError::InvalidPath));
+                    }
+                    
                     let result = gallery
                         .pregenerate_image_cache_selective(&image_path, true)
                         .await;
@@ -658,11 +722,13 @@ impl Gallery {
                             }
                         }
                         Err(e) => {
-                            error!(
-                                "Failed to generate missing formats for {}: {}",
-                                image_path, e
-                            );
-                            failed.fetch_add(1, Ordering::Relaxed);
+                            if !cancel_token.is_cancelled() {
+                                error!(
+                                    "Failed to generate missing formats for {}: {}",
+                                    image_path, e
+                                );
+                                failed.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
                     }
                     
@@ -670,6 +736,13 @@ impl Gallery {
                 }
             })
             .buffer_unordered(num_cores)
+            .take_while(|_| {
+                let is_cancelled = cancel_token.is_cancelled();
+                if is_cancelled {
+                    cancelled.store(true, Ordering::Relaxed);
+                }
+                async move { !is_cancelled }
+            })
             .collect()
             .await;
 
