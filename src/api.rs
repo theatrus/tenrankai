@@ -479,8 +479,8 @@ pub async fn image_detail_api_handler_for_named(
         }
     };
 
-    // Include tile configuration if zoom is allowed and tiles are configured
-    let tile_config = if user_permissions.permissions.can_use_zoom {
+    // Include tile configuration if tile zoom is allowed and tiles are configured
+    let tile_config = if user_permissions.permissions.can_use_tile_zoom {
         gallery.config.tiles.as_ref().map(|tc| {
             // Calculate the actual dimensions of the tiled image
             // The backend scales proportionally if max dimension > 8192

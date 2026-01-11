@@ -93,11 +93,6 @@ pub fn default_tile_size() -> u32 {
     1024
 }
 
-/// Default tiles require authentication (true for security)
-pub fn default_tiles_require_auth() -> bool {
-    true
-}
-
 /// Default tiles pregeneration (false to save space)
 pub fn default_tiles_pregenerate() -> bool {
     false

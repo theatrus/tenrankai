@@ -103,6 +103,7 @@ export interface RolePermissions {
   can_edit_any_comments: boolean;
   can_delete_any_comments: boolean;
   can_use_zoom: boolean;
+  can_use_tile_zoom: boolean;
   owner_access: boolean;
 }
 

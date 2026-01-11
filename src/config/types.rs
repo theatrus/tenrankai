@@ -138,15 +138,13 @@ pub struct PreviewConfig {
 }
 
 /// Tile configuration for protected zoom feature
+/// Access is controlled by the `can_use_zoom` role permission
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TileConfig {
     /// Size of each tile in pixels (e.g., 1024 for 1024x1024 tiles)
     #[serde(default = "super::defaults::default_tile_size")]
     pub tile_size: u32,
-    /// Whether tiles require authentication
-    #[serde(default = "super::defaults::default_tiles_require_auth")]
-    pub require_auth: bool,
     /// Whether to pre-generate tiles during cache pre-generation
     #[serde(default = "super::defaults::default_tiles_pregenerate")]
     pub pregenerate: bool,
