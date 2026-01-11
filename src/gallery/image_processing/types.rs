@@ -123,37 +123,33 @@ impl LoadedImage {
 
             // Resize gain map if present (AVIF only)
             #[cfg(feature = "avif")]
-            if let Some(ref mut avif_info) = self.avif_info {
-                if let Some(ref gm_info) = avif_info.gain_map_info {
-                    if let Some(ref gm_image) = gm_info.gain_map_image {
-                        // Calculate scale factors
-                        let scale_x = self.image.width() as f32 / orig_width as f32;
-                        let scale_y = self.image.height() as f32 / orig_height as f32;
+            if let Some(ref mut avif_info) = self.avif_info
+                && let Some(ref gm_info) = avif_info.gain_map_info
+                && let Some(ref gm_image) = gm_info.gain_map_image
+            {
+                // Calculate scale factors
+                let scale_x = self.image.width() as f32 / orig_width as f32;
+                let scale_y = self.image.height() as f32 / orig_height as f32;
 
-                        // Apply same scale to gain map
-                        let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
-                        let new_gm_width = ((gm_width as f32 * scale_x).round() as u32).max(1);
-                        let new_gm_height = ((gm_height as f32 * scale_y).round() as u32).max(1);
+                // Apply same scale to gain map
+                let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
+                let new_gm_width = ((gm_width as f32 * scale_x).round() as u32).max(1);
+                let new_gm_height = ((gm_height as f32 * scale_y).round() as u32).max(1);
 
-                        tracing::debug!(
-                            "Resizing gain map from {}x{} to {}x{}",
-                            gm_width,
-                            gm_height,
-                            new_gm_width,
-                            new_gm_height
-                        );
+                tracing::debug!(
+                    "Resizing gain map from {}x{} to {}x{}",
+                    gm_width,
+                    gm_height,
+                    new_gm_width,
+                    new_gm_height
+                );
 
-                        let resized_gain_map = gm_image.resize_exact(
-                            new_gm_width,
-                            new_gm_height,
-                            FilterType::Lanczos3,
-                        );
+                let resized_gain_map =
+                    gm_image.resize_exact(new_gm_width, new_gm_height, FilterType::Lanczos3);
 
-                        // Update the gain map info with resized image
-                        if let Some(ref mut gm_info_mut) = avif_info.gain_map_info {
-                            gm_info_mut.gain_map_image = Some(resized_gain_map);
-                        }
-                    }
+                // Update the gain map info with resized image
+                if let Some(ref mut gm_info_mut) = avif_info.gain_map_info {
+                    gm_info_mut.gain_map_image = Some(resized_gain_map);
                 }
             }
         }
