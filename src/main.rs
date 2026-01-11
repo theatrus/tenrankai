@@ -395,16 +395,22 @@ async fn run_server(
                 );
             }
 
-            // Trigger refresh with pre-generation if configured
-            if gallery.is_metadata_cache_empty().await {
+            // Trigger refresh and/or pre-generation on startup
+            let metadata_empty = gallery.is_metadata_cache_empty().await;
+            let pregenerate = gallery_config.pregenerate.is_some();
+
+            if metadata_empty {
                 info!(
                     "Metadata cache for gallery '{}' is empty, triggering initial refresh",
                     gallery_config.name
                 );
-                let pregenerate = gallery_config.pregenerate.is_some();
+            }
+
+            // Run refresh if metadata is empty, or pregenerate if configured
+            if metadata_empty || pregenerate {
                 if pregenerate {
                     info!(
-                        "Cache pre-generation is enabled for gallery '{}'",
+                        "Cache pre-generation enabled for gallery '{}', will generate missing cache entries",
                         gallery_config.name
                     );
                 }
