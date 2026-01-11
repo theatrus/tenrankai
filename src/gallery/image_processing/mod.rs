@@ -7,7 +7,7 @@ mod types;
 mod watermark;
 
 // Re-export public items
-pub use types::OutputFormat;
+pub use types::{LoadedImage, OutputFormat};
 
 // Re-export format-specific ICC profile extraction functions
 #[cfg(feature = "avif")]

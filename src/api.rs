@@ -479,8 +479,8 @@ pub async fn image_detail_api_handler_for_named(
         }
     };
 
-    // Include tile configuration if zoom is allowed and tiles are configured
-    let tile_config = if user_permissions.permissions.can_use_zoom {
+    // Include tile configuration if tile zoom is allowed and tiles are configured
+    let tile_config = if user_permissions.permissions.can_use_tile_zoom {
         gallery.config.tiles.as_ref().map(|tc| {
             // Calculate the actual dimensions of the tiled image
             // The backend scales proportionally if max dimension > 8192
@@ -1318,7 +1318,7 @@ roles = ["viewer"]
             jpeg_quality: Some(85),
             webp_quality: Some(85.0),
             new_threshold_days: Some(7),
-            pregenerate_cache: false,
+            pregenerate: None,
             copyright_holder: Some("Test".to_string()),
             cache_refresh_interval_minutes: Some(60),
             thumbnail: crate::ImageSizeConfig {

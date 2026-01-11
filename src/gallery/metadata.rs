@@ -394,9 +394,10 @@ impl Gallery {
     pub async fn refresh_all_metadata(&self) -> Result<(), super::GalleryError> {
         use walkdir::WalkDir;
 
-        info!("Starting full metadata refresh");
+        info!("Starting metadata refresh (checking modification dates)");
         let start_time = std::time::Instant::now();
-        let mut count = 0;
+        let mut refreshed_count = 0;
+        let mut skipped_count = 0;
         let mut all_image_paths = Vec::new();
 
         for entry in WalkDir::new(&self.config.source_directory)
@@ -414,15 +415,22 @@ impl Gallery {
                 // Collect all image paths for indexing
                 all_image_paths.push(relative_str.clone());
 
-                // Extract metadata for this image
-                if let Ok(metadata) = self.extract_image_metadata(path).await {
-                    self.insert_metadata_with_tracking(relative_str, metadata)
-                        .await;
-                    count += 1;
+                // Check if we need to refresh this file's metadata
+                let needs_refresh = self.needs_metadata_refresh(path, &relative_str).await;
 
-                    if count % 100 == 0 {
-                        debug!("Processed {} images...", count);
+                if needs_refresh {
+                    // Extract metadata for this image
+                    if let Ok(metadata) = self.extract_image_metadata(path).await {
+                        self.insert_metadata_with_tracking(relative_str, metadata)
+                            .await;
+                        refreshed_count += 1;
+
+                        if refreshed_count % 100 == 0 {
+                            debug!("Refreshed {} images...", refreshed_count);
+                        }
                     }
+                } else {
+                    skipped_count += 1;
                 }
             }
         }
@@ -434,17 +442,85 @@ impl Gallery {
             info!("Built image index with {} images", all_image_paths.len());
         }
 
-        // Save the cache to disk
-        self.save_metadata_cache().await?;
+        // Save the cache to disk if any changes were made
+        if refreshed_count > 0 {
+            self.save_metadata_cache().await?;
+        }
 
         let elapsed = start_time.elapsed();
         info!(
-            "Metadata refresh completed: {} images in {:.2}s",
-            count,
-            elapsed.as_secs_f64()
+            "Metadata refresh completed in {:.2}s: {} refreshed, {} unchanged (skipped)",
+            elapsed.as_secs_f64(),
+            refreshed_count,
+            skipped_count
         );
 
         Ok(())
+    }
+
+    /// Check if a file's metadata needs to be refreshed based on modification date
+    /// Also checks sidecar files (XMP, markdown) for changes
+    async fn needs_metadata_refresh(&self, path: &Path, relative_path: &str) -> bool {
+        // Get cached metadata
+        let cache = self.metadata_cache.read().await;
+        let cached = cache.get(relative_path);
+
+        let cached_mtime = match cached {
+            None => {
+                // No cached metadata, need to extract
+                return true;
+            }
+            Some(cached_metadata) => cached_metadata.modification_date,
+        };
+
+        // Get current file modification time
+        let current_mtime = tokio::fs::metadata(path)
+            .await
+            .ok()
+            .and_then(|m| m.modified().ok());
+
+        // Check main image file
+        match (current_mtime, cached_mtime) {
+            (Some(current), Some(cached)) if current > cached => {
+                return true;
+            }
+            (Some(_), None) => {
+                // Cached entry has no modification date, refresh to add it
+                return true;
+            }
+            _ => {}
+        }
+
+        // Check XMP sidecar file
+        let xmp_path = path.with_extension("xmp");
+        if xmp_path.exists()
+            && let Ok(meta) = tokio::fs::metadata(&xmp_path).await
+            && let Ok(xmp_mtime) = meta.modified()
+            && let Some(cached) = cached_mtime
+            && xmp_mtime > cached
+        {
+            return true;
+        }
+
+        // Check markdown sidecar files (image.jpg.md or image.md)
+        let md_path1 = path.with_file_name(format!(
+            "{}.md",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        let md_path2 = path.with_extension("md");
+
+        for md_path in [md_path1, md_path2] {
+            if md_path.exists()
+                && let Ok(meta) = tokio::fs::metadata(&md_path).await
+                && let Ok(md_mtime) = meta.modified()
+                && let Some(cached) = cached_mtime
+                && md_mtime > cached
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub(crate) async fn extract_image_metadata(

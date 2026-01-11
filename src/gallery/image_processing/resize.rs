@@ -1,25 +1,180 @@
-use crate::copyright::{CopyrightConfig, add_copyright_notice};
 use crate::gallery::types::ImageSize as SizeVariant;
 use crate::gallery::{Gallery, GalleryError};
-use image::{DynamicImage, ImageFormat, imageops::FilterType};
 use std::path::{Path, PathBuf};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
-use super::formats;
-#[cfg(feature = "avif")]
-use super::formats::avif::AvifImageInfo;
 use super::types::{ImageSize, OutputFormat};
 
-// Type alias for AVIF info that works with or without the feature
-#[cfg(feature = "avif")]
-#[allow(dead_code)] // Used conditionally
-type AvifInfoOption = Option<AvifImageInfo>;
-#[cfg(not(feature = "avif"))]
-type AvifInfoOption = Option<()>;
-
 impl Gallery {
+    /// Process multiple variants of an image in a single batch
+    /// This loads the image once and generates all requested sizes/formats
+    pub async fn process_image_batch(
+        &self,
+        original_path: &Path,
+        relative_path: &str,
+        variants: Vec<(String, ImageSize, bool, OutputFormat)>, // (size_str, dimensions, apply_watermark, format)
+    ) -> Result<Vec<PathBuf>, GalleryError> {
+        use super::types::LoadedImage;
+
+        // Generate batch deduplication key
+        let variants_hash = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            for (size, dims, watermark, format) in &variants {
+                size.hash(&mut hasher);
+                dims.width.hash(&mut hasher);
+                dims.height.hash(&mut hasher);
+                watermark.hash(&mut hasher);
+                format.hash(&mut hasher);
+            }
+            hasher.finish()
+        };
+
+        let task_key = format!("batch:{}:{}", relative_path, variants_hash);
+        let handle = self.task_deduplicator.should_execute(task_key).await;
+
+        let mut result_paths = Vec::new();
+
+        if handle.is_executor() {
+            // We're the executor, process all variants
+
+            // Ensure cache directory exists
+            tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+
+            // Process in blocking thread
+            let original_path = original_path.to_path_buf();
+            let copyright_holder = self.config.copyright_holder.clone();
+            let static_dir = std::path::PathBuf::from("static");
+            let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
+            let webp_quality = self.config.webp_quality.unwrap_or(85.0);
+
+            // Pre-generate cache filenames and paths
+            let mut variant_configs = Vec::new();
+            for (size_str, dimensions, apply_watermark, output_format) in &variants {
+                let cache_filename = self.generate_cache_filename(
+                    relative_path,
+                    size_str,
+                    output_format.extension(),
+                    *apply_watermark,
+                );
+                let cache_path = self.config.cache_directory.join(&cache_filename);
+                variant_configs.push((
+                    size_str.clone(),
+                    dimensions.clone(),
+                    *apply_watermark,
+                    *output_format,
+                    cache_path,
+                ));
+            }
+
+            // Get cancellation tokens for inner checks (both pregeneration and shutdown)
+            let pregen_token = self.pregeneration_token.lock().await.clone();
+            let shutdown_token = self.shutdown_token.clone();
+
+            let paths =
+                tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
+                    // Helper to check if cancelled
+                    let is_cancelled =
+                        || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+
+                    // Check cancellation before loading
+                    if is_cancelled() {
+                        debug!("Batch processing cancelled before loading image");
+                        return Ok(Vec::new());
+                    }
+
+                    // Load image once with all metadata
+                    debug!("Loading image for batch processing: {:?}", original_path);
+                    let loaded_image = LoadedImage::load(&original_path)?;
+                    let mut paths = Vec::new();
+
+                    let total_variants = variant_configs.len();
+                    info!(
+                        "Processing {} variants for image: {:?}",
+                        total_variants,
+                        original_path.file_name()
+                    );
+
+                    // Process each variant
+                    for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in
+                        variant_configs.into_iter().enumerate()
+                    {
+                        // Check cancellation between variants
+                        if is_cancelled() {
+                            info!(
+                                "Batch processing cancelled after {}/{} variants",
+                                idx, total_variants
+                            );
+                            break;
+                        }
+
+                        debug!(
+                            "  [{}/{}] Generating {} {}x{} (format: {}, watermark: {})",
+                            idx + 1,
+                            total_variants,
+                            size_str,
+                            dimensions.width,
+                            dimensions.height,
+                            output_format.extension(),
+                            apply_watermark
+                        );
+
+                        // Clone the loaded image for this variant
+                        let mut variant_image = loaded_image.clone();
+
+                        // Resize to target dimensions
+                        variant_image.resize(dimensions.width, dimensions.height)?;
+
+                        // Apply watermark if needed
+                        if apply_watermark && let Some(ref holder) = copyright_holder {
+                            let font_path = static_dir.join("DejaVuSans.ttf");
+                            variant_image.apply_watermark(holder, &font_path)?;
+                        }
+
+                        // Save the variant
+                        variant_image.save_as(
+                            &cache_path,
+                            output_format,
+                            jpeg_quality,
+                            webp_quality,
+                        )?;
+                        paths.push(cache_path);
+                    }
+
+                    debug!(
+                        "Completed batch processing for {:?}",
+                        original_path.file_name()
+                    );
+                    Ok(paths)
+                })
+                .await??;
+
+            // Mark task as complete
+            handle.complete().await;
+
+            result_paths = paths;
+        } else {
+            // We're a waiter, wait for the executor to finish
+            handle.wait().await;
+
+            // Reconstruct the paths that should have been generated
+            for (size_str, _, apply_watermark, output_format) in &variants {
+                let cache_filename = self.generate_cache_filename(
+                    relative_path,
+                    size_str,
+                    output_format.extension(),
+                    *apply_watermark,
+                );
+                let cache_path = self.config.cache_directory.join(&cache_filename);
+                result_paths.push(cache_path);
+            }
+        }
+
+        Ok(result_paths)
+    }
     /// Parse size string and determine dimensions
-    pub(super) fn parse_size(&self, size: &str) -> Result<(ImageSize, bool), GalleryError> {
+    pub(crate) fn parse_size(&self, size: &str) -> Result<(ImageSize, bool), GalleryError> {
         // Parse the size variant from string
         let size_variant = SizeVariant::parse(size).ok_or(GalleryError::InvalidPath)?;
 
@@ -216,6 +371,7 @@ impl Gallery {
             let original_path = original_path.to_path_buf();
             let cache_dir = self.config.cache_directory.clone();
             let relative_path_owned = relative_path.to_string();
+            let shutdown_flag = self.shutdown_flag.clone();
 
             let result = tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
                 process_all_tiles_for_image(
@@ -224,6 +380,7 @@ impl Gallery {
                     &relative_path_owned,
                     tile_size,
                     output_format,
+                    &shutdown_flag,
                 )
             })
             .await?;
@@ -277,209 +434,24 @@ fn process_image(
     jpeg_quality: u8,
     webp_quality: f32,
 ) -> Result<(), GalleryError> {
-    // Detect format and extract ICC profile
-    #[allow(unused_variables)] // Used in avif feature
-    let (icc_profile, detected_format) = extract_image_info(original_path)?;
+    use super::types::LoadedImage;
 
-    // Load and resize image - special handling for AVIF to preserve color properties
-    debug!(
-        "Opening image file: {:?}, detected format: {:?}",
-        original_path, detected_format
-    );
+    // Load image with all metadata
+    let mut loaded_image = LoadedImage::load(original_path)?;
 
-    let (img, _avif_info) = {
-        #[cfg(feature = "avif")]
-        {
-            if detected_format == Some(ImageFormat::Avif) {
-                // Use our custom AVIF reader to preserve color properties
-                match formats::avif::read_avif_info(original_path) {
-                    Ok((img, info)) => (img, Some(info)),
-                    Err(e) => {
-                        debug!(
-                            "Failed to read AVIF with custom reader: {}, falling back",
-                            e
-                        );
-                        (image::open(original_path)?, None)
-                    }
-                }
-            } else {
-                (image::open(original_path)?, None)
-            }
-        }
-        #[cfg(not(feature = "avif"))]
-        {
-            (image::open(original_path)?, None::<()>)
-        }
-    };
-
-    let resized = resize_image(&img, dimensions)?;
-
-    // Resize gain map if present
-    #[cfg(feature = "avif")]
-    let mut resized_avif_info = _avif_info.clone();
-    #[cfg(not(feature = "avif"))]
-    let _resized_avif_info: AvifInfoOption = None;
-
-    #[cfg(feature = "avif")]
-    if let Some(ref mut info) = resized_avif_info
-        && let Some(ref gm_info) = info.gain_map_info
-        && let Some(ref gm_image) = gm_info.gain_map_image
-    {
-        // Resize gain map to match the proportion of the main image resize
-        let (orig_width, orig_height) = (img.width(), img.height());
-        let (resized_width, resized_height) = (resized.width(), resized.height());
-
-        // Calculate scale factors
-        let scale_x = resized_width as f32 / orig_width as f32;
-        let scale_y = resized_height as f32 / orig_height as f32;
-
-        // Apply same scale to gain map
-        let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
-        let new_gm_width = (gm_width as f32 * scale_x).round() as u32;
-        let new_gm_height = (gm_height as f32 * scale_y).round() as u32;
-
-        // Ensure gain map is at least 1x1
-        let new_gm_width = new_gm_width.max(1);
-        let new_gm_height = new_gm_height.max(1);
-
-        debug!(
-            "Resizing gain map from {}x{} to {}x{}",
-            gm_width, gm_height, new_gm_width, new_gm_height
-        );
-
-        let resized_gain_map =
-            gm_image.resize_exact(new_gm_width, new_gm_height, FilterType::Lanczos3);
-
-        // Update the gain map info with resized image
-        if let Some(ref mut gm_info_mut) = info.gain_map_info {
-            gm_info_mut.gain_map_image = Some(resized_gain_map);
-        }
-    }
+    // Resize the image (this also handles gain maps)
+    loaded_image.resize(dimensions.width, dimensions.height)?;
 
     // Apply watermark if needed
-    let final_image = if let (true, Some(holder)) = (apply_watermark, copyright_holder) {
-        apply_copyright_watermark(resized, holder, static_dir)?
-    } else {
-        resized
-    };
+    if apply_watermark && let Some(holder) = copyright_holder {
+        let font_path = static_dir.join("DejaVuSans.ttf");
+        loaded_image.apply_watermark(&holder, &font_path)?;
+    }
 
     // Save in requested format
-    save_image(
-        &final_image,
-        cache_path,
-        output_format,
-        jpeg_quality,
-        webp_quality,
-        icc_profile.as_deref(),
-        #[cfg(feature = "avif")]
-        resized_avif_info.as_ref(),
-        #[cfg(not(feature = "avif"))]
-        None,
-    )?;
+    loaded_image.save_as(cache_path, output_format, jpeg_quality, webp_quality)?;
 
     Ok(())
-}
-
-/// Extract ICC profile and detect format
-fn extract_image_info(path: &Path) -> Result<(Option<Vec<u8>>, Option<ImageFormat>), GalleryError> {
-    use std::io::BufReader;
-
-    let file = std::fs::File::open(path)?;
-    let buf_reader = BufReader::new(file);
-    let decoder = image::ImageReader::new(buf_reader).with_guessed_format()?;
-    let detected_format = decoder.format();
-
-    let icc_profile = match detected_format {
-        Some(ImageFormat::Jpeg) => formats::jpeg::extract_icc_profile(path),
-        Some(ImageFormat::Png) => formats::png::extract_icc_profile(path),
-        #[cfg(feature = "avif")]
-        Some(ImageFormat::Avif) => formats::avif::extract_icc_profile(path),
-        _ => None,
-    };
-
-    Ok((icc_profile, detected_format))
-}
-
-/// Resize image preserving aspect ratio
-fn resize_image(img: &DynamicImage, dimensions: ImageSize) -> Result<DynamicImage, GalleryError> {
-    let (orig_width, orig_height) = (img.width(), img.height());
-
-    // Don't upscale - if requested dimensions are larger than original, use original
-    let final_width = dimensions.width.min(orig_width);
-    let final_height = dimensions.height.min(orig_height);
-
-    // Only resize if dimensions are different
-    if final_width != orig_width || final_height != orig_height {
-        Ok(img.resize(final_width, final_height, FilterType::Lanczos3))
-    } else {
-        Ok(img.clone())
-    }
-}
-
-/// Apply copyright watermark to image
-fn apply_copyright_watermark(
-    image: DynamicImage,
-    copyright_holder: String,
-    static_dir: &Path,
-) -> Result<DynamicImage, GalleryError> {
-    let font_path = static_dir.join("DejaVuSans.ttf");
-    if !font_path.exists() {
-        debug!("Font file not found at {:?}, skipping watermark", font_path);
-        return Ok(image);
-    }
-
-    let copyright_config = CopyrightConfig {
-        copyright_holder,
-        font_size: 20.0,
-        padding: 10,
-    };
-
-    match add_copyright_notice(&image, &copyright_config, &font_path) {
-        Ok(watermarked) => Ok(watermarked),
-        Err(e) => {
-            error!("Failed to add copyright watermark: {}", e);
-            Ok(image)
-        }
-    }
-}
-
-/// Save image in specified format
-fn save_image(
-    image: &DynamicImage,
-    path: &Path,
-    format: OutputFormat,
-    jpeg_quality: u8,
-    webp_quality: f32,
-    icc_profile: Option<&[u8]>,
-    #[cfg(feature = "avif")] avif_info: Option<&AvifImageInfo>,
-    #[cfg(not(feature = "avif"))] _avif_info: Option<()>,
-) -> Result<(), GalleryError> {
-    match format {
-        OutputFormat::Jpeg => {
-            formats::jpeg::save_with_profile(image, path, jpeg_quality, icc_profile)
-        }
-        OutputFormat::WebP => {
-            formats::webp::save_with_profile(image, path, webp_quality, icc_profile)
-        }
-        OutputFormat::Png => formats::png::save(image, path),
-        #[cfg(feature = "avif")]
-        OutputFormat::Avif => {
-            // Use the preserved AVIF info if available
-            if let Some(info) = avif_info {
-                formats::avif::save_with_info(image, path, 85, 6, Some(info))
-            } else {
-                // Fallback: preserve HDR if the source is 16-bit
-                let preserve_hdr = matches!(
-                    image,
-                    DynamicImage::ImageLuma16(_)
-                        | DynamicImage::ImageLumaA16(_)
-                        | DynamicImage::ImageRgb16(_)
-                        | DynamicImage::ImageRgba16(_)
-                );
-                formats::avif::save_with_profile(image, path, 85, 6, icc_profile, preserve_hdr)
-            }
-        }
-    }
 }
 
 /// Process all tiles for an image at once
@@ -489,50 +461,26 @@ fn process_all_tiles_for_image(
     relative_path: &str,
     tile_size: u32,
     output_format: OutputFormat,
+    shutdown_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), GalleryError> {
+    use super::types::LoadedImage;
+
     debug!(
         "Loading image once to generate all tiles for: {:?}",
         original_path
     );
 
-    // Detect format and extract ICC profile
-    #[allow(unused_variables)] // Used in avif feature
-    let (icc_profile, detected_format) = extract_image_info(original_path)?;
+    // Load image with all metadata preserved
+    let mut loaded_image = LoadedImage::load(original_path)?;
 
-    // Load image with HDR/gain map preservation for AVIF
-    let (img, _avif_info) = {
-        #[cfg(feature = "avif")]
-        {
-            if detected_format == Some(ImageFormat::Avif) {
-                // Use our custom AVIF reader to preserve color properties
-                match formats::avif::read_avif_info(original_path) {
-                    Ok((img, info)) => (img, Some(info)),
-                    Err(e) => {
-                        debug!(
-                            "Failed to read AVIF with custom reader: {}, falling back",
-                            e
-                        );
-                        (image::open(original_path)?, None)
-                    }
-                }
-            } else {
-                (image::open(original_path)?, None)
-            }
-        }
-        #[cfg(not(feature = "avif"))]
-        {
-            (image::open(original_path)?, None::<()>)
-        }
-    };
-
-    let (img_width, img_height) = (img.width(), img.height());
+    let (img_width, img_height) = loaded_image.dimensions();
 
     // Resize the image if it's too large - we don't want to serve full resolution tiles
     // Cap the maximum dimension at 8192px for tile generation
     let max_tile_dimension = 8192;
     let max_dimension = img_width.max(img_height);
 
-    let resized = if max_dimension > max_tile_dimension {
+    if max_dimension > max_tile_dimension {
         // Scale down proportionally
         let scale = max_tile_dimension as f32 / max_dimension as f32;
         let new_width = (img_width as f32 * scale) as u32;
@@ -541,45 +489,15 @@ fn process_all_tiles_for_image(
             "Resizing image for tiles: {}x{} -> {}x{} (scale: {})",
             img_width, img_height, new_width, new_height, scale
         );
-        img.resize_exact(new_width, new_height, FilterType::Lanczos3)
+        loaded_image.resize(new_width, new_height)?;
     } else {
         debug!(
             "Image within tile dimension limit: {}x{}",
             img_width, img_height
         );
-        img
-    };
-
-    let (resized_width, resized_height) = (resized.width(), resized.height());
-
-    // Resize gain map if present to match the image resize
-    #[cfg(feature = "avif")]
-    let mut resized_avif_info = _avif_info.clone();
-    #[cfg(not(feature = "avif"))]
-    let _resized_avif_info: AvifInfoOption = None;
-
-    #[cfg(feature = "avif")]
-    if let Some(ref mut info) = resized_avif_info
-        && let Some(ref gm_info) = info.gain_map_info
-        && let Some(ref gm_image) = gm_info.gain_map_image
-    {
-        // Calculate scale factors
-        let scale_x = resized_width as f32 / img_width as f32;
-        let scale_y = resized_height as f32 / img_height as f32;
-
-        // Apply same scale to gain map
-        let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
-        let new_gm_width = (gm_width as f32 * scale_x).round().max(1.0) as u32;
-        let new_gm_height = (gm_height as f32 * scale_y).round().max(1.0) as u32;
-
-        let resized_gain_map =
-            gm_image.resize_exact(new_gm_width, new_gm_height, FilterType::Lanczos3);
-
-        // Update the gain map info with resized image
-        if let Some(ref mut gm_info_mut) = info.gain_map_info {
-            gm_info_mut.gain_map_image = Some(resized_gain_map);
-        }
     }
+
+    let (resized_width, resized_height) = loaded_image.dimensions();
 
     // Calculate grid dimensions
     let grid_width = resized_width.div_ceil(tile_size);
@@ -597,6 +515,15 @@ fn process_all_tiles_for_image(
 
     // Generate all tiles for this image
     for tile_y in 0..grid_height {
+        // Check for shutdown at the start of each row
+        if shutdown_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            info!(
+                "Tile generation cancelled for {} after {} tiles",
+                relative_path, generated_count
+            );
+            return Ok(());
+        }
+
         for tile_x in 0..grid_width {
             // Calculate tile boundaries using the fixed tile size
             let tile_start_x = tile_x * tile_size;
@@ -608,50 +535,65 @@ fn process_all_tiles_for_image(
 
             // Extract the tile region once
             if tile_actual_width > 0 && tile_actual_height > 0 {
-                let tile_img = resized.crop_imm(
+                // Extract tile from the loaded image - use actual dimensions, not minimum
+                let tile_img = loaded_image.image.crop_imm(
                     tile_start_x,
                     tile_start_y,
                     tile_actual_width,
                     tile_actual_height,
                 );
 
-                // Extract corresponding gain map tile if present
+                // Create a new LoadedImage for the tile with preserved metadata
+                let mut tile_loaded_image =
+                    LoadedImage::new(tile_img, loaded_image.source_path.clone());
+
+                // Preserve ICC profile
+                tile_loaded_image.icc_profile = loaded_image.icc_profile.clone();
+                tile_loaded_image.format = loaded_image.format;
+
+                // Handle gain map extraction for AVIF tiles
                 #[cfg(feature = "avif")]
-                let mut tile_avif_info = resized_avif_info.clone();
-                #[cfg(not(feature = "avif"))]
-                let _tile_avif_info: AvifInfoOption = None;
+                if let Some(ref avif_info) = loaded_image.avif_info {
+                    // Clone the AVIF info for the tile
+                    let mut tile_avif_info = avif_info.clone();
 
-                #[cfg(feature = "avif")]
-                if let Some(ref mut info) = tile_avif_info
-                    && let Some(ref gm_info) = info.gain_map_info
-                    && let Some(ref gm_image) = gm_info.gain_map_image
-                {
-                    // Calculate gain map tile coordinates proportionally
-                    let gm_scale_x = gm_image.width() as f32 / resized_width as f32;
-                    let gm_scale_y = gm_image.height() as f32 / resized_height as f32;
+                    // Extract corresponding gain map tile if present
+                    if let Some(ref gm_info) = avif_info.gain_map_info {
+                        if let Some(ref gm_image) = gm_info.gain_map_image {
+                            // Calculate gain map tile coordinates proportionally
+                            let gm_scale_x = gm_image.width() as f32 / resized_width as f32;
+                            let gm_scale_y = gm_image.height() as f32 / resized_height as f32;
 
-                    let gm_tile_x = (tile_start_x as f32 * gm_scale_x).round() as u32;
-                    let gm_tile_y = (tile_start_y as f32 * gm_scale_y).round() as u32;
-                    let gm_tile_width =
-                        (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
-                    let gm_tile_height =
-                        (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
+                            let gm_tile_x = (tile_start_x as f32 * gm_scale_x).round() as u32;
+                            let gm_tile_y = (tile_start_y as f32 * gm_scale_y).round() as u32;
+                            let gm_tile_width =
+                                (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
+                            let gm_tile_height =
+                                (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
 
-                    // Ensure we don't exceed gain map boundaries
-                    let gm_tile_width =
-                        gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
-                    let gm_tile_height =
-                        gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
+                            // Ensure we don't exceed gain map boundaries
+                            let gm_tile_width =
+                                gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
+                            let gm_tile_height =
+                                gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
 
-                    if gm_tile_width > 0 && gm_tile_height > 0 {
-                        let gm_tile =
-                            gm_image.crop_imm(gm_tile_x, gm_tile_y, gm_tile_width, gm_tile_height);
+                            if gm_tile_width > 0 && gm_tile_height > 0 {
+                                let gm_tile = gm_image.crop_imm(
+                                    gm_tile_x,
+                                    gm_tile_y,
+                                    gm_tile_width,
+                                    gm_tile_height,
+                                );
 
-                        // Update the gain map info with tile
-                        if let Some(ref mut gm_info_mut) = info.gain_map_info {
-                            gm_info_mut.gain_map_image = Some(gm_tile);
+                                // Update the gain map info with tile
+                                if let Some(ref mut gm_info_mut) = tile_avif_info.gain_map_info {
+                                    gm_info_mut.gain_map_image = Some(gm_tile);
+                                }
+                            }
                         }
                     }
+
+                    tile_loaded_image.avif_info = Some(tile_avif_info);
                 }
 
                 // Save both regular and @2x versions of this tile
@@ -672,19 +614,13 @@ fn process_all_tiles_for_image(
                         continue;
                     }
 
-                    // Save the tile with preserved ICC profile and HDR info
-                    // For AVIF tiles, use high quality settings
-                    save_image(
-                        &tile_img,
+                    // Save the tile with preserved metadata
+                    // For tiles, use high quality settings
+                    tile_loaded_image.save_as(
                         &cache_path,
                         output_format,
-                        90,                     // High quality for JPEG fallback
-                        90.0,                   // High quality for WebP fallback
-                        icc_profile.as_deref(), // Preserve ICC profile
-                        #[cfg(feature = "avif")]
-                        tile_avif_info.as_ref(), // Preserve HDR/gain map info for tile
-                        #[cfg(not(feature = "avif"))]
-                        None,
+                        90,   // High quality for JPEG fallback
+                        90.0, // High quality for WebP fallback
                     )?;
 
                     generated_count += 1;

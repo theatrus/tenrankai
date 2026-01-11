@@ -46,6 +46,8 @@ pub struct RolePermissions {
     // Interactive permissions
     #[serde(default)]
     pub can_use_zoom: bool,
+    #[serde(default)]
+    pub can_use_tile_zoom: bool,
 
     // Special permissions
     #[serde(default)]
@@ -89,6 +91,7 @@ impl RolePermissions {
         self.can_delete_any_comments |= other.can_delete_any_comments;
 
         self.can_use_zoom |= other.can_use_zoom;
+        self.can_use_tile_zoom |= other.can_use_tile_zoom;
 
         self.owner_access |= other.owner_access;
     }
@@ -121,6 +124,7 @@ impl RolePermissions {
             self.can_delete_any_comments = true;
 
             self.can_use_zoom = true;
+            self.can_use_tile_zoom = true;
         }
     }
 }

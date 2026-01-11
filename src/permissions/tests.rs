@@ -39,7 +39,7 @@ fn create_test_gallery_config(name: &str) -> GallerySystemConfig {
         webp_quality: Some(85.0),
         new_threshold_days: None,
         copyright_holder: None,
-        pregenerate_cache: false,
+        pregenerate: None,
         image_indexing: crate::config::ImageIndexingMode::Filename,
         permissions: Default::default(),
         cache_refresh_interval_minutes: Some(60),

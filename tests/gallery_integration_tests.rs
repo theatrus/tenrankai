@@ -60,6 +60,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                                 can_edit_any_comments: false,
                                 can_delete_any_comments: false,
                                 can_use_zoom: false,
+                                can_use_tile_zoom: false,
                                 owner_access: false,
                             },
                         ),

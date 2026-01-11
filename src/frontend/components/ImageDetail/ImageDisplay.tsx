@@ -515,8 +515,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
         className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
         style={{ 
           width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
-          height: dimensions.height > 0 ? `${dimensions.height}px` : undefined,
-          aspectRatio: `${image.dimensions[0]} / ${image.dimensions[1]}`,
+          height: imageLoading ? (dimensions.height > 0 ? `${dimensions.height}px` : undefined) : 'auto',
           position: 'relative',
           overflow: 'hidden'
         }}
@@ -565,8 +564,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
               alt={image.name}
               style={{ 
                 width: '100%',
-                height: '100%',
-                objectFit: 'contain',
+                height: 'auto',
                 display: imageLoading || imageError ? 'none' : 'block'
               }}
               onLoad={handleImageLoad}

@@ -27,7 +27,8 @@ use std::{
     },
     time::SystemTime,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 
@@ -44,6 +45,12 @@ pub struct Gallery {
     pub(crate) image_indexer: Arc<RwLock<indexing::ImageIndexer>>,
     pub(crate) user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage>,
     pub(crate) task_deduplicator: TaskDeduplicator,
+    /// Cancellation token for background tasks
+    pub(crate) shutdown_token: CancellationToken,
+    /// Token for cancelling pre-generation tasks
+    pub(crate) pregeneration_token: Arc<Mutex<CancellationToken>>,
+    /// Atomic flag for synchronous cancellation checks (e.g., in spawn_blocking)
+    pub(crate) shutdown_flag: Arc<AtomicBool>,
 }
 
 impl Gallery {
@@ -71,6 +78,9 @@ impl Gallery {
             image_indexer: Arc::new(RwLock::new(image_indexer)),
             user_metadata_storage,
             task_deduplicator: TaskDeduplicator::new(),
+            shutdown_token: CancellationToken::new(),
+            pregeneration_token: Arc::new(Mutex::new(CancellationToken::new())),
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -112,33 +122,39 @@ impl Gallery {
         self: Arc<Self>,
         pregenerate: bool,
     ) -> Result<(), GalleryError> {
+        // Cancel any existing pre-generation tasks
+        {
+            let mut token_guard = self.pregeneration_token.lock().await;
+            token_guard.cancel();
+            *token_guard = CancellationToken::new();
+        }
+
         // First refresh metadata
         self.clone().refresh_all_metadata().await?;
 
-        // Generate any missing formats (especially AVIF) after metadata refresh
-        // This runs regardless of pregenerate setting to ensure format completeness
-        {
-            let gallery_clone = self.clone();
-            tokio::spawn(async move {
-                info!("Starting missing format generation in background after metadata refresh");
-                if let Err(e) = gallery_clone.generate_all_missing_formats().await {
-                    error!("Failed to generate missing formats: {}", e);
-                } else {
-                    info!("Background missing format generation completed successfully");
-                }
-            });
+        // Report format coverage status
+        if let Err(e) = self.report_format_coverage().await {
+            error!("Failed to report format coverage: {}", e);
         }
 
-        // Then optionally pre-generate cache in background (full regeneration)
+        // Pre-generate missing formats if enabled
         if pregenerate {
-            info!("Spawning background task for full cache pre-generation");
+            info!("Spawning background task for cache pre-generation (missing formats only)");
             let gallery_clone = self.clone();
+            let token = self.pregeneration_token.lock().await.clone();
             tokio::spawn(async move {
-                info!("Starting full cache pre-generation in background after metadata refresh");
-                if let Err(e) = gallery_clone.pregenerate_all_images_cache().await {
-                    error!("Failed to pre-generate image cache: {}", e);
-                } else {
-                    info!("Background full cache pre-generation completed successfully");
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        info!("Cache pre-generation cancelled");
+                    }
+                    _ = async {
+                        info!("Starting cache pre-generation in background after metadata refresh");
+                        if let Err(e) = gallery_clone.pregenerate_all_images_cache().await {
+                            error!("Failed to pre-generate image cache: {}", e);
+                        } else {
+                            info!("Background cache pre-generation completed successfully");
+                        }
+                    } => {}
                 }
             });
         }
@@ -148,5 +164,16 @@ impl Gallery {
 
     pub fn get_config(&self) -> &crate::GallerySystemConfig {
         &self.config
+    }
+
+    /// Trigger shutdown of all background tasks
+    pub async fn shutdown(&self) {
+        info!("Shutting down gallery '{}'", self.config.name);
+        // Set atomic flag for synchronous code (e.g., blocking tile generation)
+        self.shutdown_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown_token.cancel();
+        // Also cancel any running pre-generation tasks
+        self.pregeneration_token.lock().await.cancel();
     }
 }

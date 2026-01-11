@@ -599,17 +599,9 @@ pub async fn image_handler_for_named(
                         user_permissions.permissions.can_download_large
                     }
                     ImageSize::Tile(_, _) => {
-                        // Tiles require permission based on gallery config
-                        if let Some(tile_config) = &gallery.config.tiles {
-                            if tile_config.require_auth {
-                                user_permissions.permissions.can_use_zoom
-                            } else {
-                                user_permissions.permissions.can_view
-                            }
-                        } else {
-                            // No tile config means tiles are not available
-                            false
-                        }
+                        // Tiles require can_use_tile_zoom permission
+                        gallery.config.tiles.is_some()
+                            && user_permissions.permissions.can_use_tile_zoom
                     }
                 };
 

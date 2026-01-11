@@ -61,7 +61,16 @@ images_per_page = 50
 cache_refresh_interval_minutes = 60
 jpeg_quality = 85
 webp_quality = 85.0
-pregenerate_cache = false
+# Pre-generation configuration for cache warming
+# Uncomment to enable pre-generation of resized images on startup
+# [galleries.pregenerate]
+# # Which formats to pre-generate (defaults: jpeg=true, webp=true, avif=false)
+# formats = { jpeg = true, webp = true, avif = false }
+# # Which sizes to pre-generate (defaults: thumbnail=true, gallery=true, medium=true, large=false)
+# sizes = { thumbnail = true, gallery = true, medium = true, large = false }
+# # Whether to pre-generate tiles (requires tiles config, default: false)
+# tiles = false
+
 # Number of days to consider an image as "new" (based on file modification date)
 # Remove or comment out to disable the feature
 new_threshold_days = 7
@@ -93,7 +102,9 @@ permissions = { can_view = true, can_download_medium = true }
 name = "contributor"
 # Inherits all permissions from viewer role
 inherits = "viewer"
-permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true, can_use_zoom = true }
+# can_use_zoom: basic zoom using medium image
+# can_use_tile_zoom: enhanced zoom using high-res tiles (requires tiles config)
+permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true, can_use_zoom = true, can_use_tile_zoom = true }
 
 # Define an admin role with full access
 [galleries.permissions.roles.admin]
@@ -124,6 +135,12 @@ height = 1200
 [galleries.large]
 width = 1600
 height = 1600
+
+# Optional: Tile configuration for enhanced zoom feature
+# Tiles provide high-resolution zoom capability (access controlled by can_use_tile_zoom permission)
+# [galleries.tiles]
+# tile_size = 1024     # Size of each tile in pixels (1024x1024)
+# Note: To pre-generate tiles, enable tiles = true in [galleries.pregenerate]
 
 [galleries.preview]
 max_images = 6
