@@ -80,27 +80,32 @@ export function ImageDetailPage({
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
 
+  // Navigate to a specific image by its navigation data
+  const handleNavigateToImage = async (image: { path: string; name: string }) => {
+    try {
+      // Load new image data
+      await loadImage(image.path);
+
+      // Update URL without page reload
+      const newUrl = `${galleryUrl}/detail/${image.path}`;
+      window.history.pushState({}, '', newUrl);
+
+      // Update document title
+      document.title = `${image.name} - theatr.us`;
+
+    } catch (err) {
+      console.error(`Failed to navigate to image:`, err);
+    }
+  };
+
   // Enhanced navigation with SPA-style URL updates
   const handleNavigation = async (direction: 'prev' | 'next') => {
     if (!currentData) return;
 
-    try {
-      const targetImage = direction === 'prev' ? currentData.prev_image : currentData.next_image;
-      if (!targetImage) return;
+    const targetImage = direction === 'prev' ? currentData.prev_image : currentData.next_image;
+    if (!targetImage) return;
 
-      // Load new image data
-      await loadImage(targetImage.path);
-      
-      // Update URL without page reload
-      const newUrl = `${galleryUrl}/detail/${targetImage.path}`;
-      window.history.pushState({}, '', newUrl);
-      
-      // Update document title
-      document.title = `${targetImage.name} - theatr.us`;
-      
-    } catch (err) {
-      console.error(`Failed to navigate to ${direction} image:`, err);
-    }
+    await handleNavigateToImage(targetImage);
   };
 
   useKeyboardNavigation({
@@ -196,8 +201,11 @@ export function ImageDetailPage({
           <ImageNavigation
             prevImage={currentData.prev_image}
             nextImage={currentData.next_image}
+            prevImages={currentData.prev_images || []}
+            nextImages={currentData.next_images || []}
             galleryUrl={galleryUrl}
             onNavigate={handleNavigation}
+            onNavigateToImage={handleNavigateToImage}
             title={currentData.image.title}
             description={currentData.image.description}
           />

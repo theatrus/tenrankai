@@ -87,6 +87,9 @@ pub struct GalleryApiResponse {
     pub permissions: crate::permissions::RolePermissions,
 }
 
+/// Maximum number of navigation images to include in each direction
+const NAV_IMAGES_COUNT: usize = 8;
+
 #[derive(Serialize, Debug)]
 pub struct ImageDetailApiResponse {
     pub gallery_name: String,
@@ -94,6 +97,10 @@ pub struct ImageDetailApiResponse {
     pub breadcrumbs: Vec<crate::gallery::BreadcrumbItem>,
     pub prev_image: Option<crate::gallery::NavigationImage>,
     pub next_image: Option<crate::gallery::NavigationImage>,
+    /// Extended navigation: multiple previous images (closest first)
+    pub prev_images: Vec<crate::gallery::NavigationImage>,
+    /// Extended navigation: multiple next images (closest first)
+    pub next_images: Vec<crate::gallery::NavigationImage>,
     pub permissions: crate::permissions::RolePermissions,
     pub tile_config: Option<TileConfigInfo>,
 }
@@ -432,7 +439,8 @@ pub async fn image_detail_api_handler_for_named(
     // Find current image index and get prev/next
     let current_index = images.iter().position(|img| img.path == path);
 
-    let (prev_image, next_image) = if let Some(index) = current_index {
+    let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
+        // Immediate prev/next for keyboard navigation
         let prev = if index > 0 {
             let prev_item = &images[index - 1];
             Some(crate::gallery::NavigationImage {
@@ -455,9 +463,35 @@ pub async fn image_detail_api_handler_for_named(
             None
         };
 
-        (prev, next)
+        // Extended navigation: multiple images in each direction (closest first)
+        let prev_imgs: Vec<crate::gallery::NavigationImage> = (0..index)
+            .rev()
+            .take(NAV_IMAGES_COUNT)
+            .map(|i| {
+                let item = &images[i];
+                crate::gallery::NavigationImage {
+                    path: item.path.clone(),
+                    name: item.name.clone(),
+                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        let next_imgs: Vec<crate::gallery::NavigationImage> = ((index + 1)..images.len())
+            .take(NAV_IMAGES_COUNT)
+            .map(|i| {
+                let item = &images[i];
+                crate::gallery::NavigationImage {
+                    path: item.path.clone(),
+                    name: item.name.clone(),
+                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        (prev, next, prev_imgs, next_imgs)
     } else {
-        (None, None)
+        (None, None, Vec::new(), Vec::new())
     };
 
     // Build breadcrumbs for the parent directory, not including the image filename
@@ -518,6 +552,8 @@ pub async fn image_detail_api_handler_for_named(
         breadcrumbs,
         prev_image,
         next_image,
+        prev_images,
+        next_images,
         permissions: user_permissions.permissions,
         tile_config,
     }))

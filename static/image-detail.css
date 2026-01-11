@@ -184,92 +184,156 @@ body {
     to { transform: rotate(360deg); }
 }
 
+/* ==========================================================================
+   Navigation Strip - Filmstrip-style thumbnail navigation
+   ========================================================================== */
+
 .image-navigation {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     margin-top: var(--spacing-lg);
     gap: var(--spacing-md);
 }
 
-.nav-item {
+/* Navigation strip container (prev or next side) */
+.nav-strip {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md);
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    text-decoration: none;
-    color: var(--text-primary);
-    transition: all 0.3s ease;
-    flex: 1;
-    max-width: 300px;
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
 }
 
-.nav-item:hover {
-    background: var(--bg-hover);
-    border-color: var(--border-hover);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-
-.nav-prev {
-    justify-content: flex-start;
-}
-
-.nav-next {
+.nav-strip-prev {
     justify-content: flex-end;
 }
 
-.nav-thumbnail {
-    flex-shrink: 0;
+.nav-strip-next {
+    justify-content: flex-start;
 }
 
-.nav-thumbnail img {
-    width: 60px;
-    height: 60px;
-    object-fit: cover;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-}
-
-.nav-info {
+/* Container for thumbnail images */
+.nav-strip-container {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    flex: 1;
     min-width: 0;
 }
 
-.nav-direction {
+.nav-strip-prev .nav-strip-container {
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+.nav-strip-next .nav-strip-container {
+    flex-direction: row;
+    justify-content: flex-start;
+}
+
+/* Individual thumbnail button */
+.nav-strip-thumb {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    overflow: hidden;
+}
+
+.nav-strip-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.nav-strip-thumb:hover {
+    border-color: var(--link-color);
+    transform: scale(1.08);
+    z-index: 1;
+}
+
+/* Immediate (adjacent) thumbnail is larger and highlighted */
+.nav-strip-thumb-immediate {
+    width: 56px;
+    height: 56px;
+    border-color: var(--border-color);
+}
+
+.nav-strip-thumb-immediate:hover {
+    border-color: var(--link-color);
+}
+
+/* Fade gradient overlays */
+.nav-strip-fade {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.nav-strip-fade-left {
+    left: 0;
+    background: linear-gradient(to right, var(--bg-primary), transparent);
+}
+
+.nav-strip-fade-right {
+    right: 0;
+    background: linear-gradient(to left, var(--bg-primary), transparent);
+}
+
+/* Arrow buttons */
+.nav-strip-arrow {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-muted);
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 3;
 }
 
-.nav-filename {
-    font-size: 0.85rem;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.nav-strip-arrow:hover {
+    background: var(--bg-hover);
+    border-color: var(--link-color);
+    color: var(--link-color);
 }
 
+.nav-strip-arrow-prev {
+    margin-left: var(--spacing-sm);
+}
+
+.nav-strip-arrow-next {
+    margin-right: var(--spacing-sm);
+}
+
+/* Spacer when no title/description - minimal width to maximize thumbnail space */
 .nav-spacer {
-    flex: 1;
-    max-width: 300px;
+    width: var(--spacing-lg);
 }
 
-/* Image info in navigation */
+/* Image info in navigation (title/description center section) */
 .nav-image-info {
-    flex: 2;
-    max-width: 600px;
+    max-width: 400px;
     text-align: center;
     padding: var(--spacing-md) var(--spacing-lg);
-    margin: 0 var(--spacing-md);
+    margin: 0 var(--spacing-sm);
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -296,25 +360,10 @@ body {
     margin-bottom: 0;
 }
 
+/* Responsive: Hide navigation strip on mobile (uses MobileNavigation instead) */
 @media (max-width: 768px) {
     .image-navigation {
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-    
-    .nav-item {
-        max-width: 100%;
-        width: 100%;
-    }
-    
-    .nav-spacer {
         display: none;
-    }
-    
-    .nav-filename {
-        white-space: normal;
-        overflow: visible;
-        text-overflow: unset;
     }
 }
 

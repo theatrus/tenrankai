@@ -419,7 +419,7 @@ pub async fn image_detail_handler_for_named(
         );
     }
 
-    let (prev_image, next_image) = if let Some(index) = current_index {
+    let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
         let prev = if index > 0 {
             let prev_item = &images[index - 1];
             Some(NavigationImage {
@@ -442,9 +442,35 @@ pub async fn image_detail_handler_for_named(
             None
         };
 
-        (prev, next)
+        // Extended navigation: multiple images in each direction (closest first)
+        let prev_imgs: Vec<NavigationImage> = (0..index)
+            .rev()
+            .take(8)
+            .map(|i| {
+                let item = &images[i];
+                NavigationImage {
+                    path: item.path.clone(),
+                    name: item.name.clone(),
+                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        let next_imgs: Vec<NavigationImage> = ((index + 1)..images.len())
+            .take(8)
+            .map(|i| {
+                let item = &images[i];
+                NavigationImage {
+                    path: item.path.clone(),
+                    name: item.name.clone(),
+                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        (prev, next, prev_imgs, next_imgs)
     } else {
-        (None, None)
+        (None, None, Vec::new(), Vec::new())
     };
 
     // Build breadcrumbs for the parent directory, not including the image filename
@@ -496,6 +522,8 @@ pub async fn image_detail_handler_for_named(
         "breadcrumbs": breadcrumbs,
         "prev_image": prev_image,
         "next_image": next_image,
+        "prev_images": prev_images,
+        "next_images": next_images,
         "image_detail_json": image_detail_json,
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
