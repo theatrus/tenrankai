@@ -295,8 +295,8 @@ impl Gallery {
         relative_path: &str,
         only_missing: bool,
     ) -> Result<(), super::GalleryError> {
-        // Check for cancellation
-        if self.pregeneration_token.lock().await.is_cancelled() {
+        // Check for cancellation (both pregeneration and shutdown)
+        if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
             return Ok(());
         }
 
@@ -405,8 +405,8 @@ impl Gallery {
         &self,
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
-        // Check for cancellation
-        if self.pregeneration_token.lock().await.is_cancelled() {
+        // Check for cancellation (both pregeneration and shutdown)
+        if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
             return Ok(());
         }
 
@@ -454,8 +454,8 @@ impl Gallery {
         if grid_width > 0 && grid_height > 0 {
             // Just request tile 0,0 - the backend will generate all tiles
             for format in &formats {
-                // Check for cancellation before each format
-                if self.pregeneration_token.lock().await.is_cancelled() {
+                // Check for cancellation before each format (both pregeneration and shutdown)
+                if self.pregeneration_token.lock().await.is_cancelled() || self.shutdown_token.is_cancelled() {
                     return Ok(());
                 }
 
@@ -503,9 +503,10 @@ impl Gallery {
             total_images, num_cores
         );
 
-        // Get cancellation token
-        let cancel_token = self.pregeneration_token.lock().await.clone();
-        
+        // Get cancellation tokens (both pregeneration and shutdown)
+        let pregen_token = self.pregeneration_token.lock().await.clone();
+        let shutdown_token = self.shutdown_token.clone();
+
         // Track progress across threads
         let completed = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
@@ -519,19 +520,23 @@ impl Gallery {
                 let completed = completed.clone();
                 let failed = failed.clone();
                 let cancelled = cancelled.clone();
-                let cancel_token = cancel_token.clone();
-                
+                let pregen_token = pregen_token.clone();
+                let shutdown_token = shutdown_token.clone();
+
                 async move {
+                    // Helper to check if cancelled
+                    let is_cancelled = || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+
                     // Check for cancellation before processing
-                    if cancel_token.is_cancelled() {
+                    if is_cancelled() {
                         cancelled.store(true, Ordering::Relaxed);
                         return (index, image_path, Err(super::GalleryError::InvalidPath));
                     }
-                    
+
                     let result = gallery.pregenerate_image_cache(&image_path).await;
-                    
+
                     // Check for cancellation between operations
-                    if cancel_token.is_cancelled() {
+                    if is_cancelled() {
                         cancelled.store(true, Ordering::Relaxed);
                         return (index, image_path, Err(super::GalleryError::InvalidPath));
                     }
@@ -560,23 +565,23 @@ impl Gallery {
                             }
                         }
                         Err(e) => {
-                            if !cancel_token.is_cancelled() {
+                            if !is_cancelled() {
                                 error!("Failed to pre-generate cache for {}: {}", image_path, e);
                                 failed.fetch_add(1, Ordering::Relaxed);
                             }
                         }
                     }
-                    
+
                     (index, image_path, result)
                 }
             })
             .buffer_unordered(num_cores)
             .take_while(|_| {
-                let is_cancelled = cancel_token.is_cancelled();
-                if is_cancelled {
+                let check_cancelled = pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+                if check_cancelled {
                     cancelled.store(true, Ordering::Relaxed);
                 }
-                async move { !is_cancelled }
+                async move { !check_cancelled }
             })
             .collect()
             .await;
@@ -696,10 +701,11 @@ impl Gallery {
             "Processing {} images with missing formats (using {} parallel workers)",
             unique_image_count, num_cores
         );
-        
-        // Get cancellation token
-        let cancel_token = self.pregeneration_token.lock().await.clone();
-        
+
+        // Get cancellation tokens (both pregeneration and shutdown)
+        let pregen_token = self.pregeneration_token.lock().await.clone();
+        let shutdown_token = self.shutdown_token.clone();
+
         // Track progress
         let completed = Arc::new(AtomicUsize::new(0));
         let failed = Arc::new(AtomicUsize::new(0));
@@ -712,20 +718,24 @@ impl Gallery {
                 let completed = completed.clone();
                 let failed = failed.clone();
                 let cancelled = cancelled.clone();
-                let cancel_token = cancel_token.clone();
+                let pregen_token = pregen_token.clone();
+                let shutdown_token = shutdown_token.clone();
                 let total = unique_image_count;
-                
+
                 async move {
+                    // Helper to check if cancelled
+                    let is_cancelled = || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+
                     // Check for cancellation
-                    if cancel_token.is_cancelled() {
+                    if is_cancelled() {
                         cancelled.store(true, Ordering::Relaxed);
                         return (image_path, Err(super::GalleryError::InvalidPath));
                     }
-                    
+
                     let result = gallery
                         .pregenerate_image_cache_selective(&image_path, true)
                         .await;
-                    
+
                     match &result {
                         Ok(_) => {
                             let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
@@ -737,7 +747,7 @@ impl Gallery {
                             }
                         }
                         Err(e) => {
-                            if !cancel_token.is_cancelled() {
+                            if !is_cancelled() {
                                 error!(
                                     "Failed to generate missing formats for {}: {}",
                                     image_path, e
@@ -746,17 +756,17 @@ impl Gallery {
                             }
                         }
                     }
-                    
+
                     (image_path, result)
                 }
             })
             .buffer_unordered(num_cores)
             .take_while(|_| {
-                let is_cancelled = cancel_token.is_cancelled();
-                if is_cancelled {
+                let check_cancelled = pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+                if check_cancelled {
                     cancelled.store(true, Ordering::Relaxed);
                 }
-                async move { !is_cancelled }
+                async move { !check_cancelled }
             })
             .collect()
             .await;

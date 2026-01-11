@@ -159,8 +159,10 @@ impl Gallery {
     }
 
     /// Trigger shutdown of all background tasks
-    pub fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         info!("Shutting down gallery '{}'", self.config.name);
         self.shutdown_token.cancel();
+        // Also cancel any running pre-generation tasks
+        self.pregeneration_token.lock().await.cancel();
     }
 }

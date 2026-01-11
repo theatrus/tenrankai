@@ -68,12 +68,16 @@ impl Gallery {
                 ));
             }
 
-            // Get cancellation token for inner checks
-            let cancel_token = self.pregeneration_token.lock().await.clone();
+            // Get cancellation tokens for inner checks (both pregeneration and shutdown)
+            let pregen_token = self.pregeneration_token.lock().await.clone();
+            let shutdown_token = self.shutdown_token.clone();
 
             let paths = tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
+                // Helper to check if cancelled
+                let is_cancelled = || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
+
                 // Check cancellation before loading
-                if cancel_token.is_cancelled() {
+                if is_cancelled() {
                     debug!("Batch processing cancelled before loading image");
                     return Ok(Vec::new());
                 }
@@ -89,7 +93,7 @@ impl Gallery {
                 // Process each variant
                 for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in variant_configs.into_iter().enumerate() {
                     // Check cancellation between variants
-                    if cancel_token.is_cancelled() {
+                    if is_cancelled() {
                         info!("Batch processing cancelled after {}/{} variants", idx, total_variants);
                         break;
                     }

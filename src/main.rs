@@ -424,9 +424,9 @@ async fn run_server(
     // Shutdown galleries and save caches
     info!("Shutting down - stopping background tasks and saving metadata caches...");
     for gallery in galleries_for_shutdown {
-        // Trigger shutdown of background tasks
-        gallery.shutdown();
-        
+        // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
+        gallery.shutdown().await;
+
         // Save caches
         if let Err(e) = gallery.save_caches().await {
             tracing::error!("Failed to save metadata cache on shutdown: {}", e);
@@ -434,7 +434,7 @@ async fn run_server(
             info!("Metadata cache saved successfully for gallery '{}'", gallery.get_config().name);
         }
     }
-    
+
     // Give background tasks a moment to shut down cleanly
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
