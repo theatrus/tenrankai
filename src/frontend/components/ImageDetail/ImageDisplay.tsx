@@ -826,21 +826,23 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     const viewAspect = window.innerWidth / window.innerHeight;
     const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
 
-    // Scale from tiled coordinates to base display coordinates (parent applies zoom scale)
-    const tileScale = baseImgWidth / tileConfig.tiled_width;
-    const tileDisplaySize = tileConfig.tile_size * tileScale;
+    // Scale from original image to display coordinates
+    // This matches the scale used in the tile container
+    const imgScale = baseImgWidth / image.dimensions[0];
+    const tileDisplaySize = tileConfig.tile_size * imgScale;
 
     // Visible viewport in tiled pixel coordinates
-    const visibleTiledWidth = window.innerWidth / (tileScale * pinchZoom.scale);
-    const visibleTiledHeight = window.innerHeight / (tileScale * pinchZoom.scale);
+    const visibleTiledWidth = window.innerWidth / (imgScale * pinchZoom.scale);
+    const visibleTiledHeight = window.innerHeight / (imgScale * pinchZoom.scale);
 
     // Center of visible area in tiled coordinates (accounting for pan)
     // Pan is in screen pixels, convert to tiled coordinates
-    const panInTiledX = -pinchZoom.translateX / (tileScale * pinchZoom.scale);
-    const panInTiledY = -pinchZoom.translateY / (tileScale * pinchZoom.scale);
+    const panInTiledX = -pinchZoom.translateX / (imgScale * pinchZoom.scale);
+    const panInTiledY = -pinchZoom.translateY / (imgScale * pinchZoom.scale);
 
-    const tiledCenterX = tileConfig.tiled_width / 2 + panInTiledX;
-    const tiledCenterY = tileConfig.tiled_height / 2 + panInTiledY;
+    // Center is at image center (which is at origin of tiled coordinates)
+    const tiledCenterX = image.dimensions[0] / 2 + panInTiledX;
+    const tiledCenterY = image.dimensions[1] / 2 + panInTiledY;
 
     // Calculate which tiles to render (with buffer)
     const startTileX = Math.max(0, Math.floor((tiledCenterX - visibleTiledWidth / 2) / tileConfig.tile_size) - 1);
@@ -984,14 +986,10 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
 
                   {/* Tile overlay - positioned exactly over base image */}
                   {tileConfig && pinchZoom.scale > 1.5 && (() => {
-                    // Scale from tiled to base image display coordinates
-                    const tileScale = baseImgWidth / tileConfig.tiled_width;
-
-                    // Offset to align tiles with actual image content (not padding)
-                    const paddingLeft = (tileConfig.tiled_width - image.dimensions[0]) / 2;
-                    const paddingTop = (tileConfig.tiled_height - image.dimensions[1]) / 2;
-                    const offsetX = -paddingLeft * tileScale;
-                    const offsetY = -paddingTop * tileScale;
+                    // The tiled image has the original at (0,0) with padding on right/bottom
+                    // So tiles should start at (0,0) to align with the base image
+                    // Scale factor: base image display size / original image size
+                    const imgScale = baseImgWidth / image.dimensions[0];
 
                     return (
                       <div
@@ -999,10 +997,10 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                           position: 'absolute',
                           top: 0,
                           left: 0,
-                          width: `${tileConfig.tiled_width * tileScale}px`,
-                          height: `${tileConfig.tiled_height * tileScale}px`,
-                          transform: `translate(${offsetX}px, ${offsetY}px)`,
-                          pointerEvents: 'none'
+                          width: `${tileConfig.tiled_width * imgScale}px`,
+                          height: `${tileConfig.tiled_height * imgScale}px`,
+                          pointerEvents: 'none',
+                          overflow: 'hidden'
                         }}
                       >
                         {renderMobileZoomTiles()}
