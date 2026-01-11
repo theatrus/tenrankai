@@ -107,6 +107,34 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
   const currentScaleRef = useRef<number>(1);
   const initialTranslateRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isPinchingRef = useRef<boolean>(false);
+
+  // Calculate pan limits based on image size and scale
+  const calculatePanLimits = (scale: number) => {
+    const imgAspect = image.dimensions[0] / image.dimensions[1];
+    const viewAspect = window.innerWidth / window.innerHeight;
+
+    // Base image display size (fits within viewport)
+    let baseImgWidth: number, baseImgHeight: number;
+    if (imgAspect > viewAspect) {
+      baseImgWidth = window.innerWidth;
+      baseImgHeight = window.innerWidth / imgAspect;
+    } else {
+      baseImgHeight = window.innerHeight;
+      baseImgWidth = window.innerHeight * imgAspect;
+    }
+
+    // Scaled image size
+    const scaledWidth = baseImgWidth * scale;
+    const scaledHeight = baseImgHeight * scale;
+
+    // Pan limits: how far can we pan before image edge leaves viewport
+    // If scaled image is smaller than viewport, no panning allowed (stays centered)
+    // If scaled image is larger, limit is (scaledSize - viewportSize) / 2
+    const maxPanX = Math.max(0, (scaledWidth - window.innerWidth) / 2);
+    const maxPanY = Math.max(0, (scaledHeight - window.innerHeight) / 2);
+
+    return { maxPanX, maxPanY };
+  };
   
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
@@ -444,9 +472,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
       initialTranslateRef.current = { x: newTranslateX, y: newTranslateY };
       lastTouchCenter.current = currentCenter;
 
-      // Constrain pan based on scale
-      const maxPanX = Math.max(0, (newScale - 1) * window.innerWidth / 2);
-      const maxPanY = Math.max(0, (newScale - 1) * window.innerHeight / 2);
+      // Constrain pan to keep image within viewport
+      const { maxPanX, maxPanY } = calculatePanLimits(newScale);
       newTranslateX = Math.max(-maxPanX, Math.min(maxPanX, newTranslateX));
       newTranslateY = Math.max(-maxPanY, Math.min(maxPanY, newTranslateY));
 
@@ -483,9 +510,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
       let newTranslateX = pinchZoom.translateX + deltaX;
       let newTranslateY = pinchZoom.translateY + deltaY;
 
-      // Constrain pan
-      const maxPanX = Math.max(0, (pinchZoom.scale - 1) * window.innerWidth / 2);
-      const maxPanY = Math.max(0, (pinchZoom.scale - 1) * window.innerHeight / 2);
+      // Constrain pan to keep image within viewport
+      const { maxPanX, maxPanY } = calculatePanLimits(pinchZoom.scale);
       newTranslateX = Math.max(-maxPanX, Math.min(maxPanX, newTranslateX));
       newTranslateY = Math.max(-maxPanY, Math.min(maxPanY, newTranslateY));
 
