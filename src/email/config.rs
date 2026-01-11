@@ -44,11 +44,13 @@ impl EmailProviderType {
         }
     }
 
-    /// Check if this provider requires credentials
+    /// Check if this provider requires explicit credentials in config
+    /// Note: SES returns false because it can use the AWS SDK's default
+    /// credential provider chain (env vars, credentials file, IAM roles)
     pub fn requires_credentials(&self) -> bool {
         match self {
             EmailProviderType::Null => false,
-            EmailProviderType::Ses => true,
+            EmailProviderType::Ses => false, // AWS SDK handles credential discovery
             EmailProviderType::Smtp => true,
             EmailProviderType::SendGrid => true,
             EmailProviderType::Mailgun => true,
@@ -246,11 +248,14 @@ impl EmailProviderConfig {
     pub fn has_required_credentials(&self) -> bool {
         match self {
             EmailProviderConfig::Null => true, // No credentials required
-            EmailProviderConfig::Ses(config) => {
-                // SES can use default AWS credentials or explicit ones
-                config.access_key_id.is_some() && config.secret_access_key.is_some()
-                    || std::env::var("AWS_ACCESS_KEY_ID").is_ok()
-                    || std::env::var("AWS_PROFILE").is_ok()
+            EmailProviderConfig::Ses(_) => {
+                // SES uses the AWS SDK's default credential provider chain:
+                // 1. Explicit credentials in config
+                // 2. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+                // 3. AWS credentials file (~/.aws/credentials)
+                // 4. IAM role credentials (EC2, ECS, Lambda, etc.)
+                // We always return true and let the SDK handle credential discovery
+                true
             }
             EmailProviderConfig::Smtp(config) => {
                 // SMTP may or may not require auth
@@ -304,8 +309,9 @@ mod tests {
         assert_eq!(EmailProviderType::Mailgun.display_name(), "Mailgun");
 
         // Test credential requirements
+        // Null and SES don't require explicit credentials (SES uses AWS SDK credential chain)
         assert!(!EmailProviderType::Null.requires_credentials());
-        assert!(EmailProviderType::Ses.requires_credentials());
+        assert!(!EmailProviderType::Ses.requires_credentials());
         assert!(EmailProviderType::Smtp.requires_credentials());
         assert!(EmailProviderType::SendGrid.requires_credentials());
         assert!(EmailProviderType::Mailgun.requires_credentials());
