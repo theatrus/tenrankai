@@ -27,7 +27,7 @@ use std::{
     },
     time::SystemTime,
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
@@ -51,6 +51,8 @@ pub struct Gallery {
     pub(crate) pregeneration_token: Arc<Mutex<CancellationToken>>,
     /// Atomic flag for synchronous cancellation checks (e.g., in spawn_blocking)
     pub(crate) shutdown_flag: Arc<AtomicBool>,
+    /// Semaphore to limit concurrent image processing operations (prevents memory exhaustion)
+    pub(crate) image_processing_semaphore: Arc<Semaphore>,
 }
 
 impl Gallery {
@@ -81,6 +83,9 @@ impl Gallery {
             shutdown_token: CancellationToken::new(),
             pregeneration_token: Arc::new(Mutex::new(CancellationToken::new())),
             shutdown_flag: Arc::new(AtomicBool::new(false)),
+            // Limit concurrent image processing to prevent memory exhaustion
+            // Use number of CPUs as the limit for a reasonable balance
+            image_processing_semaphore: Arc::new(Semaphore::new(num_cpus::get())),
         }
     }
 

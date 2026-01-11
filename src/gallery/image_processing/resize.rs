@@ -250,6 +250,15 @@ impl Gallery {
         if handle.is_executor() {
             // We're the executor, generate the image
 
+            // Acquire semaphore permit to limit concurrent image processing
+            let _permit = self
+                .image_processing_semaphore
+                .acquire()
+                .await
+                .map_err(|_| {
+                    GalleryError::ProcessingError("Image processing semaphore closed".to_string())
+                })?;
+
             // Ensure cache directory exists
             tokio::fs::create_dir_all(&self.config.cache_directory).await?;
 
@@ -362,6 +371,15 @@ impl Gallery {
 
         if handle.is_executor() {
             // We're the executor, generate all tiles for this image
+
+            // Acquire semaphore permit to limit concurrent image processing
+            let _permit = self
+                .image_processing_semaphore
+                .acquire()
+                .await
+                .map_err(|_| {
+                    GalleryError::ProcessingError("Image processing semaphore closed".to_string())
+                })?;
 
             // Ensure cache directory exists
             tokio::fs::create_dir_all(&self.config.cache_directory).await?;
