@@ -295,6 +295,11 @@ impl Gallery {
         relative_path: &str,
         only_missing: bool,
     ) -> Result<(), super::GalleryError> {
+        // Check for cancellation
+        if self.pregeneration_token.lock().await.is_cancelled() {
+            return Ok(());
+        }
+
         if !self.is_image(relative_path) {
             return Ok(());
         }
@@ -400,6 +405,11 @@ impl Gallery {
         &self,
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
+        // Check for cancellation
+        if self.pregeneration_token.lock().await.is_cancelled() {
+            return Ok(());
+        }
+
         // Check if tiles are configured
         let tile_config = match &self.config.tiles {
             Some(config) => config,
@@ -444,6 +454,11 @@ impl Gallery {
         if grid_width > 0 && grid_height > 0 {
             // Just request tile 0,0 - the backend will generate all tiles
             for format in &formats {
+                // Check for cancellation before each format
+                if self.pregeneration_token.lock().await.is_cancelled() {
+                    return Ok(());
+                }
+
                 match self
                     .get_image_tile(&full_path, relative_path, 0, 0, *format)
                     .await

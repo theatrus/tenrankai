@@ -67,20 +67,35 @@ impl Gallery {
                     cache_path,
                 ));
             }
-            
+
+            // Get cancellation token for inner checks
+            let cancel_token = self.pregeneration_token.lock().await.clone();
+
             let paths = tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
+                // Check cancellation before loading
+                if cancel_token.is_cancelled() {
+                    debug!("Batch processing cancelled before loading image");
+                    return Ok(Vec::new());
+                }
+
                 // Load image once with all metadata
                 debug!("Loading image for batch processing: {:?}", original_path);
                 let loaded_image = LoadedImage::load(&original_path)?;
                 let mut paths = Vec::new();
-                
+
                 let total_variants = variant_configs.len();
                 info!("Processing {} variants for image: {:?}", total_variants, original_path.file_name());
-                
+
                 // Process each variant
                 for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in variant_configs.into_iter().enumerate() {
-                    debug!("  [{}/{}] Generating {} {}x{} (format: {}, watermark: {})", 
-                        idx + 1, 
+                    // Check cancellation between variants
+                    if cancel_token.is_cancelled() {
+                        info!("Batch processing cancelled after {}/{} variants", idx, total_variants);
+                        break;
+                    }
+
+                    debug!("  [{}/{}] Generating {} {}x{} (format: {}, watermark: {})",
+                        idx + 1,
                         total_variants,
                         size_str,
                         dimensions.width,
@@ -88,13 +103,13 @@ impl Gallery {
                         output_format.extension(),
                         apply_watermark
                     );
-                    
+
                     // Clone the loaded image for this variant
                     let mut variant_image = loaded_image.clone();
-                    
+
                     // Resize to target dimensions
                     variant_image.resize(dimensions.width, dimensions.height)?;
-                    
+
                     // Apply watermark if needed
                     if apply_watermark {
                         if let Some(ref holder) = copyright_holder {
@@ -102,7 +117,7 @@ impl Gallery {
                             variant_image.apply_watermark(holder, &font_path)?;
                         }
                     }
-                    
+
                     // Save the variant
                     variant_image.save_as(&cache_path, output_format, jpeg_quality, webp_quality)?;
                     paths.push(cache_path);
