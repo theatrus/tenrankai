@@ -906,8 +906,6 @@ Tenrankai is under active development with a comprehensive codebase and document
 - Full-text search across galleries and posts
 - Video file support with thumbnail generation
 - Tag-based filtering and organization
-- User roles and permissions system
-- Gallery-specific access controls
 
 ### Contributing
 

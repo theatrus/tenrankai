@@ -71,12 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Logout functionality
   - Accessible from user menu in navigation
 
-- **Gallery Access Control**: Folder-level authentication and user restrictions
-  - `require_auth = true` in `_folder.md` TOML to require authentication
-  - `allowed_users = ["user1", "user2"]` to restrict access to specific users
+- **Gallery Access Control**: Role-based folder-level permissions
+  - Configure `[permissions]` section in `_folder.md` TOML for folder-specific access
+  - `public_role = "none"` to require authentication for a folder
+  - Define custom roles with fine-grained permissions (viewing, downloading, metadata, comments)
+  - Assign users to roles via `[[permissions.user_roles]]` sections
   - Hierarchical access control (parent folder restrictions apply to children)
   - Access control applies to gallery views, previews, image viewing, and API endpoints
-  - Comprehensive checking throughout the gallery pipeline
 
 - **Enhanced Login System**: Improved user experience and security
   - Consolidated JavaScript utilities in `/static/login.js` with cache busting
