@@ -116,7 +116,7 @@ impl Gallery {
                     _ = interval.tick() => {
                         info!("Starting scheduled metadata cache refresh");
 
-                        let pregenerate = gallery.config.pregenerate_cache;
+                        let pregenerate = gallery.config.pregenerate.is_some();
                         if let Err(e) = gallery
                             .clone()
                             .refresh_metadata_and_pregenerate_cache(pregenerate)
@@ -280,6 +280,64 @@ impl Gallery {
         format!("composite_{}_{}", self.config.name, path_key)
     }
 
+    /// Get sizes to pregenerate based on config
+    fn get_pregenerate_sizes(&self) -> Vec<ImageSize> {
+        let config = match &self.config.pregenerate {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+
+        let mut sizes = Vec::new();
+        if config.sizes.thumbnail {
+            sizes.push(ImageSize::Thumbnail);
+            sizes.push(ImageSize::ThumbnailRetina);
+        }
+        if config.sizes.gallery {
+            sizes.push(ImageSize::Gallery);
+            sizes.push(ImageSize::GalleryRetina);
+        }
+        if config.sizes.medium {
+            sizes.push(ImageSize::Medium);
+            sizes.push(ImageSize::MediumRetina);
+        }
+        if config.sizes.large {
+            sizes.push(ImageSize::Large);
+            sizes.push(ImageSize::LargeRetina);
+        }
+        sizes
+    }
+
+    /// Get formats to pregenerate based on config
+    fn get_pregenerate_formats(&self) -> Vec<OutputFormat> {
+        let config = match &self.config.pregenerate {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+
+        let mut formats = Vec::new();
+        if config.formats.jpeg {
+            formats.push(OutputFormat::Jpeg);
+        }
+        if config.formats.webp {
+            formats.push(OutputFormat::WebP);
+        }
+        #[cfg(feature = "avif")]
+        if config.formats.avif {
+            formats.push(OutputFormat::Avif);
+        }
+        formats
+    }
+
+    /// Check if tiles should be pregenerated
+    fn should_pregenerate_tiles(&self) -> bool {
+        self.config
+            .pregenerate
+            .as_ref()
+            .map(|c| c.tiles)
+            .unwrap_or(false)
+            && self.config.tiles.is_some()
+    }
+
     /// Pre-generate cache for a single image (only generates missing formats)
     pub async fn pregenerate_image_cache(
         &self,
@@ -301,12 +359,18 @@ impl Gallery {
             return Ok(());
         }
 
-        let sizes = ImageSize::ALL;
+        let sizes = self.get_pregenerate_sizes();
+        let allowed_formats = self.get_pregenerate_formats();
+
+        if sizes.is_empty() || allowed_formats.is_empty() {
+            return Ok(());
+        }
+
         let mut variants = Vec::new();
 
         // Collect all missing variants to generate
-        for &size in sizes {
-            let formats_to_generate = match self.check_format_coverage(relative_path, size).await {
+        for size in &sizes {
+            let formats_to_generate = match self.check_format_coverage(relative_path, *size).await {
                 Ok(coverage) => coverage.missing_formats(relative_path),
                 Err(e) => {
                     debug!(
@@ -328,14 +392,16 @@ impl Gallery {
 
             let apply_watermark = supports_watermark && self.config.copyright_holder.is_some();
 
-            // Add each format as a variant
+            // Add each format as a variant (only if in allowed formats)
             for format in formats_to_generate {
-                variants.push((
-                    size.as_str().to_string(),
-                    dimensions.clone(),
-                    apply_watermark,
-                    format,
-                ));
+                if allowed_formats.contains(&format) {
+                    variants.push((
+                        size.as_str().to_string(),
+                        dimensions.clone(),
+                        apply_watermark,
+                        format,
+                    ));
+                }
             }
         }
 
@@ -520,8 +586,7 @@ impl Gallery {
 
                     // Also pre-generate tiles if configured and enabled
                     if result.is_ok()
-                        && let Some(tile_config) = &gallery.config.tiles
-                        && tile_config.pregenerate
+                        && gallery.should_pregenerate_tiles()
                         && let Err(e) = gallery.pregenerate_tiles_for_image(&image_path).await
                     {
                         error!("Failed to pre-generate tiles for {}: {}", image_path, e);

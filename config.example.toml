@@ -61,7 +61,16 @@ images_per_page = 50
 cache_refresh_interval_minutes = 60
 jpeg_quality = 85
 webp_quality = 85.0
-pregenerate_cache = false
+# Pre-generation configuration for cache warming
+# Uncomment to enable pre-generation of resized images on startup
+# [galleries.pregenerate]
+# # Which formats to pre-generate (defaults: jpeg=true, webp=true, avif=false)
+# formats = { jpeg = true, webp = true, avif = false }
+# # Which sizes to pre-generate (defaults: thumbnail=true, gallery=true, medium=true, large=false)
+# sizes = { thumbnail = true, gallery = true, medium = true, large = false }
+# # Whether to pre-generate tiles (requires tiles config, default: false)
+# tiles = false
+
 # Number of days to consider an image as "new" (based on file modification date)
 # Remove or comment out to disable the feature
 new_threshold_days = 7
@@ -131,7 +140,7 @@ height = 1600
 # Tiles provide high-resolution zoom capability (access controlled by can_use_tile_zoom permission)
 # [galleries.tiles]
 # tile_size = 1024     # Size of each tile in pixels (1024x1024)
-# pregenerate = false  # Pre-generate tiles during cache generation (uses more disk space)
+# Note: To pre-generate tiles, enable tiles = true in [galleries.pregenerate]
 
 [galleries.preview]
 max_images = 6

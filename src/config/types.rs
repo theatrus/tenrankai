@@ -93,8 +93,9 @@ pub struct GallerySystemConfig {
     pub cache_refresh_interval_minutes: Option<u64>,
     pub jpeg_quality: Option<u8>,
     pub webp_quality: Option<f32>,
+    /// Pre-generation configuration (None = disabled, Some = enabled with settings)
     #[serde(default)]
-    pub pregenerate_cache: bool,
+    pub pregenerate: Option<PregenerateConfig>,
     /// Number of days to consider an image as "new" (based on file modification date)
     pub new_threshold_days: Option<u32>,
     /// Copyright holder name for watermarking medium-sized images
@@ -138,16 +139,54 @@ pub struct PreviewConfig {
 }
 
 /// Tile configuration for protected zoom feature
-/// Access is controlled by the `can_use_zoom` role permission
+/// Access is controlled by the `can_use_tile_zoom` role permission
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TileConfig {
     /// Size of each tile in pixels (e.g., 1024 for 1024x1024 tiles)
     #[serde(default = "super::defaults::default_tile_size")]
     pub tile_size: u32,
-    /// Whether to pre-generate tiles during cache pre-generation
-    #[serde(default = "super::defaults::default_tiles_pregenerate")]
-    pub pregenerate: bool,
+}
+
+/// Pre-generation configuration for cache warming
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PregenerateConfig {
+    /// Which image formats to pre-generate
+    #[serde(default = "super::defaults::default_pregenerate_formats")]
+    pub formats: PregenerateFormats,
+    /// Which image sizes to pre-generate
+    #[serde(default = "super::defaults::default_pregenerate_sizes")]
+    pub sizes: PregenerateSizes,
+    /// Whether to pre-generate tiles (requires tiles config)
+    #[serde(default)]
+    pub tiles: bool,
+}
+
+/// Which image formats to pre-generate
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PregenerateFormats {
+    #[serde(default = "super::defaults::default_true")]
+    pub jpeg: bool,
+    #[serde(default = "super::defaults::default_true")]
+    pub webp: bool,
+    #[serde(default)]
+    pub avif: bool,
+}
+
+/// Which image sizes to pre-generate
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PregenerateSizes {
+    #[serde(default = "super::defaults::default_true")]
+    pub thumbnail: bool,
+    #[serde(default = "super::defaults::default_true")]
+    pub gallery: bool,
+    #[serde(default = "super::defaults::default_true")]
+    pub medium: bool,
+    #[serde(default)]
+    pub large: bool,
 }
 
 /// Posts system configuration for markdown-based content

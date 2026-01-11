@@ -401,7 +401,7 @@ async fn run_server(
                     "Metadata cache for gallery '{}' is empty, triggering initial refresh",
                     gallery_config.name
                 );
-                let pregenerate = gallery_config.pregenerate_cache;
+                let pregenerate = gallery_config.pregenerate.is_some();
                 if pregenerate {
                     info!(
                         "Cache pre-generation is enabled for gallery '{}'",

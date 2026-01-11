@@ -1318,7 +1318,7 @@ roles = ["viewer"]
             jpeg_quality: Some(85),
             webp_quality: Some(85.0),
             new_threshold_days: Some(7),
-            pregenerate_cache: false,
+            pregenerate: None,
             copyright_holder: Some("Test".to_string()),
             cache_refresh_interval_minutes: Some(60),
             thumbnail: crate::ImageSizeConfig {

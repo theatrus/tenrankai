@@ -25,7 +25,8 @@ pub use api_response::ApiResponse;
 pub use cache::{CacheType, FormatCoverage};
 pub use config::{
     AppConfig, Config, GallerySystemConfig, ImageIndexingMode, ImageSizeConfig, PostsSystemConfig,
-    PreviewConfig, ServerConfig, StaticConfig, TemplateConfig, TileConfig,
+    PregenerateConfig, PregenerateFormats, PregenerateSizes, PreviewConfig, ServerConfig,
+    StaticConfig, TemplateConfig, TileConfig,
 };
 pub use logging::LogLevel;
 pub use template_system::{TemplateCategory, TemplatePath, TemplateType};

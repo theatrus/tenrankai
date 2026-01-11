@@ -268,7 +268,7 @@ region = "us-east-1"
 - `cache_directory`: Where processed images and metadata are cached
 - `images_per_page`: Number of images to display per page
 - `new_threshold_days`: Days to consider an image "new" (remove to disable)
-- `pregenerate_cache`: Pre-generate all image sizes on startup/refresh
+- `pregenerate`: Pre-generation configuration section with format/size/tile options
 - `jpeg_quality`: JPEG compression quality (1-100)
 - `webp_quality`: WebP compression quality (0.0-100.0)
 - `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")

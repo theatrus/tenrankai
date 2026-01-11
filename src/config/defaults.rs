@@ -93,9 +93,23 @@ pub fn default_tile_size() -> u32 {
     1024
 }
 
-/// Default tiles pregeneration (false to save space)
-pub fn default_tiles_pregenerate() -> bool {
-    false
+/// Default pregenerate formats (jpeg + webp, not avif)
+pub fn default_pregenerate_formats() -> super::types::PregenerateFormats {
+    super::types::PregenerateFormats {
+        jpeg: true,
+        webp: true,
+        avif: false,
+    }
+}
+
+/// Default pregenerate sizes (thumbnail, gallery, medium - not large)
+pub fn default_pregenerate_sizes() -> super::types::PregenerateSizes {
+    super::types::PregenerateSizes {
+        thumbnail: true,
+        gallery: true,
+        medium: true,
+        large: false,
+    }
 }
 
 impl Default for GallerySystemConfig {
@@ -116,7 +130,7 @@ impl Default for GallerySystemConfig {
             cache_refresh_interval_minutes: Some(60),
             jpeg_quality: Some(85),
             webp_quality: Some(85.0),
-            pregenerate_cache: false,
+            pregenerate: None,
             new_threshold_days: None,
             copyright_holder: None,
             image_indexing: default_image_indexing(),
@@ -162,7 +176,7 @@ impl Default for Config {
                 cache_refresh_interval_minutes: Some(60),
                 jpeg_quality: Some(85),
                 webp_quality: Some(85.0),
-                pregenerate_cache: false,
+                pregenerate: None,
                 new_threshold_days: None,
                 copyright_holder: None,
                 image_indexing: default_image_indexing(),
