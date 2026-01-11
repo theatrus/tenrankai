@@ -69,8 +69,9 @@ src/openai/
 # Required: OpenAI API key
 api_key = "sk-..."
 
-# Model for vision analysis (default: "gpt-4o")
-model = "gpt-4o"
+# Model for vision analysis (default: "gpt-5.2")
+# Options: "gpt-5.2" (recommended), "gpt-4.1" (legacy), "gpt-4.1-mini" (cost-effective)
+model = "gpt-5.2"
 
 # Delay between API calls in milliseconds (default: 1000)
 rate_limit_ms = 1000
@@ -164,11 +165,11 @@ When `enable_background_analysis = true`:
 
 ### OpenAI API Request
 
-Using GPT-4o with structured output:
+Using GPT-5.2 with structured output:
 
 ```json
 {
-  "model": "gpt-4o",
+  "model": "gpt-5.2",
   "messages": [
     {
       "role": "user",
@@ -306,9 +307,9 @@ New crates required:
 
 ## Cost Estimation
 
-GPT-4o pricing (as of Jan 2026):
-- ~$0.01 per image at "low" detail
-- 1000 images ≈ $10
+GPT-5.2 pricing (check OpenAI pricing page for current rates):
+- Estimated ~$0.005-0.02 per image depending on detail level
+- 1000 images ≈ $5-20
 
 Recommended approach:
 - Start with CLI for controlled batch processing
