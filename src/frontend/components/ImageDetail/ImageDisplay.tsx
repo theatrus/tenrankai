@@ -787,14 +787,22 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
           const tileUrl2x = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}@2x`;
           const imageSetValue = `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`;
 
+          // Calculate actual tile dimensions (edge tiles may be smaller)
+          const tileStartX = tile.x * tileConfig.tile_size;
+          const tileStartY = tile.y * tileConfig.tile_size;
+          const tileEndX = Math.min((tile.x + 1) * tileConfig.tile_size, tileConfig.tiled_width);
+          const tileEndY = Math.min((tile.y + 1) * tileConfig.tile_size, tileConfig.tiled_height);
+          const actualTileWidth = tileEndX - tileStartX;
+          const actualTileHeight = tileEndY - tileStartY;
+
           const tileStyle: React.CSSProperties = {
             position: 'absolute',
-            left: `${offsetX + tile.x * tileConfig.tile_size * zoomScale}px`,
-            top: `${offsetY + tile.y * tileConfig.tile_size * zoomScale}px`,
-            width: `${tileConfig.tile_size * zoomScale}px`,
-            height: `${tileConfig.tile_size * zoomScale}px`,
+            left: `${offsetX + tileStartX * zoomScale}px`,
+            top: `${offsetY + tileStartY * zoomScale}px`,
+            width: `${actualTileWidth * zoomScale}px`,
+            height: `${actualTileHeight * zoomScale}px`,
             backgroundSize: '100% 100%',
-            backgroundPosition: 'center',
+            backgroundPosition: 'top left',
             backgroundRepeat: 'no-repeat',
             imageRendering: 'auto'
           };
@@ -871,11 +879,6 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
         const displayWidth = actualTileWidth * imgScale;
         const displayHeight = actualTileHeight * imgScale;
 
-        // For edge tiles, we need to show only the portion that contains image data
-        // The tile image is tile_size x tile_size, but we only want to show actualTileWidth x actualTileHeight
-        const isEdgeTileX = actualTileWidth < tileConfig.tile_size;
-        const isEdgeTileY = actualTileHeight < tileConfig.tile_size;
-
         tiles.push(
           <div
             key={`tile_${tx}_${ty}`}
@@ -886,10 +889,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
               width: `${displayWidth}px`,
               height: `${displayHeight}px`,
               backgroundImage: `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`,
-              // For edge tiles, don't stretch - show at natural size clipped
-              backgroundSize: (isEdgeTileX || isEdgeTileY)
-                ? `${tileConfig.tile_size * imgScale}px ${tileConfig.tile_size * imgScale}px`
-                : '100% 100%',
+              // Edge tiles are cropped to actual size on server, so 100% 100% works for all
+              backgroundSize: '100% 100%',
               backgroundPosition: 'top left',
               backgroundRepeat: 'no-repeat'
             }}
