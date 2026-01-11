@@ -1,4 +1,4 @@
-use crate::{ApiResponse, TemplateType};
+use crate::{ApiResponse, TemplateType, api_response::no_cache_headers};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -481,7 +481,7 @@ pub async fn template_with_gallery_handler(
     }
 
     match app_state.template_engine.render_with_gallery(&path).await {
-        Ok(html) => html.into_response(),
+        Ok(html) => (no_cache_headers(), html).into_response(),
         Err(status) => status.into_response(),
     }
 }
