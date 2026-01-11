@@ -8,6 +8,7 @@ interface ImageDisplayProps {
   onImageClick?: () => void;
   tileConfig?: TileConfig;
   galleryName: string;
+  onZoomStateChange?: (isZoomed: boolean) => void;
 }
 
 interface ZoomState {
@@ -19,6 +20,18 @@ interface ZoomState {
   tileX?: number;
   tileY?: number;
 }
+
+interface PinchZoomState {
+  scale: number;
+  translateX: number;
+  translateY: number;
+  isZoomed: boolean;
+}
+
+// Check if device supports touch
+const isTouchDevice = () => {
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+};
 
 // Helper function to calculate dimensions
 const calculateImageDimensions = (imageDimensions: number[], windowWidth: number, windowHeight: number) => {
@@ -51,7 +64,7 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
-export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConfig }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   
@@ -77,6 +90,18 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
   const containerRef = useRef<HTMLDivElement>(null);
   const preloadedTilesRef = useRef<Set<string>>(new Set());
   const [loadingTiles, setLoadingTiles] = useState<Set<string>>(new Set());
+
+  // Pinch zoom state for mobile
+  const [pinchZoom, setPinchZoom] = useState<PinchZoomState>({
+    scale: 1,
+    translateX: 0,
+    translateY: 0,
+    isZoomed: false
+  });
+  const [isMobile] = useState(() => isTouchDevice());
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastTouchCenter = useRef<{ x: number; y: number } | null>(null);
+  const initialPinchScale = useRef<number>(1);
   
   // Only show loading indicator after 500ms
   const showLoading = useDelayedLoading(imageLoading);
@@ -301,7 +326,189 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     }
     // No default behavior - downloading should use the download buttons
   };
-  
+
+  // Touch event handlers for pinch-to-zoom on mobile
+  const getTouchDistance = (touches: React.TouchList) => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const getTouchCenter = (touches: React.TouchList) => {
+    if (touches.length < 2) {
+      return { x: touches[0].clientX, y: touches[0].clientY };
+    }
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2
+    };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!canUseZoom || !isMobile) return;
+
+    if (e.touches.length === 2) {
+      // Starting pinch gesture
+      e.preventDefault();
+      lastTouchDistance.current = getTouchDistance(e.touches);
+      lastTouchCenter.current = getTouchCenter(e.touches);
+      initialPinchScale.current = pinchZoom.scale;
+    } else if (e.touches.length === 1 && pinchZoom.isZoomed) {
+      // Single touch on zoomed image - prepare for panning
+      lastTouchCenter.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!canUseZoom || !isMobile) return;
+
+    if (e.touches.length === 2 && lastTouchDistance.current !== null) {
+      // Pinch gesture in progress
+      e.preventDefault();
+
+      const currentDistance = getTouchDistance(e.touches);
+      const currentCenter = getTouchCenter(e.touches);
+
+      // Calculate new scale
+      const scaleChange = currentDistance / lastTouchDistance.current;
+      let newScale = initialPinchScale.current * scaleChange;
+
+      // Clamp scale between 1 and 4
+      newScale = Math.max(1, Math.min(4, newScale));
+
+      // Calculate pan adjustment based on pinch center movement
+      let newTranslateX = pinchZoom.translateX;
+      let newTranslateY = pinchZoom.translateY;
+
+      if (lastTouchCenter.current) {
+        const deltaX = currentCenter.x - lastTouchCenter.current.x;
+        const deltaY = currentCenter.y - lastTouchCenter.current.y;
+        newTranslateX += deltaX;
+        newTranslateY += deltaY;
+      }
+
+      // Constrain pan when zoomed
+      if (newScale > 1) {
+        const maxPan = (newScale - 1) * dimensions.width / 2;
+        newTranslateX = Math.max(-maxPan, Math.min(maxPan, newTranslateX));
+        newTranslateY = Math.max(-maxPan, Math.min(maxPan, newTranslateY));
+      } else {
+        newTranslateX = 0;
+        newTranslateY = 0;
+      }
+
+      lastTouchCenter.current = currentCenter;
+
+      setPinchZoom({
+        scale: newScale,
+        translateX: newTranslateX,
+        translateY: newTranslateY,
+        isZoomed: newScale > 1.1
+      });
+    } else if (e.touches.length === 1 && pinchZoom.isZoomed && lastTouchCenter.current) {
+      // Panning while zoomed
+      e.preventDefault();
+
+      const deltaX = e.touches[0].clientX - lastTouchCenter.current.x;
+      const deltaY = e.touches[0].clientY - lastTouchCenter.current.y;
+
+      let newTranslateX = pinchZoom.translateX + deltaX;
+      let newTranslateY = pinchZoom.translateY + deltaY;
+
+      // Constrain pan
+      const maxPanX = (pinchZoom.scale - 1) * dimensions.width / 2;
+      const maxPanY = (pinchZoom.scale - 1) * dimensions.height / 2;
+      newTranslateX = Math.max(-maxPanX, Math.min(maxPanX, newTranslateX));
+      newTranslateY = Math.max(-maxPanY, Math.min(maxPanY, newTranslateY));
+
+      lastTouchCenter.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+      setPinchZoom(prev => ({
+        ...prev,
+        translateX: newTranslateX,
+        translateY: newTranslateY
+      }));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!canUseZoom || !isMobile) return;
+
+    if (e.touches.length < 2) {
+      lastTouchDistance.current = null;
+      initialPinchScale.current = pinchZoom.scale;
+    }
+
+    if (e.touches.length === 0) {
+      lastTouchCenter.current = null;
+
+      // Reset zoom if scale is close to 1
+      if (pinchZoom.scale < 1.1) {
+        setPinchZoom({
+          scale: 1,
+          translateX: 0,
+          translateY: 0,
+          isZoomed: false
+        });
+      }
+    }
+  };
+
+  // Double-tap to zoom/reset on mobile
+  const lastTapTime = useRef<number>(0);
+  const handleDoubleTap = (e: React.TouchEvent) => {
+    if (!canUseZoom || !isMobile) return;
+
+    const now = Date.now();
+    if (now - lastTapTime.current < 300) {
+      // Double tap detected
+      e.preventDefault();
+
+      if (pinchZoom.isZoomed) {
+        // Reset zoom
+        setPinchZoom({
+          scale: 1,
+          translateX: 0,
+          translateY: 0,
+          isZoomed: false
+        });
+      } else {
+        // Zoom in to 2x at tap location
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+          const tapX = e.changedTouches[0].clientX - rect.left;
+          const tapY = e.changedTouches[0].clientY - rect.top;
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+
+          setPinchZoom({
+            scale: 2,
+            translateX: (centerX - tapX) * 0.5,
+            translateY: (centerY - tapY) * 0.5,
+            isZoomed: true
+          });
+        }
+      }
+    }
+    lastTapTime.current = now;
+  };
+
+  // Reset pinch zoom when image changes
+  useEffect(() => {
+    setPinchZoom({
+      scale: 1,
+      translateX: 0,
+      translateY: 0,
+      isZoomed: false
+    });
+  }, [image.path]);
+
+  // Notify parent of zoom state changes
+  useEffect(() => {
+    onZoomStateChange?.(pinchZoom.isZoomed);
+  }, [pinchZoom.isZoomed, onZoomStateChange]);
+
   // Clear preloaded tiles cache when image changes
   useEffect(() => {
     preloadedTilesRef.current.clear();
@@ -510,19 +717,23 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
 
   return (
     <div className="image-container-outer">
-      <div 
+      <div
         ref={containerRef}
-        className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
-        style={{ 
+        className={`image-container ${canUseZoom ? 'zoom-enabled' : ''} ${pinchZoom.isZoomed ? 'pinch-zoomed' : ''}`}
+        style={{
           width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
           height: imageLoading ? (dimensions.height > 0 ? `${dimensions.height}px` : undefined) : 'auto',
           position: 'relative',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          touchAction: canUseZoom && isMobile ? 'none' : 'pan-x pan-y'
         }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
+        onMouseDown={!isMobile ? handleMouseDown : undefined}
+        onMouseMove={!isMobile ? handleMouseMove : undefined}
+        onMouseUp={!isMobile ? handleMouseUp : undefined}
+        onMouseLeave={!isMobile ? handleMouseLeave : undefined}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={(e) => { handleTouchEnd(e); handleDoubleTap(e); }}
       >
         {showLoading && (
           <div className="image-loading">
@@ -558,14 +769,17 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             aria-label={image.name}
           >
             {/* Image display with retina support - using img element for HDR compatibility */}
-            <img 
+            <img
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
               alt={image.name}
-              style={{ 
+              style={{
                 width: '100%',
                 height: 'auto',
-                display: imageLoading || imageError ? 'none' : 'block'
+                display: imageLoading || imageError ? 'none' : 'block',
+                transform: isMobile && canUseZoom ? `scale(${pinchZoom.scale}) translate(${pinchZoom.translateX / pinchZoom.scale}px, ${pinchZoom.translateY / pinchZoom.scale}px)` : undefined,
+                transformOrigin: 'center center',
+                transition: pinchZoom.scale === 1 ? 'transform 0.2s ease-out' : 'none'
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
@@ -587,8 +801,8 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             />
           </div>
           
-          {/* Zoom overlay */}
-          {canUseZoom && zoomState.isZooming && (
+          {/* Zoom overlay (loupe) - desktop only */}
+          {canUseZoom && zoomState.isZooming && !isMobile && (
             <div 
               className="zoom-overlay"
               style={{
