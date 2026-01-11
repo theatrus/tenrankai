@@ -701,16 +701,15 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     }
     
     const zoomScale = 1.0; // No additional zoom since tiles are already high-res
-    
-    // Map from display percentage to tiled coordinates
+
+    // Map from display percentage to image pixel coordinates
+    // Original image is at (0,0) in tiled image, so image coords = tiled coords
     const imgX = (zoomState.imageX / 100) * image.dimensions[0];
     const imgY = (zoomState.imageY / 100) * image.dimensions[1];
-    
-    const scaleX = tileConfig.tiled_width / image.dimensions[0];
-    const scaleY = tileConfig.tiled_height / image.dimensions[1];
-    
-    const tiledX = imgX * scaleX;
-    const tiledY = imgY * scaleY;
+
+    // Tiled coordinates are the same as image coordinates (image at origin)
+    const tiledX = imgX;
+    const tiledY = imgY;
     
     // Calculate which tiles we need to render (could be up to 4 at corners)
     const tilesToRender: Array<{x: number, y: number}> = [];
@@ -783,25 +782,39 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
           const tileUrl = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}`;
           const tileUrl2x = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}@2x`;
           const imageSetValue = `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`;
-          
+
+          // Calculate actual tile dimensions (edge tiles may be smaller)
+          const tileStartX = tile.x * tileConfig.tile_size;
+          const tileStartY = tile.y * tileConfig.tile_size;
+          const tileEndX = Math.min((tile.x + 1) * tileConfig.tile_size, tileConfig.tiled_width);
+          const tileEndY = Math.min((tile.y + 1) * tileConfig.tile_size, tileConfig.tiled_height);
+          const actualTileWidth = tileEndX - tileStartX;
+          const actualTileHeight = tileEndY - tileStartY;
+
+          const isEdgeTileX = actualTileWidth < tileConfig.tile_size;
+          const isEdgeTileY = actualTileHeight < tileConfig.tile_size;
+
           const tileStyle: React.CSSProperties = {
             position: 'absolute',
-            left: `${offsetX + tile.x * tileConfig.tile_size * zoomScale}px`,
-            top: `${offsetY + tile.y * tileConfig.tile_size * zoomScale}px`,
-            width: `${tileConfig.tile_size * zoomScale}px`,
-            height: `${tileConfig.tile_size * zoomScale}px`,
-            backgroundSize: '100% 100%',
-            backgroundPosition: 'center',
+            left: `${offsetX + tileStartX * zoomScale}px`,
+            top: `${offsetY + tileStartY * zoomScale}px`,
+            width: `${actualTileWidth * zoomScale}px`,
+            height: `${actualTileHeight * zoomScale}px`,
+            // For edge tiles, show at natural size (don't stretch)
+            backgroundSize: (isEdgeTileX || isEdgeTileY)
+              ? `${tileConfig.tile_size * zoomScale}px ${tileConfig.tile_size * zoomScale}px`
+              : '100% 100%',
+            backgroundPosition: 'top left',
             backgroundRepeat: 'no-repeat',
             imageRendering: 'auto'
           };
-          
+
           // Set both standard and WebKit prefixed versions
           tileStyle.backgroundImage = imageSetValue;
           (tileStyle as any).WebkitBackgroundImage = imageSetValue;
-          
+
           const tileKey = `tile_${tile.x}_${tile.y}`;
-          
+
           return (
             <div
               key={tileKey}
@@ -827,49 +840,65 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
     const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
 
     // Scale from original image to display coordinates
-    // This matches the scale used in the tile container
     const imgScale = baseImgWidth / image.dimensions[0];
-    const tileDisplaySize = tileConfig.tile_size * imgScale;
 
-    // Visible viewport in tiled pixel coordinates
-    const visibleTiledWidth = window.innerWidth / (imgScale * pinchZoom.scale);
-    const visibleTiledHeight = window.innerHeight / (imgScale * pinchZoom.scale);
+    // Visible viewport in original image pixel coordinates
+    const visibleImgWidth = window.innerWidth / (imgScale * pinchZoom.scale);
+    const visibleImgHeight = window.innerHeight / (imgScale * pinchZoom.scale);
 
-    // Center of visible area in tiled coordinates (accounting for pan)
-    // Pan is in screen pixels, convert to tiled coordinates
-    const panInTiledX = -pinchZoom.translateX / (imgScale * pinchZoom.scale);
-    const panInTiledY = -pinchZoom.translateY / (imgScale * pinchZoom.scale);
+    // Center of visible area in original image coordinates (accounting for pan)
+    const panInImgX = -pinchZoom.translateX / (imgScale * pinchZoom.scale);
+    const panInImgY = -pinchZoom.translateY / (imgScale * pinchZoom.scale);
 
-    // Center is at image center (which is at origin of tiled coordinates)
-    const tiledCenterX = image.dimensions[0] / 2 + panInTiledX;
-    const tiledCenterY = image.dimensions[1] / 2 + panInTiledY;
+    const imgCenterX = image.dimensions[0] / 2 + panInImgX;
+    const imgCenterY = image.dimensions[1] / 2 + panInImgY;
 
     // Calculate which tiles to render (with buffer)
-    const startTileX = Math.max(0, Math.floor((tiledCenterX - visibleTiledWidth / 2) / tileConfig.tile_size) - 1);
-    const endTileX = Math.min(tileConfig.grid_width - 1, Math.ceil((tiledCenterX + visibleTiledWidth / 2) / tileConfig.tile_size) + 1);
-    const startTileY = Math.max(0, Math.floor((tiledCenterY - visibleTiledHeight / 2) / tileConfig.tile_size) - 1);
-    const endTileY = Math.min(tileConfig.grid_height - 1, Math.ceil((tiledCenterY + visibleTiledHeight / 2) / tileConfig.tile_size) + 1);
+    // Tiles are in tiled coordinates, but original image starts at (0,0)
+    const startTileX = Math.max(0, Math.floor((imgCenterX - visibleImgWidth / 2) / tileConfig.tile_size) - 1);
+    const endTileX = Math.min(tileConfig.grid_width - 1, Math.ceil((imgCenterX + visibleImgWidth / 2) / tileConfig.tile_size) + 1);
+    const startTileY = Math.max(0, Math.floor((imgCenterY - visibleImgHeight / 2) / tileConfig.tile_size) - 1);
+    const endTileY = Math.min(tileConfig.grid_height - 1, Math.ceil((imgCenterY + visibleImgHeight / 2) / tileConfig.tile_size) + 1);
 
     for (let ty = startTileY; ty <= endTileY; ty++) {
       for (let tx = startTileX; tx <= endTileX; tx++) {
         const tileUrl = `/gallery/_image/${imageId}/tile_${tx}_${ty}`;
         const tileUrl2x = `/gallery/_image/${imageId}/tile_${tx}_${ty}@2x`;
 
-        // Position tile within container (in base display coordinates, parent scales)
-        const tileX = tx * tileDisplaySize;
-        const tileY = ty * tileDisplaySize;
+        // Calculate actual tile dimensions (edge tiles may be smaller)
+        const tileStartX = tx * tileConfig.tile_size;
+        const tileStartY = ty * tileConfig.tile_size;
+        const tileEndX = Math.min((tx + 1) * tileConfig.tile_size, tileConfig.tiled_width);
+        const tileEndY = Math.min((ty + 1) * tileConfig.tile_size, tileConfig.tiled_height);
+        const actualTileWidth = tileEndX - tileStartX;
+        const actualTileHeight = tileEndY - tileStartY;
+
+        // Position and size in display coordinates
+        const displayX = tileStartX * imgScale;
+        const displayY = tileStartY * imgScale;
+        const displayWidth = actualTileWidth * imgScale;
+        const displayHeight = actualTileHeight * imgScale;
+
+        // For edge tiles, we need to show only the portion that contains image data
+        // The tile image is tile_size x tile_size, but we only want to show actualTileWidth x actualTileHeight
+        const isEdgeTileX = actualTileWidth < tileConfig.tile_size;
+        const isEdgeTileY = actualTileHeight < tileConfig.tile_size;
 
         tiles.push(
           <div
             key={`tile_${tx}_${ty}`}
             style={{
               position: 'absolute',
-              left: `${tileX}px`,
-              top: `${tileY}px`,
-              width: `${tileDisplaySize}px`,
-              height: `${tileDisplaySize}px`,
+              left: `${displayX}px`,
+              top: `${displayY}px`,
+              width: `${displayWidth}px`,
+              height: `${displayHeight}px`,
               backgroundImage: `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`,
-              backgroundSize: '100% 100%',
+              // For edge tiles, don't stretch - show at natural size clipped
+              backgroundSize: (isEdgeTileX || isEdgeTileY)
+                ? `${tileConfig.tile_size * imgScale}px ${tileConfig.tile_size * imgScale}px`
+                : '100% 100%',
+              backgroundPosition: 'top left',
               backgroundRepeat: 'no-repeat'
             }}
           />
@@ -977,36 +1006,28 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                       top: 0,
                       left: 0,
                       width: '100%',
-                      height: '100%',
-                      objectFit: 'contain'
+                      height: '100%'
                     }}
                     onContextMenu={(e) => e.preventDefault()}
                     onDragStart={(e) => e.preventDefault()}
                   />
 
-                  {/* Tile overlay - positioned exactly over base image */}
-                  {tileConfig && pinchZoom.scale > 1.5 && (() => {
-                    // The tiled image has the original at (0,0) with padding on right/bottom
-                    // So tiles should start at (0,0) to align with the base image
-                    // Scale factor: base image display size / original image size
-                    const imgScale = baseImgWidth / image.dimensions[0];
-
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: `${tileConfig.tiled_width * imgScale}px`,
-                          height: `${tileConfig.tiled_height * imgScale}px`,
-                          pointerEvents: 'none',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        {renderMobileZoomTiles()}
-                      </div>
-                    );
-                  })()}
+                  {/* Tile overlay - matches base image size exactly */}
+                  {tileConfig && pinchZoom.scale > 1.5 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        pointerEvents: 'none',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {renderMobileZoomTiles()}
+                    </div>
+                  )}
                 </div>
               );
             })()}
