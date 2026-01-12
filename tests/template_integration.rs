@@ -89,6 +89,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         }]),
         posts: None,
         email: None,
+        openai: None,
     };
 
     let app = create_app(config, None).await;

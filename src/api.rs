@@ -1408,6 +1408,7 @@ roles = ["viewer"]
             galleries: Some(vec![]),
             posts: None,
             email: None,
+            openai: None,
         };
 
         let app_state = AppState {

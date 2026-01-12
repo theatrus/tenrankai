@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::{LogLevel, email};
+use crate::{LogLevel, email, openai};
 
 /// Main application configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -17,6 +17,8 @@ pub struct Config {
     pub posts: Option<Vec<PostsSystemConfig>>,
     #[serde(default)]
     pub email: Option<email::EmailConfig>,
+    #[serde(default)]
+    pub openai: Option<openai::OpenAIConfig>,
 }
 
 /// Server configuration for host and port settings

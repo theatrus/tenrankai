@@ -27,6 +27,18 @@ pub struct ImageUserMetadata {
     /// Username of last editor
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_by: Option<String>,
+
+    /// AI-generated keywords describing the image
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_keywords: Vec<String>,
+
+    /// AI-generated accessibility alt-text
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_alt_text: Option<String>,
+
+    /// When AI analysis was performed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_analyzed_at: Option<DateTime<Utc>>,
 }
 
 /// A single comment in a discussion thread
@@ -116,6 +128,8 @@ impl ImageUserMetadata {
             && !self.highlighted
             && self.pick_status.is_none()
             && self.tags.is_empty()
+            && self.ai_keywords.is_empty()
+            && self.ai_alt_text.is_none()
     }
 
     /// Add a new comment to the thread
@@ -190,6 +204,18 @@ impl ImageUserMetadata {
         self.comments.remove(pos);
         self.update_modified(Some(deleter.to_string()));
         Ok(())
+    }
+
+    /// Set AI analysis results
+    pub fn set_ai_analysis(&mut self, keywords: Vec<String>, alt_text: String) {
+        self.ai_keywords = keywords;
+        self.ai_alt_text = Some(alt_text);
+        self.ai_analyzed_at = Some(Utc::now());
+    }
+
+    /// Check if AI analysis has been performed
+    pub fn has_ai_analysis(&self) -> bool {
+        self.ai_analyzed_at.is_some()
     }
 }
 

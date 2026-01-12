@@ -157,6 +157,7 @@ This is the content of the second test post."#;
             refresh_interval_minutes: None,
         }]),
         email: None,
+        openai: None,
     };
 
     let app = create_app(config, None).await;
