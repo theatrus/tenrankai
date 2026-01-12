@@ -10,7 +10,7 @@ use tenrankai::{
     Config, LogLevel, commands, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
-    posts, startup_checks,
+    openai, posts, startup_checks,
 };
 
 #[derive(Parser, Debug)]
@@ -60,6 +60,44 @@ enum Commands {
     /// Cache management commands
     #[command(subcommand)]
     Cache(CacheCommands),
+
+    /// Analyze images using OpenAI Vision API to generate keywords and alt-text
+    AnalyzeImages {
+        /// Gallery name to analyze
+        #[arg(short, long)]
+        gallery: String,
+
+        /// Specific folder within the gallery (optional)
+        #[arg(short, long)]
+        folder: Option<String>,
+
+        /// Maximum number of images to analyze
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Force re-analysis of images that already have AI data
+        #[arg(long)]
+        force: bool,
+
+        /// Dry run - show what would be analyzed without making API calls
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Clear AI analysis data from images
+    ClearAnalysis {
+        /// Gallery name
+        #[arg(short, long)]
+        gallery: String,
+
+        /// Specific folder within the gallery (optional)
+        #[arg(short, long)]
+        folder: Option<String>,
+
+        /// Dry run - show what would be cleared without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -177,6 +215,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             image_path,
             verbose,
         }) => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
+        Some(Commands::AnalyzeImages {
+            gallery,
+            folder,
+            limit,
+            force,
+            dry_run,
+        }) => {
+            commands::analyze::handle_analyze_command(
+                config, gallery, folder, limit, force, dry_run,
+            )
+            .await
+        }
+        Some(Commands::ClearAnalysis {
+            gallery,
+            folder,
+            dry_run,
+        }) => {
+            commands::clear_analysis::handle_clear_analysis_command(
+                config, gallery, folder, dry_run,
+            )
+            .await
+        }
         Some(Commands::Serve {
             port,
             host,
@@ -481,8 +541,11 @@ async fn run_server(
         }
     }
 
+    // Create Arc for galleries - used by both app and background analysis
+    let galleries_arc = Arc::new(galleries_map);
+
     // Create the app with the initialized galleries
-    let app = create_app(config.clone(), Some(Arc::new(galleries_map))).await;
+    let app = create_app(config.clone(), Some(galleries_arc.clone())).await;
 
     // Initialize posts background refresh
     // We need to recreate posts managers here for background tasks
@@ -522,6 +585,31 @@ async fn run_server(
         }
     }
 
+    // Start background image analysis if configured
+    let background_analysis_token = tokio_util::sync::CancellationToken::new();
+    if let Some(openai_config) = &config.openai
+        && openai_config.enable_background_analysis
+    {
+        // We need to create a client here for the background task
+        match openai::OpenAIClient::new(openai_config.clone()) {
+            Ok(client) => {
+                openai::start_background_analysis(
+                    Arc::new(client),
+                    galleries_arc.clone(),
+                    openai_config.background_interval_minutes,
+                    openai_config.background_batch_size,
+                    background_analysis_token.clone(),
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to create OpenAI client for background analysis: {}",
+                    e
+                );
+            }
+        }
+    }
+
     let addr = SocketAddr::from((host.parse::<std::net::IpAddr>()?, port));
     info!("Server listening on {}", addr);
 
@@ -541,6 +629,10 @@ async fn run_server(
 
     // Shutdown galleries and save caches
     info!("Shutting down - stopping background tasks and saving metadata caches...");
+
+    // Cancel background image analysis
+    background_analysis_token.cancel();
+
     for gallery in galleries_for_shutdown {
         // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
         gallery.shutdown().await;

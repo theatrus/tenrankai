@@ -5,6 +5,7 @@ import { useDelayedLoading } from '../../hooks/useDelayedLoading.ts';
 interface ImageDisplayProps {
   image: ImageInfo;
   canUseZoom?: boolean;
+  canSeeAiAltText?: boolean;
   onImageClick?: () => void;
   tileConfig?: TileConfig;
   galleryName: string;
@@ -65,7 +66,7 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
-export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   
@@ -86,6 +87,11 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
   
   const timeoutRef = useRef<number | null>(null);
   const loadedImageRef = useRef<string | null>(null);
+
+  // Compute alt text based on permission
+  const altText = canSeeAiAltText && image.user_metadata?.ai_alt_text
+    ? image.user_metadata.ai_alt_text
+    : image.name;
   const isInitialMount = useRef(true);
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -996,7 +1002,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                   <img
                     src={image.medium_url}
                     srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
-                    alt={image.name}
+                    alt={altText}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -1105,7 +1111,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             <img
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
-              alt={image.name}
+              alt={altText}
               style={{
                 width: '100%',
                 height: 'auto',

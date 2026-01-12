@@ -395,6 +395,7 @@ mod tests {
             user_database_manager: None,
             email_provider: None,
             webauthn: None,
+            openai_client: None,
             config,
         };
 

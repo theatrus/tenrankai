@@ -1,5 +1,10 @@
 {% assign page_title = image.name %}
-{% assign meta_description = image.description | default: "View this image on theatr.us gallery" | strip_html | truncate: 160 %}
+{% comment %} Use AI alt-text if available, otherwise fall back to description or default {% endcomment %}
+{% if image.user_metadata.ai_alt_text %}
+    {% assign meta_description = image.user_metadata.ai_alt_text | strip_html | truncate: 160 %}
+{% else %}
+    {% assign meta_description = image.description | default: "View this image on theatr.us gallery" | strip_html | truncate: 160 %}
+{% endif %}
 
 {% comment %} Open Graph tags for image {% endcomment %}
 {% assign og_title = image.name %}

@@ -11,6 +11,7 @@ pub mod gallery;
 pub mod logging;
 pub mod login;
 pub mod metadata_storage;
+pub mod openai;
 pub mod permissions;
 pub mod posts;
 pub mod robots;
@@ -53,6 +54,7 @@ pub struct AppState {
     pub user_database_manager: Option<login::types::UserDatabaseManager>,
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
+    pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub config: Config,
 }
 
@@ -220,6 +222,22 @@ pub async fn create_app(
         None
     };
 
+    // Initialize OpenAI client if configured
+    let openai_client = if let Some(openai_config) = config.openai.clone() {
+        match openai::OpenAIClient::new(openai_config) {
+            Ok(client) => {
+                info!("OpenAI client initialized");
+                Some(Arc::new(client))
+            }
+            Err(e) => {
+                error!("Failed to initialize OpenAI client: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let app_state = AppState {
         template_engine,
         static_handler,
@@ -230,6 +248,7 @@ pub async fn create_app(
         user_database_manager,
         email_provider,
         webauthn,
+        openai_client,
         config: config.clone(),
     };
 
@@ -537,6 +556,46 @@ pub async fn create_app(
                             state,
                             Path((name, image_path, comment_id)),
                             auth,
+                        )
+                    }
+                }),
+            );
+
+            // API route for AI image analysis
+            router = router.route(
+                &format!("/api/gallery/{}/analyze/{{*path}}", name),
+                axum::routing::post({
+                    let name = name.clone();
+                    move |state, path: Path<String>, auth| {
+                        let image_path = path.0;
+                        api::analyze_image_handler(state, Path((name, image_path)), auth)
+                    }
+                }),
+            );
+
+            // API route for AI folder analysis (batch)
+            router = router.route(
+                &format!("/api/gallery/{}/analyze-folder/{{*path}}", name),
+                axum::routing::post({
+                    let name = name.clone();
+                    move |state, path: Path<String>, auth, request| {
+                        let folder_path = path.0;
+                        api::analyze_folder_handler(state, Path((name, folder_path)), auth, request)
+                    }
+                }),
+            );
+
+            // API route for AI analysis of root folder
+            router = router.route(
+                &format!("/api/gallery/{}/analyze-folder", name),
+                axum::routing::post({
+                    let name = name.clone();
+                    move |state, auth, request| {
+                        api::analyze_folder_handler(
+                            state,
+                            Path((name, String::new())),
+                            auth,
+                            request,
                         )
                     }
                 }),

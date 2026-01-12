@@ -185,6 +185,7 @@ impl Default for Config {
             }]),
             posts: None,
             email: None,
+            openai: None,
         }
     }
 }

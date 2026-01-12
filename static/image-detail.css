@@ -1560,3 +1560,65 @@ dd {
     width: 150px !important;
   }
 }
+/* AI Metadata Styles */
+.ai-metadata {
+  margin-top: var(--spacing-lg);
+}
+
+.ai-metadata h3 {
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.ai-metadata h4 {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.ai-alt-text {
+  margin-bottom: 1rem;
+}
+
+.ai-alt-text p {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-keywords {
+  margin-bottom: 1rem;
+}
+
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyword-tag {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.2s;
+}
+
+.keyword-tag:hover {
+  background-color: var(--bg-hover);
+}
+
+.ai-analyzed-at {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.ai-analyzed-at small {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}

@@ -293,7 +293,7 @@ pub(crate) struct FolderMetadata {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ImageMarkdownConfig {
+pub struct ImageMarkdownConfig {
     pub title: Option<String>,
 
     // Camera/technical info overrides
@@ -323,7 +323,7 @@ pub(crate) struct ImageMarkdownConfig {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ImageMarkdownMetadata {
+pub struct ImageMarkdownMetadata {
     pub config: ImageMarkdownConfig,
     pub description_markdown: String,
 }
