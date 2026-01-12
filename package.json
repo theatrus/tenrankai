@@ -11,6 +11,9 @@
     "dev:open": "vite --open",
     "preview": "vite preview",
     "type-check": "tsc --noEmit && tsc -p tsconfig.legacy.json --noEmit",
+    "lint:css": "stylelint 'static/**/*.css'",
+    "lint:css-vars": "node scripts/validate-css-variables.js",
+    "lint": "npm run type-check && npm run lint:css && npm run lint:css-vars",
     "clean": "node -e \"const fs = require('fs'); ['static/dist', 'static/js', 'node_modules/.vite'].forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));\"",
     "help": "echo 'Development: npm run dev (+ cargo run in another terminal)'"
   },
@@ -19,11 +22,13 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
-    "vite": "^5.0.0",
-    "@vitejs/plugin-react": "^4.2.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "@types/web": "^0.0.99"
+    "@types/web": "^0.0.99",
+    "@vitejs/plugin-react": "^4.2.0",
+    "stylelint": "^16.26.1",
+    "stylelint-config-standard": "^39.0.1",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
   }
 }

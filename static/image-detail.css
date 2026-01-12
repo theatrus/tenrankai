@@ -1415,20 +1415,20 @@ dd {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   cursor: pointer;
-  color: var(--text-color);
+  color: var(--text-primary);
   transition: all 0.2s;
 }
 
 .area-select-btn:hover {
   background: var(--bg-secondary);
-  border-color: var(--primary-color);
+  border-color: var(--link-color);
 }
 
 .selected-area-info {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--primary-color);
+  color: var(--link-color);
   font-size: 0.875rem;
 }
 
@@ -1444,8 +1444,8 @@ dd {
 }
 
 .area-clear-btn:hover {
-  color: var(--text-color);
-  border-color: var(--primary-color);
+  color: var(--text-primary);
+  border-color: var(--link-color);
 }
 
 /* Area Selector Modal */
@@ -1508,12 +1508,12 @@ dd {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   cursor: pointer;
-  color: var(--text-color);
+  color: var(--text-primary);
   transition: all 0.2s;
 }
 
 .area-selector-close:hover {
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
 }
 
 /* Comment Area Preview */
@@ -1599,7 +1599,7 @@ dd {
 }
 
 .keyword-tag {
-  background-color: var(--bg-tertiary);
+  background-color: var(--bg-secondary);
   color: var(--text-secondary);
   padding: 0.25rem 0.75rem;
   border-radius: 1rem;
