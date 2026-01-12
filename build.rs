@@ -1,17 +1,24 @@
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::SystemTime;
 
 fn main() {
-    println!("cargo:rerun-if-changed=src/js");
-    println!("cargo:rerun-if-changed=src/frontend");
-    println!("cargo:rerun-if-changed=src/css");
-    println!("cargo:rerun-if-changed=src/assets");
+    // Tell Cargo when to re-run build.rs
+    // Note: For directories, Cargo only checks if the directory itself changed,
+    // not the files within. We handle file-level checking in needs_rebuild().
+    println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=package.json");
+    println!("cargo:rerun-if-changed=package-lock.json");
     println!("cargo:rerun-if-changed=tsconfig.json");
     println!("cargo:rerun-if-changed=tsconfig.legacy.json");
     println!("cargo:rerun-if-changed=vite.config.ts");
     println!("cargo:rerun-if-changed=vite.config.js");
+    println!("cargo:rerun-if-changed=src/js");
+    println!("cargo:rerun-if-changed=src/frontend");
+    println!("cargo:rerun-if-changed=src/css");
+    println!("cargo:rerun-if-changed=src/assets");
 
     // Control frontend builds based on environment
     let skip_frontend_build = env::var("TENRANKAI_SKIP_FRONTEND").is_ok();
@@ -21,8 +28,151 @@ fn main() {
         return;
     }
 
-    // Always build frontend
+    // Check if we need to rebuild by comparing source and output timestamps
+    if !needs_rebuild() {
+        // No rebuild needed - sources haven't changed
+        return;
+    }
+
+    // Build frontend
     build_frontend();
+}
+
+/// Check if frontend rebuild is needed by comparing source and output timestamps
+fn needs_rebuild() -> bool {
+    let output_dirs = ["static/dist", "static/js"];
+    let source_dirs = ["src/js", "src/frontend", "src/css", "src/assets"];
+    let config_files = [
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.legacy.json",
+        "vite.config.ts",
+        "vite.config.js",
+    ];
+
+    // Get the newest source file timestamp
+    let mut newest_source: Option<SystemTime> = None;
+
+    // Check config files
+    for file in &config_files {
+        if let Some(mtime) = get_mtime(Path::new(file)) {
+            newest_source = Some(match newest_source {
+                Some(current) => current.max(mtime),
+                None => mtime,
+            });
+        }
+    }
+
+    // Check source directories
+    for dir in &source_dirs {
+        if let Some(mtime) = get_newest_mtime_recursive(Path::new(dir)) {
+            newest_source = Some(match newest_source {
+                Some(current) => current.max(mtime),
+                None => mtime,
+            });
+        }
+    }
+
+    let newest_source = match newest_source {
+        Some(t) => t,
+        None => {
+            // No source files found, skip build
+            return false;
+        }
+    };
+
+    // Get the oldest output file timestamp (if any output exists)
+    let mut oldest_output: Option<SystemTime> = None;
+    let mut any_output_exists = false;
+
+    for dir in &output_dirs {
+        let dir_path = Path::new(dir);
+        if dir_path.exists() {
+            any_output_exists = true;
+            if let Some(mtime) = get_oldest_mtime_recursive(dir_path) {
+                oldest_output = Some(match oldest_output {
+                    Some(current) => current.min(mtime),
+                    None => mtime,
+                });
+            }
+        }
+    }
+
+    // If no output exists, we need to build
+    if !any_output_exists {
+        return true;
+    }
+
+    // If we have outputs, check if sources are newer
+    match oldest_output {
+        Some(output_time) => newest_source > output_time,
+        None => true, // Output dir exists but is empty
+    }
+}
+
+/// Get modification time of a file
+fn get_mtime(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Get the newest modification time of any file in a directory (recursive)
+fn get_newest_mtime_recursive(dir: &Path) -> Option<SystemTime> {
+    if !dir.exists() {
+        return None;
+    }
+
+    let mut newest: Option<SystemTime> = None;
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            let mtime = if path.is_dir() {
+                get_newest_mtime_recursive(&path)
+            } else {
+                get_mtime(&path)
+            };
+
+            if let Some(t) = mtime {
+                newest = Some(match newest {
+                    Some(current) => current.max(t),
+                    None => t,
+                });
+            }
+        }
+    }
+
+    newest
+}
+
+/// Get the oldest modification time of any file in a directory (recursive)
+fn get_oldest_mtime_recursive(dir: &Path) -> Option<SystemTime> {
+    if !dir.exists() {
+        return None;
+    }
+
+    let mut oldest: Option<SystemTime> = None;
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            let mtime = if path.is_dir() {
+                get_oldest_mtime_recursive(&path)
+            } else {
+                get_mtime(&path)
+            };
+
+            if let Some(t) = mtime {
+                oldest = Some(match oldest {
+                    Some(current) => current.min(t),
+                    None => t,
+                });
+            }
+        }
+    }
+
+    oldest
 }
 
 fn npm_command() -> &'static str {
