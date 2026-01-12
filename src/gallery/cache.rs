@@ -275,7 +275,7 @@ impl Gallery {
     }
 
     /// Generate a composite cache key with full context (legacy API compatibility)
-    pub(crate) fn generate_composite_cache_key_with_context(&self, gallery_path: &str) -> String {
+    pub fn generate_composite_cache_key_with_context(&self, gallery_path: &str) -> String {
         let path_key = self.generate_safe_path_key(gallery_path);
         format!("composite_{}_{}", self.config.name, path_key)
     }
