@@ -93,34 +93,75 @@ pub struct AnalysisOutput {
     pub alt_text: String,
 }
 
+/// Optional location context for image analysis
+#[derive(Debug, Clone)]
+pub struct LocationContext {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
 impl OpenAIRequest {
     /// Create a new image analysis request
     pub fn new_image_analysis(model: &str, base64_image: &str, max_tokens: u32) -> Self {
+        Self::new_image_analysis_with_context(model, base64_image, max_tokens, None)
+    }
+
+    /// Create a new image analysis request with optional location context
+    pub fn new_image_analysis_with_context(
+        model: &str,
+        base64_image: &str,
+        max_tokens: u32,
+        location: Option<LocationContext>,
+    ) -> Self {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "keywords": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "5-10 descriptive keywords for the image"
+                    "description": "8-12 keywords covering subject, location, composition, lighting, and style"
                 },
                 "alt_text": {
                     "type": "string",
-                    "description": "1-2 sentence description suitable for screen readers"
+                    "description": "1-2 sentence description of scene and photographic style"
                 }
             },
             "required": ["keywords", "alt_text"],
             "additionalProperties": false
         });
 
+        let prompt = if let Some(loc) = location {
+            format!(
+                "Analyze this photograph and provide descriptive keywords and alt-text. \
+                The image was taken at GPS coordinates: {:.6}, {:.6}. \
+                IMPORTANT: First, identify the specific landmark, building, park, dam, bridge, or point of interest \
+                at or very near these exact coordinates. Search your knowledge for what notable location exists there. \
+                Generate 8-12 relevant keywords covering: \
+                1) The specific location/landmark name \
+                2) Key subjects and elements in the scene \
+                3) Photo composition (e.g., wide angle, leading lines, rule of thirds, symmetry, foreground interest) \
+                4) Lighting and mood (e.g., golden hour, overcast, dramatic shadows, soft light) \
+                5) Photography style if notable (e.g., landscape, architectural, long exposure, HDR) \
+                Provide a 1-2 sentence alt-text describing the scene, location, and photographic style.",
+                loc.latitude, loc.longitude
+            )
+        } else {
+            "Analyze this photograph and provide descriptive keywords and alt-text. \
+            Generate 8-12 relevant keywords covering: \
+            1) Key subjects and elements in the scene \
+            2) Photo composition (e.g., wide angle, leading lines, rule of thirds, symmetry, foreground interest) \
+            3) Lighting and mood (e.g., golden hour, overcast, dramatic shadows, soft light) \
+            4) Photography style if notable (e.g., landscape, architectural, long exposure, HDR) \
+            Provide a 1-2 sentence alt-text describing the scene and photographic style."
+                .to_string()
+        };
+
         Self {
             model: model.to_string(),
             input: vec![InputMessage {
                 role: "user".to_string(),
                 content: vec![
-                    InputContent::Text {
-                        text: "Analyze this image and provide descriptive keywords and alt-text for accessibility. Generate 5-10 relevant keywords that describe the image content, mood, and key elements. Also provide a concise 1-2 sentence alt-text description suitable for screen readers.".to_string(),
-                    },
+                    InputContent::Text { text: prompt },
                     InputContent::Image {
                         image_url: format!("data:image/jpeg;base64,{}", base64_image),
                         detail: "auto".to_string(),

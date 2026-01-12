@@ -11,4 +11,4 @@ mod types;
 pub use client::OpenAIClient;
 pub use config::OpenAIConfig;
 pub use error::OpenAIError;
-pub use types::ImageAnalysisResult;
+pub use types::{ImageAnalysisResult, LocationContext};

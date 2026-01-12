@@ -1,7 +1,10 @@
 use super::{
     config::OpenAIConfig,
     error::OpenAIError,
-    types::{AnalysisOutput, ImageAnalysisResult, OpenAIRequest, OpenAIResponse, OutputContent},
+    types::{
+        AnalysisOutput, ImageAnalysisResult, LocationContext, OpenAIRequest, OpenAIResponse,
+        OutputContent,
+    },
 };
 use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
@@ -173,14 +176,26 @@ impl OpenAIClient {
         base64_image: &str,
         image_name: &str,
     ) -> Result<ImageAnalysisResult, OpenAIError> {
+        self.analyze_image_data_with_location(base64_image, image_name, None)
+            .await
+    }
+
+    /// Analyze an image from base64 data with optional location context
+    pub async fn analyze_image_data_with_location(
+        &self,
+        base64_image: &str,
+        image_name: &str,
+        location: Option<LocationContext>,
+    ) -> Result<ImageAnalysisResult, OpenAIError> {
         // Apply rate limiting
         self.wait_for_rate_limit().await;
 
         // Build and send request
-        let request = OpenAIRequest::new_image_analysis(
+        let request = OpenAIRequest::new_image_analysis_with_context(
             &self.config.model,
             base64_image,
             self.config.max_tokens,
+            location,
         );
 
         debug!("Sending image analysis request for: {}", image_name);

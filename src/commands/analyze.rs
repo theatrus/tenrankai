@@ -1,7 +1,7 @@
 use crate::Config;
 use crate::gallery::Gallery;
 use crate::metadata_storage::{MetadataStorage, SidecarMetadataStorage};
-use crate::openai::{OpenAIClient, OpenAIError};
+use crate::openai::{LocationContext, OpenAIClient, OpenAIError};
 use base64::{Engine as _, engine::general_purpose};
 use std::path::Path;
 use std::sync::Arc;
@@ -226,9 +226,26 @@ async fn analyze_single_image(
     // Encode as base64
     let base64_image = general_purpose::STANDARD.encode(&image_data);
 
-    // Call OpenAI API
+    // Try to get location info from image EXIF metadata
+    let location: Option<LocationContext> = gallery
+        .get_image_metadata_cached(relative_path)
+        .await
+        .ok()
+        .and_then(|meta| meta.location_info)
+        .map(|loc| {
+            debug!(
+                "Using GPS coordinates for {}: {:.6}, {:.6}",
+                relative_path, loc.latitude, loc.longitude
+            );
+            LocationContext {
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+            }
+        });
+
+    // Call OpenAI API with location context if available
     let result = client
-        .analyze_image_data(&base64_image, relative_path)
+        .analyze_image_data_with_location(&base64_image, relative_path, location)
         .await?;
 
     // Load existing metadata or create new
