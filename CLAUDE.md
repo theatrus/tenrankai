@@ -92,10 +92,15 @@ npm run build          # Build test (catches build errors)
 
 **Backend Testing:**
 ```bash
-cargo test --no-default-features                    # Run all tests
+# Fast tests (no AVIF, for quick iteration)
+cargo test --no-default-features                    # Run all tests (~180 tests)
 cargo test --no-default-features api::tests         # Run specific test module
 cargo clippy --no-default-features -- -D warnings   # Lint checking
 cargo fmt --check                                    # Format checking
+
+# Full tests with AVIF support (run before merging PRs)
+cargo test                                          # Run all tests (~235 tests)
+cargo clippy -- -D warnings                         # Lint with all features
 ```
 
 **Integration Testing:**
@@ -106,6 +111,11 @@ cargo run --no-default-features -- serve --quit-after 3
 # Test with frontend build
 npm run build && cargo run --no-default-features -- serve --quit-after 5
 ```
+
+**Test Coverage Notes:**
+- `--no-default-features`: ~180 tests, faster builds, no AVIF dependencies
+- Default features (AVIF enabled): ~235 tests, includes 19 AVIF-specific tests
+- Always run full tests (`cargo test`) before merging to ensure AVIF code paths work
 
 ### Important Notes for AI Development
 
@@ -913,10 +923,11 @@ npm run build           # Production build test
 
 **Code Quality Checklist:**
 - [ ] TypeScript types are correct (`npm run type-check`)
-- [ ] Rust code compiles without warnings (`cargo clippy`)
+- [ ] Rust code compiles without warnings (`cargo clippy --no-default-features`)
 - [ ] Frontend builds successfully (`npm run build`)
 - [ ] Server starts without errors (test with `--quit-after`)
 - [ ] React enhancement works (check browser console)
+- [ ] Full test suite passes before merging (`cargo test && cargo clippy -- -D warnings`)
 
 ## Future Improvements
 
