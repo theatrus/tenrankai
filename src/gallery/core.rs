@@ -70,6 +70,7 @@ impl Gallery {
                     display_name,
                     description,
                     path: item_path,
+                    file_path: None, // Directories don't need file_path
                     parent_path: Some(relative_path.to_string()),
                     is_directory: true,
                     thumbnail_url: None,
@@ -175,6 +176,7 @@ impl Gallery {
                     display_name: None,
                     description: None,
                     path: url_identifier.clone(), // Use indexed identifier as path
+                    file_path: Some(item_path.clone()), // Actual filesystem path for internal use
                     parent_path: Some(relative_path.to_string()),
                     is_directory: false,
                     thumbnail_url: Some(thumbnail_url),
@@ -991,6 +993,7 @@ impl Gallery {
                         display_name: None,
                         description: None,
                         path: url_identifier.clone(), // Use indexed identifier as path
+                        file_path: Some(item_path.clone()), // Actual filesystem path for internal use
                         parent_path: Some(path.to_string()),
                         is_directory: false,
                         thumbnail_url: Some(thumbnail_url),

@@ -117,6 +117,24 @@ enum CacheCommands {
         #[arg(short, long)]
         gallery: String,
     },
+    /// Invalidate cached files (removes from cache to force regeneration)
+    Invalidate {
+        /// Gallery name
+        #[arg(short, long)]
+        gallery: String,
+
+        /// Type of cache to invalidate: "composite" or "image"
+        #[arg(short = 't', long, default_value = "composite")]
+        cache_type: String,
+
+        /// Path within the gallery (e.g., "2026-01-lake-natoma" for composite, or image filename)
+        #[arg(short, long)]
+        path: String,
+
+        /// Dry run - show what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[tokio::main]
@@ -317,6 +335,113 @@ async fn handle_cache_command(
 
             // Run cache validation and cleanup
             gallery.validate_and_cleanup_cache().await?;
+        }
+        CacheCommands::Invalidate {
+            gallery: gallery_name,
+            cache_type,
+            path,
+            dry_run,
+        } => {
+            let gallery_config = gallery_configs
+                .iter()
+                .find(|g| g.name == gallery_name)
+                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
+
+            let cache_dir = &gallery_config.cache_directory;
+
+            match cache_type.as_str() {
+                "composite" => {
+                    // Find all composite files matching the gallery path
+                    // Composite files are named: composite_{gallery}_{path_key}_{hash}.jpg
+                    let pattern = format!("composite_{}_", gallery_name);
+                    let path_pattern = path.replace(['/', '-'], "_");
+
+                    println!(
+                        "Looking for composite cache files matching gallery '{}' path '{}'...",
+                        gallery_name, path
+                    );
+
+                    let mut deleted_count = 0;
+                    if let Ok(entries) = std::fs::read_dir(cache_dir) {
+                        for entry in entries.flatten() {
+                            let filename = entry.file_name().to_string_lossy().to_string();
+                            if filename.starts_with(&pattern) && filename.contains(&path_pattern) {
+                                if dry_run {
+                                    println!("  Would delete: {}", filename);
+                                } else {
+                                    match std::fs::remove_file(entry.path()) {
+                                        Ok(_) => {
+                                            println!("  Deleted: {}", filename);
+                                            deleted_count += 1;
+                                        }
+                                        Err(e) => {
+                                            eprintln!("  Failed to delete {}: {}", filename, e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if dry_run {
+                        println!("Dry run complete - no files were deleted");
+                    } else if deleted_count == 0 {
+                        println!("No matching composite cache files found");
+                    } else {
+                        println!("Deleted {} composite cache file(s)", deleted_count);
+                    }
+                }
+                "image" => {
+                    // Find all cached versions of a specific image
+                    // Image cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
+                    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+                    let hash = gallery.generate_cache_key(&path, "");
+
+                    println!(
+                        "Looking for image cache files for '{}' (hash prefix: {})...",
+                        path,
+                        &hash[..8.min(hash.len())]
+                    );
+
+                    let mut deleted_count = 0;
+                    if let Ok(entries) = std::fs::read_dir(cache_dir) {
+                        for entry in entries.flatten() {
+                            let filename = entry.file_name().to_string_lossy().to_string();
+                            // Check if file starts with the hash (handles all formats and watermarked variants)
+                            if filename.starts_with(&hash) {
+                                if dry_run {
+                                    println!("  Would delete: {}", filename);
+                                } else {
+                                    match std::fs::remove_file(entry.path()) {
+                                        Ok(_) => {
+                                            println!("  Deleted: {}", filename);
+                                            deleted_count += 1;
+                                        }
+                                        Err(e) => {
+                                            eprintln!("  Failed to delete {}: {}", filename, e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if dry_run {
+                        println!("Dry run complete - no files were deleted");
+                    } else if deleted_count == 0 {
+                        println!("No matching image cache files found");
+                    } else {
+                        println!("Deleted {} image cache file(s)", deleted_count);
+                    }
+                }
+                _ => {
+                    eprintln!(
+                        "Unknown cache type '{}'. Valid types: composite, image",
+                        cache_type
+                    );
+                    std::process::exit(1);
+                }
+            }
         }
     }
 

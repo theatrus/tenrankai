@@ -198,7 +198,7 @@ impl Gallery {
         Ok(())
     }
 
-    pub(crate) fn generate_cache_key(&self, path: &str, size: &str) -> String {
+    pub fn generate_cache_key(&self, path: &str, size: &str) -> String {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(path);

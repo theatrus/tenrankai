@@ -171,7 +171,11 @@ pub struct GalleryItem {
     pub name: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
+    /// URL path identifier (may be indexed/hashed, not the actual filename)
     pub path: String,
+    /// Actual filesystem path relative to source directory (not serialized to frontend)
+    #[serde(skip)]
+    pub file_path: Option<String>,
     pub parent_path: Option<String>,
     pub is_directory: bool,
     pub thumbnail_url: Option<String>,
