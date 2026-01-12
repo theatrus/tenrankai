@@ -299,21 +299,7 @@ async fn handle_cache_command(
                 .find(|g| g.name == gallery_name)
                 .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
 
-            let gallery = Arc::new(Gallery::new(gallery_config.clone()));
-
-            // Initialize gallery to load metadata cache
-            if let Err(e) = gallery.initialize_and_check_version().await {
-                eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
-            }
-
-            // If cache is empty, refresh metadata first
-            if gallery.is_metadata_cache_empty().await {
-                println!("Metadata cache is empty, refreshing...");
-                gallery.clone().refresh_all_metadata().await?;
-            }
-
-            // Run the coverage report
-            gallery.report_format_coverage().await?;
+            commands::cache::report(gallery_config).await?;
         }
         CacheCommands::Cleanup {
             gallery: gallery_name,
@@ -323,21 +309,7 @@ async fn handle_cache_command(
                 .find(|g| g.name == gallery_name)
                 .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
 
-            let gallery = Arc::new(Gallery::new(gallery_config.clone()));
-
-            // Initialize gallery to load metadata cache
-            if let Err(e) = gallery.initialize_and_check_version().await {
-                eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
-            }
-
-            // If cache is empty, refresh metadata first
-            if gallery.is_metadata_cache_empty().await {
-                println!("Metadata cache is empty, refreshing...");
-                gallery.clone().refresh_all_metadata().await?;
-            }
-
-            // Run cache validation and cleanup
-            gallery.validate_and_cleanup_cache().await?;
+            commands::cache::cleanup(gallery_config).await?;
         }
         CacheCommands::Invalidate {
             gallery: gallery_name,
