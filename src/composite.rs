@@ -59,19 +59,24 @@ pub fn create_composite_preview(
         // Use file_path if available, otherwise fall back to path (for backwards compatibility)
         let relative_path = image_item.file_path.as_ref().unwrap_or(&image_item.path);
         let image_path = source_directory.join(relative_path);
-        if let Ok(img) = load_image_with_avif_support(&image_path) {
-            // Calculate position in grid
-            let row = idx / grid_size;
-            let col = idx % grid_size;
-            let x = (col as u32) * (cell_size + padding);
-            let y = (row as u32) * (cell_size + padding);
+        match load_image_with_avif_support(&image_path) {
+            Ok(img) => {
+                // Calculate position in grid
+                let row = idx / grid_size;
+                let col = idx % grid_size;
+                let x = (col as u32) * (cell_size + padding);
+                let y = (row as u32) * (cell_size + padding);
 
-            // Resize image to fit cell while maintaining aspect ratio
-            let resized =
-                img.resize_to_fill(cell_size, cell_size, image::imageops::FilterType::Lanczos3);
+                // Resize image to fit cell while maintaining aspect ratio
+                let resized =
+                    img.resize_to_fill(cell_size, cell_size, image::imageops::FilterType::Lanczos3);
 
-            // Copy to composite
-            image::imageops::overlay(&mut composite, &resized, x as i64, y as i64);
+                // Copy to composite
+                image::imageops::overlay(&mut composite, &resized, x as i64, y as i64);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load image {:?}: {}", image_path, e);
+            }
         }
     }
 
