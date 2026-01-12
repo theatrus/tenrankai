@@ -381,7 +381,8 @@ async fn test_composite_with_avif_images() {
             name: format!("test_{:03}", i),
             display_name: Some(format!("Test {}", i)),
             description: None,
-            path: filename,
+            path: filename.clone(),
+            file_path: Some(filename), // Actual filesystem path
             parent_path: None,
             is_directory: false,
             thumbnail_url: None,

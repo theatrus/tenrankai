@@ -56,8 +56,9 @@ pub fn create_composite_preview(
             break;
         }
 
-        // Load the thumbnail (with AVIF support)
-        let image_path = source_directory.join(&image_item.path);
+        // Use file_path if available, otherwise fall back to path (for backwards compatibility)
+        let relative_path = image_item.file_path.as_ref().unwrap_or(&image_item.path);
+        let image_path = source_directory.join(relative_path);
         if let Ok(img) = load_image_with_avif_support(&image_path) {
             // Calculate position in grid
             let row = idx / grid_size;
@@ -117,6 +118,7 @@ mod tests {
             display_name: None,
             description: None,
             path: path.to_string(),
+            file_path: Some(path.to_string()), // In tests, path is the actual file path
             parent_path: None,
             is_directory: false,
             thumbnail_url: Some(format!("/gallery/_image/{}/thumbnail", path)),
