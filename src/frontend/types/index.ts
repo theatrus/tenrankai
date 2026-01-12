@@ -111,6 +111,7 @@ export interface RolePermissions {
   can_use_tile_zoom: boolean;
   can_analyze_images: boolean;
   can_see_ai_analysis: boolean;
+  can_see_ai_alt_text: boolean;
   owner_access: boolean;
 }
 

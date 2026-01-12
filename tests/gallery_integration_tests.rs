@@ -63,6 +63,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                                 can_use_tile_zoom: false,
                                 can_analyze_images: false,
                                 can_see_ai_analysis: true, // Allow viewing AI analysis
+                                can_see_ai_alt_text: true, // Allow viewing AI alt-text on images
                                 owner_access: false,
                             },
                         ),

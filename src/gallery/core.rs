@@ -584,6 +584,7 @@ impl Gallery {
                     can_use_tile_zoom: false,
                     can_analyze_images: false,
                     can_see_ai_analysis: false,
+                    can_see_ai_alt_text: false,
                     owner_access: false,
                 }
             }

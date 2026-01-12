@@ -54,6 +54,8 @@ pub struct RolePermissions {
     pub can_analyze_images: bool,
     #[serde(default)]
     pub can_see_ai_analysis: bool,
+    #[serde(default)]
+    pub can_see_ai_alt_text: bool,
 
     // Special permissions
     #[serde(default)]
@@ -101,6 +103,7 @@ impl RolePermissions {
 
         self.can_analyze_images |= other.can_analyze_images;
         self.can_see_ai_analysis |= other.can_see_ai_analysis;
+        self.can_see_ai_alt_text |= other.can_see_ai_alt_text;
 
         self.owner_access |= other.owner_access;
     }
@@ -137,6 +140,7 @@ impl RolePermissions {
 
             self.can_analyze_images = true;
             self.can_see_ai_analysis = true;
+            self.can_see_ai_alt_text = true;
         }
     }
 }

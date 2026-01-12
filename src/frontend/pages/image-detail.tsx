@@ -190,6 +190,7 @@ export function ImageDetailPage({
               <ImageDisplay
                 image={currentData.image}
                 canUseZoom={currentData.permissions.can_use_zoom}
+                canSeeAiAltText={currentData.permissions.can_see_ai_alt_text}
                 tileConfig={currentData.tile_config}
                 galleryName={currentData.gallery_name}
                 onZoomStateChange={setIsImageZoomed}

@@ -121,7 +121,12 @@ pub struct ImageContext {
 impl OpenAIRequest {
     /// Create a new image analysis request
     pub fn new_image_analysis(model: &str, base64_image: &str, max_tokens: u32) -> Self {
-        Self::new_image_analysis_with_context(model, base64_image, max_tokens, ImageContext::default())
+        Self::new_image_analysis_with_context(
+            model,
+            base64_image,
+            max_tokens,
+            ImageContext::default(),
+        )
     }
 
     /// Create a new image analysis request with context
@@ -176,7 +181,9 @@ impl OpenAIRequest {
 
     /// Build the analysis prompt incorporating all available context
     fn build_analysis_prompt(context: &ImageContext) -> String {
-        let mut prompt = String::from("Analyze this photograph and provide descriptive keywords and alt-text.\n\n");
+        let mut prompt = String::from(
+            "Analyze this photograph and provide descriptive keywords and alt-text.\n\n",
+        );
 
         // Check if we have any context to add
         let has_context = context.title.is_some()
@@ -188,7 +195,9 @@ impl OpenAIRequest {
             || context.capture_date.is_some();
 
         if has_context {
-            prompt.push_str("CONTEXT INFORMATION (for your reference only - do not repeat verbatim):\n");
+            prompt.push_str(
+                "CONTEXT INFORMATION (for your reference only - do not repeat verbatim):\n",
+            );
         }
 
         if let Some(ref folder_title) = context.folder_title {
@@ -249,15 +258,17 @@ impl OpenAIRequest {
             1) Key subjects and elements in the scene\n\
             2) Photo composition (e.g., wide angle, leading lines, rule of thirds, symmetry)\n\
             3) Lighting and mood (e.g., golden hour, overcast, dramatic shadows)\n\
-            4) Photography style if notable (e.g., landscape, architectural, long exposure)\n"
+            4) Photography style if notable (e.g., landscape, architectural, long exposure)\n",
         );
 
         if context.location.is_some() {
             prompt.push_str("5) Location name if identifiable (NOT coordinates)\n");
         }
 
-        prompt.push_str("\nProvide a 1-2 sentence alt-text describing the scene and photographic style. \
-            Focus on what is visually depicted, not technical metadata.");
+        prompt.push_str(
+            "\nProvide a 1-2 sentence alt-text describing the scene and photographic style. \
+            Focus on what is visually depicted, not technical metadata.",
+        );
 
         prompt
     }
