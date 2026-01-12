@@ -61,6 +61,8 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                                 can_delete_any_comments: false,
                                 can_use_zoom: false,
                                 can_use_tile_zoom: false,
+                                can_analyze_images: false,
+                                can_see_ai_analysis: true, // Allow viewing AI analysis
                                 owner_access: false,
                             },
                         ),

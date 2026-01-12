@@ -1,7 +1,7 @@
 use crate::Config;
 use crate::gallery::Gallery;
 use crate::metadata_storage::{MetadataStorage, SidecarMetadataStorage};
-use crate::openai::{LocationContext, OpenAIClient, OpenAIError};
+use crate::openai::{ImageContext, LocationContext, OpenAIClient, OpenAIError};
 use base64::{Engine as _, engine::general_purpose};
 use std::path::Path;
 use std::sync::Arc;
@@ -226,26 +226,12 @@ async fn analyze_single_image(
     // Encode as base64
     let base64_image = general_purpose::STANDARD.encode(&image_data);
 
-    // Try to get location info from image EXIF metadata
-    let location: Option<LocationContext> = gallery
-        .get_image_metadata_cached(relative_path)
-        .await
-        .ok()
-        .and_then(|meta| meta.location_info)
-        .map(|loc| {
-            debug!(
-                "Using GPS coordinates for {}: {:.6}, {:.6}",
-                relative_path, loc.latitude, loc.longitude
-            );
-            LocationContext {
-                latitude: loc.latitude,
-                longitude: loc.longitude,
-            }
-        });
+    // Build context from available metadata
+    let context = build_image_context(gallery, relative_path).await;
 
-    // Call OpenAI API with location context if available
+    // Call OpenAI API with context
     let result = client
-        .analyze_image_data_with_location(&base64_image, relative_path, location)
+        .analyze_image_data_with_context(&base64_image, relative_path, context)
         .await?;
 
     // Load existing metadata or create new
@@ -293,4 +279,60 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len - 3])
     }
+}
+
+/// Build context for image analysis from available metadata
+async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageContext {
+    use crate::gallery::metadata_sources::read_image_markdown_metadata;
+
+    let mut context = ImageContext::default();
+
+    // Get image metadata (location, camera info, capture date from EXIF)
+    if let Ok(cached_meta) = gallery.get_image_metadata_cached(relative_path).await {
+        if let Some(loc) = cached_meta.location_info {
+            debug!(
+                "Using GPS coordinates for {}: {:.6}, {:.6}",
+                relative_path, loc.latitude, loc.longitude
+            );
+            context.location = Some(LocationContext {
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+            });
+        }
+
+        // Camera settings
+        if let Some(ref camera_info) = cached_meta.camera_info {
+            context.focal_length = camera_info.focal_length.clone();
+            context.aperture = camera_info.aperture.clone();
+        }
+
+        // Capture date and time (EXIF stores local time, which is preserved here)
+        if let Some(capture_date) = cached_meta.capture_date
+            && let Ok(duration) = capture_date.duration_since(std::time::UNIX_EPOCH)
+            && let Some(dt) =
+                chrono::DateTime::<chrono::Utc>::from_timestamp(duration.as_secs() as i64, 0)
+        {
+            context.capture_date = Some(dt.format("%B %d, %Y at %H:%M").to_string());
+        }
+    }
+
+    // Get title and description from image markdown
+    let full_path = gallery.source_directory().join(relative_path);
+    if let Some(md_meta) = read_image_markdown_metadata(&full_path).await {
+        context.title = md_meta.config.title;
+        if !md_meta.description_markdown.is_empty() {
+            context.description = Some(md_meta.description_markdown);
+        }
+    }
+
+    // Get folder metadata for additional context
+    let parent_path = std::path::Path::new(relative_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let (folder_title, _) = gallery.read_folder_metadata(&parent_path).await;
+    context.folder_title = folder_title;
+
+    context
 }

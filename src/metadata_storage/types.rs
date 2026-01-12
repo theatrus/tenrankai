@@ -217,6 +217,13 @@ impl ImageUserMetadata {
     pub fn has_ai_analysis(&self) -> bool {
         self.ai_analyzed_at.is_some()
     }
+
+    /// Clear AI analysis results
+    pub fn clear_ai_analysis(&mut self) {
+        self.ai_keywords = vec![];
+        self.ai_alt_text = None;
+        self.ai_analyzed_at = None;
+    }
 }
 
 impl Comment {

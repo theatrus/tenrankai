@@ -1249,6 +1249,460 @@ pub async fn delete_comment_handler(
     }
 }
 
+// AI Image Analysis API handlers
+
+#[derive(Debug, Serialize)]
+pub struct AnalyzeImageResponse {
+    pub success: bool,
+    pub keywords: Vec<String>,
+    pub alt_text: String,
+    pub analyzed_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AnalyzeFolderResponse {
+    pub success: bool,
+    pub total: usize,
+    pub analyzed: usize,
+    pub skipped: usize,
+    pub errors: usize,
+}
+
+/// Analyze a single image using OpenAI Vision API
+pub async fn analyze_image_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, image_path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+) -> impl IntoResponse {
+    // Check if OpenAI is configured
+    let openai_client = match &app_state.openai_client {
+        Some(client) => client.clone(),
+        None => {
+            let mut response = ApiResponse::BadRequest
+                .with_message("OpenAI is not configured. Add [openai] section to config.toml.");
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Extract parent path for permission checking
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        resolved_path[..last_slash].to_string()
+    } else {
+        String::new()
+    };
+
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
+    }
+
+    // Check if user can analyze images
+    if !user_permissions.permissions.can_analyze_images {
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to analyze images");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Get the full path
+    let full_path = gallery.source_directory().join(&resolved_path);
+
+    // Get or generate a medium-sized version of the image for API efficiency
+    let image_data =
+        match get_image_for_analysis(gallery.as_ref(), &full_path, &resolved_path).await {
+            Ok(data) => data,
+            Err(e) => {
+                error!("Failed to read image for analysis: {}", e);
+                let mut response =
+                    ApiResponse::InternalServerError.with_message("Failed to read image");
+                response.headers_mut().extend(no_cache_headers());
+                return response;
+            }
+        };
+
+    // Encode as base64
+    let base64_image = general_purpose::STANDARD.encode(&image_data);
+
+    // Build context from available metadata
+    let context = build_image_context(gallery, &resolved_path).await;
+
+    // Call OpenAI API with context
+    let result = match openai_client
+        .analyze_image_data_with_context(&base64_image, &resolved_path, context)
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            error!("OpenAI analysis failed: {}", e);
+            let mut response =
+                ApiResponse::InternalServerError.with_message(&format!("Analysis failed: {}", e));
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Load existing metadata or create new
+    let mut metadata = gallery
+        .user_metadata_storage
+        .load(&full_path)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    // Update with AI analysis results
+    metadata.set_ai_analysis(result.keywords.clone(), result.alt_text.clone());
+
+    // Save metadata
+    if let Err(e) = gallery
+        .user_metadata_storage
+        .save(&full_path, &metadata)
+        .await
+    {
+        error!("Failed to save AI analysis metadata: {}", e);
+        // Still return success since the analysis was done
+    }
+
+    info!(
+        "Analyzed image {}: {} keywords",
+        resolved_path,
+        result.keywords.len()
+    );
+
+    let mut response = Json(AnalyzeImageResponse {
+        success: true,
+        keywords: result.keywords,
+        alt_text: result.alt_text,
+        analyzed_at: result.analyzed_at.to_rfc3339(),
+    })
+    .into_response();
+    response.headers_mut().extend(no_cache_headers());
+    response
+}
+
+/// Get image data for analysis (preferring cached medium size)
+async fn get_image_for_analysis(
+    gallery: &crate::gallery::Gallery,
+    full_path: &std::path::Path,
+    relative_path: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    // Try to get cached medium-sized image first (more efficient for API)
+    let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
+    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+
+    if cache_path.exists() {
+        debug!("Using cached medium image for analysis");
+        return Ok(tokio::fs::read(&cache_path).await?);
+    }
+
+    // Fall back to original image
+    debug!("Using original image for analysis");
+    Ok(tokio::fs::read(full_path).await?)
+}
+
+/// Build context for image analysis from available metadata
+async fn build_image_context(
+    gallery: &crate::gallery::Gallery,
+    relative_path: &str,
+) -> crate::openai::ImageContext {
+    use crate::gallery::metadata_sources::read_image_markdown_metadata;
+
+    let mut context = crate::openai::ImageContext::default();
+
+    // Get image metadata (location, camera info, capture date from EXIF)
+    if let Ok(cached_meta) = gallery.get_image_metadata_cached(relative_path).await {
+        if let Some(loc) = cached_meta.location_info {
+            debug!(
+                "Using GPS coordinates for {}: {:.6}, {:.6}",
+                relative_path, loc.latitude, loc.longitude
+            );
+            context.location = Some(crate::openai::LocationContext {
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+            });
+        }
+
+        // Camera settings
+        if let Some(ref camera_info) = cached_meta.camera_info {
+            context.focal_length = camera_info.focal_length.clone();
+            context.aperture = camera_info.aperture.clone();
+        }
+
+        // Capture date and time (EXIF stores local time, which is preserved here)
+        if let Some(capture_date) = cached_meta.capture_date
+            && let Ok(duration) = capture_date.duration_since(std::time::UNIX_EPOCH)
+            && let Some(dt) =
+                chrono::DateTime::<chrono::Utc>::from_timestamp(duration.as_secs() as i64, 0)
+        {
+            context.capture_date = Some(dt.format("%B %d, %Y at %H:%M").to_string());
+        }
+    }
+
+    // Get title and description from image markdown
+    let full_path = gallery.source_directory().join(relative_path);
+    if let Some(md_meta) = read_image_markdown_metadata(&full_path).await {
+        context.title = md_meta.config.title;
+        if !md_meta.description_markdown.is_empty() {
+            context.description = Some(md_meta.description_markdown);
+        }
+    }
+
+    // Get folder metadata for additional context
+    let parent_path = std::path::Path::new(relative_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let (folder_title, _) = gallery.read_folder_metadata(&parent_path).await;
+    context.folder_title = folder_title;
+
+    context
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AnalyzeFolderRequest {
+    /// Maximum number of images to analyze (default: 10)
+    #[serde(default = "default_analyze_limit")]
+    pub limit: usize,
+    /// Whether to force re-analysis of already analyzed images
+    #[serde(default)]
+    pub force: bool,
+}
+
+fn default_analyze_limit() -> usize {
+    10
+}
+
+/// Analyze multiple images in a folder using OpenAI Vision API
+pub async fn analyze_folder_handler(
+    State(app_state): State<crate::AppState>,
+    Path((gallery_name, folder_path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+    Json(request): Json<AnalyzeFolderRequest>,
+) -> impl IntoResponse {
+    // Check if OpenAI is configured
+    let openai_client = match &app_state.openai_client {
+        Some(client) => client.clone(),
+        None => {
+            let mut response = ApiResponse::BadRequest
+                .with_message("OpenAI is not configured. Add [openai] section to config.toml.");
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Get gallery
+    let gallery = match app_state.galleries.get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &folder_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response; // Hide existence
+    }
+
+    // Check if user can analyze images
+    if !user_permissions.permissions.can_analyze_images {
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to analyze images");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // List images in the folder
+    let (_, images, _) = match gallery.list_directory(&folder_path, 0).await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Failed to list directory: {}", e);
+            let mut response =
+                ApiResponse::InternalServerError.with_message("Failed to list directory");
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Filter images that need analysis
+    let mut images_to_analyze = Vec::new();
+    for image in images {
+        if images_to_analyze.len() >= request.limit {
+            break;
+        }
+
+        // Build the full path for this image
+        let relative_path = if folder_path.is_empty() {
+            image.name.clone()
+        } else {
+            format!("{}/{}", folder_path, image.name)
+        };
+        let full_path = gallery.source_directory().join(&relative_path);
+
+        // Check if already analyzed (unless force is set)
+        if !request.force
+            && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&full_path).await
+            && metadata.has_ai_analysis()
+        {
+            debug!("Skipping {} - already analyzed", relative_path);
+            continue;
+        }
+
+        images_to_analyze.push((relative_path, full_path));
+    }
+
+    let total = images_to_analyze.len();
+    let mut analyzed = 0;
+    let mut skipped = 0;
+    let mut errors = 0;
+
+    // Analyze each image
+    for (relative_path, full_path) in images_to_analyze {
+        // Get or generate a medium-sized version of the image for API efficiency
+        let image_data =
+            match get_image_for_analysis(gallery.as_ref(), &full_path, &relative_path).await {
+                Ok(data) => data,
+                Err(e) => {
+                    error!("Failed to read image {}: {}", relative_path, e);
+                    errors += 1;
+                    continue;
+                }
+            };
+
+        // Encode as base64
+        let base64_image = general_purpose::STANDARD.encode(&image_data);
+
+        // Build context from available metadata
+        let context = build_image_context(gallery, &relative_path).await;
+
+        // Call OpenAI API with context
+        let result = match openai_client
+            .analyze_image_data_with_context(&base64_image, &relative_path, context)
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                error!("OpenAI analysis failed for {}: {}", relative_path, e);
+                errors += 1;
+
+                // If rate limited, stop processing
+                if matches!(
+                    e,
+                    crate::openai::OpenAIError::RateLimited { retry_after_ms: _ }
+                ) {
+                    info!("Rate limited by OpenAI, stopping folder analysis");
+                    skipped = total - analyzed - errors;
+                    break;
+                }
+                continue;
+            }
+        };
+
+        // Load existing metadata or create new
+        let mut metadata = gallery
+            .user_metadata_storage
+            .load(&full_path)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
+        // Update with AI analysis results
+        metadata.set_ai_analysis(result.keywords.clone(), result.alt_text.clone());
+
+        // Save metadata
+        if let Err(e) = gallery
+            .user_metadata_storage
+            .save(&full_path, &metadata)
+            .await
+        {
+            error!(
+                "Failed to save AI analysis metadata for {}: {}",
+                relative_path, e
+            );
+        }
+
+        info!(
+            "Analyzed image {}: {} keywords",
+            relative_path,
+            result.keywords.len()
+        );
+        analyzed += 1;
+    }
+
+    let mut response = Json(AnalyzeFolderResponse {
+        success: true,
+        total,
+        analyzed,
+        skipped,
+        errors,
+    })
+    .into_response();
+    response.headers_mut().extend(no_cache_headers());
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1427,6 +1881,7 @@ roles = ["viewer"]
             user_database_manager: None,
             email_provider: None,
             webauthn: None,
+            openai_client: None,
             config,
         };
 

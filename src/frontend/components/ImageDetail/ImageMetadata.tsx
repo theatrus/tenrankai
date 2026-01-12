@@ -210,3 +210,37 @@ export function LocationMetadata({ image, permissions }: { image: ImageInfo; per
     </div>
   );
 }
+
+export function AIMetadata({ image, permissions }: { image: ImageInfo; permissions: RolePermissions }) {
+  const userMetadata = image.user_metadata;
+
+  // Only show if AI analysis has been performed and user has permission
+  if (!userMetadata?.ai_analyzed_at || !permissions.can_see_ai_analysis) {
+    return null;
+  }
+
+  return (
+    <div className="ai-metadata card">
+      <h3>Description</h3>
+
+      {userMetadata.ai_alt_text && (
+        <div className="ai-alt-text">
+          <p>{userMetadata.ai_alt_text}</p>
+        </div>
+      )}
+
+      {userMetadata.ai_keywords && userMetadata.ai_keywords.length > 0 && (
+        <div className="ai-keywords">
+          <h4>Keywords</h4>
+          <div className="keyword-tags">
+            {userMetadata.ai_keywords.map((keyword, index) => (
+              <span key={index} className="keyword-tag">
+                {keyword}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

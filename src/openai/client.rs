@@ -2,7 +2,7 @@ use super::{
     config::OpenAIConfig,
     error::OpenAIError,
     types::{
-        AnalysisOutput, ImageAnalysisResult, LocationContext, OpenAIRequest, OpenAIResponse,
+        AnalysisOutput, ImageAnalysisResult, ImageContext, OpenAIRequest, OpenAIResponse,
         OutputContent,
     },
 };
@@ -176,16 +176,16 @@ impl OpenAIClient {
         base64_image: &str,
         image_name: &str,
     ) -> Result<ImageAnalysisResult, OpenAIError> {
-        self.analyze_image_data_with_location(base64_image, image_name, None)
+        self.analyze_image_data_with_context(base64_image, image_name, ImageContext::default())
             .await
     }
 
-    /// Analyze an image from base64 data with optional location context
-    pub async fn analyze_image_data_with_location(
+    /// Analyze an image from base64 data with context (location, title, description)
+    pub async fn analyze_image_data_with_context(
         &self,
         base64_image: &str,
         image_name: &str,
-        location: Option<LocationContext>,
+        context: ImageContext,
     ) -> Result<ImageAnalysisResult, OpenAIError> {
         // Apply rate limiting
         self.wait_for_rate_limit().await;
@@ -195,7 +195,7 @@ impl OpenAIClient {
             &self.config.model,
             base64_image,
             self.config.max_tokens,
-            location,
+            context,
         );
 
         debug!("Sending image analysis request for: {}", image_name);

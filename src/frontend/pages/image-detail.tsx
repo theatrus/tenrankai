@@ -8,7 +8,7 @@ import { useSwipeGestures } from '../hooks/useSwipeGestures.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
-import { ImageMetadata, CameraMetadata, LocationMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
+import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 
 interface ImageDetailPageProps {
@@ -246,6 +246,8 @@ export function ImageDetailPage({
               <LocationMetadata image={currentData.image} permissions={currentData.permissions} />
             </div>
           )}
+
+          <AIMetadata image={currentData.image} permissions={currentData.permissions} />
           
           {currentData.permissions.can_read_metadata && (
             <UserMetadata

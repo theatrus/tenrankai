@@ -49,6 +49,12 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_use_tile_zoom: bool,
 
+    // AI permissions
+    #[serde(default)]
+    pub can_analyze_images: bool,
+    #[serde(default)]
+    pub can_see_ai_analysis: bool,
+
     // Special permissions
     #[serde(default)]
     pub owner_access: bool, // Bypasses all restrictions
@@ -93,6 +99,9 @@ impl RolePermissions {
         self.can_use_zoom |= other.can_use_zoom;
         self.can_use_tile_zoom |= other.can_use_tile_zoom;
 
+        self.can_analyze_images |= other.can_analyze_images;
+        self.can_see_ai_analysis |= other.can_see_ai_analysis;
+
         self.owner_access |= other.owner_access;
     }
 
@@ -125,6 +134,9 @@ impl RolePermissions {
 
             self.can_use_zoom = true;
             self.can_use_tile_zoom = true;
+
+            self.can_analyze_images = true;
+            self.can_see_ai_analysis = true;
         }
     }
 }

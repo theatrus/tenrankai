@@ -53,6 +53,11 @@ export interface ImageUserMetadata {
   tags: string[];
   last_modified?: string;
   modified_by?: string;
+
+  // AI-generated metadata
+  ai_keywords?: string[];
+  ai_alt_text?: string;
+  ai_analyzed_at?: string;
 }
 
 export interface ImageInfo {
@@ -104,6 +109,8 @@ export interface RolePermissions {
   can_delete_any_comments: boolean;
   can_use_zoom: boolean;
   can_use_tile_zoom: boolean;
+  can_analyze_images: boolean;
+  can_see_ai_analysis: boolean;
   owner_access: boolean;
 }
 

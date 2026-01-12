@@ -6,7 +6,7 @@ mod handlers;
 pub mod image_processing;
 mod indexing;
 mod metadata;
-mod metadata_sources;
+pub mod metadata_sources;
 mod task_deduplicator;
 mod types;
 

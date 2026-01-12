@@ -996,7 +996,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
                   <img
                     src={image.medium_url}
                     srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
-                    alt={image.name}
+                    alt={image.user_metadata?.ai_alt_text || image.name}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -1105,7 +1105,7 @@ export function ImageDisplay({ image, canUseZoom = false, onImageClick, tileConf
             <img
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
-              alt={image.name}
+              alt={image.user_metadata?.ai_alt_text || image.name}
               style={{
                 width: '100%',
                 height: 'auto',

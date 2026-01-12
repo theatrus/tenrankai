@@ -582,6 +582,8 @@ impl Gallery {
                     can_delete_any_comments: false,
                     can_use_zoom: false,
                     can_use_tile_zoom: false,
+                    can_analyze_images: false,
+                    can_see_ai_analysis: false,
                     owner_access: false,
                 }
             }
@@ -601,10 +603,29 @@ impl Gallery {
             (None, None)
         };
 
-        // Load user metadata if the user has permission
-        let user_metadata = if user.is_some() && permissions.can_read_metadata {
+        // Load user metadata if the user has permission to see any part of it
+        let user_metadata = if permissions.can_read_metadata || permissions.can_see_ai_analysis {
             match self.user_metadata_storage.load(&full_path).await {
-                Ok(metadata) => metadata,
+                Ok(Some(mut metadata)) => {
+                    // Filter metadata based on permissions
+                    if !permissions.can_read_metadata {
+                        // User can only see AI analysis, not other metadata
+                        metadata.comments = vec![];
+                        metadata.highlighted = false;
+                        metadata.pick_status = None;
+                        metadata.tags = vec![];
+                        metadata.last_modified = None;
+                        metadata.modified_by = None;
+                    }
+                    if !permissions.can_see_ai_analysis {
+                        // User cannot see AI analysis
+                        metadata.ai_keywords = vec![];
+                        metadata.ai_alt_text = None;
+                        metadata.ai_analyzed_at = None;
+                    }
+                    Some(metadata)
+                }
+                Ok(None) => None,
                 Err(e) => {
                     debug!("Failed to load user metadata for {}: {}", relative_path, e);
                     None
