@@ -683,11 +683,103 @@ impl Gallery {
             }
         }
 
+        // Remove orphaned cache files (cache files for images that no longer exist)
+        let orphaned_count = self.remove_orphaned_cache_files().await?;
+        if orphaned_count > 0 {
+            info!("Removed {} orphaned cache files", orphaned_count);
+        }
+
         info!(
             "Completed cache validation and cleanup for gallery '{}'",
             self.config.name
         );
         Ok(())
+    }
+
+    /// Remove cache files that don't belong to any current image in the metadata cache
+    async fn remove_orphaned_cache_files(&self) -> Result<usize, super::GalleryError> {
+        use std::collections::HashSet;
+
+        // Build a set of all valid cache filename prefixes (hashes) for current images
+        let valid_prefixes: HashSet<String> = {
+            let metadata_cache = self.metadata_cache.read().await;
+            let mut prefixes = HashSet::new();
+
+            for image_path in metadata_cache.keys() {
+                // Generate the base hash for this image (used as prefix for all cached versions)
+                let base_hash = self.generate_cache_key(image_path, "");
+                prefixes.insert(base_hash);
+
+                // Also generate hashes for each size variant
+                for size in ImageSize::ALL {
+                    for format in &["jpg", "webp", "png", "avif"] {
+                        let hash = self.generate_cache_key(
+                            image_path,
+                            &format!("{}_{}", size.as_str(), format),
+                        );
+                        prefixes.insert(hash);
+
+                        // Also watermarked variants
+                        if size.supports_watermark() {
+                            let hash_wm = self.generate_cache_key(
+                                image_path,
+                                &format!("{}_{}_watermarked", size.as_str(), format),
+                            );
+                            prefixes.insert(hash_wm);
+                        }
+                    }
+                }
+            }
+
+            prefixes
+        };
+
+        // Files to keep (metadata files, composites handled separately)
+        let protected_files = ["metadata_cache.json", "cache_metadata.json"];
+        let composite_prefix = format!("composite_{}_", self.config.name);
+
+        let mut removed_count = 0;
+
+        // Walk the cache directory and check each file
+        if let Ok(mut entries) = tokio::fs::read_dir(&self.config.cache_directory).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let filename = entry.file_name().to_string_lossy().to_string();
+
+                // Skip protected files
+                if protected_files.contains(&filename.as_str()) {
+                    continue;
+                }
+
+                // Skip composite files (they have their own lifecycle)
+                if filename.starts_with(&composite_prefix) {
+                    continue;
+                }
+
+                // Check if this is an image cache file (hash-based filename)
+                // Cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
+                let hash_part = filename
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches("_watermarked");
+
+                // If the hash doesn't match any valid prefix, it's orphaned
+                if !hash_part.is_empty() && !valid_prefixes.contains(hash_part) {
+                    let file_path = entry.path();
+                    match tokio::fs::remove_file(&file_path).await {
+                        Ok(_) => {
+                            debug!("Removed orphaned cache file: {}", filename);
+                            removed_count += 1;
+                        }
+                        Err(e) => {
+                            debug!("Failed to remove orphaned cache file {}: {}", filename, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(removed_count)
     }
 
     /// Check what formats are available for a specific image and size in cache
@@ -1135,5 +1227,230 @@ Hidden folder
         let items = gallery.scan_directory("hidden").await.unwrap();
         assert_eq!(items.len(), 1); // Should see the image
         assert_eq!(items[0].name, "test.jpg");
+    }
+
+    #[tokio::test]
+    async fn test_remove_stale_metadata_entries() {
+        use super::super::ImageMetadata;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.clone(),
+            cache_directory: cache_dir,
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            ..Default::default()
+        };
+
+        let gallery = Gallery::new(config);
+
+        // Insert metadata for "existing" and "deleted" images
+        let metadata = ImageMetadata {
+            dimensions: (100, 100),
+            capture_date: None,
+            camera_info: None,
+            location_info: None,
+            modification_date: None,
+            color_profile: None,
+        };
+
+        {
+            let mut cache = gallery.metadata_cache.write().await;
+            cache.insert("existing.jpg".to_string(), metadata.clone());
+            cache.insert("deleted.jpg".to_string(), metadata.clone());
+            cache.insert("also_deleted.jpg".to_string(), metadata);
+        }
+
+        // Only "existing.jpg" is in the current image paths
+        let current_paths = vec!["existing.jpg".to_string()];
+
+        // Call remove_stale_metadata_entries
+        let removed_count = gallery.remove_stale_metadata_entries(&current_paths).await;
+
+        // Should have removed 2 entries
+        assert_eq!(removed_count, 2);
+
+        // Verify remaining cache entries
+        let cache = gallery.metadata_cache.read().await;
+        assert!(cache.contains_key("existing.jpg"));
+        assert!(!cache.contains_key("deleted.jpg"));
+        assert!(!cache.contains_key("also_deleted.jpg"));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_remove_orphaned_cache_files() {
+        use super::super::ImageMetadata;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.clone(),
+            cache_directory: cache_dir.clone(),
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            ..Default::default()
+        };
+
+        let gallery = Gallery::new(config);
+
+        // Insert metadata for an image that "exists"
+        let metadata = ImageMetadata {
+            dimensions: (100, 100),
+            capture_date: None,
+            camera_info: None,
+            location_info: None,
+            modification_date: None,
+            color_profile: None,
+        };
+
+        {
+            let mut cache = gallery.metadata_cache.write().await;
+            cache.insert("valid_image.jpg".to_string(), metadata);
+        }
+
+        // Create a cache file for the valid image
+        let valid_hash = gallery.generate_cache_key("valid_image.jpg", "thumbnail_webp");
+        let valid_cache_file = cache_dir.join(format!("{}.webp", valid_hash));
+        std::fs::write(&valid_cache_file, b"valid cache content").unwrap();
+
+        // Create orphaned cache files (no corresponding metadata entry)
+        let orphan1 = cache_dir.join("orphan123456789abcdef0123456789abcdef0123456789abcdef0123456789ab.jpg");
+        let orphan2 = cache_dir.join("orphan987654321fedcba0987654321fedcba0987654321fedcba0987654321fe.webp");
+        std::fs::write(&orphan1, b"orphan cache 1").unwrap();
+        std::fs::write(&orphan2, b"orphan cache 2").unwrap();
+
+        // Create protected files that should NOT be removed
+        let metadata_cache = cache_dir.join("metadata_cache.json");
+        let cache_metadata = cache_dir.join("cache_metadata.json");
+        std::fs::write(&metadata_cache, b"{}").unwrap();
+        std::fs::write(&cache_metadata, b"{}").unwrap();
+
+        // Create a composite file that should NOT be removed
+        let composite = cache_dir.join("composite_test_abc123.jpg");
+        std::fs::write(&composite, b"composite").unwrap();
+
+        // Verify all files exist before cleanup
+        assert!(valid_cache_file.exists());
+        assert!(orphan1.exists());
+        assert!(orphan2.exists());
+        assert!(metadata_cache.exists());
+        assert!(cache_metadata.exists());
+        assert!(composite.exists());
+
+        // Call remove_orphaned_cache_files
+        let removed_count = gallery.remove_orphaned_cache_files().await.unwrap();
+
+        // Should have removed 2 orphaned files
+        assert_eq!(removed_count, 2);
+
+        // Verify valid cache file still exists
+        assert!(valid_cache_file.exists(), "Valid cache file should remain");
+
+        // Verify orphaned files were removed
+        assert!(!orphan1.exists(), "Orphan 1 should be removed");
+        assert!(!orphan2.exists(), "Orphan 2 should be removed");
+
+        // Verify protected files still exist
+        assert!(metadata_cache.exists(), "metadata_cache.json should remain");
+        assert!(cache_metadata.exists(), "cache_metadata.json should remain");
+        assert!(composite.exists(), "Composite files should remain");
+    }
+
+    #[tokio::test]
+    async fn test_cache_cleanup_integration() {
+        use super::super::ImageMetadata;
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        // Create an actual image file
+        std::fs::write(source_dir.join("real_image.jpg"), vec![0xFF, 0xD8, 0xFF, 0xE0]).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.clone(),
+            cache_directory: cache_dir.clone(),
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            ..Default::default()
+        };
+
+        let gallery = Arc::new(Gallery::new(config));
+
+        // Simulate: metadata for an image that was deleted
+        let metadata = ImageMetadata {
+            dimensions: (100, 100),
+            capture_date: None,
+            camera_info: None,
+            location_info: None,
+            modification_date: None,
+            color_profile: None,
+        };
+
+        {
+            let mut cache = gallery.metadata_cache.write().await;
+            // Add both real and deleted image metadata
+            cache.insert("real_image.jpg".to_string(), metadata.clone());
+            cache.insert("deleted_image.jpg".to_string(), metadata);
+        }
+
+        // Create cache files for both
+        let real_hash = gallery.generate_cache_key("real_image.jpg", "thumbnail_webp");
+        let deleted_hash = gallery.generate_cache_key("deleted_image.jpg", "thumbnail_webp");
+        std::fs::write(cache_dir.join(format!("{}.webp", real_hash)), b"cache").unwrap();
+        std::fs::write(cache_dir.join(format!("{}.webp", deleted_hash)), b"cache").unwrap();
+
+        // Verify initial state
+        {
+            let cache = gallery.metadata_cache.read().await;
+            assert_eq!(cache.len(), 2);
+        }
+
+        // Call refresh_all_metadata which should detect the deleted image
+        // and clean up its metadata entry
+        gallery.refresh_all_metadata().await.unwrap();
+
+        // After refresh, only real_image.jpg should be in metadata cache
+        {
+            let cache = gallery.metadata_cache.read().await;
+            assert!(cache.contains_key("real_image.jpg"));
+            assert!(!cache.contains_key("deleted_image.jpg"));
+        }
+
+        // Run cache validation which should remove orphaned cache files
+        gallery.clone().validate_and_cleanup_cache().await.unwrap();
+
+        // The deleted image's cache file should now be orphaned and removed
+        let deleted_cache_file = cache_dir.join(format!("{}.webp", deleted_hash));
+        assert!(
+            !deleted_cache_file.exists(),
+            "Deleted image cache file should be removed"
+        );
+
+        // Real image's cache file should still exist
+        let real_cache_file = cache_dir.join(format!("{}.webp", real_hash));
+        assert!(real_cache_file.exists(), "Real image cache file should remain");
     }
 }

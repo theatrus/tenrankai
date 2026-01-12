@@ -442,20 +442,67 @@ impl Gallery {
             info!("Built image index with {} images", all_image_paths.len());
         }
 
+        // Remove stale metadata cache entries (images that no longer exist)
+        let removed_count = self.remove_stale_metadata_entries(&all_image_paths).await;
+
         // Save the cache to disk if any changes were made
-        if refreshed_count > 0 {
+        if refreshed_count > 0 || removed_count > 0 {
             self.save_metadata_cache().await?;
         }
 
         let elapsed = start_time.elapsed();
         info!(
-            "Metadata refresh completed in {:.2}s: {} refreshed, {} unchanged (skipped)",
+            "Metadata refresh completed in {:.2}s: {} refreshed, {} unchanged, {} removed (stale)",
             elapsed.as_secs_f64(),
             refreshed_count,
-            skipped_count
+            skipped_count,
+            removed_count
         );
 
         Ok(())
+    }
+
+    /// Remove metadata cache entries for images that no longer exist on disk
+    pub(crate) async fn remove_stale_metadata_entries(&self, current_image_paths: &[String]) -> usize {
+        use std::collections::HashSet;
+
+        let current_paths: HashSet<&String> = current_image_paths.iter().collect();
+
+        // Find stale entries (in cache but not on disk)
+        let stale_paths: Vec<String> = {
+            let cache = self.metadata_cache.read().await;
+            cache
+                .keys()
+                .filter(|path| !current_paths.contains(path))
+                .cloned()
+                .collect()
+        };
+
+        if stale_paths.is_empty() {
+            return 0;
+        }
+
+        // Remove stale entries
+        let mut cache = self.metadata_cache.write().await;
+        let mut removed_count = 0;
+
+        for path in &stale_paths {
+            if cache.remove(path).is_some() {
+                debug!("Removed stale metadata entry: {}", path);
+                removed_count += 1;
+            }
+        }
+
+        if removed_count > 0 {
+            self.metadata_cache_dirty
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            info!(
+                "Removed {} stale metadata entries for deleted/moved images",
+                removed_count
+            );
+        }
+
+        removed_count
     }
 
     /// Check if a file's metadata needs to be refreshed based on modification date
