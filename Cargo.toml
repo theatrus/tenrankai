@@ -25,7 +25,7 @@ rexif = "0.7"
 image = { version = "0.25" }
 imageproc = "0.26"
 ab_glyph = "0.2"
-resvg = "0.45"
+resvg = "0.46"
 usvg = "0.45"
 ico = "0.5"
 webp = { version = "0.3", features = ["img"] }
