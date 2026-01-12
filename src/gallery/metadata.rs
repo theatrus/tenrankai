@@ -463,7 +463,10 @@ impl Gallery {
     }
 
     /// Remove metadata cache entries for images that no longer exist on disk
-    pub(crate) async fn remove_stale_metadata_entries(&self, current_image_paths: &[String]) -> usize {
+    pub(crate) async fn remove_stale_metadata_entries(
+        &self,
+        current_image_paths: &[String],
+    ) -> usize {
         use std::collections::HashSet;
 
         let current_paths: HashSet<&String> = current_image_paths.iter().collect();

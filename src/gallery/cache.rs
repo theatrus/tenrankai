@@ -1330,8 +1330,10 @@ Hidden folder
         std::fs::write(&valid_cache_file, b"valid cache content").unwrap();
 
         // Create orphaned cache files (no corresponding metadata entry)
-        let orphan1 = cache_dir.join("orphan123456789abcdef0123456789abcdef0123456789abcdef0123456789ab.jpg");
-        let orphan2 = cache_dir.join("orphan987654321fedcba0987654321fedcba0987654321fedcba0987654321fe.webp");
+        let orphan1 =
+            cache_dir.join("orphan123456789abcdef0123456789abcdef0123456789abcdef0123456789ab.jpg");
+        let orphan2 = cache_dir
+            .join("orphan987654321fedcba0987654321fedcba0987654321fedcba0987654321fe.webp");
         std::fs::write(&orphan1, b"orphan cache 1").unwrap();
         std::fs::write(&orphan2, b"orphan cache 2").unwrap();
 
@@ -1386,7 +1388,11 @@ Hidden folder
         std::fs::create_dir_all(&cache_dir).unwrap();
 
         // Create an actual image file
-        std::fs::write(source_dir.join("real_image.jpg"), vec![0xFF, 0xD8, 0xFF, 0xE0]).unwrap();
+        std::fs::write(
+            source_dir.join("real_image.jpg"),
+            vec![0xFF, 0xD8, 0xFF, 0xE0],
+        )
+        .unwrap();
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
@@ -1451,6 +1457,9 @@ Hidden folder
 
         // Real image's cache file should still exist
         let real_cache_file = cache_dir.join(format!("{}.webp", real_hash));
-        assert!(real_cache_file.exists(), "Real image cache file should remain");
+        assert!(
+            real_cache_file.exists(),
+            "Real image cache file should remain"
+        );
     }
 }
