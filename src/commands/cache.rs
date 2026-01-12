@@ -3,6 +3,52 @@ use std::sync::Arc;
 use crate::GallerySystemConfig;
 use crate::gallery::Gallery;
 
+/// Report format coverage for a gallery's image cache
+pub async fn report(
+    gallery_config: &GallerySystemConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+
+    // Initialize gallery to load metadata cache
+    if let Err(e) = gallery.initialize_and_check_version().await {
+        eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
+    }
+
+    // If cache is empty, refresh metadata first
+    if gallery.is_metadata_cache_empty().await {
+        println!("Metadata cache is empty, refreshing...");
+        gallery.clone().refresh_all_metadata().await?;
+    }
+
+    // Run the coverage report
+    gallery.report_format_coverage().await?;
+
+    Ok(())
+}
+
+/// Validate and clean up outdated cache entries
+pub async fn cleanup(
+    gallery_config: &GallerySystemConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+
+    // Initialize gallery to load metadata cache
+    if let Err(e) = gallery.initialize_and_check_version().await {
+        eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
+    }
+
+    // If cache is empty, refresh metadata first
+    if gallery.is_metadata_cache_empty().await {
+        println!("Metadata cache is empty, refreshing...");
+        gallery.clone().refresh_all_metadata().await?;
+    }
+
+    // Run cache validation and cleanup
+    gallery.validate_and_cleanup_cache().await?;
+
+    Ok(())
+}
+
 /// Invalidate composite cache files for a gallery path
 pub fn invalidate_composite(
     gallery_config: &GallerySystemConfig,
