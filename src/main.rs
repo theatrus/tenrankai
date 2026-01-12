@@ -60,6 +60,29 @@ enum Commands {
     /// Cache management commands
     #[command(subcommand)]
     Cache(CacheCommands),
+
+    /// Analyze images using OpenAI Vision API to generate keywords and alt-text
+    AnalyzeImages {
+        /// Gallery name to analyze
+        #[arg(short, long)]
+        gallery: String,
+
+        /// Specific folder within the gallery (optional)
+        #[arg(short, long)]
+        folder: Option<String>,
+
+        /// Maximum number of images to analyze
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Force re-analysis of images that already have AI data
+        #[arg(long)]
+        force: bool,
+
+        /// Dry run - show what would be analyzed without making API calls
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -177,6 +200,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             image_path,
             verbose,
         }) => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
+        Some(Commands::AnalyzeImages {
+            gallery,
+            folder,
+            limit,
+            force,
+            dry_run,
+        }) => {
+            commands::analyze::handle_analyze_command(
+                config, gallery, folder, limit, force, dry_run,
+            )
+            .await
+        }
         Some(Commands::Serve {
             port,
             host,
