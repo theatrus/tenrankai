@@ -19,6 +19,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/frontend");
     println!("cargo:rerun-if-changed=src/css");
     println!("cargo:rerun-if-changed=src/assets");
+    println!("cargo:rerun-if-changed=static");
+    println!("cargo:rerun-if-changed=scripts");
 
     // Control frontend builds based on environment
     let skip_frontend_build = env::var("TENRANKAI_SKIP_FRONTEND").is_ok();
@@ -268,11 +270,8 @@ fn build_with_vite(frontend_dir: &Path) {
     println!("cargo:warning=Building frontend with Vite (React)...");
 
     // Use production build for release
-    let build_command = if std::env::var("PROFILE").unwrap_or_default() == "release" {
-        "build:prod"
-    } else {
-        "build"
-    };
+    let is_release = std::env::var("PROFILE").unwrap_or_default() == "release";
+    let build_command = if is_release { "build:prod" } else { "build" };
 
     let output = Command::new(npm_command())
         .arg("run")
@@ -289,6 +288,34 @@ fn build_with_vite(frontend_dir: &Path) {
     }
 
     println!("cargo:warning=Vite build completed successfully.");
+
+    // Run linting for release builds
+    if is_release {
+        run_frontend_linting(frontend_dir);
+    }
+}
+
+fn run_frontend_linting(frontend_dir: &Path) {
+    println!("cargo:warning=Running frontend linting (release build)...");
+
+    // Run the full lint suite (TypeScript + CSS + CSS variables)
+    let output = Command::new(npm_command())
+        .arg("run")
+        .arg("lint")
+        .current_dir(frontend_dir)
+        .output()
+        .expect("Failed to run frontend linting");
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        panic!(
+            "Frontend linting failed:\n{}\n{}",
+            stdout, stderr
+        );
+    }
+
+    println!("cargo:warning=Frontend linting passed.");
 }
 
 fn check_node_available() -> bool {

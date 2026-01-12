@@ -4247,6 +4247,7 @@ dependencies = [
  "pulldown-cmark",
  "quick-xml",
  "rand",
+ "regex",
  "reqwest",
  "resvg",
  "rexif",
