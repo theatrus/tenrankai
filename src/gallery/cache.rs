@@ -49,16 +49,19 @@ impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
         let current_version = env!("CARGO_PKG_VERSION");
 
-        // Load caches from storage
-        let loaded_metadata = crate::cache::load_image_metadata_cache(&self.cache_storage).await?;
+        // Load image metadata cache from storage
+        if let Err(e) = self.image_cache.load(&self.cache_storage).await {
+            warn!("Failed to load image metadata cache: {}", e);
+        }
+
+        // Load folder metadata cache from storage
+        if let Err(e) = self.folder_cache.load(&self.cache_storage).await {
+            warn!("Failed to load folder metadata cache: {}", e);
+        }
+
+        // Load cache version metadata
         let loaded_cache_metadata =
             crate::cache::load_cache_version_metadata(&self.cache_storage).await;
-
-        // Update the in-memory caches with loaded data
-        {
-            let mut cache = self.metadata_cache.write().await;
-            *cache = loaded_metadata;
-        }
 
         let needs_refresh = match loaded_cache_metadata {
             Ok(cm) => {
@@ -78,10 +81,9 @@ impl Gallery {
                 current_version, self.config.name
             );
 
-            // Clear the old metadata cache
-            let mut cache = self.metadata_cache.write().await;
-            cache.clear();
-            drop(cache);
+            // Clear the old caches
+            self.image_cache.clear().await;
+            self.folder_cache.clear().await;
 
             // Update version and trigger refresh
             let mut metadata = self.cache_metadata.write().await;
@@ -91,10 +93,23 @@ impl Gallery {
 
             // Save the updated cache metadata
             self.save_cache_metadata().await?;
+
+            // Pre-populate folder metadata cache for fast initial page loads
+            info!("Pre-populating folder metadata cache...");
+            if let Err(e) = self.refresh_folder_metadata().await {
+                warn!("Failed to pre-populate folder metadata cache: {}", e);
+            }
         } else {
+            // Check if folder cache is empty (cache file might not have existed)
+            if self.folder_cache.is_empty().await {
+                info!("Folder cache is empty, pre-populating...");
+                if let Err(e) = self.refresh_folder_metadata().await {
+                    warn!("Failed to pre-populate folder metadata cache: {}", e);
+                }
+            }
             // Build the indexer from the existing cache
             let all_paths: Vec<String> = {
-                let cache = self.metadata_cache.read().await;
+                let cache = self.image_cache.read_all().await;
                 cache.keys().cloned().collect()
             };
 
@@ -152,8 +167,6 @@ impl Gallery {
     }
 
     pub fn start_periodic_cache_save(gallery: super::SharedGallery, interval_minutes: u64) {
-        use std::sync::atomic::Ordering;
-
         let shutdown_token = gallery.shutdown_token.clone();
         tokio::spawn(async move {
             let mut interval =
@@ -167,20 +180,18 @@ impl Gallery {
                         break;
                     }
                     _ = interval.tick() => {
-                        // Check if cache is dirty
-                        if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
-                            debug!("Cache is dirty, saving to disk");
+                        // Save image cache if dirty (dirty flag check is internal)
+                        match gallery.image_cache.save_if_dirty(&gallery.cache_storage).await {
+                            Ok(true) => info!("Periodic image metadata cache save completed"),
+                            Ok(false) => debug!("Image cache not dirty, skipping save"),
+                            Err(e) => error!("Failed to save image metadata cache: {}", e),
+                        }
 
-                            if let Err(e) = gallery.save_metadata_cache().await {
-                                error!("Failed to save metadata cache: {}", e);
-                            } else {
-                                // Reset dirty flag and update counter
-                                gallery.metadata_cache_dirty.store(false, Ordering::Relaxed);
-                                gallery
-                                    .metadata_updates_since_save
-                                    .store(0, Ordering::Relaxed);
-                                info!("Periodic metadata cache save completed");
-                            }
+                        // Save folder cache if dirty
+                        match gallery.folder_cache.save_if_dirty(&gallery.cache_storage).await {
+                            Ok(true) => info!("Periodic folder metadata cache save completed"),
+                            Ok(false) => debug!("Folder cache not dirty, skipping save"),
+                            Err(e) => error!("Failed to save folder metadata cache: {}", e),
                         }
                     }
                 }
@@ -189,14 +200,17 @@ impl Gallery {
     }
 
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
-        use std::sync::atomic::Ordering;
+        // Save image metadata cache
+        self.image_cache
+            .save(&self.cache_storage)
+            .await
+            .map_err(|e| super::GalleryError::CacheError(e.to_string()))?;
 
-        let cache = self.metadata_cache.read().await;
-        crate::cache::save_image_metadata_cache(&self.cache_storage, &cache).await?;
-
-        // Reset dirty flag after successful save
-        self.metadata_cache_dirty.store(false, Ordering::Relaxed);
-        self.metadata_updates_since_save.store(0, Ordering::Relaxed);
+        // Save folder metadata cache
+        self.folder_cache
+            .save(&self.cache_storage)
+            .await
+            .map_err(|e| super::GalleryError::CacheError(e.to_string()))?;
 
         Ok(())
     }
@@ -211,7 +225,7 @@ impl Gallery {
         // Ensure cache storage is ready (creates directory for filesystem, no-op for S3)
         self.cache_storage.create_dir("").await?;
 
-        // Save both caches
+        // Save all caches
         self.save_metadata_cache().await?;
         self.save_cache_metadata().await?;
 
@@ -482,7 +496,7 @@ impl Gallery {
         let tile_size = tile_config.tile_size;
 
         // Get image dimensions to calculate grid size
-        let metadata = self.metadata_cache.read().await;
+        let metadata = self.image_cache.read_all().await;
         let image_metadata = match metadata.get(relative_path) {
             Some(meta) => meta,
             None => return Ok(()), // No metadata available
@@ -560,8 +574,8 @@ impl Gallery {
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
+            let cache = self.image_cache.read_all().await;
+            cache.keys().cloned().collect()
         };
 
         let total_images = image_paths.len();
@@ -703,10 +717,10 @@ impl Gallery {
 
         // Build a set of all valid cache filename prefixes (hashes) for current images
         let valid_prefixes: HashSet<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
+            let cache = self.image_cache.read_all().await;
             let mut prefixes = HashSet::new();
 
-            for image_path in metadata_cache.keys() {
+            for image_path in cache.keys() {
                 // Generate the base hash for this image (used as prefix for all cached versions)
                 let base_hash = self.generate_cache_key(image_path, "");
                 prefixes.insert(base_hash);
@@ -863,8 +877,8 @@ impl Gallery {
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
+            let cache = self.image_cache.read_all().await;
+            cache.keys().cloned().collect()
         };
 
         for image_path in image_paths {
@@ -897,8 +911,8 @@ impl Gallery {
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
+            let cache = self.image_cache.read_all().await;
+            cache.keys().cloned().collect()
         };
 
         let total_images = image_paths.len();
@@ -1182,6 +1196,9 @@ This folder should not appear in listings.
         let cache_storage = create_test_storage(&config.cache_directory);
         let gallery = Gallery::new(config, source_storage, cache_storage);
 
+        // Populate the folder cache first (mandatory for scan_directory)
+        gallery.refresh_folder_cache().await.unwrap();
+
         let items = gallery.scan_directory("").await.unwrap();
 
         // Should have 1 visible folder, hidden folder should not appear
@@ -1230,6 +1247,9 @@ Hidden folder
         let cache_storage = create_test_storage(&config.cache_directory);
         let gallery = Gallery::new(config, source_storage, cache_storage);
 
+        // Populate the folder cache first (mandatory for scan_directory)
+        gallery.refresh_folder_cache().await.unwrap();
+
         // Should be able to access hidden folder directly
         let items = gallery.scan_directory("hidden").await.unwrap();
         assert_eq!(items.len(), 1); // Should see the image
@@ -1272,7 +1292,7 @@ Hidden folder
         };
 
         {
-            let mut cache = gallery.metadata_cache.write().await;
+            let mut cache = gallery.image_cache.write_all().await;
             cache.insert("existing.jpg".to_string(), metadata.clone());
             cache.insert("deleted.jpg".to_string(), metadata.clone());
             cache.insert("also_deleted.jpg".to_string(), metadata);
@@ -1288,7 +1308,7 @@ Hidden folder
         assert_eq!(removed_count, 2);
 
         // Verify remaining cache entries
-        let cache = gallery.metadata_cache.read().await;
+        let cache = gallery.image_cache.read_all().await;
         assert!(cache.contains_key("existing.jpg"));
         assert!(!cache.contains_key("deleted.jpg"));
         assert!(!cache.contains_key("also_deleted.jpg"));
@@ -1331,7 +1351,7 @@ Hidden folder
         };
 
         {
-            let mut cache = gallery.metadata_cache.write().await;
+            let mut cache = gallery.image_cache.write_all().await;
             cache.insert("valid_image.jpg".to_string(), metadata);
         }
 
@@ -1429,7 +1449,7 @@ Hidden folder
         };
 
         {
-            let mut cache = gallery.metadata_cache.write().await;
+            let mut cache = gallery.image_cache.write_all().await;
             // Add both real and deleted image metadata
             cache.insert("real_image.jpg".to_string(), metadata.clone());
             cache.insert("deleted_image.jpg".to_string(), metadata);
@@ -1443,7 +1463,7 @@ Hidden folder
 
         // Verify initial state
         {
-            let cache = gallery.metadata_cache.read().await;
+            let cache = gallery.image_cache.read_all().await;
             assert_eq!(cache.len(), 2);
         }
 
@@ -1453,7 +1473,7 @@ Hidden folder
 
         // After refresh, only real_image.jpg should be in metadata cache
         {
-            let cache = gallery.metadata_cache.read().await;
+            let cache = gallery.image_cache.read_all().await;
             assert!(cache.contains_key("real_image.jpg"));
             assert!(!cache.contains_key("deleted_image.jpg"));
         }

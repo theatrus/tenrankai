@@ -21,7 +21,6 @@ pub use handlers::{
 pub use types::*;
 
 use std::{
-    collections::HashMap,
     path::PathBuf,
     sync::{
         Arc,
@@ -30,6 +29,8 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::{Mutex, RwLock, Semaphore};
+
+use crate::cache::PersistentCache;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
@@ -51,10 +52,12 @@ pub struct Gallery {
     pub(crate) cache_path: PathBuf,
     /// Storage backend for cache files
     pub(crate) cache_storage: DynStorage,
-    pub(crate) metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
+    /// Image metadata cache (dimensions, EXIF, etc.)
+    pub(crate) image_cache: Arc<PersistentCache<ImageMetadata>>,
+    /// Folder cache (metadata, contents, counts, previews - unified)
+    pub(crate) folder_cache: Arc<PersistentCache<CachedFolderMetadata>>,
+    /// Cache version and refresh timestamp
     pub(crate) cache_metadata: Arc<RwLock<CacheMetadata>>,
-    pub(crate) metadata_cache_dirty: Arc<AtomicBool>,
-    pub(crate) metadata_updates_since_save: Arc<AtomicUsize>,
     pub(crate) image_indexer: Arc<RwLock<indexing::ImageIndexer>>,
     pub(crate) user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage>,
     pub(crate) task_deduplicator: TaskDeduplicator,
@@ -91,7 +94,8 @@ impl Gallery {
             .unwrap_or_else(|| PathBuf::from("cache")); // Placeholder for S3
 
         // Start with empty caches - they will be loaded asynchronously via initialize_and_check_version()
-        let metadata_cache = HashMap::new();
+        let image_cache = Arc::new(PersistentCache::new("metadata_cache.json"));
+        let folder_cache = Arc::new(PersistentCache::new("folder_cache.json"));
         let cache_metadata = CacheMetadata {
             version: String::new(), // Empty version will trigger loading in initialize
             last_full_refresh: SystemTime::UNIX_EPOCH,
@@ -111,10 +115,9 @@ impl Gallery {
             source_storage,
             cache_path,
             cache_storage,
-            metadata_cache: Arc::new(RwLock::new(metadata_cache)),
+            image_cache,
+            folder_cache,
             cache_metadata: Arc::new(RwLock::new(cache_metadata)),
-            metadata_cache_dirty: Arc::new(AtomicBool::new(false)),
-            metadata_updates_since_save: Arc::new(AtomicUsize::new(0)),
             image_indexer: Arc::new(RwLock::new(image_indexer)),
             user_metadata_storage,
             task_deduplicator: TaskDeduplicator::new(),
@@ -161,7 +164,7 @@ impl Gallery {
     }
 
     pub async fn is_metadata_cache_empty(&self) -> bool {
-        self.metadata_cache.read().await.is_empty()
+        self.image_cache.is_empty().await
     }
 
     pub(crate) fn is_new(&self, modification_date: Option<SystemTime>) -> bool {

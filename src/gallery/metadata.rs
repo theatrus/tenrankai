@@ -9,7 +9,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
 use std::time::SystemTime;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, info, trace};
 
 impl Gallery {
     /// Extract EXIF data from image bytes
@@ -308,18 +308,14 @@ impl Gallery {
             .await
             .unwrap_or(false)
         {
-            // If image doesn't exist, remove from cache
-            let mut cache = self.metadata_cache.write().await;
-            if cache.remove(relative_path).is_some() {
-                self.metadata_cache_dirty
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            // If image doesn't exist, remove from cache (marks dirty automatically)
+            if self.image_cache.remove(relative_path).await.is_some() {
                 debug!("Removed deleted image from cache: {}", relative_path);
             }
 
             // Also update the indexer - rebuild it without this image
-            drop(cache); // Release the cache lock first
             let all_paths: Vec<String> = {
-                let cache = self.metadata_cache.read().await;
+                let cache = self.image_cache.read_all().await;
                 cache
                     .keys()
                     .filter(|p| *p != relative_path)
@@ -351,7 +347,7 @@ impl Gallery {
 
             // Update the indexer with all current images
             let all_paths: Vec<String> = {
-                let cache = self.metadata_cache.read().await;
+                let cache = self.image_cache.read_all().await;
                 cache.keys().cloned().collect()
             };
             let mut indexer = self.image_indexer.write().await;
@@ -411,7 +407,7 @@ impl Gallery {
 
             // Rebuild the index with all current images
             let all_paths: Vec<String> = {
-                let cache = self.metadata_cache.read().await;
+                let cache = self.image_cache.read_all().await;
                 cache.keys().cloned().collect()
             };
             let mut indexer = self.image_indexer.write().await;
@@ -572,6 +568,9 @@ impl Gallery {
         // Remove stale metadata cache entries (images that no longer exist)
         let removed_count = self.remove_stale_metadata_entries(&all_image_paths).await;
 
+        // Refresh folder metadata cache
+        self.refresh_folder_metadata().await?;
+
         // Save the cache to disk if any changes were made
         if refreshed_count > 0 || removed_count > 0 {
             self.save_metadata_cache().await?;
@@ -589,6 +588,293 @@ impl Gallery {
         Ok(())
     }
 
+    /// Refresh folder cache with metadata, contents, counts, and preview images
+    /// This does a single recursive listing and pre-computes everything.
+    /// This must be called before any gallery operations can succeed.
+    pub async fn refresh_folder_cache(&self) -> Result<(), super::GalleryError> {
+        use std::collections::{HashMap, HashSet};
+
+        info!("Refreshing folder cache (metadata, contents, counts, previews)");
+        let start_time = std::time::Instant::now();
+
+        // 1. Get all entries in a single recursive call
+        let all_entries = self.source_storage.list_recursive("").await?;
+
+        // 2. Collect all folder paths (including root)
+        let mut folder_paths: HashSet<String> = HashSet::new();
+        folder_paths.insert(String::new()); // root folder
+
+        for entry in &all_entries {
+            if entry.is_dir {
+                folder_paths.insert(entry.path.clone());
+            }
+        }
+
+        // 3. Build parent -> direct children mapping
+        // For each folder: (subdirectory names, image paths)
+        let mut folder_children: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
+
+        for entry in &all_entries {
+            // Get parent folder path
+            let parent = if let Some(last_slash) = entry.path.rfind('/') {
+                entry.path[..last_slash].to_string()
+            } else {
+                String::new() // root
+            };
+
+            // Get entry name
+            let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
+
+            // Skip hidden files and markdown files
+            if name.starts_with('.') || name.ends_with(".md") {
+                continue;
+            }
+
+            let children = folder_children.entry(parent).or_default();
+            if entry.is_dir {
+                children.0.push(name.to_string()); // subdirectory name
+            } else if self.is_image(name) {
+                children.1.push(entry.path.clone()); // full image path
+            }
+        }
+
+        // 4. Read _folder.md for each folder and identify hidden folders
+        let mut folder_metadata: HashMap<
+            String,
+            (Option<super::FolderMetadata>, Option<std::time::SystemTime>),
+        > = HashMap::new();
+        let mut hidden_folders: HashSet<String> = HashSet::new();
+
+        for folder_path in &folder_paths {
+            let metadata = self.read_folder_metadata_from_storage(folder_path).await;
+
+            // Get the last modified time of the _folder.md file
+            let folder_md_path = if folder_path.is_empty() {
+                "_folder.md".to_string()
+            } else {
+                format!("{}/_folder.md", folder_path)
+            };
+            let last_modified = self
+                .source_storage
+                .metadata(&folder_md_path)
+                .await
+                .ok()
+                .and_then(|m| m.last_modified);
+
+            // Check if this folder is hidden
+            if metadata.as_ref().map(|m| m.config.hidden).unwrap_or(false) {
+                hidden_folders.insert(folder_path.clone());
+            }
+
+            folder_metadata.insert(folder_path.clone(), (metadata, last_modified));
+        }
+
+        // 5. Check if a folder is effectively hidden (it or any ancestor is hidden)
+        let is_effectively_hidden = |path: &str| -> bool {
+            if hidden_folders.contains(path) {
+                return true;
+            }
+            // Check ancestors
+            let mut current = path;
+            while let Some(last_slash) = current.rfind('/') {
+                current = &current[..last_slash];
+                if hidden_folders.contains(current) {
+                    return true;
+                }
+            }
+            // Check root
+            hidden_folders.contains("")
+        };
+
+        // 6. Compute recursive image counts (bottom-up)
+        // First, sort folders by depth (deepest first) for bottom-up processing
+        let mut folders_by_depth: Vec<&String> = folder_paths.iter().collect();
+        folders_by_depth.sort_by_key(|p| std::cmp::Reverse(p.matches('/').count()));
+
+        let mut recursive_counts: HashMap<String, usize> = HashMap::new();
+
+        for folder_path in &folders_by_depth {
+            if is_effectively_hidden(folder_path) {
+                recursive_counts.insert((*folder_path).clone(), 0);
+                continue;
+            }
+
+            let (subdirs, images) = folder_children
+                .get(*folder_path)
+                .cloned()
+                .unwrap_or_default();
+
+            // Count images directly in this folder
+            let direct_count = images.len();
+
+            // Add counts from visible subdirectories
+            let subdir_count: usize = subdirs
+                .iter()
+                .filter_map(|subdir_name| {
+                    let subdir_path = if folder_path.is_empty() {
+                        subdir_name.clone()
+                    } else {
+                        format!("{}/{}", folder_path, subdir_name)
+                    };
+                    if !is_effectively_hidden(&subdir_path) {
+                        recursive_counts.get(&subdir_path).copied()
+                    } else {
+                        None
+                    }
+                })
+                .sum();
+
+            recursive_counts.insert((*folder_path).clone(), direct_count + subdir_count);
+        }
+
+        // 7. Select preview images for each folder (BFS with depth limit)
+        let max_preview = self.config.preview.max_images;
+        let max_depth = self.config.preview.max_depth;
+        let max_per_folder = self.config.preview.max_per_folder;
+
+        // Pre-build image path -> preview item data (avoids lookups in closure)
+        let image_preview_data: HashMap<String, super::CachedPreviewItem> = {
+            let indexer = self.image_indexer.read().await;
+            let image_cache = self.image_cache.read_all().await;
+
+            folder_children
+                .values()
+                .flat_map(|(_, images)| images.iter())
+                .map(|img_path| {
+                    let url_id = indexer
+                        .get_index(img_path)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| urlencoding::encode(img_path).to_string());
+                    let thumbnail_url =
+                        format!("{}/_image/{}/thumbnail", self.config.url_prefix, url_id);
+                    let gallery_url =
+                        format!("{}/_image/{}/gallery", self.config.url_prefix, url_id);
+                    let dimensions = image_cache.get(img_path).map(|m| m.dimensions);
+
+                    (
+                        img_path.clone(),
+                        super::CachedPreviewItem {
+                            path: img_path.clone(),
+                            url_id,
+                            thumbnail_url,
+                            gallery_url,
+                            dimensions,
+                        },
+                    )
+                })
+                .collect()
+        };
+
+        let select_preview_items = |folder_path: &str| -> Vec<super::CachedPreviewItem> {
+            if is_effectively_hidden(folder_path) {
+                return Vec::new();
+            }
+
+            let mut previews = Vec::new();
+            let mut queue: std::collections::VecDeque<(String, usize)> =
+                std::collections::VecDeque::new();
+            queue.push_back((folder_path.to_string(), 0));
+
+            while let Some((current_path, depth)) = queue.pop_front() {
+                if previews.len() >= max_preview || depth > max_depth {
+                    break;
+                }
+
+                if is_effectively_hidden(&current_path) {
+                    continue;
+                }
+
+                if let Some((subdirs, images)) = folder_children.get(&current_path) {
+                    // Add images from this folder using pre-built preview data
+                    // Limited by both max_per_folder and max_preview
+                    let mut folder_count = 0;
+                    for img_path in images {
+                        if previews.len() >= max_preview || folder_count >= max_per_folder {
+                            break;
+                        }
+                        if let Some(preview_item) = image_preview_data.get(img_path) {
+                            previews.push(preview_item.clone());
+                            folder_count += 1;
+                        }
+                    }
+
+                    // Queue subdirectories for next depth level
+                    if depth < max_depth {
+                        for subdir_name in subdirs {
+                            let subdir_path = if current_path.is_empty() {
+                                subdir_name.clone()
+                            } else {
+                                format!("{}/{}", current_path, subdir_name)
+                            };
+                            queue.push_back((subdir_path, depth + 1));
+                        }
+                    }
+                }
+            }
+
+            previews
+        };
+
+        // 8. Build final cache entries
+        let mut new_cache: HashMap<String, super::CachedFolderMetadata> = HashMap::new();
+
+        for folder_path in &folder_paths {
+            let (metadata, metadata_last_modified) = folder_metadata
+                .get(folder_path)
+                .cloned()
+                .unwrap_or((None, None));
+
+            let (subdirs, images) = folder_children
+                .get(folder_path)
+                .cloned()
+                .unwrap_or_default();
+
+            // Filter out hidden subdirectories from the list
+            let visible_subdirs: Vec<String> = subdirs
+                .into_iter()
+                .filter(|subdir_name| {
+                    let subdir_path = if folder_path.is_empty() {
+                        subdir_name.clone()
+                    } else {
+                        format!("{}/{}", folder_path, subdir_name)
+                    };
+                    !is_effectively_hidden(&subdir_path)
+                })
+                .collect();
+
+            let recursive_count = recursive_counts.get(folder_path).copied().unwrap_or(0);
+            let preview_items = select_preview_items(folder_path);
+
+            new_cache.insert(
+                folder_path.clone(),
+                super::CachedFolderMetadata {
+                    metadata,
+                    metadata_last_modified,
+                    subdirectories: visible_subdirs,
+                    images,
+                    recursive_image_count: recursive_count,
+                    preview_items,
+                },
+            );
+        }
+
+        // Replace entire folder cache
+        self.folder_cache.replace_all(new_cache.clone()).await;
+
+        info!(
+            "Folder cache refresh completed in {:.2}s: {} folders cached",
+            start_time.elapsed().as_secs_f64(),
+            new_cache.len()
+        );
+
+        Ok(())
+    }
+
+    /// Legacy alias for refresh_folder_cache
+    pub(crate) async fn refresh_folder_metadata(&self) -> Result<(), super::GalleryError> {
+        self.refresh_folder_cache().await
+    }
+
     /// Remove metadata cache entries for images that no longer exist on disk
     pub(crate) async fn remove_stale_metadata_entries(
         &self,
@@ -600,7 +886,7 @@ impl Gallery {
 
         // Find stale entries (in cache but not on disk)
         let stale_paths: Vec<String> = {
-            let cache = self.metadata_cache.read().await;
+            let cache = self.image_cache.read_all().await;
             cache
                 .keys()
                 .filter(|path| !current_paths.contains(path))
@@ -612,20 +898,16 @@ impl Gallery {
             return 0;
         }
 
-        // Remove stale entries
-        let mut cache = self.metadata_cache.write().await;
+        // Remove stale entries (PersistentCache marks dirty automatically)
         let mut removed_count = 0;
-
         for path in &stale_paths {
-            if cache.remove(path).is_some() {
+            if self.image_cache.remove(path).await.is_some() {
                 debug!("Removed stale metadata entry: {}", path);
                 removed_count += 1;
             }
         }
 
         if removed_count > 0 {
-            self.metadata_cache_dirty
-                .store(true, std::sync::atomic::Ordering::Relaxed);
             info!(
                 "Removed {} stale metadata entries for deleted/moved images",
                 removed_count
@@ -644,7 +926,7 @@ impl Gallery {
         file_mtimes: &std::collections::HashMap<String, std::time::SystemTime>,
     ) -> bool {
         // Get cached metadata
-        let cache = self.metadata_cache.read().await;
+        let cache = self.image_cache.read_all().await;
         let cached = cache.get(relative_path);
 
         let cached_mtime = match cached {
@@ -875,36 +1157,8 @@ impl Gallery {
         path: String,
         metadata: ImageMetadata,
     ) {
-        use std::sync::atomic::Ordering;
-
-        let mut cache = self.metadata_cache.write().await;
-        cache.insert(path, metadata);
-
-        // Mark cache as dirty
-        self.metadata_cache_dirty.store(true, Ordering::Relaxed);
-
-        // Increment update counter
-        let updates = self
-            .metadata_updates_since_save
-            .fetch_add(1, Ordering::Relaxed)
-            + 1;
-
-        // If we've made enough updates, trigger a save
-        const UPDATES_BEFORE_SAVE: usize = 100;
-        if updates >= UPDATES_BEFORE_SAVE {
-            drop(cache); // Release the lock before saving
-
-            if let Err(e) = self.save_metadata_cache().await {
-                error!(
-                    "Failed to save metadata cache after {} updates: {}",
-                    updates, e
-                );
-            } else {
-                self.metadata_cache_dirty.store(false, Ordering::Relaxed);
-                self.metadata_updates_since_save.store(0, Ordering::Relaxed);
-                debug!("Saved metadata cache after {} updates", updates);
-            }
-        }
+        // PersistentCache handles dirty tracking automatically
+        self.image_cache.insert(path, metadata).await;
     }
 }
 

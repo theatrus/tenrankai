@@ -182,6 +182,15 @@ pub async fn create_app(
                     source_storage,
                     cache_storage,
                 ));
+
+                // Initialize folder cache (mandatory for gallery operations)
+                if let Err(e) = gallery.refresh_folder_cache().await {
+                    error!(
+                        "Failed to initialize folder cache for gallery '{}': {}",
+                        gallery_config.name, e
+                    );
+                }
+
                 galleries.insert(gallery_config.name.clone(), gallery);
             }
         }

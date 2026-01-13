@@ -272,7 +272,7 @@ pub(crate) struct ImageMetadata {
     pub color_profile: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FolderConfig {
     #[serde(default)]
@@ -285,10 +285,49 @@ pub(crate) struct FolderConfig {
     pub permissions: crate::permissions::types::PermissionConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct FolderMetadata {
     pub config: FolderConfig,
     pub description_markdown: String,
+}
+
+/// Cached folder data with metadata, contents, and pre-computed values
+/// Single source of truth for all folder-related data to avoid repeated S3 calls
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CachedFolderMetadata {
+    // === From _folder.md ===
+    /// The parsed folder metadata, or None if no _folder.md exists
+    pub metadata: Option<FolderMetadata>,
+    /// Last modified time of the _folder.md file (for staleness checks)
+    pub metadata_last_modified: Option<std::time::SystemTime>,
+
+    // === Directory contents (direct children only) ===
+    /// Names of visible subdirectories (excludes hidden)
+    pub subdirectories: Vec<String>,
+    /// Paths of images in this folder (relative to gallery root)
+    pub images: Vec<String>,
+
+    // === Pre-computed data ===
+    /// Total image count including all subdirectories (recursive)
+    pub recursive_image_count: usize,
+    /// Pre-computed preview items for fast gallery preview API
+    pub preview_items: Vec<CachedPreviewItem>,
+}
+
+/// Minimal preview item with pre-computed URLs and dimensions
+/// Used for fast gallery preview without expensive lookups at request time
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CachedPreviewItem {
+    /// Image path relative to gallery root
+    pub path: String,
+    /// URL identifier (indexed or encoded path)
+    pub url_id: String,
+    /// Pre-built thumbnail URL
+    pub thumbnail_url: String,
+    /// Pre-built gallery URL
+    pub gallery_url: String,
+    /// Image dimensions (for layout)
+    pub dimensions: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

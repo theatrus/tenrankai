@@ -1840,6 +1840,8 @@ roles = ["viewer"]
             source_storage,
             cache_storage,
         ));
+        // Populate the folder cache (mandatory for gallery operations)
+        gallery.refresh_folder_cache().await.unwrap();
         let mut galleries = HashMap::new();
         galleries.insert("test".to_string(), gallery);
 
@@ -2019,38 +2021,40 @@ roles = ["viewer"]
         // Add metadata to the test image
         {
             let gallery = app_state.galleries.get("test").unwrap();
-            let mut cache = gallery.metadata_cache.write().await;
-            cache.insert(
-                "test.jpg".to_string(),
-                crate::gallery::ImageMetadata {
-                    dimensions: (1920, 1080),
-                    capture_date: None,
-                    camera_info: Some(crate::gallery::CameraInfo {
-                        camera_make: Some("Canon".to_string()),
-                        camera_model: Some("EOS R5".to_string()),
-                        lens_model: Some("RF 24-70mm".to_string()),
-                        iso: Some(800),
-                        aperture: Some("f/2.8".to_string()),
-                        shutter_speed: Some("1/60s".to_string()),
-                        focal_length: Some("50mm".to_string()),
-                        telescope: None,
-                        mount: None,
-                        filters: None,
-                        total_exposure_time: None,
-                        ra: None,
-                        dec: None,
-                        additional_details: None,
-                    }),
-                    location_info: Some(crate::gallery::LocationInfo {
-                        latitude: 37.7749,
-                        longitude: -122.4194,
-                        google_maps_url: "https://maps.google.com/...".to_string(),
-                        apple_maps_url: "https://maps.apple.com/...".to_string(),
-                    }),
-                    modification_date: None,
-                    color_profile: Some("sRGB".to_string()),
-                },
-            );
+            gallery
+                .image_cache
+                .insert(
+                    "test.jpg".to_string(),
+                    crate::gallery::ImageMetadata {
+                        dimensions: (1920, 1080),
+                        capture_date: None,
+                        camera_info: Some(crate::gallery::CameraInfo {
+                            camera_make: Some("Canon".to_string()),
+                            camera_model: Some("EOS R5".to_string()),
+                            lens_model: Some("RF 24-70mm".to_string()),
+                            iso: Some(800),
+                            aperture: Some("f/2.8".to_string()),
+                            shutter_speed: Some("1/60s".to_string()),
+                            focal_length: Some("50mm".to_string()),
+                            telescope: None,
+                            mount: None,
+                            filters: None,
+                            total_exposure_time: None,
+                            ra: None,
+                            dec: None,
+                            additional_details: None,
+                        }),
+                        location_info: Some(crate::gallery::LocationInfo {
+                            latitude: 37.7749,
+                            longitude: -122.4194,
+                            google_maps_url: "https://maps.google.com/...".to_string(),
+                            apple_maps_url: "https://maps.apple.com/...".to_string(),
+                        }),
+                        modification_date: None,
+                        color_profile: Some("sRGB".to_string()),
+                    },
+                )
+                .await;
         }
 
         let auth = headers_to_optional_auth(&headers, &app_state);
@@ -2092,38 +2096,40 @@ roles = ["viewer"]
         // Add metadata to the test image
         {
             let gallery = app_state.galleries.get("test").unwrap();
-            let mut cache = gallery.metadata_cache.write().await;
-            cache.insert(
-                "test.jpg".to_string(),
-                crate::gallery::ImageMetadata {
-                    dimensions: (1920, 1080),
-                    capture_date: None,
-                    camera_info: Some(crate::gallery::CameraInfo {
-                        camera_make: Some("Canon".to_string()),
-                        camera_model: Some("EOS R5".to_string()),
-                        lens_model: Some("RF 24-70mm".to_string()),
-                        iso: Some(800),
-                        aperture: Some("f/2.8".to_string()),
-                        shutter_speed: Some("1/60s".to_string()),
-                        focal_length: Some("50mm".to_string()),
-                        telescope: None,
-                        mount: None,
-                        filters: None,
-                        total_exposure_time: None,
-                        ra: None,
-                        dec: None,
-                        additional_details: None,
-                    }),
-                    location_info: Some(crate::gallery::LocationInfo {
-                        latitude: 37.7749,
-                        longitude: -122.4194,
-                        google_maps_url: "https://maps.google.com/...".to_string(),
-                        apple_maps_url: "https://maps.apple.com/...".to_string(),
-                    }),
-                    modification_date: None,
-                    color_profile: Some("sRGB".to_string()),
-                },
-            );
+            gallery
+                .image_cache
+                .insert(
+                    "test.jpg".to_string(),
+                    crate::gallery::ImageMetadata {
+                        dimensions: (1920, 1080),
+                        capture_date: None,
+                        camera_info: Some(crate::gallery::CameraInfo {
+                            camera_make: Some("Canon".to_string()),
+                            camera_model: Some("EOS R5".to_string()),
+                            lens_model: Some("RF 24-70mm".to_string()),
+                            iso: Some(800),
+                            aperture: Some("f/2.8".to_string()),
+                            shutter_speed: Some("1/60s".to_string()),
+                            focal_length: Some("50mm".to_string()),
+                            telescope: None,
+                            mount: None,
+                            filters: None,
+                            total_exposure_time: None,
+                            ra: None,
+                            dec: None,
+                            additional_details: None,
+                        }),
+                        location_info: Some(crate::gallery::LocationInfo {
+                            latitude: 37.7749,
+                            longitude: -122.4194,
+                            google_maps_url: "https://maps.google.com/...".to_string(),
+                            apple_maps_url: "https://maps.apple.com/...".to_string(),
+                        }),
+                        modification_date: None,
+                        color_profile: Some("sRGB".to_string()),
+                    },
+                )
+                .await;
         }
 
         let auth = headers_to_optional_auth(&headers, &app_state);
