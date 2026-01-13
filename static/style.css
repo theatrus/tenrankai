@@ -5,6 +5,7 @@
 /* Default theme (can be overridden by user preference or OS) */
 :root {
     /* Spacing (theme-independent) */
+    --spacing-xs: 0.25rem;
     --spacing-sm: 0.5rem;
     --spacing-md: 1rem;
     --spacing-lg: 1.5rem;
@@ -62,6 +63,9 @@
     --message-error-bg: rgba(220, 53, 69, 0.1);
     --message-error-color: #dc3545;
     --message-error-border: rgba(220, 53, 69, 0.3);
+    --message-warning-bg: rgba(255, 193, 7, 0.1);
+    --message-warning-color: #ffc107;
+    --message-warning-border: rgba(255, 193, 7, 0.3);
 
     /* Code block colors */
     --code-bg: #2d2d2d;
@@ -74,6 +78,11 @@
     --shadow-medium: rgba(0, 0, 0, 0.4);
     --shadow-light: rgba(0, 0, 0, 0.3);
     --header-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+
+    /* Font families */
+    --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-heading: var(--font-body);
+    --font-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
 /* Light Theme */
@@ -125,6 +134,9 @@
     --message-error-bg: rgba(220, 53, 69, 0.1);
     --message-error-color: #58151c;
     --message-error-border: rgba(220, 53, 69, 0.25);
+    --message-warning-bg: rgba(255, 193, 7, 0.1);
+    --message-warning-color: #664d03;
+    --message-warning-border: rgba(255, 193, 7, 0.25);
 
     /* Code block colors */
     --code-bg: #f8f9fa;
@@ -137,6 +149,11 @@
     --shadow-medium: rgba(0, 0, 0, 0.1);
     --shadow-light: rgba(0, 0, 0, 0.05);
     --header-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+    /* Font families */
+    --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-heading: var(--font-body);
+    --font-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
 /* Auto theme based on OS preference (when no manual preference is set) */
@@ -178,6 +195,9 @@
         --message-error-bg: rgba(220, 53, 69, 0.1);
         --message-error-color: #58151c;
         --message-error-border: rgba(220, 53, 69, 0.25);
+        --message-warning-bg: rgba(255, 193, 7, 0.1);
+        --message-warning-color: #664d03;
+        --message-warning-border: rgba(255, 193, 7, 0.25);
         --code-bg: #f8f9fa;
         --code-text: #212529;
         --code-border: #dee2e6;
@@ -187,6 +207,11 @@
         --shadow-light: rgba(0, 0, 0, 0.05);
         --header-bg: #f0f4f8;
         --header-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+        /* Font families */
+        --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-heading: var(--font-body);
+        --font-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
     }
 }
 
@@ -196,13 +221,17 @@ html, body {
 }
 
 body {
-    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-body);
     line-height: 1.6;
     color: var(--text-primary);
     margin: 0;
     padding: 0;
     background-color: var(--bg-primary);
     overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
 }
 
 header {
@@ -260,7 +289,7 @@ nav a:hover {
 
 main {
     min-height: calc(100vh - 200px);
-    padding: 2rem 0;
+    padding: 0;
     touch-action: pan-x pan-y;
 }
 
@@ -1053,7 +1082,7 @@ code {
     color: var(--code-inline-text);
     padding: 0.2rem 0.4rem;
     border-radius: 3px;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
 }
 
@@ -1275,23 +1304,23 @@ th {
 }
 
 .toast-success {
-    border-left: 4px solid var(--success-color);
-    background: color-mix(in srgb, var(--success-color) 10%, var(--bg-card));
+    border-left: 4px solid var(--message-success-color);
+    background: color-mix(in srgb, var(--message-success-color) 10%, var(--bg-card));
 }
 
 .toast-error {
-    border-left: 4px solid var(--error-color);
-    background: color-mix(in srgb, var(--error-color) 10%, var(--bg-card));
+    border-left: 4px solid var(--message-error-color);
+    background: color-mix(in srgb, var(--message-error-color) 10%, var(--bg-card));
 }
 
 .toast-warning {
-    border-left: 4px solid var(--warning-color);
-    background: color-mix(in srgb, var(--warning-color) 10%, var(--bg-card));
+    border-left: 4px solid var(--message-warning-color);
+    background: color-mix(in srgb, var(--message-warning-color) 10%, var(--bg-card));
 }
 
 .toast-info {
-    border-left: 4px solid var(--link-color);
-    background: color-mix(in srgb, var(--link-color) 10%, var(--bg-card));
+    border-left: 4px solid var(--message-info-color);
+    background: color-mix(in srgb, var(--message-info-color) 10%, var(--bg-card));
 }
 
 .toast-content {
