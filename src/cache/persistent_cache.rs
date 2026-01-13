@@ -200,11 +200,6 @@ where
         self.dirty.load(Ordering::Relaxed)
     }
 
-    /// Mark the cache as dirty (has unsaved changes).
-    pub fn mark_dirty(&self) {
-        self.dirty.store(true, Ordering::Relaxed);
-    }
-
     /// Get the number of items in the cache.
     pub async fn len(&self) -> usize {
         self.data.read().await.len()

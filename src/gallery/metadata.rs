@@ -594,10 +594,8 @@ impl Gallery {
         // Refresh folder metadata cache
         self.refresh_folder_metadata().await?;
 
-        // Save the cache to disk if any changes were made
-        if refreshed_count > 0 || removed_count > 0 {
-            self.save_metadata_cache().await?;
-        }
+        // Save caches (only saves if dirty)
+        self.save_metadata_cache().await?;
 
         let elapsed = start_time.elapsed();
         info!(
@@ -788,10 +786,8 @@ impl Gallery {
                         .get_index(img_path)
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| urlencoding::encode(img_path).to_string());
-                    let thumbnail_url =
-                        format!("{}/_image/{}/thumbnail", self.config.url_prefix, url_id);
-                    let gallery_url =
-                        format!("{}/_image/{}/gallery", self.config.url_prefix, url_id);
+                    let thumbnail_url = self.build_thumbnail_url(&url_id);
+                    let gallery_url = self.build_gallery_url(&url_id);
                     let dimensions = image_cache.get(img_path).map(|m| m.dimensions);
 
                     (

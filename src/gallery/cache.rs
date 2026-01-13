@@ -200,17 +200,26 @@ impl Gallery {
     }
 
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
-        // Save image metadata cache
-        self.image_cache
-            .save(&self.cache_storage)
+        // Save image metadata cache if dirty
+        let image_saved = self
+            .image_cache
+            .save_if_dirty(&self.cache_storage)
             .await
             .map_err(|e| super::GalleryError::CacheError(e.to_string()))?;
 
-        // Save folder metadata cache
-        self.folder_cache
-            .save(&self.cache_storage)
+        // Save folder metadata cache if dirty
+        let folder_saved = self
+            .folder_cache
+            .save_if_dirty(&self.cache_storage)
             .await
             .map_err(|e| super::GalleryError::CacheError(e.to_string()))?;
+
+        if image_saved || folder_saved {
+            debug!(
+                "Saved metadata caches (image: {}, folder: {})",
+                image_saved, folder_saved
+            );
+        }
 
         Ok(())
     }

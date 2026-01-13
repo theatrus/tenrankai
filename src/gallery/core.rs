@@ -103,14 +103,8 @@ impl Gallery {
                     .unwrap_or_else(|| urlencoding::encode(image_path).to_string())
             };
 
-            let thumbnail_url = format!(
-                "{}/_image/{}/thumbnail",
-                self.config.url_prefix, url_identifier
-            );
-            let gallery_url = format!(
-                "{}/_image/{}/gallery",
-                self.config.url_prefix, url_identifier
-            );
+            let thumbnail_url = self.build_thumbnail_url(&url_identifier);
+            let gallery_url = self.build_gallery_url(&url_identifier);
 
             // Get metadata from image cache
             let (dimensions, capture_date, modification_date) = {
@@ -480,19 +474,10 @@ impl Gallery {
                 .to_string(),
             title,
             path: relative_path.to_string(),
-            url: format!("{}/_image/{}", self.config.url_prefix, url_identifier),
-            thumbnail_url: format!(
-                "{}/_image/{}/thumbnail",
-                self.config.url_prefix, url_identifier
-            ),
-            gallery_url: format!(
-                "{}/_image/{}/gallery",
-                self.config.url_prefix, url_identifier
-            ),
-            medium_url: format!(
-                "{}/_image/{}/medium",
-                self.config.url_prefix, url_identifier
-            ),
+            url: self.build_image_base_url(&url_identifier),
+            thumbnail_url: self.build_thumbnail_url(&url_identifier),
+            gallery_url: self.build_gallery_url(&url_identifier),
+            medium_url: self.build_medium_url(&url_identifier),
             description,
             camera_info,
             location_info,

@@ -182,6 +182,35 @@ impl Gallery {
         }
     }
 
+    // === URL Building Helpers ===
+
+    /// Build an image URL for a specific size variant.
+    /// Format: `{url_prefix}/_image/{url_id}/{size}`
+    pub(crate) fn build_image_url(&self, url_id: &str, size: &str) -> String {
+        format!("{}/_image/{}/{}", self.config.url_prefix, url_id, size)
+    }
+
+    /// Build a thumbnail URL for an image.
+    pub(crate) fn build_thumbnail_url(&self, url_id: &str) -> String {
+        self.build_image_url(url_id, "thumbnail")
+    }
+
+    /// Build a gallery-size URL for an image.
+    pub(crate) fn build_gallery_url(&self, url_id: &str) -> String {
+        self.build_image_url(url_id, "gallery")
+    }
+
+    /// Build a medium-size URL for an image.
+    pub(crate) fn build_medium_url(&self, url_id: &str) -> String {
+        self.build_image_url(url_id, "medium")
+    }
+
+    /// Build the base image URL (without size).
+    /// Format: `{url_prefix}/_image/{url_id}`
+    pub(crate) fn build_image_base_url(&self, url_id: &str) -> String {
+        format!("{}/_image/{}", self.config.url_prefix, url_id)
+    }
+
     pub async fn refresh_metadata_and_pregenerate_cache(
         self: Arc<Self>,
         pregenerate: bool,
