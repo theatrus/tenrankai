@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::{Config, storage::StorageUrl};
 use std::path::Path;
 use thiserror::Error;
 use tracing::{error, info, warn};
@@ -26,29 +26,72 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
     // Check cache directories for all galleries
     if let Some(galleries) = &config.galleries {
         for gallery_config in galleries {
-            let cache_dir = Path::new(&gallery_config.cache_directory);
-            if !cache_dir.exists() {
-                info!(
-                    "Cache directory for gallery '{}' does not exist, creating: {:?}",
-                    gallery_config.name, cache_dir
-                );
-                if let Err(e) = tokio::fs::create_dir_all(cache_dir).await {
-                    error!(
-                        "Failed to create cache directory for gallery '{}': {}",
-                        gallery_config.name, e
-                    );
-                    errors.push(StartupCheckError::CacheDirectoryCreationFailed(e));
-                } else {
+            // Parse the cache_directory as a storage URL
+            match StorageUrl::parse(&gallery_config.cache_directory) {
+                Ok(StorageUrl::Filesystem { path }) => {
+                    // Filesystem cache - check/create directory
+                    if !path.exists() {
+                        info!(
+                            "Cache directory for gallery '{}' does not exist, creating: {:?}",
+                            gallery_config.name, path
+                        );
+                        if let Err(e) = tokio::fs::create_dir_all(&path).await {
+                            error!(
+                                "Failed to create cache directory for gallery '{}': {}",
+                                gallery_config.name, e
+                            );
+                            errors.push(StartupCheckError::CacheDirectoryCreationFailed(e));
+                        } else {
+                            info!(
+                                "Cache directory for gallery '{}' created successfully",
+                                gallery_config.name
+                            );
+                        }
+                    } else {
+                        info!(
+                            "Cache directory for gallery '{}' exists: {:?}",
+                            gallery_config.name, path
+                        );
+                    }
+                }
+                Ok(StorageUrl::S3 { bucket, prefix, .. }) => {
+                    // S3 cache - no directory creation needed
                     info!(
-                        "Cache directory for gallery '{}' created successfully",
-                        gallery_config.name
+                        "Cache for gallery '{}' is S3 storage: s3://{}/{}",
+                        gallery_config.name, bucket, prefix
                     );
                 }
-            } else {
-                info!(
-                    "Cache directory for gallery '{}' exists: {:?}",
-                    gallery_config.name, cache_dir
-                );
+                Err(e) => {
+                    warn!(
+                        "Could not parse cache_directory for gallery '{}': {} (treating as filesystem path)",
+                        gallery_config.name, e
+                    );
+                    // Fallback to treating as filesystem path
+                    let cache_dir = Path::new(&gallery_config.cache_directory);
+                    if !cache_dir.exists() {
+                        info!(
+                            "Cache directory for gallery '{}' does not exist, creating: {:?}",
+                            gallery_config.name, cache_dir
+                        );
+                        if let Err(e) = tokio::fs::create_dir_all(cache_dir).await {
+                            error!(
+                                "Failed to create cache directory for gallery '{}': {}",
+                                gallery_config.name, e
+                            );
+                            errors.push(StartupCheckError::CacheDirectoryCreationFailed(e));
+                        } else {
+                            info!(
+                                "Cache directory for gallery '{}' created successfully",
+                                gallery_config.name
+                            );
+                        }
+                    } else {
+                        info!(
+                            "Cache directory for gallery '{}' exists: {:?}",
+                            gallery_config.name, cache_dir
+                        );
+                    }
+                }
             }
         }
     }

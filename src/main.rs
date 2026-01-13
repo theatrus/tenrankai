@@ -423,7 +423,7 @@ async fn handle_cache_command(
                 .find(|g| g.name == gallery_name)
                 .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
 
-            commands::cache::list_composites(gallery_config)?;
+            commands::cache::list_composites(gallery_config).await?;
         }
     }
 
