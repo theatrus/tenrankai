@@ -1,7 +1,9 @@
 use crate::gallery::types::ImageSize as SizeVariant;
 use crate::gallery::{Gallery, GalleryError};
-use crate::storage::{DynStorage, storage_exists_sync};
+use crate::storage::{DynStorage, storage_exists_sync, storage_write_sync};
+use bytes::Bytes;
 use std::path::{Path, PathBuf};
+use tokio::runtime::Handle;
 use tracing::{debug, info};
 
 use super::types::{ImageSize, OutputFormat};
@@ -71,10 +73,13 @@ impl Gallery {
             // Get cancellation tokens for inner checks (both pregeneration and shutdown)
             let pregen_token = self.pregeneration_token.lock().await.clone();
             let shutdown_token = self.shutdown_token.clone();
+            let cache_storage = self.cache_storage.clone();
+            let cache_path = self.cache_path.clone();
+            let runtime_handle = Handle::current();
 
-            // Encode all variants in blocking thread (no file I/O)
-            let encoded_variants =
-                tokio::task::spawn_blocking(move || -> Result<Vec<(String, Vec<u8>)>, GalleryError> {
+            // Process and write all variants in blocking thread
+            let generated_paths =
+                tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
                     // Helper to check if cancelled
                     let is_cancelled =
                         || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
@@ -88,7 +93,7 @@ impl Gallery {
                     // Load image once with all metadata
                     debug!("Loading image for batch processing: {:?}", original_path);
                     let loaded_image = LoadedImage::load(&original_path)?;
-                    let mut encoded = Vec::new();
+                    let mut paths = Vec::new();
 
                     let total_variants = variant_configs.len();
                     info!(
@@ -139,24 +144,26 @@ impl Gallery {
                             jpeg_quality,
                             webp_quality,
                         )?;
-                        encoded.push((cache_filename, data));
+
+                        // Write to cache storage synchronously
+                        storage_write_sync(
+                            &cache_storage,
+                            &cache_filename,
+                            Bytes::from(data),
+                            &runtime_handle,
+                        )?;
+                        paths.push(cache_path.join(&cache_filename));
                     }
 
                     debug!(
-                        "Completed batch encoding for {:?}",
+                        "Completed batch processing for {:?}",
                         original_path.file_name()
                     );
-                    Ok(encoded)
+                    Ok(paths)
                 })
                 .await??;
 
-            // Write all encoded variants to cache using storage abstraction
-            for (cache_filename, data) in encoded_variants {
-                self.cache_storage
-                    .write(&cache_filename, bytes::Bytes::from(data))
-                    .await?;
-                result_paths.push(self.cache_path.join(&cache_filename));
-            }
+            result_paths = generated_paths;
 
             // Mark task as complete
             handle.complete().await;
@@ -268,15 +275,17 @@ impl Gallery {
             // Ensure cache directory exists using storage
             self.cache_storage.create_dir("").await?;
 
-            // Process image in blocking thread - encoding only, no file I/O
+            // Process image and write to cache in blocking thread
             let original_path = original_path.to_path_buf();
             let copyright_holder = self.config.copyright_holder.clone();
             let static_dir = std::path::PathBuf::from("static"); // TODO: Make configurable
             let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
             let webp_quality = self.config.webp_quality.unwrap_or(85.0);
+            let cache_storage = self.cache_storage.clone();
+            let runtime_handle = Handle::current();
 
-            let encoded_data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, GalleryError> {
-                process_image(
+            tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                let data = process_image(
                     &original_path,
                     dimensions,
                     output_format,
@@ -285,14 +294,18 @@ impl Gallery {
                     &static_dir,
                     jpeg_quality,
                     webp_quality,
-                )
+                )?;
+
+                // Write to cache storage synchronously
+                storage_write_sync(
+                    &cache_storage,
+                    &cache_filename,
+                    Bytes::from(data),
+                    &runtime_handle,
+                )?;
+                Ok(())
             })
             .await??;
-
-            // Write cache file async using storage abstraction
-            self.cache_storage
-                .write(&cache_filename, bytes::Bytes::from(encoded_data))
-                .await?;
 
             // Mark task as complete
             handle.complete().await;
@@ -391,15 +404,15 @@ impl Gallery {
             // Ensure cache directory exists using storage
             self.cache_storage.create_dir("").await?;
 
-            // Process all tiles for this image in blocking thread - encode only
+            // Process all tiles for this image in blocking thread
             // This ensures we load the source image only once
             let original_path = original_path.to_path_buf();
             let relative_path_owned = relative_path.to_string();
             let shutdown_flag = self.shutdown_flag.clone();
             let cache_storage = self.cache_storage.clone();
-            let runtime_handle = tokio::runtime::Handle::current();
+            let runtime_handle = Handle::current();
 
-            let encoded_tiles = tokio::task::spawn_blocking(move || -> Result<Vec<(String, Vec<u8>)>, GalleryError> {
+            tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
                 process_all_tiles_for_image(
                     &original_path,
                     &relative_path_owned,
@@ -411,13 +424,6 @@ impl Gallery {
                 )
             })
             .await??;
-
-            // Write all encoded tiles to cache using storage abstraction
-            for (cache_filename, data) in encoded_tiles {
-                self.cache_storage
-                    .write(&cache_filename, bytes::Bytes::from(data))
-                    .await?;
-            }
 
             // Mark task as complete
             handle.complete().await;
@@ -483,7 +489,7 @@ fn process_image(
     loaded_image.encode(output_format, jpeg_quality, webp_quality)
 }
 
-/// Process all tiles for an image at once, returning encoded tile data
+/// Process all tiles for an image at once, writing each tile to storage
 fn process_all_tiles_for_image(
     original_path: &Path,
     relative_path: &str,
@@ -491,8 +497,8 @@ fn process_all_tiles_for_image(
     output_format: OutputFormat,
     shutdown_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
     cache_storage: &DynStorage,
-    runtime_handle: &tokio::runtime::Handle,
-) -> Result<Vec<(String, Vec<u8>)>, GalleryError> {
+    runtime_handle: &Handle,
+) -> Result<(), GalleryError> {
     use super::types::LoadedImage;
 
     debug!(
@@ -540,7 +546,7 @@ fn process_all_tiles_for_image(
         grid_height
     );
 
-    let mut encoded_tiles = Vec::new();
+    let mut written_count = 0;
     let mut skipped_count = 0;
 
     // Generate all tiles for this image
@@ -548,11 +554,11 @@ fn process_all_tiles_for_image(
         // Check for shutdown at the start of each row
         if shutdown_flag.load(std::sync::atomic::Ordering::Relaxed) {
             info!(
-                "Tile generation cancelled for {} after {} tiles encoded",
+                "Tile generation cancelled for {} after {} tiles written",
                 relative_path,
-                encoded_tiles.len()
+                written_count
             );
-            return Ok(encoded_tiles);
+            return Ok(());
         }
 
         for tile_x in 0..grid_width {
@@ -652,23 +658,30 @@ fn process_all_tiles_for_image(
                         90.0, // High quality for WebP fallback
                     )?;
 
-                    encoded_tiles.push((cache_filename, data));
+                    // Write to cache storage synchronously
+                    storage_write_sync(
+                        cache_storage,
+                        &cache_filename,
+                        Bytes::from(data),
+                        runtime_handle,
+                    )?;
+                    written_count += 1;
                 }
             }
         }
     }
 
-    if !encoded_tiles.is_empty() {
+    if written_count > 0 {
         info!(
-            "Encoded {} tiles for image, skipped {} existing tiles",
-            encoded_tiles.len(),
+            "Wrote {} tiles for image, skipped {} existing tiles",
+            written_count,
             skipped_count
         );
     } else if skipped_count > 0 {
         debug!("All {} tiles already exist for image", skipped_count);
     }
 
-    Ok(encoded_tiles)
+    Ok(())
 }
 
 #[cfg(test)]
