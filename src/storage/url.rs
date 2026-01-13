@@ -144,6 +144,49 @@ impl StorageUrl {
     pub fn is_s3(&self) -> bool {
         matches!(self, StorageUrl::S3 { .. })
     }
+
+    /// Get the clean path/prefix without query parameters.
+    ///
+    /// For filesystem: returns the path as a string.
+    /// For S3: returns just the prefix (e.g., "theatr.us/cache/photos").
+    ///
+    /// This is useful for constructing file paths within the storage.
+    pub fn prefix(&self) -> &str {
+        match self {
+            StorageUrl::Filesystem { path } => path.to_str().unwrap_or(""),
+            StorageUrl::S3 { prefix, .. } => prefix,
+        }
+    }
+
+    /// Get a clean display string without query parameters.
+    ///
+    /// Useful for logging and debugging where the full URL with
+    /// region/endpoint params would be noisy.
+    ///
+    /// For filesystem: returns the path.
+    /// For S3: returns "s3://bucket/prefix" without query string.
+    pub fn display_clean(&self) -> String {
+        match self {
+            StorageUrl::Filesystem { path } => path.display().to_string(),
+            StorageUrl::S3 { bucket, prefix, .. } => {
+                if prefix.is_empty() {
+                    format!("s3://{}", bucket)
+                } else {
+                    format!("s3://{}/{}", bucket, prefix)
+                }
+            }
+        }
+    }
+
+    /// Get the filesystem path if this is a filesystem URL.
+    ///
+    /// Returns None for S3 URLs.
+    pub fn filesystem_path(&self) -> Option<&PathBuf> {
+        match self {
+            StorageUrl::Filesystem { path } => Some(path),
+            StorageUrl::S3 { .. } => None,
+        }
+    }
 }
 
 impl std::fmt::Display for StorageUrl {

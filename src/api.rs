@@ -1856,6 +1856,7 @@ roles = ["viewer"]
                 user_database: Some("users.toml".into()),
                 cookie_secret: "test-secret".to_string(),
                 log_level: crate::LogLevel::Info,
+                aws_log_level: crate::LogLevel::Warn,
             },
             server: crate::ServerConfig {
                 host: "127.0.0.1".to_string(),

@@ -128,6 +128,7 @@ This is the content of the second test post."#;
         app: tenrankai::AppConfig {
             name: "TestServer".to_string(),
             log_level: tenrankai::LogLevel::Error,
+            aws_log_level: tenrankai::LogLevel::Error,
             cookie_secret: "test-cookie-secret".to_string(),
             base_url: Some("http://localhost:3000".to_string()),
             user_database: None,

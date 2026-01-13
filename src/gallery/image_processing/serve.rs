@@ -68,15 +68,11 @@ impl Gallery {
                         is_retina_tile,
                         output_format.extension(),
                     );
-                    let cache_path = self.cache_path.join(&cache_filename);
 
-                    // Check if already cached
-                    if self
-                        .is_cache_valid(&cache_path, &full_path)
-                        .await
-                        .unwrap_or(false)
-                    {
-                        return self.serve_file_with_cache_header(&cache_path, true).await;
+                    // Check if already cached using storage abstraction
+                    if self.is_cache_valid_storage(&cache_filename, &full_path).await {
+                        let mime_type = output_format.mime_type();
+                        return self.serve_from_cache_storage(&cache_filename, mime_type).await;
                     }
 
                     // Generate the tile
@@ -87,10 +83,10 @@ impl Gallery {
                         .get_image_tile(&full_path, relative_path, x, y, output_format)
                         .await
                     {
-                        Ok(generated_path) => {
-                            return self
-                                .serve_file_with_cache_header(&generated_path, false)
-                                .await;
+                        Ok(_) => {
+                            // Tile was generated and written to storage, serve it
+                            let mime_type = output_format.mime_type();
+                            return self.serve_from_cache_storage(&cache_filename, mime_type).await;
                         }
                         Err(e) => {
                             error!("Failed to generate tile: {}", e);
@@ -114,17 +110,21 @@ impl Gallery {
                         output_format.extension(),
                         apply_watermark,
                     );
-                    let cache_path = self.cache_path.join(&cache_filename);
-                    let was_cached = cache_path.exists();
+
+                    // Check if already cached using storage abstraction
+                    let was_cached = self.cache_storage.exists(&cache_filename).await.unwrap_or(false);
 
                     match self
                         .get_resized_image(&full_path, relative_path, size, output_format)
                         .await
                     {
-                        Ok(cached_path) => {
-                            return self
-                                .serve_file_with_cache_header(&cached_path, was_cached)
-                                .await;
+                        Ok(_) => {
+                            // Image was generated and written to storage, serve it
+                            let mime_type = output_format.mime_type();
+                            if was_cached {
+                                debug!("Serving cached image: {}", cache_filename);
+                            }
+                            return self.serve_from_cache_storage(&cache_filename, mime_type).await;
                         }
                         Err(e) => {
                             error!("Failed to resize image: {}", e);
@@ -216,8 +216,40 @@ impl Gallery {
             .await)
     }
 
+    /// Check if cache file is valid using storage abstraction.
+    ///
+    /// Returns true if the cache file exists and is newer than the source.
+    async fn is_cache_valid_storage(&self, cache_filename: &str, source_path: &Path) -> bool {
+        // Check if cache exists
+        let cache_exists = self.cache_storage.exists(cache_filename).await.unwrap_or(false);
+        if !cache_exists {
+            return false;
+        }
+
+        // Get cache modification time
+        let cache_modified = match self.cache_storage.metadata(cache_filename).await {
+            Ok(meta) => match meta.last_modified {
+                Some(time) => time,
+                None => return true, // If no modification time, assume cache is valid
+            },
+            Err(_) => return false,
+        };
+
+        // Get source modification time
+        let source_modified = match tokio::fs::metadata(source_path).await {
+            Ok(meta) => match meta.modified() {
+                Ok(time) => time,
+                Err(_) => return false,
+            },
+            Err(_) => return false,
+        };
+
+        // Cache is valid if it's newer than source
+        cache_modified >= source_modified
+    }
+
     /// Serve file from cache storage with streaming
-    async fn serve_from_cache_storage(&self, path: &str, content_type: &str) -> Response {
+    pub(crate) async fn serve_from_cache_storage(&self, path: &str, content_type: &str) -> Response {
         // Get metadata for content-length
         let size = match self.cache_storage.metadata(path).await {
             Ok(meta) => Some(meta.size),
@@ -259,6 +291,10 @@ impl Gallery {
         cache_key: &str,
         image: image::DynamicImage,
     ) -> Result<Response, GalleryError> {
+        use bytes::Bytes;
+        use image::ImageEncoder;
+        use std::io::Cursor;
+
         // Always use JPEG for composites
         let output_format = super::types::OutputFormat::Jpeg;
         // Note: cache_key is the enhanced composite key (e.g., "composite_default_MjAwOC1ldXJla2E")
@@ -266,35 +302,15 @@ impl Gallery {
         let hash = self.generate_cache_key(cache_key, output_format.extension());
 
         // Use the enhanced CacheType system for consistent filename generation
-        if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
-            let cache_filename = cache_type.filename(Some(&hash));
-            let cache_path = self.cache_path.join(&cache_filename);
-
-            // Store the cache_filename for later use in response
-            self.store_composite_with_path(image, cache_path, output_format, cache_filename)
-                .await
+        let cache_filename = if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
+            cache_type.filename(Some(&hash))
         } else {
             // Fallback to old method if cache_key format is unexpected
-            let cache_filename = format!("{}.{}", hash, output_format.extension());
-            let cache_path = self.cache_path.join(&cache_filename);
-            self.store_composite_with_path(image, cache_path, output_format, cache_filename)
-                .await
-        }
-    }
-
-    /// Helper method to store composite with given path and return response
-    async fn store_composite_with_path(
-        &self,
-        image: image::DynamicImage,
-        cache_path: std::path::PathBuf,
-        output_format: super::types::OutputFormat,
-        cache_filename: String,
-    ) -> Result<Response, GalleryError> {
-        use image::ImageEncoder;
-        use std::io::Cursor;
+            format!("{}.{}", hash, output_format.extension())
+        };
 
         // Ensure cache directory exists
-        tokio::fs::create_dir_all(&self.cache_path).await?;
+        self.cache_storage.create_dir("").await?;
 
         // Convert to RGB (JPEG doesn't support alpha)
         let rgb_image = image.to_rgb8();
@@ -314,8 +330,10 @@ impl Gallery {
 
         let image_data = buffer.into_inner();
 
-        // Write to cache
-        tokio::fs::write(&cache_path, &image_data).await?;
+        // Write to cache storage
+        self.cache_storage
+            .write(&cache_filename, Bytes::from(image_data.clone()))
+            .await?;
         tracing::debug!("Stored composite image: {}", cache_filename);
 
         // Create response

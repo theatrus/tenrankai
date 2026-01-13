@@ -36,6 +36,10 @@ pub struct AppConfig {
     pub name: String,
     #[serde(default)]
     pub log_level: LogLevel,
+    /// Log level for AWS SDK (defaults to warn to reduce noise).
+    /// Set to "debug" or "trace" to see detailed AWS API calls.
+    #[serde(default = "super::defaults::default_aws_log_level")]
+    pub aws_log_level: LogLevel,
     pub cookie_secret: String,
     #[serde(default)]
     pub base_url: Option<String>,

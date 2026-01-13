@@ -64,8 +64,12 @@ pub struct Gallery {
 
 impl Gallery {
     pub fn new(config: crate::GallerySystemConfig, cache_storage: DynStorage) -> Self {
-        // Use the cache_path from storage if it's filesystem-based, otherwise use config path
-        let cache_path = PathBuf::from(&config.cache_directory);
+        // Parse the cache_directory URL to get the clean path
+        // For filesystem: actual path. For S3: use a placeholder (we use storage abstraction)
+        let cache_path = crate::storage::StorageUrl::parse(&config.cache_directory)
+            .ok()
+            .and_then(|url| url.filesystem_path().cloned())
+            .unwrap_or_else(|| PathBuf::from("cache")); // Placeholder for S3
 
         let metadata_cache =
             crate::cache::load_image_metadata_cache(&config, &cache_path).unwrap_or_default();

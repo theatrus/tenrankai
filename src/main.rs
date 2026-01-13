@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
     Config, LogLevel, commands, create_app,
@@ -194,15 +194,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.app.log_level = cli.log_level;
 
     // Set up logging using the final log level
-    let level = config.app.log_level.to_tracing_level();
+    let app_level = config.app.log_level;
+    let aws_level = config.app.aws_log_level;
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(level.into())
-                .from_env_lossy(),
-        )
+    // Build filter with separate levels for app and AWS SDK
+    // Format: "default_level,crate1=level,crate2=level"
+    let filter_str = format!(
+        "{},aws_smithy_runtime={},aws_smithy_runtime_api={},aws_config={},aws_sdk_s3={},aws_sdk_ses={},aws_credential_types={},aws_sigv4={}",
+        app_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+    );
+
+    let filter = EnvFilter::builder()
+        .with_default_directive(app_level.to_tracing_filter().into())
+        .parse_lossy(&filter_str);
+
+    // Allow RUST_LOG to override
+    let filter = EnvFilter::try_from_default_env().unwrap_or(filter);
+
+    let subscriber = fmt::Subscriber::builder()
+        .with_env_filter(filter)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 

@@ -32,6 +32,11 @@ pub fn default_image_indexing() -> ImageIndexingMode {
     ImageIndexingMode::Filename
 }
 
+/// Default AWS SDK log level (warn to reduce noise)
+pub fn default_aws_log_level() -> LogLevel {
+    LogLevel::Warn
+}
+
 /// Default gallery template path
 pub fn default_gallery_template() -> String {
     "modules/gallery.html.liquid".to_string()
@@ -150,6 +155,7 @@ impl Default for Config {
             app: AppConfig {
                 name: "Tenrankai".to_string(),
                 log_level: LogLevel::Info,
+                aws_log_level: default_aws_log_level(),
                 cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
                 base_url: None,
                 user_database: None,
