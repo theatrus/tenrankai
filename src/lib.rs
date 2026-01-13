@@ -17,6 +17,7 @@ pub mod posts;
 pub mod robots;
 pub mod startup_checks;
 pub mod static_files;
+pub mod storage;
 pub mod template_system;
 pub mod templating;
 pub mod webp_encoder;
