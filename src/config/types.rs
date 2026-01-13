@@ -88,16 +88,19 @@ pub struct StaticConfig {
 
 /// Gallery system configuration with image processing settings
 ///
-/// Cache directory can be a filesystem path or storage URL:
-/// - `"cache/gallery"` - relative filesystem path
-/// - `"/var/cache/tenrankai"` - absolute filesystem path
-/// - Note: S3 URLs are not currently supported for cache (processed images require local filesystem)
+/// Both source and cache directories can be filesystem paths or storage URLs:
+/// - `"photos"` - relative filesystem path
+/// - `"/var/data/photos"` - absolute filesystem path
+/// - `"s3://bucket/prefix"` - S3 bucket with optional prefix
+/// - `"s3://bucket/prefix?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GallerySystemConfig {
     pub name: String,
     pub url_prefix: String,
-    pub source_directory: PathBuf,
+    /// Source directory for gallery images (filesystem path or S3 URL)
+    pub source_directory: String,
+    /// Cache directory for processed images (filesystem path or S3 URL)
     pub cache_directory: String,
     #[serde(default = "super::defaults::default_gallery_template")]
     pub gallery_template: String,

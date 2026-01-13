@@ -142,7 +142,7 @@ This is the content of the second test post."#;
         },
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: gallery_dir,
+            source_directory: gallery_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html.liquid".to_string(),
             image_detail_template: "image_detail.html.liquid".to_string(),

@@ -14,14 +14,15 @@ async fn create_test_gallery() -> (Gallery, TempDir) {
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
-        source_directory: temp_dir.path().to_path_buf(),
+        source_directory: temp_dir.path().to_string_lossy().to_string(),
         cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
+    let source_storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
     let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
-    let gallery = Gallery::new(config, cache_storage);
+    let gallery = Gallery::new(config, source_storage, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -32,10 +33,7 @@ async fn test_watermark_cache_key_differentiation() {
 
     // Create a test image
     let img = ImageBuffer::from_pixel(200, 200, image::Rgb([255u8, 128, 64]));
-    let source_path = gallery
-        .config
-        .source_directory
-        .join("test_watermark_cache.jpg");
+    let source_path = gallery.source_directory().join("test_watermark_cache.jpg");
     img.save(&source_path).unwrap();
 
     let relative_path = "test_watermark_cache.jpg";
@@ -45,7 +43,7 @@ async fn test_watermark_cache_key_differentiation() {
     // Test 1: Generate cache without watermark
     gallery.config.copyright_holder = None;
     let result_no_watermark = gallery
-        .get_resized_image(&source_path, relative_path, size, format)
+        .get_resized_image(relative_path, size, format)
         .await;
     assert!(result_no_watermark.is_ok());
     let cache_path_no_watermark = result_no_watermark.unwrap();
@@ -53,7 +51,7 @@ async fn test_watermark_cache_key_differentiation() {
     // Test 2: Enable watermark and generate cache again
     gallery.config.copyright_holder = Some("Test Copyright".to_string());
     let result_with_watermark = gallery
-        .get_resized_image(&source_path, relative_path, size, format)
+        .get_resized_image(relative_path, size, format)
         .await;
     assert!(result_with_watermark.is_ok());
     let cache_path_with_watermark = result_with_watermark.unwrap();
@@ -76,12 +74,12 @@ async fn test_watermark_cache_key_differentiation() {
 
     // Test 5: Test different sizes - thumbnail should not be affected by watermark setting
     let thumbnail_result1 = gallery
-        .get_resized_image(&source_path, relative_path, "thumbnail", format)
+        .get_resized_image(relative_path, "thumbnail", format)
         .await;
 
     gallery.config.copyright_holder = None;
     let thumbnail_result2 = gallery
-        .get_resized_image(&source_path, relative_path, "thumbnail", format)
+        .get_resized_image(relative_path, "thumbnail", format)
         .await;
 
     assert!(thumbnail_result1.is_ok());

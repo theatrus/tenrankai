@@ -13,14 +13,15 @@ async fn create_test_gallery() -> (Gallery, TempDir) {
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
-        source_directory: temp_dir.path().to_path_buf(),
+        source_directory: temp_dir.path().to_string_lossy().to_string(),
         cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
+    let source_storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
     let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
-    let gallery = Gallery::new(config, cache_storage);
+    let gallery = Gallery::new(config, source_storage, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -31,7 +32,7 @@ async fn test_png_support_and_transparency() {
 
     // Create a PNG with transparency
     let img = ImageBuffer::from_pixel(100, 100, Rgba([255u8, 128, 64, 128])); // Semi-transparent
-    let source_path = gallery.config.source_directory.join("test_transparent.png");
+    let source_path = gallery.source_directory().join("test_transparent.png");
     img.save(&source_path).unwrap();
 
     // Process the PNG image
@@ -40,7 +41,6 @@ async fn test_png_support_and_transparency() {
     // Test that PNG is always output as PNG
     let result = gallery
         .get_resized_image(
-            &source_path,
             relative_path,
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::Png,
@@ -85,10 +85,7 @@ async fn test_png_format_selection() {
 
     // Create a PNG with transparency
     let img = ImageBuffer::from_pixel(100, 100, Rgba([255u8, 0, 0, 200])); // Semi-transparent red
-    let source_path = gallery
-        .config
-        .source_directory
-        .join("test_format_selection.png");
+    let source_path = gallery.source_directory().join("test_format_selection.png");
     img.save(&source_path).unwrap();
 
     // Test different output formats
@@ -97,7 +94,6 @@ async fn test_png_format_selection() {
     // PNG should preserve transparency
     let png_result = gallery
         .get_resized_image(
-            &source_path,
             relative_path,
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::Png,
@@ -110,7 +106,6 @@ async fn test_png_format_selection() {
     // JPEG conversion should work but lose transparency
     let jpeg_result = gallery
         .get_resized_image(
-            &source_path,
             relative_path,
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::Jpeg,
@@ -127,7 +122,6 @@ async fn test_png_format_selection() {
     // WebP should also work
     let webp_result = gallery
         .get_resized_image(
-            &source_path,
             relative_path,
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::WebP,
@@ -154,10 +148,7 @@ async fn test_png_resize_quality() {
         };
     }
 
-    let source_path = gallery
-        .config
-        .source_directory
-        .join("test_resize_quality.png");
+    let source_path = gallery.source_directory().join("test_resize_quality.png");
     img.save(&source_path).unwrap();
 
     // Test different sizes
@@ -166,7 +157,6 @@ async fn test_png_resize_quality() {
     for size in sizes {
         let result = gallery
             .get_resized_image(
-                &source_path,
                 "test_resize_quality.png",
                 size,
                 crate::gallery::image_processing::OutputFormat::Png,
@@ -215,12 +205,11 @@ async fn test_png_with_extreme_dimensions() {
 
     // Test very wide PNG
     let wide_img = ImageBuffer::from_pixel(2000, 100, Rgba([0u8, 255, 0, 255]));
-    let wide_path = gallery.config.source_directory.join("test_wide.png");
+    let wide_path = gallery.source_directory().join("test_wide.png");
     wide_img.save(&wide_path).unwrap();
 
     let result = gallery
         .get_resized_image(
-            &wide_path,
             "test_wide.png",
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::Png,
@@ -237,12 +226,11 @@ async fn test_png_with_extreme_dimensions() {
 
     // Test very tall PNG
     let tall_img = ImageBuffer::from_pixel(100, 2000, Rgba([0u8, 0, 255, 255]));
-    let tall_path = gallery.config.source_directory.join("test_tall.png");
+    let tall_path = gallery.source_directory().join("test_tall.png");
     tall_img.save(&tall_path).unwrap();
 
     let result = gallery
         .get_resized_image(
-            &tall_path,
             "test_tall.png",
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::Png,

@@ -28,8 +28,9 @@ pub use error::StorageError;
 pub use filesystem::FilesystemStorage;
 pub use s3::S3Storage;
 pub use sync_adapter::{
-    SyncStorageAdapter, SyncStorageReader, storage_exists_sync, storage_open_sync,
-    storage_read_range_sync, storage_read_sync, storage_write_sync,
+    PreloadedReader, ReadSeek, SyncStorageAdapter, SyncStorageReader, storage_exists_sync,
+    storage_open_sync, storage_open_with_strategy, storage_read_range_sync, storage_read_sync,
+    storage_write_sync,
 };
 pub use url::StorageUrl;
 
@@ -66,6 +67,25 @@ pub struct StorageEntry {
 
 /// Type alias for a boxed stream of bytes.
 pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, StorageError>> + Send>>;
+
+/// Strategy hint for how to read data from storage.
+///
+/// This allows callers to indicate whether they need the full file or just
+/// partial data, enabling optimized read patterns for different backends.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ReadStrategy {
+    /// Use range reads with prefetching for efficient partial reads.
+    /// Best for: EXIF extraction, ICC profile reading, format detection.
+    /// S3: Multiple small range GETs. Filesystem: Seeking is fast anyway.
+    #[default]
+    Streaming,
+
+    /// Fetch the entire file at once in a single request.
+    /// Best for: Image resize, watermarking, full file processing.
+    /// S3: Single GET request (cheaper, faster for full files).
+    /// Filesystem: Single read (same as streaming, but clearer intent).
+    FullFetch,
+}
 
 /// Async storage operations trait.
 ///

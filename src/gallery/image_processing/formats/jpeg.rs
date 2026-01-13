@@ -17,10 +17,15 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
 
+    extract_icc_profile_from_bytes(&buffer)
+}
+
+/// Extract ICC profile from JPEG data in memory
+pub fn extract_icc_profile_from_bytes(buffer: &[u8]) -> Option<Vec<u8>> {
     // Look for ICC profile in JPEG APP2 segments
     // ICC profiles in JPEG are stored in APP2 markers with ICC_PROFILE identifier
     let mut pos = 0;
-    while pos < buffer.len() - 1 {
+    while pos < buffer.len().saturating_sub(1) {
         if buffer[pos] == 0xFF {
             let marker = buffer[pos + 1];
             if marker == 0xE2 {

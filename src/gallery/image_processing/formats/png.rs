@@ -18,6 +18,11 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
 
+    extract_icc_profile_from_bytes(&buffer)
+}
+
+/// Extract ICC profile from PNG data in memory
+pub fn extract_icc_profile_from_bytes(buffer: &[u8]) -> Option<Vec<u8>> {
     // PNG signature check
     if buffer.len() < 8 || &buffer[0..8] != b"\x89PNG\r\n\x1a\n" {
         return None;

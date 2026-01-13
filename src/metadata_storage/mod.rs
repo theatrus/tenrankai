@@ -3,30 +3,32 @@ pub mod providers;
 pub mod types;
 
 pub use error::MetadataStorageError;
-pub use providers::SidecarMetadataStorage;
+pub use providers::{SidecarMetadataStorage, StorageMetadataBackend};
 pub use types::{Comment, ImageUserMetadata, PickStatus};
 
 use async_trait::async_trait;
-use std::path::Path;
 
 /// Trait for pluggable metadata storage backends
+///
+/// Uses relative paths (strings) instead of filesystem paths to support
+/// storage abstraction (filesystem, S3, etc.)
 #[async_trait]
 pub trait MetadataStorage: Send + Sync {
-    /// Load metadata for a specific image
+    /// Load metadata for a specific image by relative path
     async fn load(
         &self,
-        image_path: &Path,
+        relative_path: &str,
     ) -> Result<Option<ImageUserMetadata>, MetadataStorageError>;
 
-    /// Save metadata for a specific image
+    /// Save metadata for a specific image by relative path
     async fn save(
         &self,
-        image_path: &Path,
+        relative_path: &str,
         metadata: &ImageUserMetadata,
     ) -> Result<(), MetadataStorageError>;
 
-    /// Delete metadata for a specific image
-    async fn delete(&self, image_path: &Path) -> Result<(), MetadataStorageError>;
+    /// Delete metadata for a specific image by relative path
+    async fn delete(&self, relative_path: &str) -> Result<(), MetadataStorageError>;
 
     /// List all images that have metadata
     async fn list_all(&self) -> Result<Vec<String>, MetadataStorageError>;
@@ -34,12 +36,12 @@ pub trait MetadataStorage: Send + Sync {
     /// Batch load metadata for multiple images
     async fn load_batch(
         &self,
-        image_paths: &[&Path],
+        relative_paths: &[&str],
     ) -> Result<Vec<(String, ImageUserMetadata)>, MetadataStorageError> {
         let mut results = Vec::new();
-        for path in image_paths {
+        for path in relative_paths {
             if let Some(metadata) = self.load(path).await? {
-                results.push((path.to_string_lossy().to_string(), metadata));
+                results.push((path.to_string(), metadata));
             }
         }
         Ok(results)

@@ -376,8 +376,13 @@ impl Gallery {
             return Ok(());
         }
 
-        let full_path = self.config.source_directory.join(relative_path);
-        if !full_path.exists() {
+        // Check if source image exists using storage
+        if !self
+            .source_storage
+            .exists(relative_path)
+            .await
+            .unwrap_or(false)
+        {
             return Ok(());
         }
 
@@ -431,10 +436,7 @@ impl Gallery {
         );
         let start = std::time::Instant::now();
 
-        match self
-            .process_image_batch(&full_path, relative_path, variants)
-            .await
-        {
+        match self.process_image_batch(relative_path, variants).await {
             Ok(paths) => {
                 let elapsed = start.elapsed();
                 info!(
@@ -474,8 +476,13 @@ impl Gallery {
             return Ok(());
         }
 
-        let full_path = self.config.source_directory.join(relative_path);
-        if !full_path.exists() {
+        // Check if source image exists using storage abstraction
+        if !self
+            .source_storage
+            .exists(relative_path)
+            .await
+            .unwrap_or(false)
+        {
             return Ok(());
         }
 
@@ -509,7 +516,7 @@ impl Gallery {
             }
 
             // Just request tile 0,0 - the backend will generate all tiles
-            match self.get_image_tile(&full_path, relative_path, 0, 0).await {
+            match self.get_image_tile(relative_path, 0, 0).await {
                 Ok(_) => {
                     info!(
                         "Pre-generated all tiles ({}x{} grid) for {}",
@@ -992,17 +999,23 @@ mod tests {
     use crate::storage::FilesystemStorage;
     use std::sync::Arc;
 
-    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
-        let path = std::path::PathBuf::from(cache_dir);
+    fn create_test_storage(dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(dir);
         std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
+
+    fn create_test_storage_from_path(path: &std::path::Path) -> crate::storage::DynStorage {
+        std::fs::create_dir_all(path).ok();
         Arc::new(FilesystemStorage::new(path))
     }
 
     #[test]
     fn test_cache_key_consistency() {
         let gallery_config = crate::config::GallerySystemConfig::default();
+        let source_storage = create_test_storage(&gallery_config.source_directory);
         let cache_storage = create_test_storage(&gallery_config.cache_directory);
-        let gallery = Gallery::new(gallery_config, cache_storage);
+        let gallery = Gallery::new(gallery_config, source_storage, cache_storage);
 
         // Test regular image cache keys
         let path = "vacation/beach.jpg";
@@ -1046,8 +1059,9 @@ mod tests {
     fn test_improved_composite_cache_structure() {
         use base64::{Engine as _, engine::general_purpose};
         let gallery_config = crate::config::GallerySystemConfig::default();
+        let source_storage = create_test_storage(&gallery_config.source_directory);
         let cache_storage = create_test_storage(&gallery_config.cache_directory);
-        let gallery = Gallery::new(gallery_config, cache_storage);
+        let gallery = Gallery::new(gallery_config, source_storage, cache_storage);
 
         // Test safe path key generation
         let safe_key_simple = gallery.generate_safe_path_key("vacation/2024");
@@ -1088,8 +1102,9 @@ mod tests {
     #[test]
     fn test_cache_filename_generation() {
         let gallery_config = crate::config::GallerySystemConfig::default();
+        let source_storage = create_test_storage(&gallery_config.source_directory);
         let cache_storage = create_test_storage(&gallery_config.cache_directory);
-        let gallery = Gallery::new(gallery_config, cache_storage);
+        let gallery = Gallery::new(gallery_config, source_storage, cache_storage);
 
         let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp", false);
         assert!(
@@ -1142,15 +1157,16 @@ This folder should not appear in listings.
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir,
+            source_directory: source_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
+        let source_storage = create_test_storage_from_path(&source_dir);
         let cache_storage = create_test_storage(&config.cache_directory);
-        let gallery = Gallery::new(config, cache_storage);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         let items = gallery.scan_directory("").await.unwrap();
 
@@ -1189,15 +1205,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir,
+            source_directory: source_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
+        let source_storage = create_test_storage_from_path(&source_dir);
         let cache_storage = create_test_storage(&config.cache_directory);
-        let gallery = Gallery::new(config, cache_storage);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         // Should be able to access hidden folder directly
         let items = gallery.scan_directory("hidden").await.unwrap();
@@ -1219,15 +1236,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir.clone(),
+            source_directory: source_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
+        let source_storage = create_test_storage_from_path(&source_dir);
         let cache_storage = create_test_storage(&config.cache_directory);
-        let gallery = Gallery::new(config, cache_storage);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         // Insert metadata for "existing" and "deleted" images
         let metadata = ImageMetadata {
@@ -1277,15 +1295,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir.clone(),
+            source_directory: source_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
+        let source_storage = create_test_storage_from_path(&source_dir);
         let cache_storage = create_test_storage(&config.cache_directory);
-        let gallery = Gallery::new(config, cache_storage);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         // Insert metadata for an image that "exists"
         let metadata = ImageMetadata {
@@ -1374,15 +1393,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir.clone(),
+            source_directory: source_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
+        let source_storage = create_test_storage_from_path(&source_dir);
         let cache_storage = create_test_storage(&config.cache_directory);
-        let gallery = Arc::new(Gallery::new(config, cache_storage));
+        let gallery = Arc::new(Gallery::new(config, source_storage, cache_storage));
 
         // Simulate: metadata for an image that was deleted
         let metadata = ImageMetadata {

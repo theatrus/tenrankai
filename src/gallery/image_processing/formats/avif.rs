@@ -103,9 +103,13 @@ pub struct GainMapInfo {
 pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
     // Read the file
     let data = std::fs::read(path)?;
+    read_avif_info_from_bytes(&data)
+}
 
+/// Read AVIF data from memory with HDR support
+pub fn read_avif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
     // Check if it's a valid AVIF file
-    if !is_avif(&data) {
+    if !is_avif(data) {
         return Err(GalleryError::ProcessingError(
             "Not a valid AVIF file".to_string(),
         ));
@@ -114,7 +118,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
     // First do a quick gain map detection using our container parser
     // This ensures we can detect gain maps even if libavif decoding fails
     let (container_has_gain_map, container_gain_map_info) =
-        avif_container::detect_gain_map_in_container(&data);
+        avif_container::detect_gain_map_in_container(data);
     debug!(
         "Container gain map detection: has_gain_map={}",
         container_has_gain_map
@@ -1057,10 +1061,22 @@ pub fn extract_color_description(path: &Path) -> Option<String> {
     }
 }
 
+/// Extract color space description from AVIF data in memory
+pub fn extract_color_description_from_bytes(data: &[u8]) -> Option<String> {
+    match read_avif_info_from_bytes(data) {
+        Ok((_, info)) => Some(get_color_space_description(&info)),
+        Err(_) => None,
+    }
+}
+
 /// Extract EXIF data from an AVIF file
 pub fn extract_exif_data(path: &Path) -> Option<Vec<u8>> {
     let data = std::fs::read(path).ok()?;
+    extract_exif_data_from_bytes(&data)
+}
 
+/// Extract EXIF data from AVIF data in memory
+pub fn extract_exif_data_from_bytes(data: &[u8]) -> Option<Vec<u8>> {
     unsafe {
         let decoder = sys::avifDecoderCreate();
         if decoder.is_null() {
@@ -1112,6 +1128,19 @@ pub fn extract_dimensions(path: &Path) -> Option<(u32, u32)> {
 
     // Parse AVIF container directly for dimensions
     avif_container::extract_dimensions(path)
+}
+
+/// Extract dimensions from AVIF data in memory
+pub fn extract_dimensions_from_bytes(data: &[u8]) -> Option<(u32, u32)> {
+    // Try using libavif first
+    if is_avif(data)
+        && let Ok(rgb_pixels) = decode_rgb(data)
+    {
+        return Some((rgb_pixels.width(), rgb_pixels.height()));
+    }
+
+    // Parse AVIF container directly for dimensions
+    avif_container::extract_dimensions_from_bytes(data)
 }
 
 /// Check if a browser supports AVIF based on Accept header

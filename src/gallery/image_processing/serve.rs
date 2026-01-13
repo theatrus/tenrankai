@@ -9,9 +9,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures::TryStreamExt;
-use std::path::Path;
-use tokio::fs::File;
-use tokio_util::io::ReaderStream;
 use tracing::{debug, error};
 
 impl Gallery {
@@ -22,15 +19,19 @@ impl Gallery {
         size: Option<String>,
         accept_header: &str,
     ) -> Response {
-        // Security check
-        let full_path = self.config.source_directory.join(relative_path);
-        if !full_path.starts_with(&self.config.source_directory) {
+        // Security check - prevent path traversal
+        if relative_path.contains("..") || relative_path.starts_with('/') {
             return ApiResponse::Forbidden.into_response();
         }
 
-        // Ensure the file exists
-        if !full_path.exists() {
-            error!("Image file not found: {:?}", full_path);
+        // Ensure the file exists using storage abstraction
+        if !self
+            .source_storage
+            .exists(relative_path)
+            .await
+            .unwrap_or(false)
+        {
+            error!("Image file not found in storage: {}", relative_path);
             return ApiResponse::ImageNotFound.into_response();
         }
 
@@ -71,7 +72,7 @@ impl Gallery {
 
                     // Check if already cached using storage abstraction
                     if self
-                        .is_cache_valid_by_key(&cache_filename, &full_path)
+                        .is_cache_valid_by_key(&cache_filename, relative_path)
                         .await
                         .unwrap_or(false)
                     {
@@ -85,7 +86,7 @@ impl Gallery {
                     // Note: For retina, we use the same tile coordinates but cache with @2x suffix
                     debug!("Generating tile ({}, {}) retina={}", x, y, is_retina_tile);
 
-                    match self.get_image_tile(&full_path, relative_path, x, y).await {
+                    match self.get_image_tile(relative_path, x, y).await {
                         Ok(_) => {
                             // Tile was generated and written to storage, serve it
                             let mime_type = output_format.mime_type();
@@ -124,7 +125,7 @@ impl Gallery {
                         .unwrap_or(false);
 
                     match self
-                        .get_resized_image(&full_path, relative_path, size, output_format)
+                        .get_resized_image(relative_path, size, output_format)
                         .await
                     {
                         Ok(_) => {
@@ -148,46 +149,35 @@ impl Gallery {
             }
         }
 
-        // Serve original file
-        self.serve_file_with_cache_header(&full_path, false).await
+        // Serve original file from source storage
+        self.serve_from_source_storage(relative_path).await
     }
 
-    /// Serve file with appropriate cache headers
-    pub(crate) async fn serve_file_with_cache_header(
-        &self,
-        path: &Path,
-        was_cached: bool,
-    ) -> Response {
+    /// Serve file from source storage with streaming
+    pub(crate) async fn serve_from_source_storage(&self, path: &str) -> Response {
+        // Determine MIME type from path
         let mime_type = mime_guess::from_path(path)
             .first_or_octet_stream()
             .to_string();
-        self.serve_file_with_content_type_and_cache_header(path, &mime_type, was_cached)
-            .await
-    }
 
-    /// Serve file with content type and cache headers
-    async fn serve_file_with_content_type_and_cache_header(
-        &self,
-        path: &Path,
-        content_type: &str,
-        _was_cached: bool,
-    ) -> Response {
-        match File::open(path).await {
-            Ok(file) => {
-                let metadata = match file.metadata().await {
-                    Ok(m) => m,
-                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-                };
+        // Get metadata for content-length
+        let size = match self.source_storage.metadata(path).await {
+            Ok(meta) => Some(meta.size),
+            Err(_) => None,
+        };
 
-                let stream = ReaderStream::new(file);
-                let body = Body::from_stream(stream);
+        // Get stream from storage
+        match self.source_storage.read_stream(path).await {
+            Ok(stream) => {
+                // Convert StorageError stream to std::io::Error stream for axum Body
+                let mapped_stream = stream.map_err(|e| std::io::Error::other(e.to_string()));
+                let body = Body::from_stream(mapped_stream);
 
                 let mut headers = HeaderMap::new();
-                headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-                headers.insert(
-                    header::CONTENT_LENGTH,
-                    metadata.len().to_string().parse().unwrap(),
-                );
+                headers.insert(header::CONTENT_TYPE, mime_type.parse().unwrap());
+                if let Some(len) = size {
+                    headers.insert(header::CONTENT_LENGTH, len.to_string().parse().unwrap());
+                }
 
                 // Add cache headers - max 1 day for all images
                 headers.insert(
@@ -197,9 +187,10 @@ impl Gallery {
 
                 (StatusCode::OK, headers, body).into_response()
             }
+            Err(StorageError::NotFound(_)) => ApiResponse::ImageNotFound.into_response(),
             Err(e) => {
-                error!("Failed to open file: {:?}, error: {}", path, e);
-                (StatusCode::NOT_FOUND).into_response()
+                error!("Failed to read from source storage: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
             }
         }
     }

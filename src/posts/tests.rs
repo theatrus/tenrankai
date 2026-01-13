@@ -329,9 +329,10 @@ Regular markdown image (not a gallery reference):
         let mut galleries = HashMap::new();
 
         // Create main gallery
+        let main_photos_dir = temp_dir.path().join("photos");
         let main_gallery_config = GallerySystemConfig {
             name: "main".to_string(),
-            source_directory: temp_dir.path().join("photos"),
+            source_directory: main_photos_dir.to_string_lossy().to_string(),
             cache_directory: temp_dir
                 .path()
                 .join("cache/main")
@@ -342,18 +343,21 @@ Regular markdown image (not a gallery reference):
 
         let main_cache_dir = temp_dir.path().join("cache/main");
         fs::create_dir_all(&main_cache_dir).unwrap();
+        let main_source_storage: DynStorage = Arc::new(FilesystemStorage::new(&main_photos_dir));
         let main_cache_storage: DynStorage = Arc::new(FilesystemStorage::new(main_cache_dir));
         let main_gallery = Arc::new(Gallery::new(
             main_gallery_config.clone(),
+            main_source_storage,
             main_cache_storage,
         ));
         galleries.insert("main".to_string(), main_gallery);
 
         // Create portfolio gallery
+        let portfolio_photos_dir = temp_dir.path().join("portfolio");
         let portfolio_gallery_config = GallerySystemConfig {
             name: "portfolio".to_string(),
             url_prefix: "/my-portfolio".to_string(),
-            source_directory: temp_dir.path().join("portfolio"),
+            source_directory: portfolio_photos_dir.to_string_lossy().to_string(),
             cache_directory: temp_dir
                 .path()
                 .join("cache/portfolio")
@@ -367,10 +371,13 @@ Regular markdown image (not a gallery reference):
 
         let portfolio_cache_dir = temp_dir.path().join("cache/portfolio");
         fs::create_dir_all(&portfolio_cache_dir).unwrap();
+        let portfolio_source_storage: DynStorage =
+            Arc::new(FilesystemStorage::new(&portfolio_photos_dir));
         let portfolio_cache_storage: DynStorage =
             Arc::new(FilesystemStorage::new(portfolio_cache_dir));
         let portfolio_gallery = Arc::new(Gallery::new(
             portfolio_gallery_config,
+            portfolio_source_storage,
             portfolio_cache_storage,
         ));
         galleries.insert("portfolio".to_string(), portfolio_gallery);

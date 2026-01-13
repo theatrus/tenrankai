@@ -41,6 +41,11 @@ pub type SharedGallery = Arc<Gallery>;
 
 pub struct Gallery {
     pub(crate) config: crate::GallerySystemConfig,
+    /// Resolved source directory path (for filesystem sources only, for security checks)
+    pub(crate) source_path: PathBuf,
+    /// Storage backend for source images (will be used in upcoming phases)
+    #[allow(dead_code)]
+    pub(crate) source_storage: DynStorage,
     /// Resolved cache directory path (parsed from config.cache_directory URL)
     pub(crate) cache_path: PathBuf,
     /// Storage backend for cache files
@@ -65,7 +70,18 @@ pub struct Gallery {
 }
 
 impl Gallery {
-    pub fn new(config: crate::GallerySystemConfig, cache_storage: DynStorage) -> Self {
+    pub fn new(
+        config: crate::GallerySystemConfig,
+        source_storage: DynStorage,
+        cache_storage: DynStorage,
+    ) -> Self {
+        // Parse the source_directory URL to get the path (for filesystem security checks)
+        // For filesystem: actual path. For S3: use empty path (security handled by storage abstraction)
+        let source_path = crate::storage::StorageUrl::parse(&config.source_directory)
+            .ok()
+            .and_then(|url| url.filesystem_path().cloned())
+            .unwrap_or_default(); // Empty for S3 (not used)
+
         // Parse the cache_directory URL to get the clean path
         // For filesystem: actual path. For S3: use a placeholder (we use storage abstraction)
         let cache_path = crate::storage::StorageUrl::parse(&config.cache_directory)
@@ -82,13 +98,17 @@ impl Gallery {
 
         let image_indexer = indexing::ImageIndexer::new(config.image_indexing);
 
-        // Create sidecar metadata storage for now
-        // TODO: Make this configurable through config
+        // Create storage-backed metadata storage using source storage
+        // User metadata is stored alongside source images in the same storage backend
         let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> =
-            Arc::new(crate::metadata_storage::SidecarMetadataStorage::new());
+            Arc::new(crate::metadata_storage::StorageMetadataBackend::new(
+                source_storage.clone(),
+            ));
 
         Self {
             config,
+            source_path,
+            source_storage,
             cache_path,
             cache_storage,
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
@@ -119,8 +139,25 @@ impl Gallery {
             || lower.ends_with(".avif")
     }
 
+    /// Returns the source directory path for filesystem-based sources.
+    /// For S3-backed sources, this returns an empty path.
     pub fn source_directory(&self) -> &std::path::Path {
-        &self.config.source_directory
+        &self.source_path
+    }
+
+    /// Returns true if the source is backed by S3 storage
+    pub fn is_source_remote(&self) -> bool {
+        self.source_path.as_os_str().is_empty()
+    }
+
+    /// Returns the source storage backend
+    pub fn source_storage(&self) -> &DynStorage {
+        &self.source_storage
+    }
+
+    /// Returns the cache storage backend
+    pub fn cache_storage(&self) -> &DynStorage {
+        &self.cache_storage
     }
 
     pub async fn is_metadata_cache_empty(&self) -> bool {

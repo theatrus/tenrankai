@@ -489,6 +489,20 @@ async fn run_server(
 
     if let Some(gallery_configs) = &config.galleries {
         for gallery_config in gallery_configs {
+            // Create source storage backend from source_directory URL
+            let source_storage =
+                match storage::create_storage_from_url(&gallery_config.source_directory).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to create source storage for gallery '{}': {}",
+                            gallery_config.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
             // Create cache storage backend from cache_directory URL
             let cache_storage =
                 match storage::create_storage_from_url(&gallery_config.cache_directory).await {
@@ -503,7 +517,11 @@ async fn run_server(
                     }
                 };
 
-            let gallery = std::sync::Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
+            let gallery = std::sync::Arc::new(Gallery::new(
+                gallery_config.clone(),
+                source_storage,
+                cache_storage,
+            ));
 
             // Initialize gallery and check for version changes
             if let Err(e) = gallery.initialize_and_check_version().await {

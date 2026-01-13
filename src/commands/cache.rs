@@ -8,8 +8,14 @@ use crate::storage;
 pub async fn report(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let source_storage =
+        storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
+    let gallery = Arc::new(Gallery::new(
+        gallery_config.clone(),
+        source_storage,
+        cache_storage,
+    ));
 
     // Initialize gallery to load metadata cache
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -32,8 +38,14 @@ pub async fn report(
 pub async fn cleanup(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let source_storage =
+        storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
+    let gallery = Arc::new(Gallery::new(
+        gallery_config.clone(),
+        source_storage,
+        cache_storage,
+    ));
 
     // Initialize gallery to load metadata cache
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -58,8 +70,14 @@ pub async fn invalidate_composite(
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let source_storage =
+        storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage.clone()));
+    let gallery = Arc::new(Gallery::new(
+        gallery_config.clone(),
+        source_storage,
+        cache_storage.clone(),
+    ));
 
     // Use the gallery's method to generate the composite cache key prefix
     let composite_key = gallery.generate_composite_cache_key_with_context(path);
@@ -118,8 +136,14 @@ pub async fn invalidate_image(
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let source_storage =
+        storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage.clone()));
+    let gallery = Arc::new(Gallery::new(
+        gallery_config.clone(),
+        source_storage,
+        cache_storage.clone(),
+    ));
 
     // Generate the hash prefix for this image path
     let hash = gallery.generate_cache_key(path, "");

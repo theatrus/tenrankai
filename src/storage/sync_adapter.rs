@@ -305,6 +305,107 @@ impl Seek for SyncStorageReader {
     }
 }
 
+/// A synchronous reader that pre-loads the entire file into memory.
+///
+/// This is more efficient than `SyncStorageReader` when you know you'll
+/// need the entire file (e.g., for image processing), especially for S3
+/// where a single GET request is cheaper than multiple range requests.
+pub struct PreloadedReader {
+    data: Bytes,
+    position: usize,
+}
+
+impl PreloadedReader {
+    /// Create a new preloaded reader from a storage path.
+    ///
+    /// This blocks until the entire file is loaded.
+    pub fn open(storage: &DynStorage, path: &str, handle: &Handle) -> Result<Self, StorageError> {
+        let data = handle.block_on(async { storage.read(path).await })?;
+        Ok(Self { data, position: 0 })
+    }
+
+    /// Get the total length of the file.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Check if the file is empty.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Get the underlying bytes.
+    pub fn into_bytes(self) -> Bytes {
+        self.data
+    }
+
+    /// Get a reference to the underlying bytes.
+    pub fn as_bytes(&self) -> &Bytes {
+        &self.data
+    }
+}
+
+impl Read for PreloadedReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let remaining = self.data.len().saturating_sub(self.position);
+        let to_copy = std::cmp::min(remaining, buf.len());
+
+        if to_copy == 0 {
+            return Ok(0);
+        }
+
+        buf[..to_copy].copy_from_slice(&self.data[self.position..self.position + to_copy]);
+        self.position += to_copy;
+        Ok(to_copy)
+    }
+}
+
+impl Seek for PreloadedReader {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_pos = match pos {
+            SeekFrom::Start(offset) => offset as i64,
+            SeekFrom::End(offset) => self.data.len() as i64 + offset,
+            SeekFrom::Current(offset) => self.position as i64 + offset,
+        };
+
+        if new_pos < 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Seek before start of file",
+            ));
+        }
+
+        self.position = new_pos as usize;
+        Ok(self.position as u64)
+    }
+}
+
+/// Open a storage file for synchronous reading with the specified strategy.
+///
+/// Returns either a streaming reader (for partial reads) or a preloaded reader
+/// (for full file access), both implementing `Read + Seek`.
+pub fn storage_open_with_strategy(
+    storage: &DynStorage,
+    path: &str,
+    strategy: super::ReadStrategy,
+    handle: &Handle,
+) -> Result<Box<dyn ReadSeek>, StorageError> {
+    match strategy {
+        super::ReadStrategy::Streaming => {
+            let reader = SyncStorageReader::open(storage, path, handle)?;
+            Ok(Box::new(reader))
+        }
+        super::ReadStrategy::FullFetch => {
+            let reader = PreloadedReader::open(storage, path, handle)?;
+            Ok(Box::new(reader))
+        }
+    }
+}
+
+/// Trait combining Read and Seek for type erasure.
+pub trait ReadSeek: Read + Seek + Send {}
+impl<T: Read + Seek + Send> ReadSeek for T {}
+
 /// A synchronous storage adapter with speculative prefetching support.
 ///
 /// This adapter allows you to:

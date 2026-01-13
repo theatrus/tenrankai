@@ -1,6 +1,5 @@
 use super::types::*;
 use crate::LogLevel;
-use std::path::PathBuf;
 
 /// Default posts index template path
 pub fn default_posts_index_template() -> String {
@@ -122,7 +121,7 @@ impl Default for GallerySystemConfig {
         Self {
             name: "default".to_string(),
             url_prefix: "/gallery".to_string(),
-            source_directory: PathBuf::from("photos"),
+            source_directory: "photos".to_string(),
             cache_directory: "cache".to_string(),
             gallery_template: default_gallery_template(),
             image_detail_template: default_image_detail_template(),
@@ -170,7 +169,7 @@ impl Default for Config {
             galleries: Some(vec![GallerySystemConfig {
                 name: "default".to_string(),
                 url_prefix: "/gallery".to_string(),
-                source_directory: PathBuf::from("photos"),
+                source_directory: "photos".to_string(),
                 cache_directory: "cache".to_string(),
                 gallery_template: default_gallery_template(),
                 image_detail_template: default_image_detail_template(),

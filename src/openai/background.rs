@@ -113,10 +113,8 @@ async fn analyze_gallery_images(
     let mut analyzed_count = 0;
 
     for relative_path in images_to_analyze {
-        let full_path = gallery.source_directory().join(&relative_path);
-
-        // Get image data for analysis
-        let image_data = match get_image_for_analysis(gallery, &full_path, &relative_path).await {
+        // Get image data for analysis using storage abstraction
+        let image_data = match get_image_for_analysis(gallery, &relative_path).await {
             Ok(data) => data,
             Err(e) => {
                 warn!(
@@ -153,10 +151,10 @@ async fn analyze_gallery_images(
             }
         };
 
-        // Load existing metadata or create new
+        // Load existing metadata or create new using relative path
         let mut metadata = gallery
             .user_metadata_storage
-            .load(&full_path)
+            .load(&relative_path)
             .await
             .ok()
             .flatten()
@@ -168,7 +166,7 @@ async fn analyze_gallery_images(
         // Save metadata
         if let Err(e) = gallery
             .user_metadata_storage
-            .save(&full_path, &metadata)
+            .save(&relative_path, &metadata)
             .await
         {
             error!(
@@ -233,10 +231,8 @@ async fn collect_images_needing_analysis(
                 format!("{}/{}", path, item.name)
             };
 
-            let full_path = gallery.source_directory().join(&relative_path);
-
-            // Check if already has AI analysis
-            if let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&full_path).await
+            // Check if already has AI analysis using relative path
+            if let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
                 && metadata.has_ai_analysis()
             {
                 continue;
@@ -252,24 +248,31 @@ async fn collect_images_needing_analysis(
 /// Get image data for analysis (preferring cached medium size)
 async fn get_image_for_analysis(
     gallery: &Gallery,
-    full_path: &std::path::Path,
     relative_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
-    let cache_path = gallery.cache_path.join(&cache_filename);
 
-    if cache_path.exists() {
-        return Ok(tokio::fs::read(&cache_path).await?);
+    if gallery
+        .cache_storage()
+        .exists(&cache_filename)
+        .await
+        .unwrap_or(false)
+    {
+        return Ok(gallery
+            .cache_storage()
+            .read(&cache_filename)
+            .await?
+            .to_vec());
     }
 
-    // Fall back to original image
-    Ok(tokio::fs::read(full_path).await?)
+    // Fall back to original image using source storage
+    Ok(gallery.source_storage().read(relative_path).await?.to_vec())
 }
 
 /// Build context for image analysis from available metadata
 async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageContext {
-    use crate::gallery::metadata_sources::read_image_markdown_metadata;
+    use crate::gallery::metadata_sources::read_image_markdown_metadata_from_storage;
 
     let mut context = ImageContext::default();
 
@@ -298,9 +301,10 @@ async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageCon
         }
     }
 
-    // Get title and description from image markdown
-    let full_path = gallery.source_directory().join(relative_path);
-    if let Some(md_meta) = read_image_markdown_metadata(&full_path).await {
+    // Get title and description from image markdown using storage abstraction
+    if let Some(md_meta) =
+        read_image_markdown_metadata_from_storage(gallery.source_storage(), relative_path).await
+    {
         context.title = md_meta.config.title;
         if !md_meta.description_markdown.is_empty() {
             context.description = Some(md_meta.description_markdown);

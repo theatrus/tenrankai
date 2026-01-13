@@ -1,4 +1,4 @@
-use crate::{Config, storage::StorageUrl};
+use crate::{Config, storage::{StorageUrl, create_storage_from_url}};
 use std::path::Path;
 use thiserror::Error;
 use tracing::{error, info, warn};
@@ -149,35 +149,117 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
     // Check gallery source directories
     if let Some(galleries) = &config.galleries {
         for gallery_config in galleries {
-            let gallery_dir = Path::new(&gallery_config.source_directory);
-            if !gallery_dir.exists() {
-                error!(
-                    "Gallery '{}' source directory does not exist: {:?}",
-                    gallery_config.name, gallery_dir
-                );
-                errors.push(StartupCheckError::GallerySourceDirectoryMissing(
-                    gallery_config.name.clone(),
-                ));
-            } else {
-                info!(
-                    "Gallery '{}' source directory exists: {:?}",
-                    gallery_config.name, gallery_dir
-                );
-
-                // Check if directory is readable
-                match tokio::fs::read_dir(gallery_dir).await {
-                    Ok(_) => info!(
-                        "Gallery '{}' source directory is accessible",
-                        gallery_config.name
-                    ),
-                    Err(e) => {
+            // Parse the source_directory as a storage URL
+            match StorageUrl::parse(&gallery_config.source_directory) {
+                Ok(StorageUrl::Filesystem { path }) => {
+                    // Filesystem source - check directory exists
+                    if !path.exists() {
                         error!(
-                            "Gallery '{}' source directory is not accessible: {}",
-                            gallery_config.name, e
+                            "Gallery '{}' source directory does not exist: {:?}",
+                            gallery_config.name, path
                         );
                         errors.push(StartupCheckError::GallerySourceDirectoryMissing(
-                            gallery_config.name.clone(),
+                            gallery_config.source_directory.clone(),
                         ));
+                    } else {
+                        info!(
+                            "Gallery '{}' source directory exists: {:?}",
+                            gallery_config.name, path
+                        );
+
+                        // Check if directory is readable
+                        match tokio::fs::read_dir(&path).await {
+                            Ok(_) => info!(
+                                "Gallery '{}' source directory is accessible",
+                                gallery_config.name
+                            ),
+                            Err(e) => {
+                                error!(
+                                    "Gallery '{}' source directory is not accessible: {}",
+                                    gallery_config.name, e
+                                );
+                                errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                                    gallery_config.source_directory.clone(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                Ok(StorageUrl::S3 { bucket, prefix, .. }) => {
+                    // S3 source - verify connectivity using storage abstraction
+                    info!(
+                        "Gallery '{}' source is S3 storage: s3://{}/{}",
+                        gallery_config.name, bucket, prefix
+                    );
+
+                    // Create storage and verify it's accessible
+                    match create_storage_from_url(&gallery_config.source_directory).await {
+                        Ok(storage) => {
+                            // Try to list the root to verify connectivity
+                            match storage.list("").await {
+                                Ok(_) => info!(
+                                    "Gallery '{}' S3 source directory is accessible",
+                                    gallery_config.name
+                                ),
+                                Err(e) => {
+                                    error!(
+                                        "Gallery '{}' S3 source directory is not accessible: {}",
+                                        gallery_config.name, e
+                                    );
+                                    errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                                        gallery_config.source_directory.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to create storage for gallery '{}' source: {}",
+                                gallery_config.name, e
+                            );
+                            errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                                gallery_config.source_directory.clone(),
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Could not parse source_directory for gallery '{}': {} (treating as filesystem path)",
+                        gallery_config.name, e
+                    );
+                    // Fallback to treating as filesystem path
+                    let gallery_dir = Path::new(&gallery_config.source_directory);
+                    if !gallery_dir.exists() {
+                        error!(
+                            "Gallery '{}' source directory does not exist: {:?}",
+                            gallery_config.name, gallery_dir
+                        );
+                        errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                            gallery_config.source_directory.clone(),
+                        ));
+                    } else {
+                        info!(
+                            "Gallery '{}' source directory exists: {:?}",
+                            gallery_config.name, gallery_dir
+                        );
+
+                        // Check if directory is readable
+                        match tokio::fs::read_dir(gallery_dir).await {
+                            Ok(_) => info!(
+                                "Gallery '{}' source directory is accessible",
+                                gallery_config.name
+                            ),
+                            Err(e) => {
+                                error!(
+                                    "Gallery '{}' source directory is not accessible: {}",
+                                    gallery_config.name, e
+                                );
+                                errors.push(StartupCheckError::GallerySourceDirectoryMissing(
+                                    gallery_config.source_directory.clone(),
+                                ));
+                            }
+                        }
                     }
                 }
             }

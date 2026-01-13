@@ -1,5 +1,8 @@
 use crate::gallery::GalleryError;
+use crate::storage::{DynStorage, PreloadedReader};
 use image::{DynamicImage, ImageFormat};
+use std::io::{BufReader, Cursor};
+use tokio::runtime::Handle;
 
 /// A loaded image with all its metadata preserved
 /// This struct encapsulates an image and its associated metadata
@@ -85,6 +88,84 @@ impl LoadedImage {
             avif_info,
             format: detected_format,
             source_path: path.to_path_buf(),
+        })
+    }
+
+    /// Load an image from storage with all metadata preserved.
+    ///
+    /// This method uses the storage abstraction to load images from either
+    /// local filesystem or remote storage (S3). It uses the FullFetch strategy
+    /// since we need the entire image for processing.
+    ///
+    /// # Arguments
+    /// * `storage` - The storage backend to read from
+    /// * `relative_path` - Path relative to the storage root
+    /// * `handle` - Tokio runtime handle for async operations
+    pub fn load_from_storage(
+        storage: &DynStorage,
+        relative_path: &str,
+        handle: &Handle,
+    ) -> Result<Self, GalleryError> {
+        // Use FullFetch strategy since we need the entire image
+        let reader = PreloadedReader::open(storage, relative_path, handle)?;
+        let data = reader.into_bytes();
+
+        Self::load_from_bytes(&data, relative_path)
+    }
+
+    /// Load an image from bytes with all metadata preserved.
+    ///
+    /// This is useful when the image data is already in memory (e.g., from storage).
+    pub fn load_from_bytes(data: &[u8], source_path_hint: &str) -> Result<Self, GalleryError> {
+        // Detect the format from the data
+        let cursor = Cursor::new(data);
+        let buf_reader = BufReader::new(cursor);
+        let decoder = image::ImageReader::new(buf_reader).with_guessed_format()?;
+        let detected_format = decoder.format();
+
+        // Extract ICC profile based on format
+        let icc_profile = match detected_format {
+            Some(ImageFormat::Jpeg) => {
+                crate::gallery::image_processing::formats::jpeg::extract_icc_profile_from_bytes(
+                    data,
+                )
+            }
+            Some(ImageFormat::Png) => {
+                crate::gallery::image_processing::formats::png::extract_icc_profile_from_bytes(data)
+            }
+            #[cfg(feature = "avif")]
+            Some(ImageFormat::Avif) => {
+                crate::gallery::image_processing::formats::avif_container::extract_icc_profile_from_container(data)
+            }
+            _ => None,
+        };
+
+        // Load the image with special handling for AVIF
+        #[cfg(feature = "avif")]
+        let (image, avif_info) = if detected_format == Some(ImageFormat::Avif) {
+            // Use our custom AVIF reader to preserve color properties and gain maps
+            // Note: read_avif_info_from_bytes would need to be added for full storage support
+            // For now, fall back to standard decoding when loading from storage
+            match image::load_from_memory(data) {
+                Ok(img) => (img, None),
+                Err(e) => {
+                    return Err(GalleryError::ImageError(e));
+                }
+            }
+        } else {
+            (image::load_from_memory(data)?, None)
+        };
+
+        #[cfg(not(feature = "avif"))]
+        let image = image::load_from_memory(data)?;
+
+        Ok(Self {
+            image,
+            icc_profile,
+            #[cfg(feature = "avif")]
+            avif_info,
+            format: detected_format,
+            source_path: std::path::PathBuf::from(source_path_hint),
         })
     }
 

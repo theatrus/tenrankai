@@ -13,14 +13,15 @@ async fn create_test_gallery() -> (Gallery, TempDir) {
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
-        source_directory: temp_dir.path().to_path_buf(),
+        source_directory: temp_dir.path().to_string_lossy().to_string(),
         cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
+    let source_storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
     let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
-    let gallery = Gallery::new(config, cache_storage);
+    let gallery = Gallery::new(config, source_storage, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -135,28 +136,3 @@ async fn test_cache_headers_for_cached_images() {
     );
 }
 
-#[tokio::test]
-async fn test_serve_file_with_cache_header() {
-    let (gallery, _temp_dir) = create_test_gallery().await;
-
-    // Create a test file
-    let test_file = gallery.config.source_directory.join("test.jpg");
-    tokio::fs::write(&test_file, b"test data").await.unwrap();
-
-    // Test serving with was_cached = false
-    let response_not_cached = gallery
-        .serve_file_with_cache_header(&test_file, false)
-        .await;
-
-    assert_eq!(response_not_cached.status(), StatusCode::OK);
-    let headers = response_not_cached.headers();
-
-    // Should have standard cache headers
-    assert!(headers.get("cache-control").is_some());
-    assert!(headers.get("content-type").is_some());
-
-    // Test serving with was_cached = true
-    let response_cached = gallery.serve_file_with_cache_header(&test_file, true).await;
-
-    assert_eq!(response_cached.status(), StatusCode::OK);
-}

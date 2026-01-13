@@ -1,10 +1,8 @@
 use crate::Config;
 use crate::gallery::Gallery;
-use crate::metadata_storage::{MetadataStorage, SidecarMetadataStorage};
 use crate::openai::{ImageContext, LocationContext, OpenAIClient, OpenAIError};
 use crate::storage;
 use base64::{Engine as _, engine::general_purpose};
-use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -30,8 +28,14 @@ pub async fn handle_analyze_command(
         .find(|g| g.name == gallery_name)
         .ok_or_else(|| format!("Gallery '{}' not found", gallery_name))?;
 
+    let source_storage =
+        storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
+    let gallery = Arc::new(Gallery::new(
+        gallery_config.clone(),
+        source_storage,
+        cache_storage,
+    ));
 
     // Create OpenAI client (unless dry run)
     let client = if !dry_run {
@@ -40,19 +44,8 @@ pub async fn handle_analyze_command(
         None
     };
 
-    // Create metadata storage
-    let metadata_storage = SidecarMetadataStorage::new();
-
-    // Get list of images to analyze
-    let images = collect_images_to_analyze(
-        &gallery,
-        &metadata_storage,
-        &gallery_config.source_directory,
-        folder.as_deref(),
-        limit,
-        force,
-    )
-    .await?;
+    // Get list of images to analyze (uses gallery's storage-backed metadata)
+    let images = collect_images_to_analyze(&gallery, folder.as_deref(), limit, force).await?;
 
     if images.is_empty() {
         println!("No images to analyze.");
@@ -78,19 +71,9 @@ pub async fn handle_analyze_command(
     let mut error_count = 0;
 
     for (i, relative_path) in images.iter().enumerate() {
-        let full_path = gallery_config.source_directory.join(relative_path);
-
         println!("[{}/{}] Analyzing: {}", i + 1, images.len(), relative_path);
 
-        match analyze_single_image(
-            &client,
-            &gallery,
-            &metadata_storage,
-            &full_path,
-            relative_path,
-        )
-        .await
-        {
+        match analyze_single_image(&client, &gallery, relative_path).await {
             Ok(result) => {
                 println!("  Keywords: {}", result.keywords.join(", "));
                 println!("  Alt-text: {}", truncate_string(&result.alt_text, 80));
@@ -124,8 +107,6 @@ pub async fn handle_analyze_command(
 /// Collect list of images that need analysis
 async fn collect_images_to_analyze(
     gallery: &Gallery,
-    metadata_storage: &SidecarMetadataStorage,
-    source_directory: &Path,
     folder: Option<&str>,
     limit: Option<usize>,
     force: bool,
@@ -137,16 +118,7 @@ async fn collect_images_to_analyze(
     let items = gallery.scan_directory(scan_path).await?;
 
     // Recursively collect image files
-    collect_images_recursive(
-        gallery,
-        metadata_storage,
-        source_directory,
-        &items,
-        scan_path,
-        &mut images,
-        force,
-    )
-    .await?;
+    collect_images_recursive(gallery, &items, scan_path, &mut images, force).await?;
 
     // Apply limit if specified
     if let Some(max) = limit {
@@ -159,8 +131,6 @@ async fn collect_images_to_analyze(
 /// Recursively collect images from gallery items
 async fn collect_images_recursive(
     gallery: &Gallery,
-    metadata_storage: &SidecarMetadataStorage,
-    source_directory: &Path,
     items: &[crate::gallery::GalleryItem],
     current_path: &str,
     images: &mut Vec<String>,
@@ -179,8 +149,6 @@ async fn collect_images_recursive(
             if let Ok(sub_items) = gallery.scan_directory(&folder_path).await {
                 Box::pin(collect_images_recursive(
                     gallery,
-                    metadata_storage,
-                    source_directory,
                     &sub_items,
                     &folder_path,
                     images,
@@ -197,14 +165,12 @@ async fn collect_images_recursive(
             };
 
             // Check if already analyzed (unless force is set)
-            if !force {
-                let full_path = source_directory.join(&relative_path);
-                if let Ok(Some(metadata)) = metadata_storage.load(&full_path).await
-                    && metadata.has_ai_analysis()
-                {
-                    debug!("Skipping {} - already analyzed", relative_path);
-                    continue;
-                }
+            if !force
+                && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
+                && metadata.has_ai_analysis()
+            {
+                debug!("Skipping {} - already analyzed", relative_path);
+                continue;
             }
 
             images.push(relative_path);
@@ -218,12 +184,10 @@ async fn collect_images_recursive(
 async fn analyze_single_image(
     client: &OpenAIClient,
     gallery: &Gallery,
-    metadata_storage: &SidecarMetadataStorage,
-    full_path: &Path,
     relative_path: &str,
 ) -> Result<crate::openai::ImageAnalysisResult, Box<dyn std::error::Error>> {
     // Get or generate a medium-sized version of the image for API efficiency
-    let image_data = get_image_for_analysis(gallery, full_path, relative_path).await?;
+    let image_data = get_image_for_analysis(gallery, relative_path).await?;
 
     // Encode as base64
     let base64_image = general_purpose::STANDARD.encode(&image_data);
@@ -237,13 +201,20 @@ async fn analyze_single_image(
         .await?;
 
     // Load existing metadata or create new
-    let mut metadata = metadata_storage.load(full_path).await?.unwrap_or_default();
+    let mut metadata = gallery
+        .user_metadata_storage
+        .load(relative_path)
+        .await?
+        .unwrap_or_default();
 
     // Update with AI analysis results
     metadata.set_ai_analysis(result.keywords.clone(), result.alt_text.clone());
 
     // Save metadata
-    metadata_storage.save(full_path, &metadata).await?;
+    gallery
+        .user_metadata_storage
+        .save(relative_path, &metadata)
+        .await?;
 
     info!(
         "Saved AI analysis for {}: {} keywords",
@@ -257,21 +228,28 @@ async fn analyze_single_image(
 /// Get image data for analysis (preferring cached medium size)
 async fn get_image_for_analysis(
     gallery: &Gallery,
-    full_path: &Path,
     relative_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
-    let cache_path = gallery.cache_path.join(&cache_filename);
 
-    if cache_path.exists() {
+    if gallery
+        .cache_storage()
+        .exists(&cache_filename)
+        .await
+        .unwrap_or(false)
+    {
         debug!("Using cached medium image for analysis");
-        return Ok(tokio::fs::read(&cache_path).await?);
+        return Ok(gallery
+            .cache_storage()
+            .read(&cache_filename)
+            .await?
+            .to_vec());
     }
 
-    // Fall back to original image
+    // Fall back to original image using source storage
     debug!("Using original image for analysis");
-    Ok(tokio::fs::read(full_path).await?)
+    Ok(gallery.source_storage().read(relative_path).await?.to_vec())
 }
 
 /// Truncate a string for display
@@ -285,7 +263,7 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 /// Build context for image analysis from available metadata
 async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageContext {
-    use crate::gallery::metadata_sources::read_image_markdown_metadata;
+    use crate::gallery::metadata_sources::read_image_markdown_metadata_from_storage;
 
     let mut context = ImageContext::default();
 
@@ -318,9 +296,10 @@ async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageCon
         }
     }
 
-    // Get title and description from image markdown
-    let full_path = gallery.source_directory().join(relative_path);
-    if let Some(md_meta) = read_image_markdown_metadata(&full_path).await {
+    // Get title and description from image markdown using storage abstraction
+    if let Some(md_meta) =
+        read_image_markdown_metadata_from_storage(gallery.source_storage(), relative_path).await
+    {
         context.title = md_meta.config.title;
         if !md_meta.description_markdown.is_empty() {
             context.description = Some(md_meta.description_markdown);

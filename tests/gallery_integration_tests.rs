@@ -1,6 +1,5 @@
 use axum::http::StatusCode;
 use axum_test::TestServer;
-use std::path::PathBuf;
 use tempfile::TempDir;
 use tenrankai::{Config, GallerySystemConfig, ImageIndexingMode, create_app};
 
@@ -24,7 +23,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
     config.galleries = Some(vec![
         GallerySystemConfig {
             name: "main".to_string(),
-            source_directory: photos_dir.clone(),
+            source_directory: photos_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.join("main").to_string_lossy().to_string(),
             images_per_page: 20,
             preview: tenrankai::PreviewConfig {
@@ -77,7 +76,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
         GallerySystemConfig {
             name: "portfolio".to_string(),
             url_prefix: "/my-portfolio".to_string(),
-            source_directory: portfolio_dir.clone(),
+            source_directory: portfolio_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.join("portfolio").to_string_lossy().to_string(),
             images_per_page: 12,
             preview: tenrankai::PreviewConfig {
@@ -133,7 +132,7 @@ async fn test_gallery_root_renders_correctly() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         3,
     );
 
@@ -164,7 +163,7 @@ async fn test_portfolio_gallery_renders_with_custom_prefix() {
     create_test_images(
         config.galleries.as_ref().unwrap()[1]
             .source_directory
-            .as_path(),
+            .as_ref(),
         2,
     );
 
@@ -191,7 +190,8 @@ async fn test_gallery_with_folder_metadata() {
     let config = create_test_config(&temp_dir);
 
     // Create a subfolder with metadata
-    let photos_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+    let photos_dir =
+        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
     let vacation_dir = photos_dir.join("vacation");
     create_folder_with_metadata(
         &vacation_dir,
@@ -233,7 +233,7 @@ async fn test_gallery_opengraph_with_composite_image() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         4,
     );
 
@@ -260,7 +260,7 @@ async fn test_gallery_opengraph_with_single_image() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         1,
     );
 
@@ -285,7 +285,7 @@ async fn test_gallery_preview_api() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         10,
     );
 
@@ -314,7 +314,8 @@ async fn test_composite_api_endpoint() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+    let root_dir =
+        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
     // Create test images in the root directory
     for i in 0..3 {
@@ -402,7 +403,8 @@ async fn test_composite_api_with_avif_images() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+    let root_dir =
+        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
     // Create AVIF images in a subdirectory
     let subdir = root_dir.join("avif-test");
@@ -466,7 +468,7 @@ async fn test_image_detail_page() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         3,
     );
 
@@ -530,7 +532,8 @@ async fn test_gallery_breadcrumbs() {
     let config = create_test_config(&temp_dir);
 
     // Create nested folders
-    let photos_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+    let photos_dir =
+        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
     let travel_dir = photos_dir.join("travel");
     let europe_dir = travel_dir.join("europe");
 
@@ -573,7 +576,7 @@ async fn test_gallery_pagination() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         25,
     );
 
@@ -621,7 +624,7 @@ async fn test_gallery_preview_partial_in_template() {
     create_test_images(
         config.galleries.as_ref().unwrap()[0]
             .source_directory
-            .as_path(),
+            .as_ref(),
         6,
     );
 
@@ -643,7 +646,8 @@ async fn test_hide_technical_details_feature() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let root_dir = &config.galleries.as_ref().unwrap()[0].source_directory;
+    let root_dir =
+        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
     // Create a test image with EXIF data
     let img = image::ImageBuffer::from_pixel(300, 200, image::Rgb([100u8, 150u8, 200u8]));

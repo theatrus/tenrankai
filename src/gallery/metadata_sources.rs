@@ -1,4 +1,5 @@
 use super::{CameraInfo, ImageMarkdownConfig, ImageMarkdownMetadata, LocationInfo};
+use crate::storage::DynStorage;
 use chrono::DateTime;
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -6,7 +7,18 @@ use std::path::Path;
 use std::time::SystemTime;
 use tracing::{debug, trace};
 
-/// Reads XMP metadata from a sidecar file
+/// Reads XMP metadata from a sidecar file using storage abstraction
+pub async fn read_xmp_metadata_from_storage(
+    storage: &DynStorage,
+    xmp_path: &str,
+) -> Option<XmpMetadata> {
+    match storage.read_to_string(xmp_path).await {
+        Ok(content) => parse_xmp_content(&content),
+        Err(_) => None,
+    }
+}
+
+/// Reads XMP metadata from a sidecar file (filesystem path version)
 pub async fn read_xmp_metadata(xmp_path: &Path) -> Option<XmpMetadata> {
     match tokio::fs::read_to_string(xmp_path).await {
         Ok(content) => parse_xmp_content(&content),
@@ -127,6 +139,34 @@ fn get_attribute_value(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option
         .map(|a| String::from_utf8_lossy(&a.value).to_string())
 }
 
+/// Reads image markdown metadata file using storage abstraction (e.g., image.jpg.md or image.md)
+pub async fn read_image_markdown_metadata_from_storage(
+    storage: &DynStorage,
+    image_path: &str,
+) -> Option<ImageMarkdownMetadata> {
+    // Extract extension and stem from the image path
+    let extension = image_path.rsplit('.').next().unwrap_or("");
+    let stem = if let Some(dot_pos) = image_path.rfind('.') {
+        &image_path[..dot_pos]
+    } else {
+        image_path
+    };
+
+    // First try IMAGE.jpg.md format
+    let full_extension_path = format!("{}.{}.md", stem, extension);
+    if let Ok(content) = storage.read_to_string(&full_extension_path).await {
+        return parse_markdown_content(&content);
+    }
+
+    // Then try IMAGE.md format
+    let simple_md_path = format!("{}.md", stem);
+    if let Ok(content) = storage.read_to_string(&simple_md_path).await {
+        return parse_markdown_content(&content);
+    }
+
+    None
+}
+
 /// Reads image markdown metadata file (e.g., image.jpg.md or image.md)
 pub async fn read_image_markdown_metadata(image_path: &Path) -> Option<ImageMarkdownMetadata> {
     // First try IMAGE.jpg.md format
@@ -153,52 +193,55 @@ pub async fn read_image_markdown_metadata(image_path: &Path) -> Option<ImageMark
     None
 }
 
-/// Internal helper to read and parse markdown file
+/// Internal helper to read and parse markdown file from filesystem
 async fn read_markdown_file(markdown_path: &Path) -> Option<ImageMarkdownMetadata> {
     match tokio::fs::read_to_string(markdown_path).await {
-        Ok(content) => {
-            // Check if content starts with TOML front matter
-            if content.trim_start().starts_with("+++") {
-                // Parse TOML front matter
-                let parts: Vec<&str> = content.splitn(3, "+++").collect();
+        Ok(content) => parse_markdown_content(&content),
+        Err(_) => None,
+    }
+}
 
-                if parts.len() >= 3 {
-                    let toml_content = parts[1];
-                    let markdown_content = parts[2].trim_start();
+/// Parse markdown content with optional TOML front matter
+fn parse_markdown_content(content: &str) -> Option<ImageMarkdownMetadata> {
+    // Check if content starts with TOML front matter
+    if content.trim_start().starts_with("+++") {
+        // Parse TOML front matter
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
 
-                    match toml_edit::de::from_str::<ImageMarkdownConfig>(toml_content) {
-                        Ok(config) => {
-                            debug!("Successfully parsed image markdown config: {:?}", config);
-                            Some(ImageMarkdownMetadata {
-                                config,
-                                description_markdown: markdown_content.to_string(),
-                            })
-                        }
-                        Err(e) => {
-                            debug!("Failed to parse image TOML front matter: {}", e);
-                            // Return just the markdown content
-                            Some(ImageMarkdownMetadata {
-                                config: ImageMarkdownConfig::default(),
-                                description_markdown: content,
-                            })
-                        }
-                    }
-                } else {
-                    // No valid front matter, return the whole content as markdown
+        if parts.len() >= 3 {
+            let toml_content = parts[1];
+            let markdown_content = parts[2].trim_start();
+
+            match toml_edit::de::from_str::<ImageMarkdownConfig>(toml_content) {
+                Ok(config) => {
+                    debug!("Successfully parsed image markdown config: {:?}", config);
                     Some(ImageMarkdownMetadata {
-                        config: ImageMarkdownConfig::default(),
-                        description_markdown: content,
+                        config,
+                        description_markdown: markdown_content.to_string(),
                     })
                 }
-            } else {
-                // No front matter, just markdown
-                Some(ImageMarkdownMetadata {
-                    config: ImageMarkdownConfig::default(),
-                    description_markdown: content,
-                })
+                Err(e) => {
+                    debug!("Failed to parse image TOML front matter: {}", e);
+                    // Return just the markdown content
+                    Some(ImageMarkdownMetadata {
+                        config: ImageMarkdownConfig::default(),
+                        description_markdown: content.to_string(),
+                    })
+                }
             }
+        } else {
+            // No valid front matter, return the whole content as markdown
+            Some(ImageMarkdownMetadata {
+                config: ImageMarkdownConfig::default(),
+                description_markdown: content.to_string(),
+            })
         }
-        Err(_) => None,
+    } else {
+        // No front matter, just markdown
+        Some(ImageMarkdownMetadata {
+            config: ImageMarkdownConfig::default(),
+            description_markdown: content.to_string(),
+        })
     }
 }
 

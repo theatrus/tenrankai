@@ -371,8 +371,8 @@ mod tests {
     use super::*;
     use crate::storage::FilesystemStorage;
 
-    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
-        let path = std::path::PathBuf::from(cache_dir);
+    fn create_test_storage(dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(dir);
         std::fs::create_dir_all(&path).ok();
         std::sync::Arc::new(FilesystemStorage::new(path))
     }
@@ -383,12 +383,16 @@ mod tests {
         let config = crate::Config::default();
         let mut gallery_config = crate::GallerySystemConfig::default();
         gallery_config.name = "test".to_string();
-        gallery_config.source_directory = std::path::PathBuf::from(".");
+        gallery_config.source_directory = ".".to_string();
         gallery_config.cache_directory = ".".to_string();
 
+        let source_storage = create_test_storage(&gallery_config.source_directory);
         let cache_storage = create_test_storage(&gallery_config.cache_directory);
-        let gallery =
-            std::sync::Arc::new(crate::gallery::Gallery::new(gallery_config, cache_storage));
+        let gallery = std::sync::Arc::new(crate::gallery::Gallery::new(
+            gallery_config,
+            source_storage,
+            cache_storage,
+        ));
         let mut galleries = std::collections::HashMap::new();
         galleries.insert("test".to_string(), gallery);
 
