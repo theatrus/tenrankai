@@ -60,6 +60,8 @@ pub struct Gallery {
     pub(crate) shutdown_flag: Arc<AtomicBool>,
     /// Semaphore to limit concurrent image processing operations (prevents memory exhaustion)
     pub(crate) image_processing_semaphore: Arc<Semaphore>,
+    /// Counter for active blocking tasks (for graceful shutdown)
+    pub(crate) active_blocking_tasks: Arc<AtomicUsize>,
 }
 
 impl Gallery {
@@ -71,13 +73,12 @@ impl Gallery {
             .and_then(|url| url.filesystem_path().cloned())
             .unwrap_or_else(|| PathBuf::from("cache")); // Placeholder for S3
 
-        let metadata_cache =
-            crate::cache::load_image_metadata_cache(&config, &cache_path).unwrap_or_default();
-        let cache_metadata = crate::cache::load_cache_version_metadata(&config, &cache_path)
-            .unwrap_or_else(|_| CacheMetadata {
-                version: String::new(), // Empty version will trigger full refresh
-                last_full_refresh: SystemTime::UNIX_EPOCH,
-            });
+        // Start with empty caches - they will be loaded asynchronously via initialize_and_check_version()
+        let metadata_cache = HashMap::new();
+        let cache_metadata = CacheMetadata {
+            version: String::new(), // Empty version will trigger loading in initialize
+            last_full_refresh: SystemTime::UNIX_EPOCH,
+        };
 
         let image_indexer = indexing::ImageIndexer::new(config.image_indexing);
 
@@ -103,6 +104,7 @@ impl Gallery {
             // Limit concurrent image processing to prevent memory exhaustion
             // Use number of CPUs as the limit for a reasonable balance
             image_processing_semaphore: Arc::new(Semaphore::new(num_cpus::get())),
+            active_blocking_tasks: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -188,7 +190,7 @@ impl Gallery {
         &self.config
     }
 
-    /// Trigger shutdown of all background tasks
+    /// Trigger shutdown of all background tasks and wait for them to complete
     pub async fn shutdown(&self) {
         info!("Shutting down gallery '{}'", self.config.name);
         // Set atomic flag for synchronous code (e.g., blocking tile generation)
@@ -197,5 +199,56 @@ impl Gallery {
         self.shutdown_token.cancel();
         // Also cancel any running pre-generation tasks
         self.pregeneration_token.lock().await.cancel();
+
+        // Wait for active blocking tasks to complete
+        let mut wait_count = 0;
+        loop {
+            let active = self
+                .active_blocking_tasks
+                .load(std::sync::atomic::Ordering::SeqCst);
+            if active == 0 {
+                break;
+            }
+            wait_count += 1;
+            if wait_count == 1 {
+                info!(
+                    "Waiting for {} active image processing task(s) to complete...",
+                    active
+                );
+            } else if wait_count % 20 == 0 {
+                // Log every 2 seconds
+                info!(
+                    "Still waiting for {} active image processing task(s)...",
+                    active
+                );
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        if wait_count > 0 {
+            info!("All image processing tasks completed");
+        }
+    }
+
+    /// Create a guard that tracks an active blocking task.
+    /// The counter is incremented when created and decremented when dropped.
+    pub(crate) fn track_blocking_task(&self) -> BlockingTaskGuard {
+        self.active_blocking_tasks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        BlockingTaskGuard {
+            counter: self.active_blocking_tasks.clone(),
+        }
+    }
+}
+
+/// RAII guard for tracking active blocking tasks.
+/// Increments counter on creation, decrements on drop.
+pub(crate) struct BlockingTaskGuard {
+    counter: Arc<AtomicUsize>,
+}
+
+impl Drop for BlockingTaskGuard {
+    fn drop(&mut self) {
+        self.counter
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }

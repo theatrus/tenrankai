@@ -49,13 +49,34 @@ impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
         let current_version = env!("CARGO_PKG_VERSION");
 
-        let mut metadata = self.cache_metadata.write().await;
-        let needs_refresh = metadata.version != current_version;
+        // Load caches from storage
+        let loaded_metadata =
+            crate::cache::load_image_metadata_cache(&self.cache_storage).await?;
+        let loaded_cache_metadata =
+            crate::cache::load_cache_version_metadata(&self.cache_storage).await;
+
+        // Update the in-memory caches with loaded data
+        {
+            let mut cache = self.metadata_cache.write().await;
+            *cache = loaded_metadata;
+        }
+
+        let needs_refresh = match loaded_cache_metadata {
+            Ok(cm) => {
+                let mut metadata = self.cache_metadata.write().await;
+                *metadata = cm;
+                metadata.version != current_version
+            }
+            Err(_) => {
+                // No cache metadata found, needs refresh
+                true
+            }
+        };
 
         if needs_refresh {
             info!(
-                "Version change detected ({}), refreshing metadata cache",
-                current_version
+                "Version change detected ({}), refreshing metadata cache for gallery '{}'",
+                current_version, self.config.name
             );
 
             // Clear the old metadata cache
@@ -64,6 +85,7 @@ impl Gallery {
             drop(cache);
 
             // Update version and trigger refresh
+            let mut metadata = self.cache_metadata.write().await;
             metadata.version = current_version.to_string();
             metadata.last_full_refresh = std::time::SystemTime::now();
             drop(metadata);
@@ -171,7 +193,7 @@ impl Gallery {
         use std::sync::atomic::Ordering;
 
         let cache = self.metadata_cache.read().await;
-        crate::cache::save_image_metadata_cache(&self.cache_path, &cache).await?;
+        crate::cache::save_image_metadata_cache(&self.cache_storage, &cache).await?;
 
         // Reset dirty flag after successful save
         self.metadata_cache_dirty.store(false, Ordering::Relaxed);
@@ -182,19 +204,19 @@ impl Gallery {
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
         let metadata = self.cache_metadata.read().await;
-        crate::cache::save_cache_version_metadata(&self.cache_path, &metadata).await?;
+        crate::cache::save_cache_version_metadata(&self.cache_storage, &metadata).await?;
         Ok(())
     }
 
     pub async fn save_caches(&self) -> Result<(), super::GalleryError> {
-        // Create cache directory if it doesn't exist
-        tokio::fs::create_dir_all(&self.cache_path).await?;
+        // Ensure cache storage is ready (creates directory for filesystem, no-op for S3)
+        self.cache_storage.create_dir("").await?;
 
         // Save both caches
         self.save_metadata_cache().await?;
         self.save_cache_metadata().await?;
 
-        info!("Saved gallery caches to disk");
+        info!("Saved gallery caches to storage");
         Ok(())
     }
 

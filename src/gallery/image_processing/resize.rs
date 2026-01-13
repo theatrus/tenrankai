@@ -77,9 +77,14 @@ impl Gallery {
             let cache_path = self.cache_path.clone();
             let runtime_handle = Handle::current();
 
+            // Track this blocking task for graceful shutdown
+            let _task_guard = self.track_blocking_task();
+
             // Process and write all variants in blocking thread
             let generated_paths =
                 tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
+                    // Guard is moved into blocking task, dropped when task completes
+                    let _guard = _task_guard;
                     // Helper to check if cancelled
                     let is_cancelled =
                         || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
@@ -284,7 +289,12 @@ impl Gallery {
             let cache_storage = self.cache_storage.clone();
             let runtime_handle = Handle::current();
 
+            // Track this blocking task for graceful shutdown
+            let _task_guard = self.track_blocking_task();
+
             tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                // Guard is moved into blocking task, dropped when task completes
+                let _guard = _task_guard;
                 let data = process_image(
                     &original_path,
                     dimensions,
@@ -412,7 +422,12 @@ impl Gallery {
             let cache_storage = self.cache_storage.clone();
             let runtime_handle = Handle::current();
 
+            // Track this blocking task for graceful shutdown
+            let _task_guard = self.track_blocking_task();
+
             tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                // Guard is moved into blocking task, dropped when task completes
+                let _guard = _task_guard;
                 process_all_tiles_for_image(
                     &original_path,
                     &relative_path_owned,
