@@ -277,11 +277,15 @@ impl TemplateEngine {
         // This avoids storage/network calls for frequently accessed templates
         if self.cache_ttl > Duration::ZERO {
             let cache = self.cache.read().await;
-            if let Some(cached) = cache.get(path) {
-                if cached.fetched_at.elapsed() < self.cache_ttl {
-                    debug!("Using TTL-cached template for {} (age: {:?})", path, cached.fetched_at.elapsed());
-                    return Ok(cached.content.clone());
-                }
+            if let Some(cached) = cache.get(path)
+                && cached.fetched_at.elapsed() < self.cache_ttl
+            {
+                debug!(
+                    "Using TTL-cached template for {} (age: {:?})",
+                    path,
+                    cached.fetched_at.elapsed()
+                );
+                return Ok(cached.content.clone());
             }
         }
 
@@ -312,9 +316,16 @@ impl TemplateEngine {
                         return Ok(content);
                     }
 
-                    info!("Loading template: {} from storage {} ({})", path, idx, storage.storage_type());
+                    info!(
+                        "Loading template: {} from storage {} ({})",
+                        path,
+                        idx,
+                        storage.storage_type()
+                    );
 
-                    let data = storage.read(path).await
+                    let data = storage
+                        .read(path)
+                        .await
                         .map_err(|e| format!("Failed to read template {}: {}", path, e))?;
 
                     let content = String::from_utf8(data.to_vec())
@@ -488,7 +499,10 @@ pub async fn template_with_gallery_handler(
     };
 
     // Check if template exists in any of the storage backends
-    let template_exists = app_state.template_engine.template_exists(&template_path).await;
+    let template_exists = app_state
+        .template_engine
+        .template_exists(&template_path)
+        .await;
 
     if !template_exists {
         debug!(

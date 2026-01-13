@@ -1,23 +1,27 @@
 use super::{error::PostsError, types::*};
 use crate::gallery::SharedGallery;
+use crate::storage::DynStorage;
 use chrono::{DateTime, NaiveDate, Utc};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
 use serde::Deserialize;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct PostsManager {
     config: PostsConfig,
+    /// Storage backend for posts (filesystem or S3)
+    storage: DynStorage,
     posts: Arc<RwLock<HashMap<String, Post>>>,
     sorted_slugs: Arc<RwLock<Vec<String>>>,
     galleries: Option<Arc<HashMap<String, SharedGallery>>>,
 }
 
 impl PostsManager {
-    pub fn new(config: PostsConfig) -> Self {
+    pub fn new(config: PostsConfig, storage: DynStorage) -> Self {
         Self {
             config,
+            storage,
             posts: Arc::new(RwLock::new(HashMap::new())),
             sorted_slugs: Arc::new(RwLock::new(Vec::new())),
             galleries: None,
@@ -30,13 +34,35 @@ impl PostsManager {
 
     pub async fn refresh_posts(&self) -> Result<(), PostsError> {
         info!(
-            "Refreshing posts from directory: {:?}",
-            self.config.source_directory
+            "Refreshing posts from storage: {} (type: {})",
+            self.config.source_directory,
+            self.storage.storage_type()
         );
 
         let mut new_posts = HashMap::new();
-        self.scan_directory(&self.config.source_directory, &mut new_posts)
-            .await?;
+
+        // List all files recursively from storage
+        let entries = self.storage.list_recursive("").await?;
+
+        // Filter for markdown files and load each post
+        for entry in entries {
+            if entry.is_dir {
+                continue;
+            }
+
+            // Check if it's a markdown file
+            if entry.path.ends_with(".md") || entry.path.ends_with(".markdown") {
+                match self.load_post(&entry.path).await {
+                    Ok(post) => {
+                        debug!("Loaded post: {}", post.slug);
+                        new_posts.insert(post.slug.clone(), post);
+                    }
+                    Err(e) => {
+                        error!("Failed to load post {}: {}", entry.path, e);
+                    }
+                }
+            }
+        }
 
         let mut sorted_slugs: Vec<String> = new_posts.keys().cloned().collect();
         sorted_slugs.sort_by(|a, b| {
@@ -74,49 +100,22 @@ impl PostsManager {
         });
     }
 
-    async fn scan_directory(
-        &self,
-        dir: &Path,
-        posts: &mut HashMap<String, Post>,
-    ) -> Result<(), PostsError> {
-        let entries = tokio::fs::read_dir(dir).await?;
-        let mut entries = entries;
+    async fn load_post(&self, path: &str) -> Result<Post, PostsError> {
+        // Read content from storage
+        let content = self.storage.read_to_string(path).await?;
 
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            let file_type = entry.file_type().await?;
-
-            if file_type.is_dir() {
-                Box::pin(self.scan_directory(&path, posts)).await?;
-            } else if file_type.is_file()
-                && let Some(extension) = path.extension()
-                && (extension == "md" || extension == "markdown")
-            {
-                match self.load_post(&path).await {
-                    Ok(post) => {
-                        debug!("Loaded post: {}", post.slug);
-                        posts.insert(post.slug.clone(), post);
-                    }
-                    Err(e) => {
-                        error!("Failed to load post {:?}: {}", path, e);
-                    }
-                }
+        // Get file modification time from storage metadata
+        let last_modified = match self.storage.metadata(path).await {
+            Ok(meta) => meta.last_modified,
+            Err(e) => {
+                warn!("Could not get metadata for {}: {}", path, e);
+                None
             }
-        }
-
-        Ok(())
-    }
-
-    async fn load_post(&self, path: &Path) -> Result<Post, PostsError> {
-        let content = tokio::fs::read_to_string(path).await?;
-
-        // Get file modification time
-        let file_metadata = tokio::fs::metadata(path).await?;
-        let last_modified = file_metadata.modified().ok();
+        };
 
         let (metadata, markdown_content) = self.parse_front_matter(&content)?;
 
-        let slug = self.generate_slug(path)?;
+        let slug = self.generate_slug(path);
 
         let mut options = Options::empty();
         options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -129,7 +128,7 @@ impl PostsManager {
 
         Ok(Post {
             slug,
-            path: path.to_path_buf(),
+            path: path.to_string(),
             title: metadata.title,
             summary: metadata.summary,
             date: metadata.date,
@@ -191,30 +190,18 @@ impl PostsManager {
         )))
     }
 
-    fn generate_slug(&self, path: &Path) -> Result<String, PostsError> {
-        let relative_path = path
-            .strip_prefix(&self.config.source_directory)
-            .map_err(|_| {
-                PostsError::InvalidFormat(format!(
-                    "Path {:?} is not under source directory {:?}",
-                    path, self.config.source_directory
-                ))
-            })?;
+    fn generate_slug(&self, path: &str) -> String {
+        // Path is already relative to the storage root
+        // Normalize path separators and remove extension
+        let slug = path.replace('\\', "/");
 
-        let slug = relative_path
-            .to_str()
-            .ok_or_else(|| PostsError::InvalidFormat("Invalid UTF-8 in path".to_string()))?
-            .replace('\\', "/");
-
-        let slug = if let Some(slug) = slug.strip_suffix(".md") {
+        if let Some(slug) = slug.strip_suffix(".md") {
             slug.to_string()
         } else if let Some(slug) = slug.strip_suffix(".markdown") {
             slug.to_string()
         } else {
             slug
-        };
-
-        Ok(slug)
+        }
     }
 
     pub async fn get_posts_page(&self, page: usize) -> Vec<PostSummary> {
@@ -259,9 +246,9 @@ impl PostsManager {
 
         if let Some(post) = posts.get(slug) {
             // Check if the file has been modified since we loaded it
-            if let Ok(metadata) = tokio::fs::metadata(&post.path).await
-                && let (Ok(file_modified), Some(post_modified)) =
-                    (metadata.modified(), post.last_modified)
+            if let Ok(meta) = self.storage.metadata(&post.path).await
+                && let (Some(file_modified), Some(post_modified)) =
+                    (meta.last_modified, post.last_modified)
                 && file_modified <= post_modified
             {
                 // Post is still fresh

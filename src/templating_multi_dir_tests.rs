@@ -202,11 +202,13 @@ mod multi_dir_tests {
         // Check that the error message contains the expected parts
         assert!(
             error.contains("Template pages/nonexistent.html.liquid not found"),
-            "Error: {}", error
+            "Error: {}",
+            error
         );
         assert!(
             error.contains("configured storage backends"),
-            "Error should mention storage backends: {}", error
+            "Error should mention storage backends: {}",
+            error
         );
 
         // Basic sanity check - the error should be reasonably sized and informative

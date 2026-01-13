@@ -150,7 +150,7 @@ This is the content of the second test post."#;
         }]),
         posts: Some(vec![PostsSystemConfig {
             name: "blog".to_string(),
-            source_directory: blog_dir,
+            source_directory: blog_dir.to_string_lossy().to_string(),
             url_prefix: "/blog".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),

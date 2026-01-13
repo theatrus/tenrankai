@@ -8,6 +8,9 @@ pub enum PostsError {
     #[error("TOML parsing error: {0}")]
     TomlError(#[from] toml_edit::de::Error),
 
+    #[error("Storage error: {0}")]
+    StorageError(#[from] crate::storage::StorageError),
+
     #[error("Date parsing error: {0}")]
     DateParseError(String),
 

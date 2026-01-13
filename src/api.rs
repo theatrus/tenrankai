@@ -1881,8 +1881,9 @@ roles = ["viewer"]
             .directories
             .iter()
             .map(|dir| {
-                Arc::new(crate::storage::FilesystemStorage::new(std::path::Path::new(dir)))
-                    as crate::storage::DynStorage
+                Arc::new(crate::storage::FilesystemStorage::new(
+                    std::path::Path::new(dir),
+                )) as crate::storage::DynStorage
             })
             .collect();
 

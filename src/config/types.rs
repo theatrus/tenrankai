@@ -209,11 +209,17 @@ pub struct PregenerateSizes {
 }
 
 /// Posts system configuration for markdown-based content
+///
+/// Source directory can be a filesystem path or S3 URL:
+/// - `"posts/blog"` - relative filesystem path
+/// - `"/var/data/posts"` - absolute filesystem path
+/// - `"s3://bucket/posts"` - S3 bucket with prefix
+/// - `"s3://bucket/posts?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PostsSystemConfig {
     pub name: String,
-    pub source_directory: PathBuf,
+    pub source_directory: String,
     pub url_prefix: String,
     #[serde(default = "super::defaults::default_posts_index_template")]
     pub index_template: String,

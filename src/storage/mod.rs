@@ -198,6 +198,26 @@ pub trait Storage: Send + Sync + 'static {
 /// Type alias for a thread-safe storage backend.
 pub type DynStorage = Arc<dyn Storage>;
 
+/// Create a storage backend from a URL string.
+///
+/// Parses the URL and creates the appropriate storage backend (filesystem or S3).
+///
+/// # Arguments
+/// * `url_str` - Storage URL string (filesystem path or s3://...)
+///
+/// # Returns
+/// A storage backend, or an error if the URL fails to parse or initialize.
+///
+/// # Example
+/// ```ignore
+/// let storage = create_storage_from_url("posts/blog").await?;
+/// let storage = create_storage_from_url("s3://bucket/prefix?region=us-west-2").await?;
+/// ```
+pub async fn create_storage_from_url(url_str: &str) -> Result<DynStorage, StorageError> {
+    let url = StorageUrl::parse(url_str)?;
+    url.into_storage().await
+}
+
 /// Create storage backends from a list of URL strings.
 ///
 /// Parses each URL and creates the appropriate storage backend (filesystem or S3).
@@ -210,8 +230,7 @@ pub type DynStorage = Arc<dyn Storage>;
 pub async fn create_storages_from_urls(urls: &[String]) -> Result<Vec<DynStorage>, StorageError> {
     let mut storages = Vec::with_capacity(urls.len());
     for url_str in urls {
-        let url = StorageUrl::parse(url_str)?;
-        let storage = url.into_storage().await?;
+        let storage = create_storage_from_url(url_str).await?;
         storages.push(storage);
     }
     Ok(storages)

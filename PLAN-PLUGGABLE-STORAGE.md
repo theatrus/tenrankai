@@ -13,8 +13,8 @@
 | Phase 6 | Refactor Cache Module | ⏳ Not Started |
 | Phase 7 | URL-Based Configuration | ✅ Complete |
 | Phase 7B | Static Files Storage | ✅ Complete |
-| Phase 7C | Template Storage | ⏳ Not Started |
-| Phase 7D | Posts Storage | ⏳ Not Started |
+| Phase 7C | Template Storage | ✅ Complete |
+| Phase 7D | Posts Storage | ✅ Complete |
 | Phase 8 | Signed URL Redirects | ✅ Complete (static files) |
 | Phase 9 | Migration Strategy | 🔄 In Progress |
 
@@ -1766,7 +1766,18 @@ impl StaticFileHandler {
 
 ---
 
-## Phase 7C: Template Storage Support
+## Phase 7C: Template Storage Support ✅
+
+**Status**: Complete (commit `757d7e2`)
+
+**Implementation Notes**:
+- Changed `TemplateConfig.directories` from `Vec<PathBuf>` to `Vec<String>` for storage URLs
+- Refactored `TemplateEngine` to use `Vec<DynStorage>` instead of `Vec<PathBuf>`
+- Added `template_exists()` method for async storage existence checks
+- Updated `load_template()` to use storage `read()` and `metadata()` operations
+- Added `create_storages_from_urls()` helper in storage module
+- Updated startup checks to recognize S3 template URLs
+- TTL-based caching (5 minute default) reduces S3 API calls
 
 Templates can also be loaded from object storage, enabling:
 - Remote template management without redeployment
@@ -2211,6 +2222,36 @@ name = "docs"
 url_prefix = "/docs"
 source_directory = "s3://my-docs/documentation"  # S3-hosted docs
 ```
+
+### 7D.3 Implementation Notes (Completed)
+
+The posts storage abstraction has been implemented with the following changes:
+
+1. **PostsConfig changes** (`src/posts/types.rs`):
+   - Changed `source_directory` from `PathBuf` to `String` for URL-based configuration
+   - Changed `Post.path` from `PathBuf` to `String` for storage-relative paths
+
+2. **PostsManager refactoring** (`src/posts/core.rs`):
+   - Added `storage: DynStorage` field to `PostsManager`
+   - Updated `new()` to accept a storage backend parameter
+   - Replaced `scan_directory()` with `storage.list_recursive("")`
+   - Replaced `tokio::fs::read_to_string()` with `storage.read_to_string()`
+   - Replaced `tokio::fs::metadata()` with `storage.metadata()` for modification times
+   - Updated `generate_slug()` to work with string paths
+
+3. **PostsError updates** (`src/posts/error.rs`):
+   - Added `StorageError` variant for storage operation failures
+
+4. **Initialization updates** (`src/lib.rs`, `src/main.rs`):
+   - Parse `source_directory` as a storage URL
+   - Create storage backend using `StorageUrl::parse().into_storage()`
+   - Pass storage to `PostsManager::new()`
+
+5. **Test updates** (`src/posts/tests.rs`, `tests/posts_integration.rs`):
+   - Updated all tests to create `FilesystemStorage` and pass to `PostsManager::new()`
+   - Updated `PostsConfig` source_directory to use `String`
+
+The implementation supports both filesystem paths and S3 URLs for posts storage.
 
 ---
 

@@ -92,13 +92,14 @@ pub async fn create_app(
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
     // Create template storage backends from URLs (supports both filesystem and S3)
-    let template_storages = match storage::create_storages_from_urls(&config.templates.directories).await {
-        Ok(storages) => storages,
-        Err(e) => {
-            tracing::error!("Failed to initialize template storage: {}", e);
-            vec![]
-        }
-    };
+    let template_storages =
+        match storage::create_storages_from_urls(&config.templates.directories).await {
+            Ok(storages) => storages,
+            Err(e) => {
+                tracing::error!("Failed to initialize template storage: {}", e);
+                vec![]
+            }
+        };
 
     let mut template_engine = templating::TemplateEngine::new(template_storages);
 
@@ -151,25 +152,35 @@ pub async fn create_app(
     let mut posts_managers = HashMap::new();
     if let Some(posts_configs) = &config.posts {
         for posts_config in posts_configs {
-            let mut posts_manager = posts::PostsManager::new(posts::PostsConfig {
-                source_directory: posts_config.source_directory.clone(),
-                url_prefix: posts_config.url_prefix.clone(),
-                index_template: posts_config.index_template.clone(),
-                post_template: posts_config.post_template.clone(),
-                posts_per_page: posts_config.posts_per_page,
-                refresh_interval_minutes: posts_config.refresh_interval_minutes,
-            });
+            // Create storage backend from source_directory URL
+            let posts_storage =
+                match storage::create_storage_from_url(&posts_config.source_directory).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!(
+                            "Failed to create posts storage for '{}': {}",
+                            posts_config.name, e
+                        );
+                        continue;
+                    }
+                };
+
+            info!(
+                "Initializing posts for '{}' from {} (storage: {})",
+                posts_config.name,
+                posts_config.source_directory,
+                posts_storage.storage_type()
+            );
+
+            let mut posts_manager =
+                posts::PostsManager::new(posts::PostsConfig::from(posts_config), posts_storage);
 
             // Set galleries reference
             posts_manager.set_galleries(galleries_arc.clone());
 
             let posts_manager = Arc::new(posts_manager);
 
-            // Initialize posts on startup
-            info!(
-                "Initializing posts for '{}' from {:?}",
-                posts_config.name, posts_config.source_directory
-            );
+            // Load posts on startup
             if let Err(e) = posts_manager.refresh_posts().await {
                 error!(
                     "Failed to initialize posts for '{}': {}",

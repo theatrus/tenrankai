@@ -10,7 +10,7 @@ use tenrankai::{
     Config, LogLevel, commands, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
-    openai, posts, startup_checks,
+    openai, posts, startup_checks, storage,
 };
 
 #[derive(Parser, Debug)]
@@ -555,21 +555,32 @@ async fn run_server(
             if let Some(interval_minutes) = posts_config.refresh_interval_minutes
                 && interval_minutes > 0
             {
+                // Create storage backend from source_directory URL
+                let posts_storage =
+                    match storage::create_storage_from_url(&posts_config.source_directory).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to create posts storage for '{}': {}",
+                                posts_config.name,
+                                e
+                            );
+                            continue;
+                        }
+                    };
+
                 info!(
-                    "Starting background posts refresh for '{}' every {} minutes",
-                    posts_config.name, interval_minutes
+                    "Starting background posts refresh for '{}' every {} minutes (storage: {})",
+                    posts_config.name,
+                    interval_minutes,
+                    posts_storage.storage_type()
                 );
 
                 // Create a new posts manager for background refresh
-                let posts_manager =
-                    std::sync::Arc::new(posts::PostsManager::new(posts::PostsConfig {
-                        source_directory: posts_config.source_directory.clone(),
-                        url_prefix: posts_config.url_prefix.clone(),
-                        index_template: posts_config.index_template.clone(),
-                        post_template: posts_config.post_template.clone(),
-                        posts_per_page: posts_config.posts_per_page,
-                        refresh_interval_minutes: posts_config.refresh_interval_minutes,
-                    }));
+                let posts_manager = std::sync::Arc::new(posts::PostsManager::new(
+                    posts::PostsConfig::from(posts_config),
+                    posts_storage,
+                ));
 
                 // Initial refresh
                 if let Err(e) = posts_manager.refresh_posts().await {

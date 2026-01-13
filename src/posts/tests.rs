@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod posts_tests {
     use super::super::*;
+    use crate::storage::{DynStorage, FilesystemStorage};
     use std::fs;
+    use std::sync::Arc;
     use tempfile::TempDir;
 
-    async fn setup_test_posts_dir() -> (TempDir, PostsConfig) {
+    async fn setup_test_posts_dir() -> (TempDir, PostsConfig, DynStorage) {
         let temp_dir = TempDir::new().unwrap();
         let posts_dir = temp_dir.path();
 
@@ -54,8 +56,10 @@ This is a tutorial post in a subdirectory."#;
 
         fs::write(subdir.join("tutorial.md"), post3_content).unwrap();
 
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -63,20 +67,20 @@ This is a tutorial post in a subdirectory."#;
             refresh_interval_minutes: None,
         };
 
-        (temp_dir, config)
+        (temp_dir, config, storage)
     }
 
     #[tokio::test]
     async fn test_posts_manager_creation() {
-        let (_temp_dir, config) = setup_test_posts_dir().await;
-        let manager = PostsManager::new(config.clone());
+        let (_temp_dir, config, storage) = setup_test_posts_dir().await;
+        let manager = PostsManager::new(config.clone(), storage);
         assert_eq!(manager.get_config().url_prefix, "/posts");
     }
 
     #[tokio::test]
     async fn test_refresh_posts() {
-        let (_temp_dir, config) = setup_test_posts_dir().await;
-        let manager = PostsManager::new(config);
+        let (_temp_dir, config, storage) = setup_test_posts_dir().await;
+        let manager = PostsManager::new(config, storage);
 
         let result = manager.refresh_posts().await;
         assert!(result.is_ok());
@@ -92,8 +96,8 @@ This is a tutorial post in a subdirectory."#;
 
     #[tokio::test]
     async fn test_get_post() {
-        let (_temp_dir, config) = setup_test_posts_dir().await;
-        let manager = PostsManager::new(config);
+        let (_temp_dir, config, storage) = setup_test_posts_dir().await;
+        let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
         let post = manager.get_post("first-post").await;
@@ -106,8 +110,8 @@ This is a tutorial post in a subdirectory."#;
 
     #[tokio::test]
     async fn test_get_post_from_subdirectory() {
-        let (_temp_dir, config) = setup_test_posts_dir().await;
-        let manager = PostsManager::new(config);
+        let (_temp_dir, config, storage) = setup_test_posts_dir().await;
+        let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
         let post = manager.get_post("tutorials/tutorial").await;
@@ -119,11 +123,11 @@ This is a tutorial post in a subdirectory."#;
 
     #[tokio::test]
     async fn test_pagination() {
-        let (_temp_dir, config_orig) = setup_test_posts_dir().await;
+        let (_temp_dir, config_orig, storage) = setup_test_posts_dir().await;
         let mut config = config_orig;
         config.posts_per_page = 2;
 
-        let manager = PostsManager::new(config);
+        let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
         let page1 = manager.get_posts_page(0).await;
@@ -148,8 +152,9 @@ Just content."#;
 
         fs::write(posts_dir.join("invalid.md"), invalid_content).unwrap();
 
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -157,7 +162,7 @@ Just content."#;
             refresh_interval_minutes: None,
         };
 
-        let manager = PostsManager::new(config);
+        let manager = PostsManager::new(config, storage);
         let result = manager.refresh_posts().await;
         assert!(result.is_ok()); // Should not fail completely
 
@@ -190,8 +195,9 @@ Content"#;
         fs::write(posts_dir.join("full-date.md"), post_with_full_date).unwrap();
         fs::write(posts_dir.join("simple-date.md"), post_with_simple_date).unwrap();
 
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -199,7 +205,7 @@ Content"#;
             refresh_interval_minutes: None,
         };
 
-        let manager = PostsManager::new(config);
+        let manager = PostsManager::new(config, storage);
         let result = manager.refresh_posts().await;
         assert!(result.is_ok());
 
@@ -253,8 +259,9 @@ Footnote[^1]
 
         fs::write(posts_dir.join("markdown-test.md"), markdown_content).unwrap();
 
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -262,7 +269,7 @@ Footnote[^1]
             refresh_interval_minutes: None,
         };
 
-        let manager = PostsManager::new(config);
+        let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
         let post = manager.get_post("markdown-test").await.unwrap();
@@ -290,7 +297,6 @@ Footnote[^1]
         use crate::GallerySystemConfig;
         use crate::gallery::Gallery;
         use std::collections::HashMap;
-        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let posts_dir = temp_dir.path();
@@ -349,8 +355,9 @@ Regular markdown image (not a gallery reference):
         galleries.insert("portfolio".to_string(), portfolio_gallery);
 
         // Create posts config
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -359,7 +366,7 @@ Regular markdown image (not a gallery reference):
         };
 
         // Create posts manager with galleries
-        let mut posts_manager = PostsManager::new(config);
+        let mut posts_manager = PostsManager::new(config, storage);
         posts_manager.set_galleries(Arc::new(galleries));
 
         // Load posts
@@ -430,8 +437,9 @@ This is the initial content."#;
         let post_path = posts_dir.join("test-post.md");
         fs::write(&post_path, initial_content).unwrap();
 
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -439,7 +447,7 @@ This is the initial content."#;
             refresh_interval_minutes: None,
         };
 
-        let manager = PostsManager::new(config);
+        let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
         // Get the initial post
@@ -488,8 +496,9 @@ date = "2024-01-01"
         let post_path = posts_dir.join("stable-post.md");
         fs::write(&post_path, content).unwrap();
 
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
         let config = PostsConfig {
-            source_directory: posts_dir.to_path_buf(),
+            source_directory: posts_dir.to_string_lossy().to_string(),
             url_prefix: "/posts".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),
@@ -497,7 +506,7 @@ date = "2024-01-01"
             refresh_interval_minutes: None,
         };
 
-        let manager = PostsManager::new(config);
+        let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
         // Get the post twice without modifications
