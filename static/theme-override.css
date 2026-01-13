@@ -1,0 +1,104 @@
+/* ==========================================================================
+   Theme Override File
+
+   Customize your theme by modifying CSS variables, fonts, and allowed classes.
+   This file is loaded AFTER style.css and overrides the defaults.
+
+   To create a custom theme:
+   1. Copy this file to your custom static directory (e.g., static-custom/)
+   2. Configure static_files.directories = ["static-custom", "static"] in config.toml
+   3. Uncomment and modify the variables/classes below
+
+   See docs/THEMING.md for the full list of available variables.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Font Imports (Google Fonts or local @font-face)
+   -------------------------------------------------------------------------- */
+
+/* Google Fonts example:
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Sans+Pro:wght@400;600&display=swap');
+*/
+
+/* Local font example:
+@font-face {
+    font-family: 'CustomFont';
+    src: url('/static/fonts/CustomFont.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+*/
+
+/* --------------------------------------------------------------------------
+   CSS Variables - Light Theme
+   -------------------------------------------------------------------------- */
+
+/*
+:root[data-theme="light"],
+:root:not([data-theme]) {
+    --bg-primary: #faf9f7;
+    --bg-secondary: #f0eeea;
+    --bg-card: #ffffff;
+    --text-primary: #2d2d2d;
+    --text-secondary: #666666;
+    --link-color: #1a5f7a;
+    --link-hover: #134b61;
+
+    --font-body: 'Source Sans Pro', -apple-system, sans-serif;
+    --font-heading: 'Playfair Display', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+}
+*/
+
+/* --------------------------------------------------------------------------
+   CSS Variables - Dark Theme
+   -------------------------------------------------------------------------- */
+
+/*
+:root[data-theme="dark"] {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #252525;
+    --bg-card: #2d2d2d;
+    --text-primary: #e8e8e8;
+    --text-secondary: #a0a0a0;
+    --link-color: #5db8d4;
+    --link-hover: #7fc9e0;
+}
+*/
+
+/* --------------------------------------------------------------------------
+   Component Overrides (optional)
+
+   These classes are intended for theme customization.
+   Other classes may change between versions.
+   -------------------------------------------------------------------------- */
+
+/* Gallery grid customization */
+/*
+.gallery-grid {
+    gap: 1rem;
+}
+*/
+
+/* Card styling */
+/*
+.card {
+    border-radius: 8px;
+    box-shadow: var(--shadow-medium);
+}
+*/
+
+/* Navigation */
+/*
+.navbar {
+    background: var(--bg-secondary);
+}
+*/
+
+/* Image detail page */
+/*
+.image-detail-content {
+    max-width: 1400px;
+}
+*/

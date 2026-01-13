@@ -59,7 +59,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ 'style.css' | asset_url }}">
-    
+    <link rel="stylesheet" href="{{ 'theme-override.css' | asset_url }}">
+
     {% comment %} Page-specific CSS files {% endcomment %}
     {% if page_css %}
         {% for css_file in page_css %}
