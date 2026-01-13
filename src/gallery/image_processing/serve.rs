@@ -24,16 +24,8 @@ impl Gallery {
             return ApiResponse::Forbidden.into_response();
         }
 
-        // Ensure the file exists using storage abstraction
-        if !self
-            .source_storage
-            .exists(relative_path)
-            .await
-            .unwrap_or(false)
-        {
-            error!("Image file not found in storage: {}", relative_path);
-            return ApiResponse::ImageNotFound.into_response();
-        }
+        // Note: We defer the source existence check until we actually need to access
+        // the source file. If serving from cache, we skip the check for better performance.
 
         let output_format = self.determine_output_format(accept_header, relative_path);
         debug!(
@@ -70,9 +62,11 @@ impl Gallery {
                         output_format.extension(),
                     );
 
-                    // Check if already cached using storage abstraction
+                    // Fast path: if tile cache exists, serve directly without validation
+                    // This avoids expensive S3 metadata calls on every request
                     if self
-                        .is_cache_valid_by_key(&cache_filename, relative_path)
+                        .cache_storage
+                        .exists(&cache_filename)
                         .await
                         .unwrap_or(false)
                     {
@@ -117,13 +111,22 @@ impl Gallery {
                         apply_watermark,
                     );
 
-                    // Check if already cached using storage abstraction
-                    let was_cached = self
+                    // Fast path: if cache exists, serve directly without validation
+                    // This avoids expensive S3 metadata calls on every request
+                    if self
                         .cache_storage
                         .exists(&cache_filename)
                         .await
-                        .unwrap_or(false);
+                        .unwrap_or(false)
+                    {
+                        debug!("Serving cached image: {}", cache_filename);
+                        let mime_type = output_format.mime_type();
+                        return self
+                            .serve_from_cache_storage(&cache_filename, mime_type)
+                            .await;
+                    }
 
+                    // Cache miss - generate the image
                     match self
                         .get_resized_image(relative_path, size, output_format)
                         .await
@@ -131,9 +134,6 @@ impl Gallery {
                         Ok(_) => {
                             // Image was generated and written to storage, serve it
                             let mime_type = output_format.mime_type();
-                            if was_cached {
-                                debug!("Serving cached image: {}", cache_filename);
-                            }
                             return self
                                 .serve_from_cache_storage(&cache_filename, mime_type)
                                 .await;
