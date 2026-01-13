@@ -20,10 +20,12 @@
 
 mod error;
 mod filesystem;
+mod s3;
 mod url;
 
 pub use error::StorageError;
 pub use filesystem::FilesystemStorage;
+pub use s3::S3Storage;
 pub use url::StorageUrl;
 
 use async_trait::async_trait;

@@ -8,7 +8,7 @@
 //! - `s3://bucket/prefix?region=us-east-1` - S3 with region
 //! - `s3://bucket/prefix?endpoint=http://minio:9000` - S3 with custom endpoint
 
-use super::{FilesystemStorage, Storage, StorageError};
+use super::{FilesystemStorage, S3Storage, Storage, StorageError};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -123,11 +123,14 @@ impl StorageUrl {
     pub async fn into_storage(self) -> Result<Arc<dyn Storage>, StorageError> {
         match self {
             StorageUrl::Filesystem { path } => Ok(Arc::new(FilesystemStorage::new(path))),
-            StorageUrl::S3 { .. } => {
-                // S3 implementation will be added later
-                Err(StorageError::Other(
-                    "S3 storage not yet implemented".to_string(),
-                ))
+            StorageUrl::S3 {
+                bucket,
+                prefix,
+                region,
+                endpoint,
+            } => {
+                let storage = S3Storage::new(bucket, prefix, region, endpoint).await?;
+                Ok(Arc::new(storage))
             }
         }
     }
