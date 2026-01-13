@@ -262,8 +262,6 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 /// Build context for image analysis from available metadata
 async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageContext {
-    use crate::gallery::metadata_sources::read_image_markdown_metadata_from_storage;
-
     let mut context = ImageContext::default();
 
     // Get image metadata (location, camera info, capture date from EXIF)
@@ -295,13 +293,19 @@ async fn build_image_context(gallery: &Gallery, relative_path: &str) -> ImageCon
         }
     }
 
-    // Get title and description from image markdown using storage abstraction
-    if let Some(md_meta) =
-        read_image_markdown_metadata_from_storage(gallery.source_storage(), relative_path).await
+    // Get title and description from user metadata storage
+    if let Some(user_meta) = gallery
+        .user_metadata_storage
+        .load(relative_path)
+        .await
+        .ok()
+        .flatten()
     {
-        context.title = md_meta.config.title;
-        if !md_meta.description_markdown.is_empty() {
-            context.description = Some(md_meta.description_markdown);
+        context.title = user_meta.title;
+        if let Some(ref desc) = user_meta.description
+            && !desc.is_empty()
+        {
+            context.description = Some(desc.clone());
         }
     }
 

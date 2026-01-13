@@ -694,4 +694,194 @@ This is a pre-existing description.
         let loaded = backend.load("delete_me.jpg").await.unwrap();
         assert!(loaded.is_none());
     }
+
+    #[tokio::test]
+    async fn test_ttl_expiry() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        // Create backend with 1 second TTL
+        let backend = StorageMetadataBackend::with_options(storage, 100, 1);
+
+        let mut metadata = ImageUserMetadata::new();
+        metadata.title = Some("TTL Test".to_string());
+
+        backend.save("ttl_test.jpg", &metadata).await.unwrap();
+
+        // First load should populate cache
+        let _ = backend.load("ttl_test.jpg").await.unwrap();
+        assert_eq!(backend.cache_len(), 1);
+
+        // Modify the file directly (simulating external change)
+        let md_content = r#"+++
+title = "Modified Title"
++++
+
+Modified content
+"#;
+        std::fs::write(temp_dir.path().join("ttl_test.md"), md_content).unwrap();
+
+        // Immediate re-load should return cached value (not modified)
+        let loaded = backend.load("ttl_test.jpg").await.unwrap().unwrap();
+        assert_eq!(loaded.title, Some("TTL Test".to_string()));
+
+        // Wait for TTL to expire
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
+        // Now load should fetch fresh data
+        let loaded = backend.load("ttl_test.jpg").await.unwrap().unwrap();
+        assert_eq!(loaded.title, Some("Modified Title".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_lru_eviction() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        // Create backend with max 2 entries
+        let backend = StorageMetadataBackend::with_options(storage, 2, 60);
+
+        // Create and load 3 files
+        for i in 0..3 {
+            let mut metadata = ImageUserMetadata::new();
+            metadata.title = Some(format!("Image {}", i));
+            backend
+                .save(&format!("img{}.jpg", i), &metadata)
+                .await
+                .unwrap();
+            let _ = backend.load(&format!("img{}.jpg", i)).await.unwrap();
+        }
+
+        // Cache should only have 2 entries (LRU limit)
+        assert_eq!(backend.cache_len(), 2);
+
+        // The oldest (img0) should have been evicted
+        // Access img1 and img2 to verify they're still cached
+        let _ = backend.load("img1.jpg").await.unwrap();
+        let _ = backend.load("img2.jpg").await.unwrap();
+        // Cache still at limit
+        assert_eq!(backend.cache_len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_merge_md_and_toml() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        let backend = StorageMetadataBackend::new(storage);
+
+        // Create .md file with title and description
+        let md_content = r#"+++
+title = "MD Title"
+telescope = "RedCat 51"
++++
+
+Description from MD file.
+"#;
+        std::fs::write(temp_dir.path().join("merge_test.md"), md_content).unwrap();
+
+        // Create .toml file with different data
+        let toml_content = r#"
+highlighted = true
+pick_status = "pick"
+tags = ["tag1", "tag2"]
+
+[[comments]]
+id = "comment-1"
+author = "user1"
+text = "Nice!"
+created_at = "2024-01-01T00:00:00Z"
+"#;
+        std::fs::write(temp_dir.path().join("merge_test.toml"), toml_content).unwrap();
+
+        // Load should merge both files
+        let loaded = backend.load("merge_test.jpg").await.unwrap().unwrap();
+
+        // From .md file
+        assert_eq!(loaded.title, Some("MD Title".to_string()));
+        assert_eq!(loaded.telescope, Some("RedCat 51".to_string()));
+        assert!(loaded
+            .description
+            .as_ref()
+            .unwrap()
+            .contains("Description from MD"));
+
+        // From .toml file
+        assert!(loaded.highlighted);
+        assert_eq!(loaded.pick_status, Some(PickStatus::Pick));
+        assert_eq!(loaded.tags.len(), 2);
+        assert_eq!(loaded.comments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_full_extension_md_priority() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        let backend = StorageMetadataBackend::new(storage);
+
+        // Create both image.jpg.md and image.md with different content
+        let full_ext_content = r#"+++
+title = "Full Extension"
++++
+Full extension content
+"#;
+        let simple_content = r#"+++
+title = "Simple Name"
++++
+Simple name content
+"#;
+
+        std::fs::write(temp_dir.path().join("priority.jpg.md"), full_ext_content).unwrap();
+        std::fs::write(temp_dir.path().join("priority.md"), simple_content).unwrap();
+
+        // Full extension path should take priority
+        let loaded = backend.load("priority.jpg").await.unwrap().unwrap();
+        assert_eq!(loaded.title, Some("Full Extension".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_md_without_frontmatter() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        let backend = StorageMetadataBackend::new(storage);
+
+        // Create .md file without frontmatter
+        let md_content = "# My Image Title\n\nThis is just plain markdown without frontmatter.";
+        std::fs::write(temp_dir.path().join("plain.md"), md_content).unwrap();
+
+        let loaded = backend.load("plain.jpg").await.unwrap().unwrap();
+
+        // Title should be None (not extracted from markdown H1)
+        assert!(loaded.title.is_none());
+        // Description should contain the full content
+        assert!(loaded
+            .description
+            .as_ref()
+            .unwrap()
+            .contains("My Image Title"));
+        assert!(loaded
+            .description
+            .as_ref()
+            .unwrap()
+            .contains("plain markdown"));
+    }
+
+    #[tokio::test]
+    async fn test_custom_cache_size() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        // Create backend with custom cache size of 5
+        let backend = StorageMetadataBackend::with_cache_size(storage, 5);
+
+        // Create and load 6 files
+        for i in 0..6 {
+            let mut metadata = ImageUserMetadata::new();
+            metadata.title = Some(format!("Image {}", i));
+            backend
+                .save(&format!("custom{}.jpg", i), &metadata)
+                .await
+                .unwrap();
+            let _ = backend.load(&format!("custom{}.jpg", i)).await.unwrap();
+        }
+
+        // Cache should respect the custom size limit
+        assert_eq!(backend.cache_len(), 5);
+    }
 }

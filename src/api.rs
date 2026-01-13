@@ -1430,8 +1430,6 @@ async fn build_image_context(
     gallery: &crate::gallery::Gallery,
     relative_path: &str,
 ) -> crate::openai::ImageContext {
-    use crate::gallery::metadata_sources::read_image_markdown_metadata_from_storage;
-
     let mut context = crate::openai::ImageContext::default();
 
     // Get image metadata (location, camera info, capture date from EXIF)
@@ -1463,13 +1461,19 @@ async fn build_image_context(
         }
     }
 
-    // Get title and description from image markdown using storage abstraction
-    if let Some(md_meta) =
-        read_image_markdown_metadata_from_storage(gallery.source_storage(), relative_path).await
+    // Get title and description from user metadata storage
+    if let Some(user_meta) = gallery
+        .user_metadata_storage
+        .load(relative_path)
+        .await
+        .ok()
+        .flatten()
     {
-        context.title = md_meta.config.title;
-        if !md_meta.description_markdown.is_empty() {
-            context.description = Some(md_meta.description_markdown);
+        context.title = user_meta.title;
+        if let Some(ref desc) = user_meta.description
+            && !desc.is_empty()
+        {
+            context.description = Some(desc.clone());
         }
     }
 

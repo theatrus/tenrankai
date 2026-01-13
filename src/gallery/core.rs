@@ -277,7 +277,7 @@ impl Gallery {
         let file_size = cached_metadata.file_size;
         let dimensions = cached_metadata.dimensions;
 
-        // Extract title and description from markdown and XMP metadata
+        // Extract title and description from user metadata and XMP
         let (title, description) = {
             // Build XMP sidecar path (replace extension with .xmp)
             let xmp_path = if let Some(dot_pos) = relative_path.rfind('.') {
@@ -293,53 +293,56 @@ impl Gallery {
             )
             .await;
 
-            // Check for markdown metadata file using storage (handles both image.jpg.md and image.md)
-            match super::metadata_sources::read_image_markdown_metadata_from_storage(
-                &self.source_storage,
-                relative_path,
-            )
-            .await
+            // Load user metadata from storage (handles both .md and .toml sidecars with caching)
+            match self
+                .user_metadata_storage
+                .load(relative_path)
+                .await
+                .ok()
+                .flatten()
             {
-                Some(md_metadata) => {
-                    // Use title from frontmatter if available
-                    let title = md_metadata
-                        .config
+                Some(user_metadata) => {
+                    // Use title from user metadata if available
+                    let title = user_metadata
                         .title
+                        .clone()
                         .or_else(|| {
-                            // Fall back to extracting title from markdown content
-                            md_metadata
-                                .description_markdown
-                                .lines()
-                                .find(|line| line.trim().starts_with("# "))
-                                .map(|line| line.trim_start_matches("# ").trim().to_string())
+                            // Fall back to extracting title from description markdown content
+                            user_metadata.description.as_ref().and_then(|desc| {
+                                desc.lines()
+                                    .find(|line| line.trim().starts_with("# "))
+                                    .map(|line| line.trim_start_matches("# ").trim().to_string())
+                            })
                         })
                         .or_else(|| {
                             // Fall back to XMP title
                             xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
                         });
 
-                    // Process markdown to HTML, removing title if present
-                    let content_without_title =
-                        if title.is_some() && md_metadata.description_markdown.contains("# ") {
-                            md_metadata
-                                .description_markdown
-                                .lines()
-                                .skip_while(|line| !line.trim().starts_with("# "))
-                                .skip(1)
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        } else {
-                            md_metadata.description_markdown.clone()
-                        };
+                    // Process markdown description to HTML, removing title if present
+                    let description_html = user_metadata.description.as_ref().map(|description| {
+                        let content_without_title =
+                            if title.is_some() && description.contains("# ") {
+                                description
+                                    .lines()
+                                    .skip_while(|line| !line.trim().starts_with("# "))
+                                    .skip(1)
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            } else {
+                                description.clone()
+                            };
 
-                    let parser = Parser::new(&content_without_title);
-                    let mut html_output = String::new();
-                    html::push_html(&mut html_output, parser);
+                        let parser = Parser::new(&content_without_title);
+                        let mut html_output = String::new();
+                        html::push_html(&mut html_output, parser);
+                        html_output
+                    });
 
-                    (title, Some(html_output))
+                    (title, description_html)
                 }
                 None => {
-                    // Fall back to XMP title/description if no markdown exists
+                    // Fall back to XMP title/description if no user metadata exists
                     let title = xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone());
                     let description = xmp_metadata
                         .as_ref()

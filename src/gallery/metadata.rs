@@ -1,7 +1,4 @@
-use super::metadata_sources::{
-    merge_metadata_sources, read_image_markdown_metadata_from_storage,
-    read_xmp_metadata_from_storage,
-};
+use super::metadata_sources::{merge_metadata_sources, read_xmp_metadata_from_storage};
 use super::path_utils::{FileExtension, SidecarPaths};
 use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
 use crate::storage::header_sizes;
@@ -1048,21 +1045,25 @@ impl Gallery {
         let xmp_metadata =
             read_xmp_metadata_from_storage(&self.source_storage, &sidecars.xmp).await;
 
-        // Check for markdown metadata file using storage (e.g., image.jpg.md or image.md)
-        let markdown_metadata =
-            read_image_markdown_metadata_from_storage(&self.source_storage, relative_path).await;
+        // Load user metadata from storage (handles both .md and .toml sidecars with caching)
+        let user_metadata = self
+            .user_metadata_storage
+            .load(relative_path)
+            .await
+            .ok()
+            .flatten();
 
         // Merge metadata from all sources
         let (camera_info, location_info) = merge_metadata_sources(
             exif_camera_info,
             exif_location_info,
             xmp_metadata,
-            markdown_metadata.as_ref().map(|m| m.config.clone()),
+            user_metadata.as_ref(),
         );
 
-        // Override capture date if specified in markdown
-        let capture_date = if let Some(ref md) = markdown_metadata
-            && let Some(ref date_str) = md.config.capture_date
+        // Override capture date if specified in user metadata
+        let capture_date = if let Some(ref um) = user_metadata
+            && let Some(ref date_str) = um.capture_date
             && let Ok(dt) = DateTime::parse_from_rfc3339(date_str)
         {
             Some(SystemTime::from(dt))
