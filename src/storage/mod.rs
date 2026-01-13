@@ -21,11 +21,16 @@
 mod error;
 mod filesystem;
 mod s3;
+mod sync_adapter;
 mod url;
 
 pub use error::StorageError;
 pub use filesystem::FilesystemStorage;
 pub use s3::S3Storage;
+pub use sync_adapter::{
+    SyncStorageAdapter, SyncStorageReader, storage_exists_sync, storage_open_sync,
+    storage_read_range_sync, storage_read_sync, storage_write_sync,
+};
 pub use url::StorageUrl;
 
 use async_trait::async_trait;
@@ -146,6 +151,28 @@ pub trait Storage: Send + Sync + 'static {
     /// # Returns
     /// A stream of byte chunks.
     async fn read_stream(&self, path: &str) -> Result<ByteStream, StorageError>;
+
+    /// Read a range of bytes from an object.
+    ///
+    /// This is useful for:
+    /// - Resumable downloads
+    /// - Seeking within large files
+    /// - Efficient partial reads (e.g., reading headers without loading entire file)
+    ///
+    /// # Arguments
+    /// * `path` - Relative path to the object
+    /// * `offset` - Byte offset to start reading from
+    /// * `length` - Number of bytes to read
+    ///
+    /// # Returns
+    /// The requested byte range. May return fewer bytes if the range extends
+    /// past the end of the file.
+    async fn read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<Bytes, StorageError>;
 
     /// Create directory (no-op for S3, creates dir for filesystem).
     ///

@@ -1,19 +1,10 @@
 use crate::gallery::types::ImageSize as SizeVariant;
 use crate::gallery::{Gallery, GalleryError};
-use crate::storage::DynStorage;
+use crate::storage::{DynStorage, storage_exists_sync};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 use super::types::{ImageSize, OutputFormat};
-
-/// Synchronous wrapper for storage exists check (for use in spawn_blocking)
-fn storage_exists_sync(
-    storage: &DynStorage,
-    path: &str,
-    handle: &tokio::runtime::Handle,
-) -> bool {
-    handle.block_on(async { storage.exists(path).await.unwrap_or(false) })
-}
 
 impl Gallery {
     /// Process multiple variants of an image in a single batch

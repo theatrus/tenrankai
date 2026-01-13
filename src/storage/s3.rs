@@ -455,6 +455,52 @@ impl Storage for S3Storage {
         }
     }
 
+    async fn read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<Bytes, StorageError> {
+        let key = self.build_key(path);
+        // S3 Range header format: bytes=start-end (inclusive)
+        let end = offset.saturating_add(length).saturating_sub(1);
+        let range = format!("bytes={}-{}", offset, end);
+        debug!(
+            "S3 read_range: bucket={}, key={}, range={}",
+            self.bucket, key, range
+        );
+
+        let result = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .range(&range)
+            .send()
+            .await;
+
+        match result {
+            Ok(output) => {
+                let data =
+                    output.body.collect().await.map_err(|e| {
+                        StorageError::Other(format!("Failed to read S3 body: {}", e))
+                    })?;
+                Ok(data.into_bytes())
+            }
+            Err(e) => {
+                let service_error = e.into_service_error();
+                if service_error.is_no_such_key() {
+                    Err(StorageError::NotFound(path.to_string()))
+                } else {
+                    Err(StorageError::Other(format!(
+                        "S3 GetObject error: {}",
+                        service_error
+                    )))
+                }
+            }
+        }
+    }
+
     async fn create_dir(&self, _path: &str) -> Result<(), StorageError> {
         // S3 doesn't have directories - they're implicit from object keys
         // This is a no-op for S3

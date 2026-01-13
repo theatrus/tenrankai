@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use std::path::{Component, Path, PathBuf};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
 /// Local filesystem storage backend.
@@ -275,6 +276,32 @@ impl Storage for FilesystemStorage {
         let stream = ReaderStream::new(file).map(|result| result.map_err(StorageError::Io));
 
         Ok(Box::pin(stream))
+    }
+
+    async fn read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<Bytes, StorageError> {
+        let full_path = self.resolve_path(path)?;
+        let mut file = match tokio::fs::File::open(&full_path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(StorageError::NotFound(path.to_string()));
+            }
+            Err(e) => return Err(StorageError::Io(e)),
+        };
+
+        // Seek to offset
+        file.seek(std::io::SeekFrom::Start(offset)).await?;
+
+        // Read up to length bytes
+        let mut buffer = vec![0u8; length as usize];
+        let bytes_read = file.read(&mut buffer).await?;
+        buffer.truncate(bytes_read);
+
+        Ok(Bytes::from(buffer))
     }
 
     async fn create_dir(&self, path: &str) -> Result<(), StorageError> {
