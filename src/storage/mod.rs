@@ -167,12 +167,8 @@ pub trait Storage: Send + Sync + 'static {
     /// # Returns
     /// The requested byte range. May return fewer bytes if the range extends
     /// past the end of the file.
-    async fn read_range(
-        &self,
-        path: &str,
-        offset: u64,
-        length: u64,
-    ) -> Result<Bytes, StorageError>;
+    async fn read_range(&self, path: &str, offset: u64, length: u64)
+    -> Result<Bytes, StorageError>;
 
     /// Create directory (no-op for S3, creates dir for filesystem).
     ///

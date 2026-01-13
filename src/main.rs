@@ -218,9 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Allow RUST_LOG to override
     let filter = EnvFilter::try_from_default_env().unwrap_or(filter);
 
-    let subscriber = fmt::Subscriber::builder()
-        .with_env_filter(filter)
-        .finish();
+    let subscriber = fmt::Subscriber::builder().with_env_filter(filter).finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
     // Handle commands

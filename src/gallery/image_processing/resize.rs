@@ -108,8 +108,10 @@ impl Gallery {
                     );
 
                     // Process each variant
-                    for (idx, (size_str, dimensions, apply_watermark, output_format, cache_filename)) in
-                        variant_configs.into_iter().enumerate()
+                    for (
+                        idx,
+                        (size_str, dimensions, apply_watermark, output_format, cache_filename),
+                    ) in variant_configs.into_iter().enumerate()
                     {
                         // Check cancellation between variants
                         if is_cancelled() {
@@ -144,11 +146,8 @@ impl Gallery {
                         }
 
                         // Encode the variant (returns bytes)
-                        let data = variant_image.encode(
-                            output_format,
-                            jpeg_quality,
-                            webp_quality,
-                        )?;
+                        let data =
+                            variant_image.encode(output_format, jpeg_quality, webp_quality)?;
 
                         // Write to cache storage synchronously
                         storage_write_sync(
@@ -250,8 +249,11 @@ impl Gallery {
         );
         let cache_path = self.cache_path.join(&cache_filename);
 
-        // Check if cache file exists and is newer than original (async)
-        if self.is_cache_valid(&cache_path, original_path).await? {
+        // Check if cache file exists and is newer than original using storage abstraction
+        if self
+            .is_cache_valid_by_key(&cache_filename, original_path)
+            .await?
+        {
             return Ok(cache_path);
         }
 
@@ -391,7 +393,10 @@ impl Gallery {
         let cache_path = self.cache_path.join(&cache_filename);
 
         // Check if cache file exists and is newer than original (async)
-        if self.is_cache_valid(&cache_path, original_path).await? {
+        if self
+            .is_cache_valid_by_key(&cache_filename, original_path)
+            .await?
+        {
             return Ok(cache_path);
         }
 
@@ -451,20 +456,28 @@ impl Gallery {
     }
 
     /// Check if cache file is valid (exists and newer than source)
-    pub(crate) async fn is_cache_valid(
+    /// Uses storage abstraction for cache and filesystem for source (source is always local)
+    pub(crate) async fn is_cache_valid_by_key(
         &self,
-        cache_path: &Path,
+        cache_key: &str,
         original_path: &Path,
     ) -> Result<bool, GalleryError> {
-        if !cache_path.exists() {
+        // Check if cache exists in storage
+        if !self.cache_storage.exists(cache_key).await.unwrap_or(false) {
             return Ok(false);
         }
 
-        let cache_metadata = tokio::fs::metadata(cache_path).await?;
+        // Get cache metadata from storage
+        let cache_meta = match self.cache_storage.metadata(cache_key).await {
+            Ok(meta) => meta,
+            Err(_) => return Ok(false),
+        };
+
+        // Get source metadata from filesystem (source images are always local)
         let original_metadata = tokio::fs::metadata(original_path).await?;
 
-        if let (Ok(cache_modified), Ok(original_modified)) =
-            (cache_metadata.modified(), original_metadata.modified())
+        if let (Some(cache_modified), Ok(original_modified)) =
+            (cache_meta.last_modified, original_metadata.modified())
             && cache_modified >= original_modified
         {
             Ok(true)
@@ -570,8 +583,7 @@ fn process_all_tiles_for_image(
         if shutdown_flag.load(std::sync::atomic::Ordering::Relaxed) {
             info!(
                 "Tile generation cancelled for {} after {} tiles written",
-                relative_path,
-                written_count
+                relative_path, written_count
             );
             return Ok(());
         }
@@ -689,8 +701,7 @@ fn process_all_tiles_for_image(
     if written_count > 0 {
         info!(
             "Wrote {} tiles for image, skipped {} existing tiles",
-            written_count,
-            skipped_count
+            written_count, skipped_count
         );
     } else if skipped_count > 0 {
         debug!("All {} tiles already exist for image", skipped_count);

@@ -332,14 +332,21 @@ Regular markdown image (not a gallery reference):
         let main_gallery_config = GallerySystemConfig {
             name: "main".to_string(),
             source_directory: temp_dir.path().join("photos"),
-            cache_directory: temp_dir.path().join("cache/main").to_string_lossy().to_string(),
+            cache_directory: temp_dir
+                .path()
+                .join("cache/main")
+                .to_string_lossy()
+                .to_string(),
             ..Default::default()
         };
 
         let main_cache_dir = temp_dir.path().join("cache/main");
         fs::create_dir_all(&main_cache_dir).unwrap();
         let main_cache_storage: DynStorage = Arc::new(FilesystemStorage::new(main_cache_dir));
-        let main_gallery = Arc::new(Gallery::new(main_gallery_config.clone(), main_cache_storage));
+        let main_gallery = Arc::new(Gallery::new(
+            main_gallery_config.clone(),
+            main_cache_storage,
+        ));
         galleries.insert("main".to_string(), main_gallery);
 
         // Create portfolio gallery
@@ -347,7 +354,11 @@ Regular markdown image (not a gallery reference):
             name: "portfolio".to_string(),
             url_prefix: "/my-portfolio".to_string(),
             source_directory: temp_dir.path().join("portfolio"),
-            cache_directory: temp_dir.path().join("cache/portfolio").to_string_lossy().to_string(),
+            cache_directory: temp_dir
+                .path()
+                .join("cache/portfolio")
+                .to_string_lossy()
+                .to_string(),
             images_per_page: 20,
             jpeg_quality: Some(90),
             webp_quality: Some(90.0),
@@ -356,8 +367,12 @@ Regular markdown image (not a gallery reference):
 
         let portfolio_cache_dir = temp_dir.path().join("cache/portfolio");
         fs::create_dir_all(&portfolio_cache_dir).unwrap();
-        let portfolio_cache_storage: DynStorage = Arc::new(FilesystemStorage::new(portfolio_cache_dir));
-        let portfolio_gallery = Arc::new(Gallery::new(portfolio_gallery_config, portfolio_cache_storage));
+        let portfolio_cache_storage: DynStorage =
+            Arc::new(FilesystemStorage::new(portfolio_cache_dir));
+        let portfolio_gallery = Arc::new(Gallery::new(
+            portfolio_gallery_config,
+            portfolio_cache_storage,
+        ));
         galleries.insert("portfolio".to_string(), portfolio_gallery);
 
         // Create posts config

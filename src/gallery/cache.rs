@@ -50,8 +50,7 @@ impl Gallery {
         let current_version = env!("CARGO_PKG_VERSION");
 
         // Load caches from storage
-        let loaded_metadata =
-            crate::cache::load_image_metadata_cache(&self.cache_storage).await?;
+        let loaded_metadata = crate::cache::load_image_metadata_cache(&self.cache_storage).await?;
         let loaded_cache_metadata =
             crate::cache::load_cache_version_metadata(&self.cache_storage).await;
 
@@ -762,40 +761,50 @@ impl Gallery {
 
         let mut removed_count = 0;
 
-        // Walk the cache directory and check each file
-        if let Ok(mut entries) = tokio::fs::read_dir(&self.cache_path).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let filename = entry.file_name().to_string_lossy().to_string();
+        // List files from cache storage
+        let entries = match self.cache_storage.list("").await {
+            Ok(entries) => entries,
+            Err(e) => {
+                debug!("Failed to list cache storage: {}", e);
+                return Ok(0);
+            }
+        };
 
-                // Skip protected files
-                if protected_files.contains(&filename.as_str()) {
-                    continue;
-                }
+        for entry in entries {
+            let filename = &entry.path;
 
-                // Skip composite files (they have their own lifecycle)
-                if filename.starts_with(&composite_prefix) {
-                    continue;
-                }
+            // Skip directories
+            if entry.is_dir {
+                continue;
+            }
 
-                // Check if this is an image cache file (hash-based filename)
-                // Cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
-                let hash_part = filename
-                    .split('.')
-                    .next()
-                    .unwrap_or("")
-                    .trim_end_matches("_watermarked");
+            // Skip protected files
+            if protected_files.contains(&filename.as_str()) {
+                continue;
+            }
 
-                // If the hash doesn't match any valid prefix, it's orphaned
-                if !hash_part.is_empty() && !valid_prefixes.contains(hash_part) {
-                    let file_path = entry.path();
-                    match tokio::fs::remove_file(&file_path).await {
-                        Ok(_) => {
-                            debug!("Removed orphaned cache file: {}", filename);
-                            removed_count += 1;
-                        }
-                        Err(e) => {
-                            debug!("Failed to remove orphaned cache file {}: {}", filename, e);
-                        }
+            // Skip composite files (they have their own lifecycle)
+            if filename.starts_with(&composite_prefix) {
+                continue;
+            }
+
+            // Check if this is an image cache file (hash-based filename)
+            // Cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
+            let hash_part = filename
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches("_watermarked");
+
+            // If the hash doesn't match any valid prefix, it's orphaned
+            if !hash_part.is_empty() && !valid_prefixes.contains(hash_part) {
+                match self.cache_storage.delete(filename).await {
+                    Ok(_) => {
+                        debug!("Removed orphaned cache file: {}", filename);
+                        removed_count += 1;
+                    }
+                    Err(e) => {
+                        debug!("Failed to remove orphaned cache file {}: {}", filename, e);
                     }
                 }
             }
@@ -837,33 +846,37 @@ impl Gallery {
                 format.extension(),
                 apply_watermark,
             );
-            let cache_path = self.cache_path.join(&cache_filename);
             let source_path = self.config.source_directory.join(relative_path);
 
-            // Check if cache file exists and is newer than source
-            *has_format = if cache_path.exists() {
-                match (
-                    tokio::fs::metadata(&cache_path).await,
-                    tokio::fs::metadata(&source_path).await,
-                ) {
-                    (Ok(cache_meta), Ok(source_meta)) => {
-                        match (cache_meta.modified(), source_meta.modified()) {
-                            (Ok(cache_time), Ok(source_time)) => {
+            // Check if cache file exists and is newer than source using storage abstraction
+            let cache_exists = self
+                .cache_storage
+                .exists(&cache_filename)
+                .await
+                .unwrap_or(false);
+
+            *has_format = if cache_exists {
+                // Get cache metadata from storage and source metadata from filesystem
+                let cache_meta = self.cache_storage.metadata(&cache_filename).await.ok();
+                let source_meta = tokio::fs::metadata(&source_path).await.ok();
+
+                match (cache_meta, source_meta) {
+                    (Some(cache_meta), Some(source_meta)) => {
+                        match (cache_meta.last_modified, source_meta.modified().ok()) {
+                            (Some(cache_time), Some(source_time)) => {
                                 if cache_time >= source_time {
                                     true
                                 } else {
                                     // Cache is outdated, remove it
                                     debug!(
                                         "Cache file is outdated, removing: {} (cache: {:?}, source: {:?})",
-                                        cache_path.display(),
-                                        cache_time,
-                                        source_time
+                                        cache_filename, cache_time, source_time
                                     );
-                                    if let Err(e) = tokio::fs::remove_file(&cache_path).await {
+                                    if let Err(e) = self.cache_storage.delete(&cache_filename).await
+                                    {
                                         debug!(
                                             "Failed to remove outdated cache file {}: {}",
-                                            cache_path.display(),
-                                            e
+                                            cache_filename, e
                                         );
                                     }
                                     false

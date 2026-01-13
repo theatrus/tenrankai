@@ -53,9 +53,9 @@ pub(crate) async fn load_cache_version_metadata(
             )));
         }
         Err(e) => {
-            return Err(crate::gallery::GalleryError::IoError(std::io::Error::other(
-                e.to_string(),
-            )));
+            return Err(crate::gallery::GalleryError::IoError(
+                std::io::Error::other(e.to_string()),
+            ));
         }
     }
 
@@ -75,8 +75,8 @@ pub(crate) async fn save_cache_json<T: Serialize>(
     data: &T,
 ) -> Result<(), StorageError> {
     let cache_file = cache_type.filename(None);
-    let json = serde_json::to_string_pretty(data)
-        .map_err(|e| StorageError::Other(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(data).map_err(|e| StorageError::Other(e.to_string()))?;
     storage.write(&cache_file, Bytes::from(json)).await
 }
 

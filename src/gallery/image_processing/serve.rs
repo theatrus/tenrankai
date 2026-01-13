@@ -70,9 +70,14 @@ impl Gallery {
                     );
 
                     // Check if already cached using storage abstraction
-                    if self.is_cache_valid_storage(&cache_filename, &full_path).await {
+                    if self
+                        .is_cache_valid_storage(&cache_filename, &full_path)
+                        .await
+                    {
                         let mime_type = output_format.mime_type();
-                        return self.serve_from_cache_storage(&cache_filename, mime_type).await;
+                        return self
+                            .serve_from_cache_storage(&cache_filename, mime_type)
+                            .await;
                     }
 
                     // Generate the tile
@@ -86,7 +91,9 @@ impl Gallery {
                         Ok(_) => {
                             // Tile was generated and written to storage, serve it
                             let mime_type = output_format.mime_type();
-                            return self.serve_from_cache_storage(&cache_filename, mime_type).await;
+                            return self
+                                .serve_from_cache_storage(&cache_filename, mime_type)
+                                .await;
                         }
                         Err(e) => {
                             error!("Failed to generate tile: {}", e);
@@ -112,7 +119,11 @@ impl Gallery {
                     );
 
                     // Check if already cached using storage abstraction
-                    let was_cached = self.cache_storage.exists(&cache_filename).await.unwrap_or(false);
+                    let was_cached = self
+                        .cache_storage
+                        .exists(&cache_filename)
+                        .await
+                        .unwrap_or(false);
 
                     match self
                         .get_resized_image(&full_path, relative_path, size, output_format)
@@ -124,7 +135,9 @@ impl Gallery {
                             if was_cached {
                                 debug!("Serving cached image: {}", cache_filename);
                             }
-                            return self.serve_from_cache_storage(&cache_filename, mime_type).await;
+                            return self
+                                .serve_from_cache_storage(&cache_filename, mime_type)
+                                .await;
                         }
                         Err(e) => {
                             error!("Failed to resize image: {}", e);
@@ -211,9 +224,7 @@ impl Gallery {
             .unwrap_or("image/jpeg");
 
         // Serve from cache storage
-        Ok(self
-            .serve_from_cache_storage(cache_key, mime_type)
-            .await)
+        Ok(self.serve_from_cache_storage(cache_key, mime_type).await)
     }
 
     /// Check if cache file is valid using storage abstraction.
@@ -221,7 +232,11 @@ impl Gallery {
     /// Returns true if the cache file exists and is newer than the source.
     async fn is_cache_valid_storage(&self, cache_filename: &str, source_path: &Path) -> bool {
         // Check if cache exists
-        let cache_exists = self.cache_storage.exists(cache_filename).await.unwrap_or(false);
+        let cache_exists = self
+            .cache_storage
+            .exists(cache_filename)
+            .await
+            .unwrap_or(false);
         if !cache_exists {
             return false;
         }
@@ -249,7 +264,11 @@ impl Gallery {
     }
 
     /// Serve file from cache storage with streaming
-    pub(crate) async fn serve_from_cache_storage(&self, path: &str, content_type: &str) -> Response {
+    pub(crate) async fn serve_from_cache_storage(
+        &self,
+        path: &str,
+        content_type: &str,
+    ) -> Response {
         // Get metadata for content-length
         let size = match self.cache_storage.metadata(path).await {
             Ok(meta) => Some(meta.size),
@@ -302,12 +321,13 @@ impl Gallery {
         let hash = self.generate_cache_key(cache_key, output_format.extension());
 
         // Use the enhanced CacheType system for consistent filename generation
-        let cache_filename = if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
-            cache_type.filename(Some(&hash))
-        } else {
-            // Fallback to old method if cache_key format is unexpected
-            format!("{}.{}", hash, output_format.extension())
-        };
+        let cache_filename =
+            if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
+                cache_type.filename(Some(&hash))
+            } else {
+                // Fallback to old method if cache_key format is unexpected
+                format!("{}.{}", hash, output_format.extension())
+            };
 
         // Ensure cache directory exists
         self.cache_storage.create_dir("").await?;

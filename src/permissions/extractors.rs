@@ -387,7 +387,8 @@ mod tests {
         gallery_config.cache_directory = ".".to_string();
 
         let cache_storage = create_test_storage(&gallery_config.cache_directory);
-        let gallery = std::sync::Arc::new(crate::gallery::Gallery::new(gallery_config, cache_storage));
+        let gallery =
+            std::sync::Arc::new(crate::gallery::Gallery::new(gallery_config, cache_storage));
         let mut galleries = std::collections::HashMap::new();
         galleries.insert("test".to_string(), gallery);
 

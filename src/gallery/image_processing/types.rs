@@ -198,12 +198,16 @@ impl LoadedImage {
         use crate::gallery::image_processing::formats;
 
         match format {
-            OutputFormat::Jpeg => {
-                formats::jpeg::encode_with_profile(&self.image, jpeg_quality, self.icc_profile.as_deref())
-            }
-            OutputFormat::WebP => {
-                formats::webp::encode_with_profile(&self.image, webp_quality, self.icc_profile.as_deref())
-            }
+            OutputFormat::Jpeg => formats::jpeg::encode_with_profile(
+                &self.image,
+                jpeg_quality,
+                self.icc_profile.as_deref(),
+            ),
+            OutputFormat::WebP => formats::webp::encode_with_profile(
+                &self.image,
+                webp_quality,
+                self.icc_profile.as_deref(),
+            ),
             OutputFormat::Png => formats::png::encode(&self.image),
             #[cfg(feature = "avif")]
             OutputFormat::Avif => {

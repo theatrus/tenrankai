@@ -180,9 +180,9 @@ impl SyncStorageReader {
             return Ok(Bytes::new());
         }
 
-        let data = self.handle.block_on(async {
-            self.storage.read_range(&self.path, offset, length).await
-        })?;
+        let data = self
+            .handle
+            .block_on(async { self.storage.read_range(&self.path, offset, length).await })?;
 
         self.cache.insert(chunk_idx, data.clone());
 
@@ -260,9 +260,9 @@ impl Read for SyncStorageReader {
 
         while remaining > 0 && self.position < self.size {
             let chunk_idx = self.chunk_index(self.position);
-            let chunk_data = self.fetch_chunk(chunk_idx).map_err(|e| {
-                io::Error::other(format!("Storage error: {}", e))
-            })?;
+            let chunk_data = self
+                .fetch_chunk(chunk_idx)
+                .map_err(|e| io::Error::other(format!("Storage error: {}", e)))?;
 
             let chunk_start = self.chunk_offset(chunk_idx);
             let offset_in_chunk = (self.position - chunk_start) as usize;
@@ -417,12 +417,7 @@ impl SyncStorageAdapter {
     }
 
     /// Write data synchronously.
-    pub fn write_sync(
-        &self,
-        path: &str,
-        data: Bytes,
-        handle: &Handle,
-    ) -> Result<(), StorageError> {
+    pub fn write_sync(&self, path: &str, data: Bytes, handle: &Handle) -> Result<(), StorageError> {
         storage_write_sync(&self.storage, path, data, handle)
     }
 
@@ -483,7 +478,11 @@ mod tests {
 
             // Test exists
             assert!(storage_exists_sync(&storage_clone, "test.txt", &handle));
-            assert!(!storage_exists_sync(&storage_clone, "nonexistent.txt", &handle));
+            assert!(!storage_exists_sync(
+                &storage_clone,
+                "nonexistent.txt",
+                &handle
+            ));
 
             Ok::<_, StorageError>(())
         })
@@ -594,8 +593,12 @@ mod tests {
 
         let result = tokio::task::spawn_blocking(move || {
             // Use small chunk size to test chunking
-            let mut reader =
-                SyncStorageReader::open_with_chunk_size(&storage_clone, "chunked.bin", &handle, 64)?;
+            let mut reader = SyncStorageReader::open_with_chunk_size(
+                &storage_clone,
+                "chunked.bin",
+                &handle,
+                64,
+            )?;
 
             // Read entire file in small pieces
             let mut buffer = Vec::new();
