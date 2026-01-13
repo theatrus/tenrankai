@@ -309,10 +309,7 @@ fn run_frontend_linting(frontend_dir: &Path) {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        panic!(
-            "Frontend linting failed:\n{}\n{}",
-            stdout, stderr
-        );
+        panic!("Frontend linting failed:\n{}\n{}", stdout, stderr);
     }
 
     println!("cargo:warning=Frontend linting passed.");
