@@ -7,6 +7,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
 use tokio::sync::RwLock;
 
 use crate::storage::{DynStorage, StorageError};
@@ -21,17 +22,20 @@ pub enum CacheError {
     Serialization(#[from] serde_json::Error),
 }
 
-/// Generic JSON-backed cache with dirty tracking.
+/// Generic JSON-backed cache with dirty tracking and staleness detection.
 ///
 /// This cache provides:
 /// - Thread-safe read/write access via RwLock
 /// - Automatic dirty flag tracking on mutations
 /// - JSON serialization to/from storage
 /// - Lazy persistence (only saves when dirty)
+/// - Staleness detection to reload from storage if newer
 pub struct PersistentCache<V> {
     data: Arc<RwLock<HashMap<String, V>>>,
     dirty: Arc<AtomicBool>,
     filename: String,
+    /// Timestamp of when cache was last loaded or saved
+    last_sync: Arc<RwLock<Option<SystemTime>>>,
 }
 
 impl<V> PersistentCache<V>
@@ -44,6 +48,7 @@ where
             data: Arc::new(RwLock::new(HashMap::new())),
             dirty: Arc::new(AtomicBool::new(false)),
             filename: filename.into(),
+            last_sync: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -56,6 +61,14 @@ where
                 let data: HashMap<String, V> = serde_json::from_str(&json)?;
                 *self.data.write().await = data;
                 self.dirty.store(false, Ordering::Relaxed);
+                // Track when we loaded (use storage mtime if available, else now)
+                let mtime = storage
+                    .metadata(&self.filename)
+                    .await
+                    .ok()
+                    .and_then(|m| m.last_modified)
+                    .unwrap_or_else(SystemTime::now);
+                *self.last_sync.write().await = Some(mtime);
                 Ok(())
             }
             Err(StorageError::NotFound(_)) => Ok(()), // Empty cache is fine
@@ -74,6 +87,7 @@ where
         let cache = self.data.read().await;
         let json = serde_json::to_string_pretty(&*cache)?;
         storage.write(&self.filename, Bytes::from(json)).await?;
+        *self.last_sync.write().await = Some(SystemTime::now());
         Ok(true)
     }
 
@@ -83,7 +97,54 @@ where
         let json = serde_json::to_string_pretty(&*cache)?;
         storage.write(&self.filename, Bytes::from(json)).await?;
         self.dirty.store(false, Ordering::Relaxed);
+        *self.last_sync.write().await = Some(SystemTime::now());
         Ok(())
+    }
+
+    /// Check if storage has a newer version of the cache file.
+    ///
+    /// Returns true if storage file is newer than our last sync, false otherwise.
+    /// Returns false if we've never synced or if storage file doesn't exist.
+    pub async fn is_storage_newer(&self, storage: &DynStorage) -> bool {
+        let last_sync = *self.last_sync.read().await;
+        let Some(last_sync) = last_sync else {
+            return false; // Never synced, can't compare
+        };
+
+        match storage.metadata(&self.filename).await {
+            Ok(meta) => {
+                if let Some(storage_mtime) = meta.last_modified {
+                    storage_mtime > last_sync
+                } else {
+                    false // No mtime available, assume not newer
+                }
+            }
+            Err(_) => false, // File doesn't exist or error
+        }
+    }
+
+    /// Load from storage if the storage file is newer than our last sync.
+    ///
+    /// This is useful before expensive refresh operations - if another process
+    /// has already refreshed and saved the cache, we can just reload it.
+    ///
+    /// Returns Ok(true) if cache was reloaded, Ok(false) if storage wasn't newer.
+    pub async fn load_if_newer(&self, storage: &DynStorage) -> Result<bool, CacheError> {
+        if self.is_storage_newer(storage).await {
+            tracing::info!(
+                "Storage cache '{}' is newer than in-memory, reloading",
+                self.filename
+            );
+            self.load(storage).await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Get the last sync timestamp (when cache was last loaded or saved).
+    pub async fn last_sync_time(&self) -> Option<SystemTime> {
+        *self.last_sync.read().await
     }
 
     /// Get an item from the cache.

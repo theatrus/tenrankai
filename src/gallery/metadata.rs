@@ -419,6 +419,29 @@ impl Gallery {
     }
 
     pub async fn refresh_all_metadata(&self) -> Result<(), super::GalleryError> {
+        // Check if storage has a newer cache file before expensive refresh
+        match self.image_cache.load_if_newer(&self.cache_storage).await {
+            Ok(true) => {
+                info!(
+                    "Image metadata cache reloaded from storage ({} entries)",
+                    self.image_cache.len().await
+                );
+                // Still need to rebuild index from reloaded cache
+                let all_paths: Vec<String> = {
+                    let cache = self.image_cache.read_all().await;
+                    cache.keys().cloned().collect()
+                };
+                let mut indexer = self.image_indexer.write().await;
+                indexer.build_index(&all_paths);
+                return Ok(());
+            }
+            Ok(false) => {} // Storage not newer, proceed with refresh
+            Err(e) => {
+                tracing::warn!("Failed to check image cache staleness: {}", e);
+                // Continue with refresh on error
+            }
+        }
+
         info!("Starting metadata refresh (checking modification dates)");
         let start_time = std::time::Instant::now();
         let mut refreshed_count = 0;
@@ -591,8 +614,28 @@ impl Gallery {
     /// Refresh folder cache with metadata, contents, counts, and preview images
     /// This does a single recursive listing and pre-computes everything.
     /// This must be called before any gallery operations can succeed.
+    ///
+    /// Before doing an expensive refresh, this checks if the cache storage has
+    /// a newer version of the cache file (e.g., from another process). If so,
+    /// it reloads from storage instead of regenerating.
     pub async fn refresh_folder_cache(&self) -> Result<(), super::GalleryError> {
         use std::collections::{HashMap, HashSet};
+
+        // Check if storage has a newer cache file before expensive refresh
+        match self.folder_cache.load_if_newer(&self.cache_storage).await {
+            Ok(true) => {
+                info!(
+                    "Folder cache reloaded from storage ({} entries)",
+                    self.folder_cache.len().await
+                );
+                return Ok(());
+            }
+            Ok(false) => {} // Storage not newer, proceed with refresh
+            Err(e) => {
+                tracing::warn!("Failed to check folder cache staleness: {}", e);
+                // Continue with refresh on error
+            }
+        }
 
         info!("Refreshing folder cache (metadata, contents, counts, previews)");
         let start_time = std::time::Instant::now();
