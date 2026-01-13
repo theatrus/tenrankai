@@ -55,14 +55,25 @@ pub struct TemplateConfig {
 }
 
 /// Static files directory configuration with custom serialization
+///
+/// Directories can be filesystem paths or S3 URLs:
+/// - `"static"` - relative filesystem path
+/// - `"/var/data/static"` - absolute filesystem path
+/// - `"s3://bucket/prefix"` - S3 bucket with optional prefix
+/// - `"s3://bucket/prefix?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StaticConfig {
     #[serde(
-        deserialize_with = "super::serialization::deserialize_static_directories",
-        serialize_with = "super::serialization::serialize_static_directories"
+        deserialize_with = "super::serialization::deserialize_storage_urls",
+        serialize_with = "super::serialization::serialize_storage_urls"
     )]
-    pub directories: Vec<PathBuf>,
+    pub directories: Vec<String>,
+    /// Whether to use signed URL redirects for S3 backends (default: false).
+    /// When true, requests for S3-backed files return a 307 redirect to a signed S3 URL.
+    /// When false, the server proxies the content through itself.
+    #[serde(default)]
+    pub use_redirects: bool,
 }
 
 /// Gallery system configuration with image processing settings

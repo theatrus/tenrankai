@@ -78,7 +78,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             directories: vec![templates_dir],
         },
         static_files: tenrankai::StaticConfig {
-            directories: vec![static_dir],
+            directories: vec![static_dir.to_string_lossy().to_string()],
         },
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),

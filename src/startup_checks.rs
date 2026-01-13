@@ -53,8 +53,18 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
         }
     }
 
-    // Check static files directories
-    for (index, static_dir) in config.static_files.directories.iter().enumerate() {
+    // Check static files directories (filesystem paths only, not S3 URLs)
+    for (index, static_url) in config.static_files.directories.iter().enumerate() {
+        // Skip S3 URLs - they are checked at runtime
+        if static_url.starts_with("s3://") {
+            info!(
+                "Static files directory {} is S3 storage: {}",
+                index, static_url
+            );
+            continue;
+        }
+
+        let static_dir = std::path::Path::new(static_url);
         if !static_dir.exists() {
             warn!(
                 "Static files directory {} does not exist: {:?}",
@@ -69,11 +79,17 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
         }
     }
 
-    // Check for required files across all static directories
+    // Check for required files across all static directories (filesystem only)
     let required_files = vec!["DejaVuSans.ttf"];
     for file in required_files {
         let mut file_found = false;
-        for static_dir in &config.static_files.directories {
+        for static_url in &config.static_files.directories {
+            // Skip S3 URLs
+            if static_url.starts_with("s3://") {
+                continue;
+            }
+
+            let static_dir = std::path::Path::new(static_url);
             let file_path = static_dir.join(file);
             if file_path.exists() {
                 info!("Required file found: {:?}", file_path);

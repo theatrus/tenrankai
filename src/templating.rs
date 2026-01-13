@@ -456,18 +456,12 @@ pub async fn template_with_gallery_handler(
             &path
         };
 
-        // Check each static directory in order
-        for (index, static_dir) in app_state.static_handler.static_dirs.iter().enumerate() {
-            let static_file_path = static_dir.join(check_path);
-            if static_file_path.exists() && static_file_path.starts_with(static_dir) {
-                debug!(
-                    "Found static file for path: {} in directory {}, serving it",
-                    path, index
-                );
-                // Pass the path without the "static/" prefix to the serve method
-                // Templates don't have version parameters, so pass false
-                return app_state.static_handler.serve(check_path, false).await;
-            }
+        // Check if file exists in any storage backend
+        if app_state.static_handler.exists(check_path).await {
+            debug!("Found static file for path: {}, serving it", path);
+            // Pass the path without the "static/" prefix to the serve method
+            // Templates don't have version parameters, so pass false
+            return app_state.static_handler.serve(check_path, false).await;
         }
 
         debug!(

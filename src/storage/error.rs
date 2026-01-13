@@ -32,3 +32,16 @@ impl StorageError {
         matches!(self, StorageError::NotFound(_))
     }
 }
+
+impl From<StorageError> for std::io::Error {
+    fn from(err: StorageError) -> Self {
+        match err {
+            StorageError::NotFound(path) => std::io::Error::new(std::io::ErrorKind::NotFound, path),
+            StorageError::PermissionDenied(msg) => {
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, msg)
+            }
+            StorageError::Io(e) => e,
+            StorageError::InvalidUrl(msg) | StorageError::Other(msg) => std::io::Error::other(msg),
+        }
+    }
+}

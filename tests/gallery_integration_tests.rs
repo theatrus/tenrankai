@@ -95,7 +95,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
 
     // Set template directory to the actual project templates
     config.templates.directories = vec![PathBuf::from("templates")];
-    config.static_files.directories = vec![PathBuf::from("static")];
+    config.static_files.directories = vec!["static".to_string()];
 
     config
 }

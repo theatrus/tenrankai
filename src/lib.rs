@@ -93,8 +93,18 @@ pub async fn create_app(
 ) -> axum::Router {
     let mut template_engine = templating::TemplateEngine::new(config.templates.directories.clone());
 
+    // Create static file handler from storage URLs (supports both filesystem and S3)
     let static_handler =
-        static_files::StaticFileHandler::new(config.static_files.directories.clone());
+        match static_files::StaticFileHandler::from_urls(config.static_files.directories.clone())
+            .await
+        {
+            Ok(handler) => handler.with_redirects(config.static_files.use_redirects),
+            Err(e) => {
+                tracing::error!("Failed to initialize static file storage: {}", e);
+                // Fall back to empty handler
+                static_files::StaticFileHandler::from_paths(vec![])
+            }
+        };
 
     // Ensure file versions are loaded before proceeding
     static_handler.refresh_file_versions().await;
@@ -110,7 +120,8 @@ pub async fn create_app(
 
     let template_engine = Arc::new(template_engine);
 
-    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directories.clone());
+    // Create favicon renderer using the same storage backends
+    let favicon_renderer = favicon::FaviconRenderer::new(static_handler.storages().to_vec());
 
     // Use provided galleries or create new ones
     let galleries_arc = if let Some(provided_galleries) = galleries {

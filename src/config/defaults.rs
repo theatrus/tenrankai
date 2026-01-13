@@ -158,7 +158,8 @@ impl Default for Config {
                 directories: vec![PathBuf::from("templates")],
             },
             static_files: StaticConfig {
-                directories: vec![PathBuf::from("static")],
+                directories: vec!["static".to_string()],
+                use_redirects: false,
             },
             galleries: Some(vec![GallerySystemConfig {
                 name: "default".to_string(),

@@ -1865,16 +1865,23 @@ roles = ["viewer"]
             openai: None,
         };
 
+        // Convert static directory strings to PathBufs for testing
+        let static_paths: Vec<std::path::PathBuf> = config
+            .static_files
+            .directories
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+        let static_handler = crate::static_files::StaticFileHandler::from_paths(static_paths);
+
         let app_state = AppState {
             template_engine: Arc::new(crate::templating::TemplateEngine::new(
                 config.templates.directories.clone(),
             )),
-            static_handler: crate::static_files::StaticFileHandler::new(
-                config.static_files.directories.clone(),
-            ),
+            static_handler: static_handler.clone(),
             galleries: Arc::new(galleries),
             favicon_renderer: crate::favicon::FaviconRenderer::new(
-                config.static_files.directories.clone(),
+                static_handler.storages().to_vec(),
             ),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
