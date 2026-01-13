@@ -79,6 +79,84 @@ Static files can redirect to S3 presigned URLs for direct client download, reduc
 
 ---
 
+## Gallery Source File Access Analysis
+
+Before implementing gallery source storage, we need to understand all file access patterns:
+
+### 1. Directory Scanning (Currently WalkDir - Sync)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `core.rs:286` | `get_all_images()` | `WalkDir::new()` |
+| `core.rs:324` | `collect_hidden_folders()` | `WalkDir::new()` |
+| `core.rs:364` | `get_all_images_for_user()` | `WalkDir::new()` |
+| `metadata.rs:349` | `background_refresh_metadata()` | `WalkDir::new()` |
+| `metadata.rs:395` | `refresh_all_metadata()` | `WalkDir::new()` |
+
+**Migration**: Replace with `storage.list_recursive()` (async).
+
+### 2. Folder Metadata (`_folder.md`)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `core.rs:732` | `read_folder_metadata_full()` | `tokio::fs::read_to_string` |
+| `core.rs:333` | `collect_hidden_folders()` | `std::fs::read_to_string` |
+
+Parses TOML front matter for: `hidden`, `title`, `permissions`.
+
+**Migration**: `storage.read()` - small text files, async.
+
+### 3. Image Markdown Sidecars (`image.jpg.md` or `image.md`)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `metadata_sources.rs:131` | `read_image_markdown_metadata()` | `tokio::fs::read_to_string` |
+| `metadata.rs:557-564` | `is_metadata_stale()` | `tokio::fs::metadata` |
+
+**Migration**: `storage.read()` for content, `storage.metadata()` for mtime.
+
+### 4. XMP Sidecar Files (`image.jpg.xmp`)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `metadata_sources.rs:10` | `read_xmp_metadata()` | `tokio::fs::read_to_string` |
+| `metadata.rs:544-547` | `is_metadata_stale()` | `tokio::fs::metadata` |
+| `core.rs:463-470` | `get_item_modification_time()` | `tokio::fs::metadata` |
+
+**Migration**: `storage.read()` for content, `storage.metadata()` for mtime.
+
+### 5. EXIF Extraction (Sync - in spawn_blocking)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `metadata.rs:54` | `extract_all_exif_data()` | `rexif::parse_file(path)` |
+| `avif.rs:1062` | `extract_exif_data()` | `std::fs::read(path)` |
+
+**Migration**: Use `SyncStorageReader` with `Streaming` strategy - only needs ~64KB from start.
+
+### 6. Image Loading (Sync - in spawn_blocking)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `types.rs:40` | `LoadedImage::load()` | `std::fs::File::open()` |
+| `jpeg.rs:10` | `extract_icc_profile()` | `std::fs::File::open()` |
+| `png.rs:11` | `extract_icc_profile()` | `std::fs::File::open()` |
+| `avif.rs:105` | `read_avif_info()` | `std::fs::read()` |
+
+**Migration**: Use `SyncStorageReader` with `FullFetch` strategy for processing.
+
+### 7. File Metadata (mtime for staleness)
+
+| Location | Function | Current API |
+|----------|----------|-------------|
+| `core.rs:781,797` | `get_image_metadata_cached()` | `tokio::fs::metadata` |
+| `metadata.rs:527` | `is_metadata_stale()` | `tokio::fs::metadata` |
+| `resize.rs:464` | `is_cache_valid_by_key()` | `tokio::fs::metadata` |
+
+**Migration**: `storage.metadata()` returns `last_modified`.
+
+---
+
 ## Pending Phases
 
 ### Phase 3: Refactor LoadedImage
@@ -87,9 +165,8 @@ Static files can redirect to S3 presigned URLs for direct client download, reduc
 
 **Challenge**: Image decoding requires `Read + Seek`. S3 doesn't support seeking natively.
 
-**Solution**: `SyncStorageReader` with range-based seeking:
+**Solution**: `SyncStorageReader` with range-based seeking (already implemented):
 ```rust
-// src/storage/sync_adapter.rs - Already implemented
 pub struct SyncStorageReader {
     storage: DynStorage,
     path: String,
@@ -104,27 +181,61 @@ impl Read for SyncStorageReader { ... }
 impl Seek for SyncStorageReader { ... }
 ```
 
-**Files to modify:**
-- `src/gallery/image_processing/types.rs` - `LoadedImage::load()` accepts storage
-- `src/gallery/image_processing/formats/*.rs` - Use reader instead of path
+**Changes:**
+1. `LoadedImage::load()` → `LoadedImage::load_from_storage(storage, path, handle)`
+2. ICC extractors take `impl Read + Seek` instead of `&Path`
+3. AVIF loader uses storage reader
 
-### Phase 4: Refactor Gallery Module
+**Files to modify:**
+- `src/gallery/image_processing/types.rs`
+- `src/gallery/image_processing/formats/jpeg.rs`
+- `src/gallery/image_processing/formats/png.rs`
+- `src/gallery/image_processing/formats/avif.rs`
+
+### Phase 4: Refactor Gallery Scanning
 
 **Goal**: Gallery source directories from storage.
 
-**Changes needed:**
-- `source_directory` becomes storage URL string
-- `scan_directory()` uses `storage.list_recursive()`
-- Image paths become storage keys
-- Filesystem `mtime` → storage `last_modified`
+**Changes:**
+1. `source_directory: PathBuf` → `source_directory: String` (storage URL)
+2. Add `source_storage: DynStorage` field to `Gallery`
+3. Replace `WalkDir` with `storage.list_recursive()`
+4. `Path::exists()` → `storage.exists()`
+5. `fs::metadata().modified()` → `storage.metadata().last_modified`
 
-### Phase 5: Refactor Image Serving
+**Migration for WalkDir:**
+```rust
+// Before (sync)
+for entry in WalkDir::new(&full_path).into_iter().flatten() {
+    if entry.file_type().is_file() { ... }
+}
 
-**Goal**: Serve original images from storage.
+// After (async)
+let entries = storage.list_recursive("").await?;
+for entry in entries.iter().filter(|e| !e.is_dir) {
+    ...
+}
+```
 
-**Options:**
-1. **Stream through server**: `storage.read_stream()` → axum Body
-2. **Redirect to signed URL**: S3 presigned URLs for direct download
+**Files to modify:**
+- `src/config/types.rs` - `source_directory` type
+- `src/gallery/mod.rs` - Add `source_storage` field
+- `src/gallery/core.rs` - All WalkDir usages
+- `src/gallery/metadata.rs` - Refresh functions
+
+### Phase 5: Refactor Metadata & Sidecars
+
+**Goal**: Load XMP, markdown, and folder metadata from storage.
+
+**Changes:**
+1. `metadata_sources.rs` functions take storage parameter
+2. `read_folder_metadata_full()` uses storage
+3. `is_metadata_stale()` uses `storage.metadata()`
+
+**Files to modify:**
+- `src/gallery/metadata_sources.rs`
+- `src/gallery/core.rs`
+- `src/gallery/metadata.rs`
 
 ---
 
