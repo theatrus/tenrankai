@@ -1184,31 +1184,26 @@ pub fn encode_to_bytes(...) -> Result<Vec<u8>> { ... }
 
 ## Phase 4: Refactor Gallery Module
 
-### 4.1 Gallery Configuration Update
+### 4.1 Gallery Configuration Update (URL-Based)
 
 ```toml
-# config.toml
+# config.toml - Simple URL-based configuration
 
 [[galleries]]
 name = "main"
 url_prefix = "/gallery"
 
-# Storage configuration for source images
-[galleries.source_storage]
-type = "filesystem"           # or "s3"
-path = "photos"               # for filesystem
-# bucket = "my-bucket"        # for s3
-# prefix = "galleries/main"   # for s3
-# region = "us-east-1"        # for s3
+# Storage URLs (filesystem paths or s3:// URLs)
+source_directory = "photos"                    # Local filesystem
+cache_directory = "cache/main"                 # Local filesystem
 
-# Storage configuration for cache
-[galleries.cache_storage]
-type = "filesystem"
-path = "cache/main"
-# Or:
-# type = "s3"
-# bucket = "my-cache-bucket"
-# prefix = "cache/main"
+# Or with S3:
+# source_directory = "s3://my-photos/galleries/main"
+# cache_directory = "s3://my-cache/galleries/main?region=us-west-2"
+
+# Mixed example: local source, S3 cache for CDN
+# source_directory = "/mnt/photos"
+# cache_directory = "s3://cdn-cache/main"
 ```
 
 ### 4.2 Gallery Struct Changes
@@ -1228,8 +1223,12 @@ pub struct Gallery {
 
 impl Gallery {
     pub async fn new(config: GalleryConfig) -> Result<Self, GalleryError> {
-        let source_storage = create_storage(&config.source_storage).await?;
-        let cache_storage = create_storage(&config.cache_storage).await?;
+        // Parse URL strings into storage backends
+        let source_url = StorageUrl::parse(&config.source_directory)?;
+        let cache_url = StorageUrl::parse(&config.cache_directory)?;
+
+        let source_storage = source_url.into_storage().await?;
+        let cache_storage = cache_url.into_storage().await?;
 
         Ok(Self {
             name: config.name.clone(),
@@ -1239,18 +1238,6 @@ impl Gallery {
             config,
             metadata_cache: Arc::new(RwLock::new(HashMap::new())),
         })
-    }
-}
-
-fn create_storage(config: &StorageConfig) -> Arc<dyn Storage> {
-    match config.storage_type.as_str() {
-        "filesystem" => Arc::new(FilesystemStorage::new(&config.path)),
-        "s3" => Arc::new(S3Storage::new(
-            config.bucket.clone().unwrap(),
-            config.prefix.clone().unwrap_or_default(),
-            config.region.clone(),
-        ).await?),
-        _ => panic!("Unknown storage type"),
     }
 }
 ```
@@ -1425,42 +1412,521 @@ impl Gallery {
 
 ---
 
-## Phase 7: Configuration Schema
+## Phase 7: Configuration Schema (URL-Based)
 
-### 7.1 Storage Configuration Types
+### 7.1 Storage URL Format
+
+Instead of complex nested configuration structures, storage locations are specified as URLs:
+
+```
+Filesystem:
+  photos                          → Local path "photos"
+  /absolute/path/to/photos        → Absolute filesystem path
+  file:///absolute/path/to/photos → Explicit file:// scheme
+
+S3:
+  s3://bucket-name/prefix         → S3 bucket with prefix
+  s3://bucket-name/prefix?region=us-east-1  → With region override
+  s3://bucket-name/prefix?endpoint=http://localhost:9000  → Custom endpoint (MinIO)
+```
+
+### 7.2 Storage URL Parsing
 
 ```rust
-// src/config.rs
+// src/storage/url.rs
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type")]
-pub enum StorageConfig {
-    #[serde(rename = "filesystem")]
-    Filesystem {
-        path: String,
-    },
-    #[serde(rename = "s3")]
+use url::Url;
+
+#[derive(Debug, Clone)]
+pub enum StorageUrl {
+    Filesystem { path: PathBuf },
     S3 {
         bucket: String,
-        #[serde(default)]
-        prefix: Option<String>,
-        #[serde(default)]
+        prefix: String,
         region: Option<String>,
-        #[serde(default)]
-        access_key_id: Option<String>,
-        #[serde(default)]
-        secret_access_key: Option<String>,
+        endpoint: Option<String>,
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct GalleryConfig {
+impl StorageUrl {
+    pub fn parse(s: &str) -> Result<Self, StorageError> {
+        // Check for s3:// scheme
+        if s.starts_with("s3://") {
+            let url = Url::parse(s).map_err(|e| StorageError::InvalidUrl(e.to_string()))?;
+            let bucket = url.host_str()
+                .ok_or_else(|| StorageError::InvalidUrl("missing bucket".into()))?
+                .to_string();
+            let prefix = url.path().trim_start_matches('/').to_string();
+
+            // Parse query params for options
+            let mut region = None;
+            let mut endpoint = None;
+            for (key, value) in url.query_pairs() {
+                match key.as_ref() {
+                    "region" => region = Some(value.to_string()),
+                    "endpoint" => endpoint = Some(value.to_string()),
+                    _ => {} // Ignore unknown params
+                }
+            }
+
+            Ok(StorageUrl::S3 { bucket, prefix, region, endpoint })
+        } else if s.starts_with("file://") {
+            // Explicit file:// URL
+            let path = s.strip_prefix("file://").unwrap();
+            Ok(StorageUrl::Filesystem { path: PathBuf::from(path) })
+        } else {
+            // Plain path = filesystem
+            Ok(StorageUrl::Filesystem { path: PathBuf::from(s) })
+        }
+    }
+
+    pub async fn into_storage(self) -> Result<Arc<dyn Storage>, StorageError> {
+        match self {
+            StorageUrl::Filesystem { path } => {
+                Ok(Arc::new(FilesystemStorage::new(path)))
+            }
+            StorageUrl::S3 { bucket, prefix, region, endpoint } => {
+                Ok(Arc::new(S3Storage::new(bucket, prefix, region, endpoint).await?))
+            }
+        }
+    }
+}
+
+// Custom deserializer for storage URLs
+impl<'de> Deserialize<'de> for StorageUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        StorageUrl::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+```
+
+### 7.3 Configuration Examples
+
+```toml
+# config.toml - Simple URL-based configuration
+
+# ============================================================
+# Gallery Configuration
+# ============================================================
+[[galleries]]
+name = "main"
+url_prefix = "/gallery"
+source_directory = "photos"                    # Local filesystem
+cache_directory = "cache/photos"               # Local filesystem
+
+# Or with S3:
+# source_directory = "s3://my-photos/galleries/main"
+# cache_directory = "s3://my-cache/galleries/main?region=us-west-2"
+
+# ============================================================
+# Static Files Configuration
+# ============================================================
+[static_files]
+# Array of storage locations (first match wins)
+directories = ["static-custom", "static"]
+
+# Or with S3 for custom overrides:
+# directories = ["s3://my-assets/static-custom", "static"]
+
+# ============================================================
+# Templates Configuration
+# ============================================================
+[templates]
+# Array of template locations (first match wins)
+directories = ["templates-custom", "templates"]
+
+# Or with S3:
+# directories = ["s3://my-assets/templates-custom", "templates"]
+
+# ============================================================
+# Posts Configuration
+# ============================================================
+[[posts]]
+name = "blog"
+source_directory = "posts/blog"                # Local filesystem
+url_prefix = "/blog"
+
+# Or with S3:
+# source_directory = "s3://my-content/posts/blog"
+```
+
+### 7.4 Mixed Storage Example
+
+Real-world deployment might use different backends for different purposes:
+
+```toml
+# Local source images, S3 cache (for CDN serving)
+[[galleries]]
+name = "main"
+url_prefix = "/gallery"
+source_directory = "/mnt/photos"               # Fast local NVMe
+cache_directory = "s3://cdn-cache/gallery?region=us-east-1"  # CDN-backed
+
+# S3 source images, local cache (for edge server)
+[[galleries]]
+name = "archive"
+url_prefix = "/archive"
+source_directory = "s3://photo-archive/originals"
+cache_directory = "/var/cache/tenrankai/archive"  # Local SSD cache
+
+# Static files from S3 with local fallback
+[static_files]
+directories = [
+    "s3://my-assets/static",    # Custom branding from S3
+    "static"                     # Built-in defaults
+]
+```
+
+---
+
+## Phase 7B: Static Files Storage Support
+
+Static files (`static/` directory) currently serve CSS, JavaScript, fonts, and other assets. Adding storage abstraction enables:
+- Serving custom assets from S3/CDN
+- Multi-directory cascading with mixed backends
+- Versioned deployments from object storage
+
+### 7B.1 Static File Handler Changes
+
+```rust
+// src/static_files.rs
+
+pub struct StaticFileHandler {
+    /// Storage backends in priority order (first match wins)
+    storages: Vec<Arc<dyn Storage>>,
+    /// File version cache for cache-busting
+    file_versions: Arc<RwLock<HashMap<String, u64>>>,
+}
+
+impl StaticFileHandler {
+    pub async fn new(directories: &[String]) -> Result<Self, StorageError> {
+        let mut storages = Vec::new();
+        for dir in directories {
+            let url = StorageUrl::parse(dir)?;
+            storages.push(url.into_storage().await?);
+        }
+        Ok(Self {
+            storages,
+            file_versions: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+
+    pub async fn serve(&self, path: &str, has_version: bool) -> Response {
+        // Try each storage in order
+        for storage in &self.storages {
+            match storage.read(path).await {
+                Ok(data) => {
+                    // Build response with appropriate headers
+                    return self.build_response(path, data, has_version);
+                }
+                Err(StorageError::NotFound(_)) => continue,
+                Err(e) => {
+                    tracing::error!("Storage error for {}: {}", path, e);
+                    continue;
+                }
+            }
+        }
+        // Not found in any storage
+        StatusCode::NOT_FOUND.into_response()
+    }
+
+    /// Refresh file versions from all storages for cache-busting
+    pub async fn refresh_file_versions(&self) {
+        let mut versions = HashMap::new();
+        for (idx, storage) in self.storages.iter().enumerate() {
+            if let Ok(entries) = storage.list_recursive("").await {
+                for entry in entries {
+                    if !entry.is_dir && (entry.path.ends_with(".css") || entry.path.ends_with(".js")) {
+                        // Only insert if not already present (first storage wins)
+                        if !versions.contains_key(&entry.path) {
+                            if let Some(meta) = entry.metadata {
+                                if let Some(mtime) = meta.last_modified {
+                                    let secs = mtime.duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0);
+                                    versions.insert(entry.path.clone(), secs);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        *self.file_versions.write().await = versions;
+    }
+}
+```
+
+### 7B.2 Static Files with S3 Redirect
+
+For S3-backed static files, we can use signed URL redirects:
+
+```rust
+impl StaticFileHandler {
+    pub async fn serve(&self, path: &str, has_version: bool) -> Response {
+        for storage in &self.storages {
+            // Check if file exists
+            if !storage.exists(path).await.unwrap_or(false) {
+                continue;
+            }
+
+            // Try redirect for S3 (reduces server bandwidth)
+            if storage.supports_redirect() {
+                if let Some(signed_url) = storage.signed_url(path, Duration::from_secs(86400)).await {
+                    return Response::builder()
+                        .status(StatusCode::TEMPORARY_REDIRECT)
+                        .header("Location", signed_url)
+                        .header("Cache-Control", "public, max-age=86400")
+                        .body(Body::empty())
+                        .unwrap();
+                }
+            }
+
+            // Fallback to proxying
+            if let Ok(data) = storage.read(path).await {
+                return self.build_response(path, data, has_version);
+            }
+        }
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+```
+
+---
+
+## Phase 7C: Template Storage Support
+
+Templates can also be loaded from object storage, enabling:
+- Remote template management without redeployment
+- A/B testing with different template sets
+- Multi-tenant customization
+
+### 7C.1 Template Engine Changes
+
+```rust
+// src/templating.rs
+
+pub struct TemplateEngine {
+    /// Storage backends for templates (first match wins)
+    storages: Vec<Arc<dyn Storage>>,
+    /// Compiled template cache
+    template_cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
+    /// Partial templates
+    partials: Arc<RwLock<HashMap<String, String>>>,
+    /// Liquid parser
+    parser: liquid::Parser,
+}
+
+impl TemplateEngine {
+    pub async fn new(directories: &[String]) -> Result<Self, TemplateError> {
+        let mut storages = Vec::new();
+        for dir in directories {
+            let url = StorageUrl::parse(dir)?;
+            storages.push(url.into_storage().await?);
+        }
+
+        let engine = Self {
+            storages,
+            template_cache: Arc::new(RwLock::new(HashMap::new())),
+            partials: Arc::new(RwLock::new(HashMap::new())),
+            parser: Self::create_parser(),
+        };
+
+        // Load partials on startup
+        engine.load_partials().await?;
+
+        Ok(engine)
+    }
+
+    async fn load_template(&self, path: &str) -> Result<String, TemplateError> {
+        // Try each storage in order
+        for storage in &self.storages {
+            match storage.read(path).await {
+                Ok(data) => {
+                    let content = String::from_utf8(data.to_vec())
+                        .map_err(|e| TemplateError::InvalidTemplate(e.to_string()))?;
+                    return Ok(content);
+                }
+                Err(StorageError::NotFound(_)) => continue,
+                Err(e) => {
+                    tracing::warn!("Storage error loading template {}: {}", path, e);
+                    continue;
+                }
+            }
+        }
+        Err(TemplateError::NotFound(path.to_string()))
+    }
+
+    async fn load_partials(&self) -> Result<(), TemplateError> {
+        let mut all_partials = HashMap::new();
+
+        // Scan partials from all storages (first match wins)
+        for storage in &self.storages {
+            if let Ok(entries) = storage.list_recursive("partials").await {
+                for entry in entries {
+                    if !entry.is_dir && entry.path.ends_with(".liquid") {
+                        let partial_name = entry.path
+                            .strip_prefix("partials/")
+                            .unwrap_or(&entry.path)
+                            .strip_suffix(".liquid")
+                            .unwrap_or(&entry.path)
+                            .to_string();
+
+                        // Only insert if not already present
+                        if !all_partials.contains_key(&partial_name) {
+                            if let Ok(data) = storage.read(&format!("partials/{}", entry.path)).await {
+                                if let Ok(content) = String::from_utf8(data.to_vec()) {
+                                    all_partials.insert(partial_name, content);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        *self.partials.write().await = all_partials;
+        Ok(())
+    }
+}
+```
+
+### 7C.2 Template Caching with Storage
+
+For S3-backed templates, caching is important to avoid repeated fetches:
+
+```rust
+struct CachedTemplate {
+    content: String,
+    compiled: liquid::Template,
+    etag: Option<String>,
+    fetched_at: Instant,
+}
+
+impl TemplateEngine {
+    async fn get_template(&self, path: &str) -> Result<liquid::Template, TemplateError> {
+        let cache = self.template_cache.read().await;
+
+        // Check cache freshness (5 minute TTL for S3 templates)
+        if let Some(cached) = cache.get(path) {
+            if cached.fetched_at.elapsed() < Duration::from_secs(300) {
+                return Ok(cached.compiled.clone());
+            }
+        }
+        drop(cache);
+
+        // Fetch and compile
+        let content = self.load_template(path).await?;
+        let compiled = self.parser.parse(&content)
+            .map_err(|e| TemplateError::ParseError(e.to_string()))?;
+
+        // Update cache
+        let mut cache = self.template_cache.write().await;
+        cache.insert(path.to_string(), CachedTemplate {
+            content,
+            compiled: compiled.clone(),
+            etag: None,
+            fetched_at: Instant::now(),
+        });
+
+        Ok(compiled)
+    }
+}
+```
+
+---
+
+## Phase 7D: Posts Storage Support
+
+The posts/blog system can also use storage abstraction for markdown files.
+
+### 7D.1 Posts Manager Changes
+
+```rust
+// src/posts/core.rs
+
+pub struct PostsManager {
     pub name: String,
     pub url_prefix: String,
-    pub source_storage: StorageConfig,
-    pub cache_storage: StorageConfig,
-    // ... existing fields
+    /// Storage for post markdown files
+    storage: Arc<dyn Storage>,
+    /// Cached post index
+    posts_cache: Arc<RwLock<Vec<PostSummary>>>,
 }
+
+impl PostsManager {
+    pub async fn new(config: &PostsConfig) -> Result<Self, PostsError> {
+        let url = StorageUrl::parse(&config.source_directory)?;
+        let storage = url.into_storage().await?;
+
+        let manager = Self {
+            name: config.name.clone(),
+            url_prefix: config.url_prefix.clone(),
+            storage,
+            posts_cache: Arc::new(RwLock::new(Vec::new())),
+        };
+
+        // Initial scan
+        manager.refresh_posts().await?;
+
+        Ok(manager)
+    }
+
+    pub async fn refresh_posts(&self) -> Result<(), PostsError> {
+        let mut posts = Vec::new();
+
+        // List all markdown files
+        let entries = self.storage.list_recursive("").await?;
+        for entry in entries {
+            if !entry.is_dir && entry.path.ends_with(".md") {
+                if let Ok(data) = self.storage.read(&entry.path).await {
+                    if let Ok(content) = String::from_utf8(data.to_vec()) {
+                        if let Some(post) = self.parse_post(&entry.path, &content) {
+                            posts.push(post);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by date descending
+        posts.sort_by(|a, b| b.date.cmp(&a.date));
+
+        *self.posts_cache.write().await = posts;
+        Ok(())
+    }
+
+    pub async fn get_post(&self, slug: &str) -> Result<Post, PostsError> {
+        let path = format!("{}.md", slug);
+        let data = self.storage.read(&path).await
+            .map_err(|_| PostsError::NotFound(slug.to_string()))?;
+        let content = String::from_utf8(data.to_vec())
+            .map_err(|e| PostsError::InvalidContent(e.to_string()))?;
+        self.parse_full_post(&path, &content)
+            .ok_or_else(|| PostsError::InvalidContent("Failed to parse post".to_string()))
+    }
+}
+```
+
+### 7D.2 Posts Configuration
+
+```toml
+[[posts]]
+name = "blog"
+url_prefix = "/blog"
+source_directory = "posts/blog"              # Local filesystem
+
+# Or from S3:
+# source_directory = "s3://my-content/posts/blog"
+
+[[posts]]
+name = "docs"
+url_prefix = "/docs"
+source_directory = "s3://my-docs/documentation"  # S3-hosted docs
 ```
 
 ---
@@ -1831,6 +2297,8 @@ s3 = ["aws-sdk-s3", "aws-config"]
 - `src/storage/filesystem.rs` - Filesystem implementation
 - `src/storage/s3.rs` - S3 implementation
 - `src/storage/blocking.rs` - Sync wrapper
+- `src/storage/url.rs` - URL-based storage configuration parsing
+- `src/storage/cached_reader.rs` - Intelligent sync reader with sparse caching
 
 ### Files to Modify
 - `src/gallery/image_processing/types.rs` - LoadedImage refactoring
@@ -1839,11 +2307,33 @@ s3 = ["aws-sdk-s3", "aws-config"]
 - `src/gallery/cache.rs` - Use Storage for cache operations
 - `src/gallery/image_processing/serve.rs` - Use Storage for serving
 - `src/gallery/image_processing/resize.rs` - Use Storage for batch processing
-- `src/config.rs` - Add StorageConfig types
-- `Cargo.toml` - Add dependencies
+- `src/config.rs` - Add StorageConfig types, update to use URL strings
+- `src/static_files.rs` - Multi-backend static file handler with redirect support
+- `src/templating.rs` - Multi-backend template loading with caching
+- `src/posts/core.rs` - Storage-backed posts manager
+- `Cargo.toml` - Add dependencies (url, object_store, aws-sdk-s3)
 
 ### Estimated Scope
-- ~15 files modified
-- ~4 new files created
-- ~2000 lines of new code
-- ~500 lines of modified code
+- ~18 files modified
+- ~6 new files created
+- ~2500 lines of new code
+- ~700 lines of modified code
+
+### Configuration Migration
+
+Old configuration style (deprecated):
+```toml
+[galleries.cache_storage]
+type = "s3"
+bucket = "my-bucket"
+prefix = "cache"
+```
+
+New URL-based configuration:
+```toml
+[[galleries]]
+source_directory = "photos"                    # Local filesystem
+cache_directory = "s3://my-bucket/cache"       # S3 with defaults
+# Or with options:
+# cache_directory = "s3://my-bucket/cache?region=us-west-2&endpoint=http://minio:9000"
+```
