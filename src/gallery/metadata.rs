@@ -1214,11 +1214,6 @@ mod tests {
         Arc::new(FilesystemStorage::new(path))
     }
 
-    fn create_test_storage_from_path(path: &std::path::Path) -> crate::storage::DynStorage {
-        std::fs::create_dir_all(path).ok();
-        Arc::new(FilesystemStorage::new(path))
-    }
-
     #[tokio::test]
     async fn test_location_extraction_a7c5795() {
         // Create a test gallery instance
