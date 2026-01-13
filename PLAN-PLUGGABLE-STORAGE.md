@@ -1,5 +1,23 @@
 # Pluggable Storage Abstraction Plan
 
+## Status Overview
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Define Storage Traits | ✅ Complete |
+| Phase 2.1 | Filesystem Storage | ✅ Complete |
+| Phase 2.2 | S3 Storage | ✅ Complete |
+| Phase 3 | Refactor LoadedImage | ⏳ Not Started |
+| Phase 4 | Refactor Gallery Module | ⏳ Not Started |
+| Phase 5 | Refactor Image Serving | ⏳ Not Started |
+| Phase 6 | Refactor Cache Module | ⏳ Not Started |
+| Phase 7 | URL-Based Configuration | ✅ Complete |
+| Phase 7B | Static Files Storage | ✅ Complete |
+| Phase 7C | Template Storage | ⏳ Not Started |
+| Phase 7D | Posts Storage | ⏳ Not Started |
+| Phase 8 | Signed URL Redirects | ✅ Complete (static files) |
+| Phase 9 | Migration Strategy | 🔄 In Progress |
+
 ## Overview
 
 This plan outlines how to refactor Tenrankai's gallery, image processing, and cache code to support pluggable storage backends, enabling both local filesystem and S3 storage for galleries and caches.
@@ -60,7 +78,7 @@ For S3 support, we have three approaches:
 
 ---
 
-## Phase 1: Define Storage Traits
+## Phase 1: Define Storage Traits ✅
 
 ### 1.1 Core Storage Trait
 
@@ -183,9 +201,21 @@ impl BlockingStorage {
 }
 ```
 
+### 1.3 Implementation Notes
+
+**Implemented in commits `cdb27de` and `9825199`:**
+
+- Created `src/storage/mod.rs` with `Storage` trait (13 async methods)
+- Created `src/storage/error.rs` with `StorageError` enum
+- Created `src/storage/filesystem.rs` with `FilesystemStorage`
+- Added path traversal prevention via `normalize_path()` function
+- Added `BlockingStorage` wrapper for `spawn_blocking` contexts
+- Added `read_to_string()` helper method to trait
+- 15 unit tests for filesystem operations
+
 ---
 
-## Phase 2: Implement Storage Backends
+## Phase 2: Implement Storage Backends ✅
 
 ### 2.1 Filesystem Storage
 
@@ -558,6 +588,17 @@ impl Storage for S3Storage {
     }
 }
 ```
+
+### 2.3 Implementation Notes
+
+**Implemented in commits `9825199` and `d6165f2`:**
+
+- Created `src/storage/s3.rs` with full S3Storage implementation (~500 lines)
+- Supports custom endpoints for MinIO/LocalStack
+- Presigned URL generation for redirect-based serving
+- Handles AWS SDK v1 API patterns (BehaviorVersion, DateTime conversion)
+- Created `tests/s3_storage_integration.rs` with 8 comprehensive tests
+- Tests auto-skip if MinIO is not available (`minio_available()` check)
 
 ---
 
@@ -1412,7 +1453,7 @@ impl Gallery {
 
 ---
 
-## Phase 7: Configuration Schema (URL-Based)
+## Phase 7: Configuration Schema (URL-Based) ✅
 
 ### 7.1 Storage URL Format
 
@@ -1581,9 +1622,19 @@ directories = [
 ]
 ```
 
+### 7.5 Implementation Notes
+
+**Implemented in commit `9825199`:**
+
+- Created `src/storage/url.rs` with `StorageUrl` enum and parser
+- Supports filesystem paths, `file://` URLs, and `s3://` URLs
+- Query parameter parsing for `region` and `endpoint`
+- Serde serialization/deserialization for config files
+- Added `url = "2"` dependency for URL parsing
+
 ---
 
-## Phase 7B: Static Files Storage Support
+## Phase 7B: Static Files Storage Support ✅
 
 Static files (`static/` directory) currently serve CSS, JavaScript, fonts, and other assets. Adding storage abstraction enables:
 - Serving custom assets from S3/CDN
@@ -1695,6 +1746,23 @@ impl StaticFileHandler {
     }
 }
 ```
+
+### 7B.3 Implementation Notes
+
+**Implemented in commit `27bc262`:**
+
+- `StaticFileHandler` refactored to use `Vec<DynStorage>` instead of `Vec<PathBuf>`
+- Added `from_urls()` constructor for URL-based configuration
+- Added `use_redirects` config option (defaults to `false`):
+  ```toml
+  [static_files]
+  directories = ["s3://bucket/prefix?region=us-west-2", "static"]
+  use_redirects = false  # proxy content (default)
+  # use_redirects = true  # redirect to signed S3 URLs
+  ```
+- Signed URL redirects return `307 Temporary Redirect` with 1-hour expiry
+- Cascading storage: first backend with matching file wins
+- File version tracking works across all storage backends
 
 ---
 
