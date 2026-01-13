@@ -1906,6 +1906,221 @@ impl TemplateEngine {
 }
 ```
 
+### 7C.3 Template TTL Caching (Implemented)
+
+**Implemented in `src/templating.rs`:**
+
+Added TTL-based caching to reduce filesystem/network calls for frequently accessed templates. The implementation uses a fast path that returns cached content immediately if within the TTL window, avoiding metadata checks entirely.
+
+```rust
+/// Default TTL for template cache entries (5 minutes).
+const DEFAULT_TEMPLATE_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
+
+struct CachedTemplate {
+    content: String,
+    modified: SystemTime,
+    fetched_at: Instant,  // Track when cache entry was created
+}
+
+impl TemplateEngine {
+    // TTL can be customized per-engine
+    pub fn with_cache_ttl(mut self, ttl: Duration) -> Self;
+
+    async fn load_template(&self, path: &str) -> Result<String, String> {
+        // Fast path: return immediately if within TTL
+        if self.cache_ttl > Duration::ZERO {
+            if let Some(cached) = cache.get(path) {
+                if cached.fetched_at.elapsed() < self.cache_ttl {
+                    return Ok(cached.content.clone());
+                }
+            }
+        }
+        // ... normal loading with modification time check
+    }
+}
+```
+
+**Benefits:**
+- Reduces S3 API calls significantly (especially for partials loaded on every request)
+- No modification time check within TTL window
+- Cache entries extend their TTL when modification time is checked and unchanged
+- Use `Duration::ZERO` to disable TTL and always check modification time
+
+### 7C.4 Future: Storage-Level Caching (Option A - Design Notes)
+
+An alternative to application-level TTL caching is implementing a generic caching wrapper at the storage layer. This approach would benefit all storage consumers (templates, posts, static files) without requiring per-module caching logic.
+
+**Design Overview:**
+
+```rust
+// src/storage/cached.rs
+
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+use bytes::Bytes;
+use tokio::sync::RwLock;
+
+/// Configuration for the caching wrapper
+pub struct CachedStorageConfig {
+    /// Maximum number of entries to cache
+    pub max_entries: usize,
+    /// TTL for cache entries
+    pub ttl: Duration,
+    /// Maximum size of a single cacheable entry (larger files bypass cache)
+    pub max_entry_size: usize,
+}
+
+impl Default for CachedStorageConfig {
+    fn default() -> Self {
+        Self {
+            max_entries: 1000,
+            ttl: Duration::from_secs(5 * 60),       // 5 minutes
+            max_entry_size: 1024 * 1024,            // 1MB
+        }
+    }
+}
+
+struct CacheEntry {
+    data: Bytes,
+    fetched_at: Instant,
+    size: usize,
+}
+
+/// A caching wrapper around any Storage implementation
+pub struct CachedStorage<S: Storage> {
+    inner: S,
+    cache: Arc<RwLock<HashMap<String, CacheEntry>>>,
+    config: CachedStorageConfig,
+}
+
+impl<S: Storage> CachedStorage<S> {
+    pub fn new(inner: S, config: CachedStorageConfig) -> Self {
+        Self {
+            inner,
+            cache: Arc::new(RwLock::new(HashMap::new())),
+            config,
+        }
+    }
+
+    /// Wrap an existing storage with default caching
+    pub fn wrap(inner: S) -> Self {
+        Self::new(inner, CachedStorageConfig::default())
+    }
+}
+
+#[async_trait]
+impl<S: Storage> Storage for CachedStorage<S> {
+    async fn read(&self, path: &str) -> Result<Bytes, StorageError> {
+        // Check cache first
+        {
+            let cache = self.cache.read().await;
+            if let Some(entry) = cache.get(path) {
+                if entry.fetched_at.elapsed() < self.config.ttl {
+                    return Ok(entry.data.clone());
+                }
+            }
+        }
+
+        // Fetch from underlying storage
+        let data = self.inner.read(path).await?;
+
+        // Cache if small enough
+        if data.len() <= self.config.max_entry_size {
+            let mut cache = self.cache.write().await;
+
+            // Evict oldest entries if at capacity
+            while cache.len() >= self.config.max_entries {
+                if let Some(oldest_key) = cache.iter()
+                    .min_by_key(|(_, v)| v.fetched_at)
+                    .map(|(k, _)| k.clone())
+                {
+                    cache.remove(&oldest_key);
+                }
+            }
+
+            cache.insert(path.to_string(), CacheEntry {
+                data: data.clone(),
+                fetched_at: Instant::now(),
+                size: data.len(),
+            });
+        }
+
+        Ok(data)
+    }
+
+    async fn exists(&self, path: &str) -> Result<bool, StorageError> {
+        // Check cache first
+        {
+            let cache = self.cache.read().await;
+            if let Some(entry) = cache.get(path) {
+                if entry.fetched_at.elapsed() < self.config.ttl {
+                    return Ok(true);
+                }
+            }
+        }
+        self.inner.exists(path).await
+    }
+
+    // Write operations invalidate cache
+    async fn write(&self, path: &str, data: Bytes) -> Result<(), StorageError> {
+        self.inner.write(path, data).await?;
+        self.cache.write().await.remove(path);
+        Ok(())
+    }
+
+    async fn delete(&self, path: &str) -> Result<(), StorageError> {
+        self.inner.delete(path).await?;
+        self.cache.write().await.remove(path);
+        Ok(())
+    }
+
+    // Pass through other methods
+    async fn metadata(&self, path: &str) -> Result<ObjectMetadata, StorageError> {
+        self.inner.metadata(path).await
+    }
+
+    async fn list(&self, prefix: &str) -> Result<Vec<StorageEntry>, StorageError> {
+        self.inner.list(prefix).await
+    }
+
+    // ... other trait methods
+}
+```
+
+**Usage Example:**
+
+```rust
+// Wrap S3 storage with caching for template loading
+let s3_storage = S3Storage::new("bucket", "prefix", Some("us-west-2")).await?;
+let cached_storage = CachedStorage::wrap(s3_storage);
+
+// Use in template engine
+let template_engine = TemplateEngine::with_storage(Arc::new(cached_storage));
+```
+
+**Trade-offs vs Application-Level Caching:**
+
+| Aspect | Storage-Level (Option A) | Application-Level (Option B) |
+|--------|-------------------------|------------------------------|
+| Scope | All storage consumers | Per-module implementation |
+| Complexity | Single implementation | Per-module caching logic |
+| Cache key | Path-based | Can include parsed/compiled data |
+| Memory efficiency | Raw bytes only | Can cache parsed structures |
+| Invalidation | Simple (by path) | Can be smarter (content-aware) |
+| Configuration | Global | Per-module tuning |
+
+**Recommendation:**
+
+For templates, the current application-level TTL caching (Option B) is preferred because:
+1. We can cache the compiled `liquid::Template` in addition to raw content
+2. Template-specific invalidation logic (modification time check on TTL expiry)
+3. Simpler implementation for the current use case
+
+Storage-level caching (Option A) would be valuable as a future enhancement when:
+- Adding more storage consumers (posts, static files with frequently accessed small assets)
+- Wanting consistent caching behavior across all storage access
+- Needing to reduce API calls at the infrastructure level
+
 ---
 
 ## Phase 7D: Posts Storage Support

@@ -91,7 +91,16 @@ pub async fn create_app(
     config: Config,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
-    let mut template_engine = templating::TemplateEngine::new(config.templates.directories.clone());
+    // Create template storage backends from URLs (supports both filesystem and S3)
+    let template_storages = match storage::create_storages_from_urls(&config.templates.directories).await {
+        Ok(storages) => storages,
+        Err(e) => {
+            tracing::error!("Failed to initialize template storage: {}", e);
+            vec![]
+        }
+    };
+
+    let mut template_engine = templating::TemplateEngine::new(template_storages);
 
     // Create static file handler from storage URLs (supports both filesystem and S3)
     let static_handler =

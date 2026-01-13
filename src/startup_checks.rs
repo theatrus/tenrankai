@@ -141,8 +141,18 @@ pub async fn perform_startup_checks(config: &Config) -> Result<(), Vec<StartupCh
         }
     }
 
-    // Check templates directories
-    for (index, templates_dir) in config.templates.directories.iter().enumerate() {
+    // Check templates directories (filesystem paths only, not S3 URLs)
+    for (index, templates_url) in config.templates.directories.iter().enumerate() {
+        // Skip S3 URLs - they are checked at runtime
+        if templates_url.starts_with("s3://") {
+            info!(
+                "Templates directory {} is S3 storage: {}",
+                index, templates_url
+            );
+            continue;
+        }
+
+        let templates_dir = std::path::Path::new(templates_url);
         if !templates_dir.exists() {
             warn!(
                 "Templates directory {} does not exist: {:?}",

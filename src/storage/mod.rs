@@ -198,6 +198,25 @@ pub trait Storage: Send + Sync + 'static {
 /// Type alias for a thread-safe storage backend.
 pub type DynStorage = Arc<dyn Storage>;
 
+/// Create storage backends from a list of URL strings.
+///
+/// Parses each URL and creates the appropriate storage backend (filesystem or S3).
+///
+/// # Arguments
+/// * `urls` - List of storage URL strings
+///
+/// # Returns
+/// Vector of storage backends, or an error if any URL fails to parse or initialize.
+pub async fn create_storages_from_urls(urls: &[String]) -> Result<Vec<DynStorage>, StorageError> {
+    let mut storages = Vec::with_capacity(urls.len());
+    for url_str in urls {
+        let url = StorageUrl::parse(url_str)?;
+        let storage = url.into_storage().await?;
+        storages.push(storage);
+    }
+    Ok(storages)
+}
+
 /// Blocking wrapper for storage operations.
 ///
 /// Used in `spawn_blocking` contexts like image loading where sync operations

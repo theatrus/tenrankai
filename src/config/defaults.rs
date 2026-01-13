@@ -155,7 +155,7 @@ impl Default for Config {
                 user_database: None,
             },
             templates: TemplateConfig {
-                directories: vec![PathBuf::from("templates")],
+                directories: vec!["templates".to_string()],
             },
             static_files: StaticConfig {
                 directories: vec!["static".to_string()],

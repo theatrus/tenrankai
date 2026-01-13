@@ -43,7 +43,7 @@ async fn test_cascading_static_directories() {
         static_dir1.to_string_lossy().to_string(),
         static_dir2.to_string_lossy().to_string(),
     ];
-    config.templates.directories = vec![templates_dir];
+    config.templates.directories = vec![templates_dir.to_string_lossy().to_string()];
 
     // Create the app
     let app = tenrankai::create_app(config, None).await;
@@ -110,7 +110,7 @@ async fn test_favicon_cascading_directories() {
         static_dir1.to_string_lossy().to_string(),
         static_dir2.to_string_lossy().to_string(),
     ];
-    config.templates.directories = vec![templates_dir];
+    config.templates.directories = vec![templates_dir.to_string_lossy().to_string()];
 
     // Create the app
     let app = tenrankai::create_app(config, None).await;

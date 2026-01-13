@@ -1855,6 +1855,7 @@ roles = ["viewer"]
             },
             static_files: crate::StaticConfig {
                 directories: vec!["static".into()],
+                use_redirects: false,
             },
             templates: crate::TemplateConfig {
                 directories: vec!["templates".into()],
@@ -1874,10 +1875,19 @@ roles = ["viewer"]
             .collect();
         let static_handler = crate::static_files::StaticFileHandler::from_paths(static_paths);
 
+        // Convert template directories to storage backends
+        let template_storages: Vec<crate::storage::DynStorage> = config
+            .templates
+            .directories
+            .iter()
+            .map(|dir| {
+                Arc::new(crate::storage::FilesystemStorage::new(std::path::Path::new(dir)))
+                    as crate::storage::DynStorage
+            })
+            .collect();
+
         let app_state = AppState {
-            template_engine: Arc::new(crate::templating::TemplateEngine::new(
-                config.templates.directories.clone(),
-            )),
+            template_engine: Arc::new(crate::templating::TemplateEngine::new(template_storages)),
             static_handler: static_handler.clone(),
             galleries: Arc::new(galleries),
             favicon_renderer: crate::favicon::FaviconRenderer::new(

@@ -44,14 +44,20 @@ pub struct AppConfig {
 }
 
 /// Template directory configuration with custom serialization
+///
+/// Directories can be filesystem paths or S3 URLs:
+/// - `"templates"` - relative filesystem path
+/// - `"/var/data/templates"` - absolute filesystem path
+/// - `"s3://bucket/prefix"` - S3 bucket with optional prefix
+/// - `"s3://bucket/prefix?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateConfig {
     #[serde(
-        deserialize_with = "super::serialization::deserialize_template_directories",
-        serialize_with = "super::serialization::serialize_template_directories"
+        deserialize_with = "super::serialization::deserialize_storage_urls",
+        serialize_with = "super::serialization::serialize_storage_urls"
     )]
-    pub directories: Vec<PathBuf>,
+    pub directories: Vec<String>,
 }
 
 /// Static files directory configuration with custom serialization

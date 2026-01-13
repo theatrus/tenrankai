@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod multi_dir_tests {
+    use crate::storage::FilesystemStorage;
     use crate::templating::TemplateEngine;
     use std::fs;
+    use std::sync::Arc;
     use tempfile::TempDir;
 
     async fn setup_multi_dir_test() -> (TempDir, TempDir, TemplateEngine) {
@@ -69,10 +71,9 @@ mod multi_dir_tests {
         fs::write(template_path2.join("pages/test.html.liquid"), page_content).unwrap();
 
         // Create template engine with dir1 first (higher priority)
-        let template_engine = TemplateEngine::new(vec![
-            template_path1.to_path_buf(),
-            template_path2.to_path_buf(),
-        ]);
+        let storage1 = Arc::new(FilesystemStorage::new(template_path1));
+        let storage2 = Arc::new(FilesystemStorage::new(template_path2));
+        let template_engine = TemplateEngine::new(vec![storage1, storage2]);
 
         (temp_dir1, temp_dir2, template_engine)
     }
@@ -164,10 +165,9 @@ mod multi_dir_tests {
         )
         .unwrap();
 
-        let template_engine = TemplateEngine::new(vec![
-            template_path1.to_path_buf(),
-            template_path2.to_path_buf(),
-        ]);
+        let storage1 = Arc::new(FilesystemStorage::new(template_path1));
+        let storage2 = Arc::new(FilesystemStorage::new(template_path2));
+        let template_engine = TemplateEngine::new(vec![storage1, storage2]);
 
         // Should load from dir1 (first in the list)
         let result = template_engine
@@ -187,10 +187,9 @@ mod multi_dir_tests {
         let template_path1 = temp_dir1.path();
         let template_path2 = temp_dir2.path();
 
-        let template_engine = TemplateEngine::new(vec![
-            template_path1.to_path_buf(),
-            template_path2.to_path_buf(),
-        ]);
+        let storage1 = Arc::new(FilesystemStorage::new(template_path1));
+        let storage2 = Arc::new(FilesystemStorage::new(template_path2));
+        let template_engine = TemplateEngine::new(vec![storage1, storage2]);
 
         // Try to load a non-existent template
         let result = template_engine
@@ -201,17 +200,13 @@ mod multi_dir_tests {
         let error = result.unwrap_err();
 
         // Check that the error message contains the expected parts
-        assert!(error.contains("Template pages/nonexistent.html.liquid not found"));
-        assert!(error.contains("configured directories:"));
-
-        // The error should show it searched in multiple directories (formatted as a Vec)
         assert!(
-            error.contains("["),
-            "Error should contain opening bracket from Vec formatting"
+            error.contains("Template pages/nonexistent.html.liquid not found"),
+            "Error: {}", error
         );
         assert!(
-            error.contains("]"),
-            "Error should contain closing bracket from Vec formatting"
+            error.contains("configured storage backends"),
+            "Error should mention storage backends: {}", error
         );
 
         // Basic sanity check - the error should be reasonably sized and informative
