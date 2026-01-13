@@ -142,17 +142,20 @@ pub async fn create_app(
         if let Some(gallery_configs) = &config.galleries {
             for gallery_config in gallery_configs {
                 // Create source storage backend from source_directory URL
-                let source_storage =
-                    match storage::create_storage_from_url(&gallery_config.source_directory).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            error!(
-                                "Failed to create source storage for gallery '{}': {}",
-                                gallery_config.name, e
-                            );
-                            continue;
-                        }
-                    };
+                let source_storage = match storage::create_storage_from_url(
+                    &gallery_config.source_directory,
+                )
+                .await
+                {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!(
+                            "Failed to create source storage for gallery '{}': {}",
+                            gallery_config.name, e
+                        );
+                        continue;
+                    }
+                };
 
                 // Create cache storage backend from cache_directory URL
                 let cache_storage =

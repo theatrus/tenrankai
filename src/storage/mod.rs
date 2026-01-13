@@ -85,6 +85,26 @@ pub enum ReadStrategy {
     /// S3: Single GET request (cheaper, faster for full files).
     /// Filesystem: Single read (same as streaming, but clearer intent).
     FullFetch,
+
+    /// Read only the file header for metadata extraction.
+    /// Falls back to full read if the header doesn't contain required data.
+    /// Best for: EXIF extraction, dimension detection from remote storage.
+    HeaderOnly {
+        /// Maximum bytes to read from the start of the file.
+        size: u64,
+        /// If true, will fall back to full read when header is insufficient.
+        fallback_to_full: bool,
+    },
+}
+
+/// Header sizes for metadata extraction by format.
+pub mod header_sizes {
+    /// JPEG EXIF data is typically in the first 256KB.
+    pub const JPEG_EXIF: u64 = 256 * 1024;
+    /// AVIF metadata box is typically in the first 512KB.
+    pub const AVIF_METADATA: u64 = 512 * 1024;
+    /// PNG header and metadata chunks are typically in the first 64KB.
+    pub const PNG_HEADER: u64 = 64 * 1024;
 }
 
 /// Async storage operations trait.
@@ -271,6 +291,21 @@ pub trait Storage: Send + Sync + 'static {
         let meta = self.metadata(path).await?;
         let etag = meta.etag.unwrap_or_default();
         Ok((data, etag))
+    }
+
+    /// Read file header for metadata extraction.
+    ///
+    /// This is optimized for metadata extraction where only the beginning
+    /// of a file is needed (EXIF, dimensions, etc.).
+    ///
+    /// # Arguments
+    /// * `path` - Relative path to the object
+    /// * `header_size` - Maximum bytes to read from the start
+    ///
+    /// # Returns
+    /// The header bytes (may be less than `header_size` for small files).
+    async fn read_header(&self, path: &str, header_size: u64) -> Result<Bytes, StorageError> {
+        self.read_range(path, 0, header_size).await
     }
 }
 

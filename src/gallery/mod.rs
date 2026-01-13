@@ -7,6 +7,7 @@ pub mod image_processing;
 mod indexing;
 mod metadata;
 pub mod metadata_sources;
+pub mod path_utils;
 mod task_deduplicator;
 mod types;
 
@@ -100,10 +101,9 @@ impl Gallery {
 
         // Create storage-backed metadata storage using source storage
         // User metadata is stored alongside source images in the same storage backend
-        let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> =
-            Arc::new(crate::metadata_storage::StorageMetadataBackend::new(
-                source_storage.clone(),
-            ));
+        let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> = Arc::new(
+            crate::metadata_storage::StorageMetadataBackend::new(source_storage.clone()),
+        );
 
         Self {
             config,

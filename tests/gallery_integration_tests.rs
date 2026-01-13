@@ -190,8 +190,7 @@ async fn test_gallery_with_folder_metadata() {
     let config = create_test_config(&temp_dir);
 
     // Create a subfolder with metadata
-    let photos_dir =
-        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
     let vacation_dir = photos_dir.join("vacation");
     create_folder_with_metadata(
         &vacation_dir,
@@ -314,8 +313,7 @@ async fn test_composite_api_endpoint() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let root_dir =
-        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let root_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
     // Create test images in the root directory
     for i in 0..3 {
@@ -403,8 +401,7 @@ async fn test_composite_api_with_avif_images() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let root_dir =
-        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let root_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
     // Create AVIF images in a subdirectory
     let subdir = root_dir.join("avif-test");
@@ -532,8 +529,7 @@ async fn test_gallery_breadcrumbs() {
     let config = create_test_config(&temp_dir);
 
     // Create nested folders
-    let photos_dir =
-        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
     let travel_dir = photos_dir.join("travel");
     let europe_dir = travel_dir.join("europe");
 
@@ -646,8 +642,7 @@ async fn test_hide_technical_details_feature() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
 
-    let root_dir =
-        std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let root_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
     // Create a test image with EXIF data
     let img = image::ImageBuffer::from_pixel(300, 200, image::Rgb([100u8, 150u8, 200u8]));

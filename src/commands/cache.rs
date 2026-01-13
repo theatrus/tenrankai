@@ -8,8 +8,7 @@ use crate::storage;
 pub async fn report(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source_storage =
-        storage::create_storage_from_url(&gallery_config.source_directory).await?;
+    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
         gallery_config.clone(),
@@ -38,8 +37,7 @@ pub async fn report(
 pub async fn cleanup(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source_storage =
-        storage::create_storage_from_url(&gallery_config.source_directory).await?;
+    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
         gallery_config.clone(),
@@ -70,8 +68,7 @@ pub async fn invalidate_composite(
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source_storage =
-        storage::create_storage_from_url(&gallery_config.source_directory).await?;
+    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
         gallery_config.clone(),
@@ -136,8 +133,7 @@ pub async fn invalidate_image(
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source_storage =
-        storage::create_storage_from_url(&gallery_config.source_directory).await?;
+    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
         gallery_config.clone(),

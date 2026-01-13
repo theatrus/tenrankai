@@ -455,9 +455,12 @@ impl Gallery {
     }
 
     /// Pre-generate tiles for a single image
+    ///
+    /// Uses the cache_files set for fast lookup to avoid regenerating existing tiles.
     pub async fn pregenerate_tiles_for_image(
         &self,
         relative_path: &str,
+        cache_files: &HashSet<String>,
     ) -> Result<(), super::GalleryError> {
         // Check for cancellation (both pregeneration and shutdown)
         if self.pregeneration_token.lock().await.is_cancelled()
@@ -473,16 +476,6 @@ impl Gallery {
         };
 
         if !self.is_image(relative_path) {
-            return Ok(());
-        }
-
-        // Check if source image exists using storage abstraction
-        if !self
-            .source_storage
-            .exists(relative_path)
-            .await
-            .unwrap_or(false)
-        {
             return Ok(());
         }
 
@@ -504,28 +497,47 @@ impl Gallery {
         let grid_height = max_dimension.div_ceil(tile_size);
         drop(metadata);
 
-        // Generate all tiles at once by requesting any tile
-        // The tile generation function will generate all tiles for the image
-        // Note: Tiles are always AVIF (or WebP fallback) regardless of this call
-        if grid_width > 0 && grid_height > 0 {
-            // Check for cancellation (both pregeneration and shutdown)
-            if self.pregeneration_token.lock().await.is_cancelled()
-                || self.shutdown_token.is_cancelled()
-            {
-                return Ok(());
-            }
+        // Skip if no tiles to generate
+        if grid_width == 0 || grid_height == 0 {
+            return Ok(());
+        }
 
-            // Just request tile 0,0 - the backend will generate all tiles
-            match self.get_image_tile(relative_path, 0, 0).await {
-                Ok(_) => {
-                    info!(
-                        "Pre-generated all tiles ({}x{} grid) for {}",
-                        grid_width, grid_height, relative_path
-                    );
-                }
-                Err(e) => {
-                    warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
-                }
+        // Fast check: see if tiles already exist using the cache_files set
+        // We check for tile (0,0) as a representative - if it exists, all tiles should exist
+        let first_tile_filename = generate_tile_cache_filename(
+            relative_path,
+            0,
+            0,
+            tile_size,
+            false, // non-retina
+            #[cfg(feature = "avif")]
+            "avif",
+            #[cfg(not(feature = "avif"))]
+            "webp",
+        );
+
+        if cache_files.contains(&first_tile_filename) {
+            // Tiles already exist, skip regeneration
+            return Ok(());
+        }
+
+        // Check for cancellation (both pregeneration and shutdown)
+        if self.pregeneration_token.lock().await.is_cancelled()
+            || self.shutdown_token.is_cancelled()
+        {
+            return Ok(());
+        }
+
+        // Just request tile 0,0 - the backend will generate all tiles
+        match self.get_image_tile(relative_path, 0, 0).await {
+            Ok(_) => {
+                info!(
+                    "Pre-generated all tiles ({}x{} grid) for {}",
+                    grid_width, grid_height, relative_path
+                );
+            }
+            Err(e) => {
+                warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
             }
         }
 
@@ -604,7 +616,9 @@ impl Gallery {
                     // Also pre-generate tiles if configured and enabled
                     if result.is_ok()
                         && gallery.should_pregenerate_tiles()
-                        && let Err(e) = gallery.pregenerate_tiles_for_image(&image_path).await
+                        && let Err(e) = gallery
+                            .pregenerate_tiles_for_image(&image_path, &cache_files)
+                            .await
                     {
                         error!("Failed to pre-generate tiles for {}: {}", image_path, e);
                         failed.fetch_add(1, Ordering::Relaxed);

@@ -343,8 +343,7 @@ impl Gallery {
                 {
                     let parts: Vec<&str> = content.splitn(3, "+++").collect();
                     if parts.len() >= 3
-                        && let Ok(config) =
-                            toml_edit::de::from_str::<super::FolderConfig>(parts[1])
+                        && let Ok(config) = toml_edit::de::from_str::<super::FolderConfig>(parts[1])
                         && config.hidden
                     {
                         hidden_folders.push(relative_str);
@@ -361,8 +360,7 @@ impl Gallery {
             {
                 let parts: Vec<&str> = content.splitn(3, "+++").collect();
                 if parts.len() >= 3
-                    && let Ok(config) =
-                        toml_edit::de::from_str::<super::FolderConfig>(parts[1])
+                    && let Ok(config) = toml_edit::de::from_str::<super::FolderConfig>(parts[1])
                     && config.hidden
                 {
                     hidden_folders.push(base_path.to_string());
@@ -504,11 +502,19 @@ impl Gallery {
             };
 
             // Check for XMP sidecar file using storage
-            let xmp_metadata =
-                super::metadata_sources::read_xmp_metadata_from_storage(&self.source_storage, &xmp_path).await;
+            let xmp_metadata = super::metadata_sources::read_xmp_metadata_from_storage(
+                &self.source_storage,
+                &xmp_path,
+            )
+            .await;
 
             // Check for markdown metadata file using storage (handles both image.jpg.md and image.md)
-            match super::metadata_sources::read_image_markdown_metadata_from_storage(&self.source_storage, relative_path).await {
+            match super::metadata_sources::read_image_markdown_metadata_from_storage(
+                &self.source_storage,
+                relative_path,
+            )
+            .await
+            {
                 Some(md_metadata) => {
                     // Use title from frontmatter if available
                     let title = md_metadata
@@ -834,9 +840,12 @@ impl Gallery {
         // No cached metadata, extract it using storage
         let storage_metadata = self.source_storage.metadata(relative_path).await?;
         let file_size = storage_metadata.size;
+        let modification_date = storage_metadata.last_modified;
 
         // Extract metadata using storage
-        let metadata = self.extract_image_metadata(relative_path).await?;
+        let metadata = self
+            .extract_image_metadata(relative_path, modification_date)
+            .await?;
 
         // Cache it with tracking
         self.insert_metadata_with_tracking(relative_path.to_string(), metadata.clone())

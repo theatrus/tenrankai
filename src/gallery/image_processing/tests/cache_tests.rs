@@ -135,4 +135,3 @@ async fn test_cache_headers_for_cached_images() {
         test_data.len().to_string()
     );
 }
-

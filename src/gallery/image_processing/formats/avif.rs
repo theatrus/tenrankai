@@ -107,7 +107,9 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
 }
 
 /// Read AVIF data from memory with HDR support
-pub fn read_avif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
+pub fn read_avif_info_from_bytes(
+    data: &[u8],
+) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
     // Check if it's a valid AVIF file
     if !is_avif(data) {
         return Err(GalleryError::ProcessingError(

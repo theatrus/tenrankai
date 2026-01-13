@@ -116,10 +116,7 @@ mod tests {
         let storage = SidecarMetadataStorage::new(temp_dir.path().to_path_buf());
 
         let sidecar = storage.get_sidecar_path("photos/vacation/beach.jpg");
-        assert_eq!(
-            sidecar,
-            temp_dir.path().join("photos/vacation/beach.toml")
-        );
+        assert_eq!(sidecar, temp_dir.path().join("photos/vacation/beach.toml"));
 
         let sidecar_png = storage.get_sidecar_path("photos/vacation/sunset.png");
         assert_eq!(

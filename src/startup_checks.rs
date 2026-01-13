@@ -1,4 +1,7 @@
-use crate::{Config, storage::{StorageUrl, create_storage_from_url}};
+use crate::{
+    Config,
+    storage::{StorageUrl, create_storage_from_url},
+};
 use std::path::Path;
 use thiserror::Error;
 use tracing::{error, info, warn};

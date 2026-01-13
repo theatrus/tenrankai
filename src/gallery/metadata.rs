@@ -2,7 +2,9 @@ use super::metadata_sources::{
     merge_metadata_sources, read_image_markdown_metadata_from_storage,
     read_xmp_metadata_from_storage,
 };
+use super::path_utils::{FileExtension, SidecarPaths};
 use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
+use crate::storage::header_sizes;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
@@ -17,10 +19,7 @@ impl Gallery {
         relative_path: &str,
     ) -> (Option<SystemTime>, Option<CameraInfo>, Option<LocationInfo>) {
         // Check file extension to determine extraction method
-        let extension = relative_path
-            .rsplit('.')
-            .next()
-            .map(|s| s.to_lowercase());
+        let extension = relative_path.rsplit('.').next().map(|s| s.to_lowercase());
 
         match extension.as_deref() {
             #[cfg(feature = "avif")]
@@ -42,8 +41,7 @@ impl Gallery {
                             Err(e) => {
                                 trace!(
                                     "Failed to parse EXIF data from AVIF {}: {}",
-                                    relative_path,
-                                    e
+                                    relative_path, e
                                 );
                                 (None, None, None)
                             }
@@ -304,7 +302,12 @@ impl Gallery {
         relative_path: &str,
     ) -> Result<(), super::GalleryError> {
         // Check if image exists using storage
-        if !self.source_storage.exists(relative_path).await.unwrap_or(false) {
+        if !self
+            .source_storage
+            .exists(relative_path)
+            .await
+            .unwrap_or(false)
+        {
             // If image doesn't exist, remove from cache
             let mut cache = self.metadata_cache.write().await;
             if cache.remove(relative_path).is_some() {
@@ -329,8 +332,19 @@ impl Gallery {
             return Ok(());
         }
 
+        // Get modification date for this file
+        let modification_date = self
+            .source_storage
+            .metadata(relative_path)
+            .await
+            .ok()
+            .and_then(|m| m.last_modified);
+
         // Extract and cache metadata using storage
-        if let Ok(metadata) = self.extract_image_metadata(relative_path).await {
+        if let Ok(metadata) = self
+            .extract_image_metadata(relative_path, modification_date)
+            .await
+        {
             self.insert_metadata_with_tracking(relative_path.to_string(), metadata)
                 .await;
             debug!("Updated metadata for: {}", relative_path);
@@ -375,8 +389,14 @@ impl Gallery {
                 continue;
             }
 
+            // Get modification date from entry metadata if available
+            let modification_date = entry.metadata.and_then(|m| m.last_modified);
+
             // Extract metadata using storage
-            if let Ok(metadata) = self.extract_image_metadata(&relative_str).await {
+            if let Ok(metadata) = self
+                .extract_image_metadata(&relative_str, modification_date)
+                .await
+            {
                 self.insert_metadata_with_tracking(relative_str, metadata)
                     .await;
                 count += 1;
@@ -481,13 +501,22 @@ impl Gallery {
             let extraction_start = std::time::Instant::now();
             let refreshed_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
 
-            // Process in parallel with buffer_unordered
-            let results: Vec<(String, Option<ImageMetadata>)> = stream::iter(paths_needing_refresh)
+            // Build list of (path, mtime) tuples using pre-fetched modification times
+            let paths_with_mtimes: Vec<(String, Option<SystemTime>)> = paths_needing_refresh
+                .into_iter()
                 .map(|path| {
+                    let mtime = file_mtimes.get(&path).copied();
+                    (path, mtime)
+                })
+                .collect();
+
+            // Process in parallel with buffer_unordered
+            let results: Vec<(String, Option<ImageMetadata>)> = stream::iter(paths_with_mtimes)
+                .map(|(path, mtime)| {
                     let counter = Arc::clone(&refreshed_counter);
                     async move {
                         let extract_start = std::time::Instant::now();
-                        let result = self.extract_image_metadata(&path).await.ok();
+                        let result = self.extract_image_metadata(&path, mtime).await.ok();
 
                         let extract_time = extract_start.elapsed();
                         if extract_time.as_millis() > 500 {
@@ -501,11 +530,7 @@ impl Gallery {
                         // Update progress
                         let count = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                         if count.is_multiple_of(50) {
-                            info!(
-                                "Progress: extracted {}/{}",
-                                count,
-                                total_to_refresh,
-                            );
+                            info!("Progress: extracted {}/{}", count, total_to_refresh,);
                         }
 
                         (path, result)
@@ -645,33 +670,20 @@ impl Gallery {
             _ => {}
         }
 
-        // Build XMP sidecar path (replace extension with .xmp)
-        let xmp_relative_path = if let Some(dot_pos) = relative_path.rfind('.') {
-            format!("{}.xmp", &relative_path[..dot_pos])
-        } else {
-            format!("{}.xmp", relative_path)
-        };
+        // Get sidecar paths
+        let sidecars = SidecarPaths::for_image(relative_path);
 
         // Check XMP sidecar file using pre-fetched map
-        if let Some(&xmp_mtime) = file_mtimes.get(&xmp_relative_path)
+        if let Some(&xmp_mtime) = file_mtimes.get(&sidecars.xmp)
             && let Some(cached) = cached_mtime
             && xmp_mtime > cached
         {
             return true;
         }
 
-        // Build markdown sidecar paths
-        // Format 1: image.jpg.md (full filename + .md)
-        let md_path1 = format!("{}.md", relative_path);
-        // Format 2: image.md (replace extension with .md)
-        let md_path2 = if let Some(dot_pos) = relative_path.rfind('.') {
-            format!("{}.md", &relative_path[..dot_pos])
-        } else {
-            format!("{}.md", relative_path)
-        };
-
-        for md_path in [md_path1, md_path2] {
-            if let Some(&md_mtime) = file_mtimes.get(&md_path)
+        // Check markdown sidecar files
+        for md_path in sidecars.markdown_paths() {
+            if let Some(&md_mtime) = file_mtimes.get(md_path)
                 && let Some(cached) = cached_mtime
                 && md_mtime > cached
             {
@@ -682,86 +694,38 @@ impl Gallery {
         false
     }
 
-    /// Extract image metadata using storage abstraction
+    /// Extract image metadata using storage abstraction.
+    ///
+    /// # Arguments
+    /// * `relative_path` - Path to the image relative to the gallery source
+    /// * `modification_date` - Pre-fetched modification date (avoids extra API call)
     pub(crate) async fn extract_image_metadata(
         &self,
         relative_path: &str,
+        modification_date: Option<SystemTime>,
     ) -> Result<ImageMetadata, super::GalleryError> {
         // Get file extension
-        let ext = relative_path
-            .rsplit('.')
-            .next()
-            .map(|s| s.to_lowercase());
+        let ext = FileExtension::from_path(relative_path);
 
-        // For JPEG and AVIF files, use optimized range read for EXIF
-        // This avoids downloading multi-MB images just for metadata
-        let is_jpeg = matches!(ext.as_deref(), Some("jpg" | "jpeg"));
-        #[cfg(feature = "avif")]
-        let is_avif = matches!(ext.as_deref(), Some("avif"));
-        #[cfg(not(feature = "avif"))]
-        let is_avif = false;
+        // Read image data with format-aware optimization
+        let image_data = self
+            .read_image_for_metadata(relative_path, ext.as_ref())
+            .await?;
 
-        // First, try to extract EXIF using a range read for supported formats
-        let (capture_date, exif_camera_info, exif_location_info, image_data) = if is_jpeg {
-            // Use range read for EXIF extraction (256KB covers most EXIF data)
-            const EXIF_HEADER_SIZE: u64 = 256 * 1024;
-            let header_data = self
-                .source_storage
-                .read_range(relative_path, 0, EXIF_HEADER_SIZE)
-                .await?;
-
-            let (capture_date, exif_camera_info, exif_location_info) =
-                self.extract_all_exif_data_from_bytes(&header_data, relative_path);
-
-            (capture_date, exif_camera_info, exif_location_info, header_data)
-        } else if is_avif {
-            // For AVIF, try range read first, fall back to full read if needed
-            // AVIF metadata is typically in the first 512KB (meta box is near the start)
-            const AVIF_HEADER_SIZE: u64 = 512 * 1024;
-            let header_data = self
-                .source_storage
-                .read_range(relative_path, 0, AVIF_HEADER_SIZE)
-                .await?;
-
-            let (capture_date, exif_camera_info, exif_location_info) =
-                self.extract_all_exif_data_from_bytes(&header_data, relative_path);
-
-            // Check if we got dimensions from the header - if not, we need full file
-            let dimensions = self.extract_dimensions_from_bytes(&header_data, ext.as_deref());
-            if dimensions == (0, 0) {
-                // Fall back to full file read
-                debug!(
-                    "AVIF header read didn't contain dimensions, falling back to full read: {}",
-                    relative_path
-                );
-                let full_data = self.source_storage.read(relative_path).await?;
-                let (capture_date, exif_camera_info, exif_location_info) =
-                    self.extract_all_exif_data_from_bytes(&full_data, relative_path);
-                (capture_date, exif_camera_info, exif_location_info, full_data)
-            } else {
-                (capture_date, exif_camera_info, exif_location_info, header_data)
-            }
-        } else {
-            // For other formats (PNG, etc.), read the full file
-            let image_data = self.source_storage.read(relative_path).await?;
-            let (capture_date, exif_camera_info, exif_location_info) =
-                self.extract_all_exif_data_from_bytes(&image_data, relative_path);
-            (capture_date, exif_camera_info, exif_location_info, image_data)
-        };
+        // Extract EXIF data from the image bytes
+        let (capture_date, exif_camera_info, exif_location_info) =
+            self.extract_all_exif_data_from_bytes(&image_data, relative_path);
 
         // Get image dimensions from the data we have
-        let dimensions = self.extract_dimensions_from_bytes(&image_data, ext.as_deref());
+        let dimensions =
+            self.extract_dimensions_from_bytes(&image_data, ext.as_ref().map(|e| e.as_str()));
 
-        // Build XMP sidecar path (replace extension with .xmp)
-        let xmp_relative_path = if let Some(dot_pos) = relative_path.rfind('.') {
-            format!("{}.xmp", &relative_path[..dot_pos])
-        } else {
-            format!("{}.xmp", relative_path)
-        };
+        // Get sidecar paths
+        let sidecars = SidecarPaths::for_image(relative_path);
 
         // Check for XMP sidecar file using storage
         let xmp_metadata =
-            read_xmp_metadata_from_storage(&self.source_storage, &xmp_relative_path).await;
+            read_xmp_metadata_from_storage(&self.source_storage, &sidecars.xmp).await;
 
         // Check for markdown metadata file using storage (e.g., image.jpg.md or image.md)
         let markdown_metadata =
@@ -776,31 +740,18 @@ impl Gallery {
         );
 
         // Override capture date if specified in markdown
-        let capture_date = if let Some(ref md) = markdown_metadata {
-            if let Some(ref date_str) = md.config.capture_date {
-                // Try to parse ISO 8601 date
-                if let Ok(dt) = DateTime::parse_from_rfc3339(date_str) {
-                    Some(SystemTime::from(dt))
-                } else {
-                    capture_date
-                }
-            } else {
-                capture_date
-            }
+        let capture_date = if let Some(ref md) = markdown_metadata
+            && let Some(ref date_str) = md.config.capture_date
+            && let Ok(dt) = DateTime::parse_from_rfc3339(date_str)
+        {
+            Some(SystemTime::from(dt))
         } else {
             capture_date
         };
 
-        // Get file modification date from storage
-        let modification_date = self
-            .source_storage
-            .metadata(relative_path)
-            .await
-            .ok()
-            .and_then(|m| m.last_modified);
-
         // Extract ICC profile name / color description from bytes
-        let color_profile = self.extract_color_profile_from_bytes(&image_data, ext.as_deref());
+        let color_profile =
+            self.extract_color_profile_from_bytes(&image_data, ext.as_ref().map(|e| e.as_str()));
 
         Ok(ImageMetadata {
             dimensions,
@@ -810,6 +761,52 @@ impl Gallery {
             modification_date,
             color_profile,
         })
+    }
+
+    /// Read image data optimized for metadata extraction.
+    ///
+    /// Uses header-only reads for formats where metadata is at the start of the file,
+    /// falling back to full reads when necessary.
+    async fn read_image_for_metadata(
+        &self,
+        relative_path: &str,
+        ext: Option<&FileExtension>,
+    ) -> Result<bytes::Bytes, super::GalleryError> {
+        let is_jpeg = ext.is_some_and(|e| e.is_jpeg());
+
+        #[cfg(feature = "avif")]
+        let is_avif = ext.is_some_and(|e| e.is_avif());
+        #[cfg(not(feature = "avif"))]
+        let is_avif = false;
+
+        if is_jpeg {
+            // JPEG EXIF is in the first 256KB
+            Ok(self
+                .source_storage
+                .read_header(relative_path, header_sizes::JPEG_EXIF)
+                .await?)
+        } else if is_avif {
+            // AVIF: try header read, fall back if dimensions not found
+            let header_data = self
+                .source_storage
+                .read_header(relative_path, header_sizes::AVIF_METADATA)
+                .await?;
+
+            // Check if we got dimensions from the header
+            let dimensions = self.extract_dimensions_from_bytes(&header_data, Some("avif"));
+            if dimensions == (0, 0) {
+                debug!(
+                    "AVIF header read didn't contain dimensions, falling back to full read: {}",
+                    relative_path
+                );
+                Ok(self.source_storage.read(relative_path).await?)
+            } else {
+                Ok(header_data)
+            }
+        } else {
+            // Other formats: full read
+            Ok(self.source_storage.read(relative_path).await?)
+        }
     }
 
     /// Extract image dimensions from bytes

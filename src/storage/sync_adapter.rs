@@ -324,6 +324,11 @@ impl PreloadedReader {
         Ok(Self { data, position: 0 })
     }
 
+    /// Create a preloaded reader from existing bytes.
+    pub fn from_bytes(data: Bytes) -> Self {
+        Self { data, position: 0 }
+    }
+
     /// Get the total length of the file.
     pub fn len(&self) -> usize {
         self.data.len()
@@ -398,6 +403,11 @@ pub fn storage_open_with_strategy(
         super::ReadStrategy::FullFetch => {
             let reader = PreloadedReader::open(storage, path, handle)?;
             Ok(Box::new(reader))
+        }
+        super::ReadStrategy::HeaderOnly { size, .. } => {
+            // Read only the header portion into a PreloadedReader
+            let data = storage_read_range_sync(storage, path, 0, size, handle)?;
+            Ok(Box::new(PreloadedReader::from_bytes(data)))
         }
     }
 }

@@ -1406,9 +1406,18 @@ async fn get_image_for_analysis(
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
 
-    if gallery.cache_storage().exists(&cache_filename).await.unwrap_or(false) {
+    if gallery
+        .cache_storage()
+        .exists(&cache_filename)
+        .await
+        .unwrap_or(false)
+    {
         debug!("Using cached medium image for analysis");
-        return Ok(gallery.cache_storage().read(&cache_filename).await?.to_vec());
+        return Ok(gallery
+            .cache_storage()
+            .read(&cache_filename)
+            .await?
+            .to_vec());
     }
 
     // Fall back to original image using source storage
@@ -1578,8 +1587,7 @@ pub async fn analyze_folder_handler(
 
         // Check if already analyzed (unless force is set)
         if !request.force
-            && let Ok(Some(metadata)) =
-                gallery.user_metadata_storage.load(&relative_path).await
+            && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
             && metadata.has_ai_analysis()
         {
             debug!("Skipping {} - already analyzed", relative_path);

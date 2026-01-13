@@ -28,8 +28,7 @@ pub async fn handle_analyze_command(
         .find(|g| g.name == gallery_name)
         .ok_or_else(|| format!("Gallery '{}' not found", gallery_name))?;
 
-    let source_storage =
-        storage::create_storage_from_url(&gallery_config.source_directory).await?;
+    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
         gallery_config.clone(),

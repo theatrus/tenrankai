@@ -42,17 +42,13 @@ async fn test_watermark_cache_key_differentiation() {
 
     // Test 1: Generate cache without watermark
     gallery.config.copyright_holder = None;
-    let result_no_watermark = gallery
-        .get_resized_image(relative_path, size, format)
-        .await;
+    let result_no_watermark = gallery.get_resized_image(relative_path, size, format).await;
     assert!(result_no_watermark.is_ok());
     let cache_path_no_watermark = result_no_watermark.unwrap();
 
     // Test 2: Enable watermark and generate cache again
     gallery.config.copyright_holder = Some("Test Copyright".to_string());
-    let result_with_watermark = gallery
-        .get_resized_image(relative_path, size, format)
-        .await;
+    let result_with_watermark = gallery.get_resized_image(relative_path, size, format).await;
     assert!(result_with_watermark.is_ok());
     let cache_path_with_watermark = result_with_watermark.unwrap();
 

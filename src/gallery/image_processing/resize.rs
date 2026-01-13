@@ -467,13 +467,21 @@ impl Gallery {
             Err(_) => return Ok(false),
         };
 
-        if let (Some(cache_modified), Some(source_modified)) =
-            (cache_meta.last_modified, source_meta.last_modified)
-            && cache_modified >= source_modified
-        {
-            Ok(true)
-        } else {
-            Ok(false)
+        // Compare timestamps if both are available
+        match (cache_meta.last_modified, source_meta.last_modified) {
+            // Both have timestamps - compare them
+            (Some(cache_modified), Some(source_modified)) => Ok(cache_modified >= source_modified),
+            // Cache exists but no timestamps available - consider it valid
+            // (optimistic caching: if the file exists, it was created for a reason)
+            (None, _) | (_, None) => {
+                tracing::trace!(
+                    "Cache exists but missing timestamps for {} (cache: {:?}, source: {:?})",
+                    cache_key,
+                    cache_meta.last_modified,
+                    source_meta.last_modified
+                );
+                Ok(true)
+            }
         }
     }
 }

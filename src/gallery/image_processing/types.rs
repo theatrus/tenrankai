@@ -144,12 +144,20 @@ impl LoadedImage {
         #[cfg(feature = "avif")]
         let (image, avif_info) = if detected_format == Some(ImageFormat::Avif) {
             // Use our custom AVIF reader to preserve color properties and gain maps
-            // Note: read_avif_info_from_bytes would need to be added for full storage support
-            // For now, fall back to standard decoding when loading from storage
-            match image::load_from_memory(data) {
-                Ok(img) => (img, None),
+            match crate::gallery::image_processing::formats::avif::read_avif_info_from_bytes(data) {
+                Ok((img, info)) => (img, Some(info)),
                 Err(e) => {
-                    return Err(GalleryError::ImageError(e));
+                    tracing::debug!(
+                        "Failed to read AVIF with custom reader: {}, falling back",
+                        e
+                    );
+                    // Fall back to standard decoding
+                    match image::load_from_memory(data) {
+                        Ok(img) => (img, None),
+                        Err(e) => {
+                            return Err(GalleryError::ImageError(e));
+                        }
+                    }
                 }
             }
         } else {
