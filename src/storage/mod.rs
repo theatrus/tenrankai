@@ -295,60 +295,6 @@ pub async fn create_storages_from_urls(urls: &[String]) -> Result<Vec<DynStorage
     Ok(storages)
 }
 
-/// Blocking wrapper for storage operations.
-///
-/// Used in `spawn_blocking` contexts like image loading where sync operations
-/// are required but the underlying storage is async.
-pub struct BlockingStorage {
-    storage: Arc<dyn Storage>,
-    runtime: tokio::runtime::Handle,
-}
-
-impl BlockingStorage {
-    /// Create a new blocking storage wrapper.
-    ///
-    /// # Arguments
-    /// * `storage` - The async storage to wrap
-    pub fn new(storage: Arc<dyn Storage>) -> Self {
-        Self {
-            storage,
-            runtime: tokio::runtime::Handle::current(),
-        }
-    }
-
-    /// Read synchronously by blocking on async operation.
-    pub fn read(&self, path: &str) -> Result<Bytes, StorageError> {
-        self.runtime.block_on(self.storage.read(path))
-    }
-
-    /// Write synchronously by blocking on async operation.
-    pub fn write(&self, path: &str, data: Bytes) -> Result<(), StorageError> {
-        self.runtime.block_on(self.storage.write(path, data))
-    }
-
-    /// Check existence synchronously.
-    pub fn exists(&self, path: &str) -> bool {
-        self.runtime
-            .block_on(self.storage.exists(path))
-            .unwrap_or(false)
-    }
-
-    /// Get metadata synchronously.
-    pub fn metadata(&self, path: &str) -> Result<ObjectMetadata, StorageError> {
-        self.runtime.block_on(self.storage.metadata(path))
-    }
-
-    /// Delete synchronously.
-    pub fn delete(&self, path: &str) -> Result<(), StorageError> {
-        self.runtime.block_on(self.storage.delete(path))
-    }
-
-    /// Get the underlying storage type name.
-    pub fn storage_type(&self) -> &'static str {
-        self.storage.storage_type()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,25 +466,6 @@ mod tests {
             }
             _ => panic!("Expected S3 URL"),
         }
-    }
-
-    #[tokio::test]
-    async fn test_blocking_storage() {
-        let temp_dir = TempDir::new().unwrap();
-        let storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
-        let blocking = BlockingStorage::new(storage);
-
-        // Test in blocking context
-        tokio::task::spawn_blocking(move || {
-            blocking
-                .write("blocking_test.txt", Bytes::from("blocking"))
-                .unwrap();
-            assert!(blocking.exists("blocking_test.txt"));
-            let data = blocking.read("blocking_test.txt").unwrap();
-            assert_eq!(&data[..], b"blocking");
-        })
-        .await
-        .unwrap();
     }
 
     #[tokio::test]

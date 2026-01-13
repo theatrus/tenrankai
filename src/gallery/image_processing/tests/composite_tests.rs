@@ -54,9 +54,7 @@ async fn test_store_and_serve_composite() {
     assert!(cache_path.exists(), "Composite file should exist on disk");
 
     // Test serving from cache using the generated filename
-    let cached_result = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
+    let cached_result = gallery.serve_cached_image(&cache_filename).await;
     assert!(
         cached_result.is_ok(),
         "Failed to serve from cache: {:?}",
@@ -187,9 +185,7 @@ async fn test_serve_cached_composite_with_proper_filename() {
     println!("Cache file exists at {:?}: {}", cache_path, exists);
 
     // Now try to serve it using the full filename (as the API handler does)
-    let serve_result = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
+    let serve_result = gallery.serve_cached_image(&cache_filename).await;
     assert!(
         serve_result.is_ok(),
         "Failed to serve cached composite with proper filename"
@@ -298,9 +294,7 @@ async fn test_composite_mime_type_for_cached_composite() {
     let cache_filename = format!("{}.jpg", hash);
 
     // Serve the composite from cache
-    let cached_response = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
+    let cached_response = gallery.serve_cached_image(&cache_filename).await;
     assert!(cached_response.is_ok());
 
     // Check that the response has the correct MIME type for a composite (JPEG)

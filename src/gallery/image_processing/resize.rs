@@ -329,14 +329,13 @@ impl Gallery {
         Ok(cache_path)
     }
 
-    /// Get a specific tile from an image
+    /// Get a specific tile from an image (tiles are always AVIF/WebP based on feature flags)
     pub(crate) async fn get_image_tile(
         &self,
         original_path: &Path,
         relative_path: &str,
         tile_x: u32,
         tile_y: u32,
-        _output_format: OutputFormat, // Ignored - tiles are always AVIF
     ) -> Result<PathBuf, GalleryError> {
         // Get default tile size from config
         let tile_size = self
@@ -346,18 +345,12 @@ impl Gallery {
             .map(|tc| tc.tile_size)
             .unwrap_or(1024);
 
-        self.get_image_tile_with_size(
-            original_path,
-            relative_path,
-            tile_x,
-            tile_y,
-            tile_size,
-            _output_format,
-        )
-        .await
+        self.get_image_tile_with_size(original_path, relative_path, tile_x, tile_y, tile_size)
+            .await
     }
 
     /// Get a specific tile from an image with custom size (for retina)
+    /// Note: Tiles are always AVIF (or WebP fallback) regardless of source format
     pub(crate) async fn get_image_tile_with_size(
         &self,
         original_path: &Path,
@@ -365,7 +358,6 @@ impl Gallery {
         tile_x: u32,
         tile_y: u32,
         tile_size: u32,
-        _output_format: OutputFormat, // Ignored - tiles are always AVIF
     ) -> Result<PathBuf, GalleryError> {
         // Check if tiles are configured
         let _tile_config = self
@@ -462,12 +454,7 @@ impl Gallery {
         cache_key: &str,
         original_path: &Path,
     ) -> Result<bool, GalleryError> {
-        // Check if cache exists in storage
-        if !self.cache_storage.exists(cache_key).await.unwrap_or(false) {
-            return Ok(false);
-        }
-
-        // Get cache metadata from storage
+        // Get cache metadata from storage (returns NotFound if doesn't exist)
         let cache_meta = match self.cache_storage.metadata(cache_key).await {
             Ok(meta) => meta,
             Err(_) => return Ok(false),

@@ -497,37 +497,27 @@ impl Gallery {
         let grid_height = max_dimension.div_ceil(tile_size);
         drop(metadata);
 
-        // Tiles are always AVIF for best compression and quality
-        #[cfg(feature = "avif")]
-        let formats = vec![OutputFormat::Avif];
-        #[cfg(not(feature = "avif"))]
-        let formats = vec![OutputFormat::WebP]; // Fallback to WebP if AVIF is disabled
-
         // Generate all tiles at once by requesting any tile
         // The tile generation function will generate all tiles for the image
+        // Note: Tiles are always AVIF (or WebP fallback) regardless of this call
         if grid_width > 0 && grid_height > 0 {
-            // Just request tile 0,0 - the backend will generate all tiles
-            for format in &formats {
-                // Check for cancellation before each format (both pregeneration and shutdown)
-                if self.pregeneration_token.lock().await.is_cancelled()
-                    || self.shutdown_token.is_cancelled()
-                {
-                    return Ok(());
-                }
+            // Check for cancellation (both pregeneration and shutdown)
+            if self.pregeneration_token.lock().await.is_cancelled()
+                || self.shutdown_token.is_cancelled()
+            {
+                return Ok(());
+            }
 
-                match self
-                    .get_image_tile(&full_path, relative_path, 0, 0, *format)
-                    .await
-                {
-                    Ok(_) => {
-                        info!(
-                            "Pre-generated all tiles ({}x{} grid) for {}",
-                            grid_width, grid_height, relative_path
-                        );
-                    }
-                    Err(e) => {
-                        warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
-                    }
+            // Just request tile 0,0 - the backend will generate all tiles
+            match self.get_image_tile(&full_path, relative_path, 0, 0).await {
+                Ok(_) => {
+                    info!(
+                        "Pre-generated all tiles ({}x{} grid) for {}",
+                        grid_width, grid_height, relative_path
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
                 }
             }
         }
@@ -594,7 +584,9 @@ impl Gallery {
                         return (index, image_path, Err(super::GalleryError::InvalidPath));
                     }
 
-                    let result = gallery.pregenerate_image_cache(&image_path, &cache_files).await;
+                    let result = gallery
+                        .pregenerate_image_cache(&image_path, &cache_files)
+                        .await;
 
                     // Check for cancellation between operations
                     if is_cancelled() {

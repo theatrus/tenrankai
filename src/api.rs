@@ -156,10 +156,7 @@ pub async fn gallery_composite_preview_handler_for_named(
     let cache_filename = gallery.generate_composite_cache_filename(&gallery_path);
 
     // Try to serve from cache first
-    if let Ok(cached_response) = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await
-    {
+    if let Ok(cached_response) = gallery.serve_cached_image(&cache_filename).await {
         // Only return if it's not a 404 (i.e., cache exists)
         if cached_response.status() != StatusCode::NOT_FOUND {
             return Ok(cached_response);

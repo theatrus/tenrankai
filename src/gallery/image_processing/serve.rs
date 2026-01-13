@@ -71,8 +71,9 @@ impl Gallery {
 
                     // Check if already cached using storage abstraction
                     if self
-                        .is_cache_valid_storage(&cache_filename, &full_path)
+                        .is_cache_valid_by_key(&cache_filename, &full_path)
                         .await
+                        .unwrap_or(false)
                     {
                         let mime_type = output_format.mime_type();
                         return self
@@ -84,10 +85,7 @@ impl Gallery {
                     // Note: For retina, we use the same tile coordinates but cache with @2x suffix
                     debug!("Generating tile ({}, {}) retina={}", x, y, is_retina_tile);
 
-                    match self
-                        .get_image_tile(&full_path, relative_path, x, y, output_format)
-                        .await
-                    {
+                    match self.get_image_tile(&full_path, relative_path, x, y).await {
                         Ok(_) => {
                             // Tile was generated and written to storage, serve it
                             let mime_type = output_format.mime_type();
@@ -207,60 +205,14 @@ impl Gallery {
     }
 
     /// Serve cached image by key using storage abstraction
-    pub async fn serve_cached_image(
-        &self,
-        cache_key: &str,
-        _size: &str,
-        _accept_header: &str,
-    ) -> Result<Response, GalleryError> {
-        // Check if file exists in cache storage
-        if !self.cache_storage.exists(cache_key).await.unwrap_or(false) {
-            return Ok(ApiResponse::CacheEntryNotFound.into_response());
-        }
-
+    pub async fn serve_cached_image(&self, cache_key: &str) -> Result<Response, GalleryError> {
         // Determine MIME type from extension using OutputFormat
         let mime_type = super::types::OutputFormat::from_file_extension(cache_key)
             .map(|format| format.mime_type())
             .unwrap_or("image/jpeg");
 
-        // Serve from cache storage
+        // Serve from cache storage (handles NotFound internally)
         Ok(self.serve_from_cache_storage(cache_key, mime_type).await)
-    }
-
-    /// Check if cache file is valid using storage abstraction.
-    ///
-    /// Returns true if the cache file exists and is newer than the source.
-    async fn is_cache_valid_storage(&self, cache_filename: &str, source_path: &Path) -> bool {
-        // Check if cache exists
-        let cache_exists = self
-            .cache_storage
-            .exists(cache_filename)
-            .await
-            .unwrap_or(false);
-        if !cache_exists {
-            return false;
-        }
-
-        // Get cache modification time
-        let cache_modified = match self.cache_storage.metadata(cache_filename).await {
-            Ok(meta) => match meta.last_modified {
-                Some(time) => time,
-                None => return true, // If no modification time, assume cache is valid
-            },
-            Err(_) => return false,
-        };
-
-        // Get source modification time
-        let source_modified = match tokio::fs::metadata(source_path).await {
-            Ok(meta) => match meta.modified() {
-                Ok(time) => time,
-                Err(_) => return false,
-            },
-            Err(_) => return false,
-        };
-
-        // Cache is valid if it's newer than source
-        cache_modified >= source_modified
     }
 
     /// Serve file from cache storage with streaming
