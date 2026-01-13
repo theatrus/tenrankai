@@ -369,6 +369,13 @@ pub async fn resolve_permissions_for_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
+
+    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(cache_dir);
+        std::fs::create_dir_all(&path).ok();
+        std::sync::Arc::new(FilesystemStorage::new(path))
+    }
 
     #[tokio::test]
     async fn test_resolve_permissions_for_path_public() {
@@ -377,9 +384,10 @@ mod tests {
         let mut gallery_config = crate::GallerySystemConfig::default();
         gallery_config.name = "test".to_string();
         gallery_config.source_directory = std::path::PathBuf::from(".");
-        gallery_config.cache_directory = std::path::PathBuf::from(".");
+        gallery_config.cache_directory = ".".to_string();
 
-        let gallery = std::sync::Arc::new(crate::gallery::Gallery::new(gallery_config));
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = std::sync::Arc::new(crate::gallery::Gallery::new(gallery_config, cache_storage));
         let mut galleries = std::collections::HashMap::new();
         galleries.insert("test".to_string(), gallery);
 

@@ -492,6 +492,70 @@ impl Storage for S3Storage {
     fn supports_redirect(&self) -> bool {
         true
     }
+
+    async fn write_if_match(
+        &self,
+        path: &str,
+        data: Bytes,
+        expected_etag: Option<&str>,
+    ) -> Result<String, StorageError> {
+        let key = self.build_key(path);
+        debug!(
+            "S3 write_if_match: bucket={}, key={}, expected_etag={:?}",
+            self.bucket, key, expected_etag
+        );
+
+        // For S3, we need to check first then write (no atomic conditional write)
+        // This is a race condition but acceptable for our use case
+        let current_meta = self.metadata(path).await.ok();
+
+        match (expected_etag, &current_meta) {
+            // Expect file to not exist, but it does
+            (None, Some(_)) => {
+                return Err(StorageError::PreconditionFailed(format!(
+                    "Object already exists: {}",
+                    path
+                )));
+            }
+            // Expect specific ETag, but file doesn't exist
+            (Some(expected), None) => {
+                return Err(StorageError::PreconditionFailed(format!(
+                    "Object does not exist, expected etag {}: {}",
+                    expected, path
+                )));
+            }
+            // Expect specific ETag, check it matches
+            (Some(expected), Some(meta)) => {
+                let current_etag = meta.etag.as_deref().unwrap_or("");
+                // S3 ETags may have quotes around them
+                let expected_normalized = expected.trim_matches('"');
+                let current_normalized = current_etag.trim_matches('"');
+                if current_normalized != expected_normalized {
+                    return Err(StorageError::PreconditionFailed(format!(
+                        "ETag mismatch: expected {}, got {}: {}",
+                        expected, current_etag, path
+                    )));
+                }
+            }
+            // No expectation and file doesn't exist - OK to create
+            (None, None) => {}
+        }
+
+        // Perform the write
+        let put_result = self
+            .client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .body(AwsByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| StorageError::Other(format!("S3 PutObject error: {}", e)))?;
+
+        // Return the new ETag
+        let new_etag = put_result.e_tag().unwrap_or("").to_string();
+        Ok(new_etag)
+    }
 }
 
 impl std::fmt::Debug for S3Storage {

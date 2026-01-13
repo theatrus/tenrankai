@@ -21,6 +21,7 @@ pub use types::*;
 
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize},
@@ -32,12 +33,18 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 
+use crate::storage::DynStorage;
+
 use self::task_deduplicator::TaskDeduplicator;
 
 pub type SharedGallery = Arc<Gallery>;
 
 pub struct Gallery {
     pub(crate) config: crate::GallerySystemConfig,
+    /// Resolved cache directory path (parsed from config.cache_directory URL)
+    pub(crate) cache_path: PathBuf,
+    /// Storage backend for cache files
+    pub(crate) cache_storage: DynStorage,
     pub(crate) metadata_cache: Arc<RwLock<HashMap<String, ImageMetadata>>>,
     pub(crate) cache_metadata: Arc<RwLock<CacheMetadata>>,
     pub(crate) metadata_cache_dirty: Arc<AtomicBool>,
@@ -56,10 +63,14 @@ pub struct Gallery {
 }
 
 impl Gallery {
-    pub fn new(config: crate::GallerySystemConfig) -> Self {
-        let metadata_cache = crate::cache::load_image_metadata_cache(&config).unwrap_or_default();
-        let cache_metadata =
-            crate::cache::load_cache_version_metadata(&config).unwrap_or_else(|_| CacheMetadata {
+    pub fn new(config: crate::GallerySystemConfig, cache_storage: DynStorage) -> Self {
+        // Use the cache_path from storage if it's filesystem-based, otherwise use config path
+        let cache_path = PathBuf::from(&config.cache_directory);
+
+        let metadata_cache =
+            crate::cache::load_image_metadata_cache(&config, &cache_path).unwrap_or_default();
+        let cache_metadata = crate::cache::load_cache_version_metadata(&config, &cache_path)
+            .unwrap_or_else(|_| CacheMetadata {
                 version: String::new(), // Empty version will trigger full refresh
                 last_full_refresh: SystemTime::UNIX_EPOCH,
             });
@@ -73,6 +84,8 @@ impl Gallery {
 
         Self {
             config,
+            cache_path,
+            cache_storage,
             metadata_cache: Arc::new(RwLock::new(metadata_cache)),
             cache_metadata: Arc::new(RwLock::new(cache_metadata)),
             metadata_cache_dirty: Arc::new(AtomicBool::new(false)),

@@ -188,37 +188,28 @@ impl LoadedImage {
         }
     }
 
-    /// Save the image to a file in the specified format
-    pub fn save_as(
+    /// Encode the image to bytes in the specified format
+    pub fn encode(
         &self,
-        path: &std::path::Path,
         format: OutputFormat,
         jpeg_quality: u8,
         webp_quality: f32,
-    ) -> Result<(), GalleryError> {
+    ) -> Result<Vec<u8>, GalleryError> {
         use crate::gallery::image_processing::formats;
 
         match format {
-            OutputFormat::Jpeg => formats::jpeg::save_with_profile(
-                &self.image,
-                path,
-                jpeg_quality,
-                self.icc_profile.as_deref(),
-            ),
-            OutputFormat::WebP => formats::webp::save_with_profile(
-                &self.image,
-                path,
-                webp_quality,
-                self.icc_profile.as_deref(),
-            ),
-            OutputFormat::Png => formats::png::save(&self.image, path),
+            OutputFormat::Jpeg => {
+                formats::jpeg::encode_with_profile(&self.image, jpeg_quality, self.icc_profile.as_deref())
+            }
+            OutputFormat::WebP => {
+                formats::webp::encode_with_profile(&self.image, webp_quality, self.icc_profile.as_deref())
+            }
+            OutputFormat::Png => formats::png::encode(&self.image),
             #[cfg(feature = "avif")]
             OutputFormat::Avif => {
-                // Use the preserved AVIF info if available
                 if let Some(ref info) = self.avif_info {
-                    formats::avif::save_with_info(&self.image, path, 85, 6, Some(info))
+                    formats::avif::encode_with_info(&self.image, 85, 6, Some(info))
                 } else {
-                    // Fallback: preserve HDR if the source is 16-bit
                     let preserve_hdr = matches!(
                         self.image,
                         DynamicImage::ImageLuma16(_)
@@ -226,9 +217,8 @@ impl LoadedImage {
                             | DynamicImage::ImageRgb16(_)
                             | DynamicImage::ImageRgba16(_)
                     );
-                    formats::avif::save_with_profile(
+                    formats::avif::encode_with_profile(
                         &self.image,
-                        path,
                         85,
                         6,
                         self.icc_profile.as_deref(),
@@ -237,6 +227,19 @@ impl LoadedImage {
                 }
             }
         }
+    }
+
+    /// Save the image to a file in the specified format
+    pub fn save_as(
+        &self,
+        path: &std::path::Path,
+        format: OutputFormat,
+        jpeg_quality: u8,
+        webp_quality: f32,
+    ) -> Result<(), GalleryError> {
+        let data = self.encode(format, jpeg_quality, webp_quality)?;
+        std::fs::write(path, data)?;
+        Ok(())
     }
 
     /// Extract a tile from the image

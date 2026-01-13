@@ -1,12 +1,14 @@
 use crate::{
     ApiResponse,
     gallery::{Gallery, GalleryError},
+    storage::StorageError,
 };
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use futures::TryStreamExt;
 use std::path::Path;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
@@ -66,7 +68,7 @@ impl Gallery {
                         is_retina_tile,
                         output_format.extension(),
                     );
-                    let cache_path = self.config.cache_directory.join(&cache_filename);
+                    let cache_path = self.cache_path.join(&cache_filename);
 
                     // Check if already cached
                     if self
@@ -112,7 +114,7 @@ impl Gallery {
                         output_format.extension(),
                         apply_watermark,
                     );
-                    let cache_path = self.config.cache_directory.join(&cache_filename);
+                    let cache_path = self.cache_path.join(&cache_filename);
                     let was_cached = cache_path.exists();
 
                     match self
@@ -191,16 +193,15 @@ impl Gallery {
         }
     }
 
-    /// Serve cached image by key
+    /// Serve cached image by key using storage abstraction
     pub async fn serve_cached_image(
         &self,
         cache_key: &str,
         _size: &str,
         _accept_header: &str,
     ) -> Result<Response, GalleryError> {
-        let cache_path = self.config.cache_directory.join(cache_key);
-
-        if !cache_path.exists() {
+        // Check if file exists in cache storage
+        if !self.cache_storage.exists(cache_key).await.unwrap_or(false) {
             return Ok(ApiResponse::CacheEntryNotFound.into_response());
         }
 
@@ -209,9 +210,47 @@ impl Gallery {
             .map(|format| format.mime_type())
             .unwrap_or("image/jpeg");
 
+        // Serve from cache storage
         Ok(self
-            .serve_file_with_content_type_and_cache_header(&cache_path, mime_type, true)
+            .serve_from_cache_storage(cache_key, mime_type)
             .await)
+    }
+
+    /// Serve file from cache storage with streaming
+    async fn serve_from_cache_storage(&self, path: &str, content_type: &str) -> Response {
+        // Get metadata for content-length
+        let size = match self.cache_storage.metadata(path).await {
+            Ok(meta) => Some(meta.size),
+            Err(_) => None,
+        };
+
+        // Get stream from storage
+        match self.cache_storage.read_stream(path).await {
+            Ok(stream) => {
+                // Convert StorageError stream to std::io::Error stream for axum Body
+                let mapped_stream = stream.map_err(|e| std::io::Error::other(e.to_string()));
+                let body = Body::from_stream(mapped_stream);
+
+                let mut headers = HeaderMap::new();
+                headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+                if let Some(len) = size {
+                    headers.insert(header::CONTENT_LENGTH, len.to_string().parse().unwrap());
+                }
+
+                // Add cache headers - max 1 day for all images
+                headers.insert(
+                    header::CACHE_CONTROL,
+                    "public, max-age=86400".parse().unwrap(),
+                );
+
+                (StatusCode::OK, headers, body).into_response()
+            }
+            Err(StorageError::NotFound(_)) => ApiResponse::CacheEntryNotFound.into_response(),
+            Err(e) => {
+                error!("Failed to read from cache storage: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+            }
+        }
     }
 
     /// Store and serve composite image
@@ -229,7 +268,7 @@ impl Gallery {
         // Use the enhanced CacheType system for consistent filename generation
         if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
             let cache_filename = cache_type.filename(Some(&hash));
-            let cache_path = self.config.cache_directory.join(&cache_filename);
+            let cache_path = self.cache_path.join(&cache_filename);
 
             // Store the cache_filename for later use in response
             self.store_composite_with_path(image, cache_path, output_format, cache_filename)
@@ -237,7 +276,7 @@ impl Gallery {
         } else {
             // Fallback to old method if cache_key format is unexpected
             let cache_filename = format!("{}.{}", hash, output_format.extension());
-            let cache_path = self.config.cache_directory.join(&cache_filename);
+            let cache_path = self.cache_path.join(&cache_filename);
             self.store_composite_with_path(image, cache_path, output_format, cache_filename)
                 .await
         }
@@ -255,7 +294,7 @@ impl Gallery {
         use std::io::Cursor;
 
         // Ensure cache directory exists
-        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        tokio::fs::create_dir_all(&self.cache_path).await?;
 
         // Convert to RGB (JPEG doesn't support alpha)
         let rgb_image = image.to_rgb8();

@@ -1428,7 +1428,7 @@ async fn get_image_for_analysis(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
 
     if cache_path.exists() {
         debug!("Using cached medium image for analysis");
@@ -1706,11 +1706,18 @@ pub async fn analyze_folder_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
     use crate::{AppState, Config, GallerySystemConfig, api_response::short_cache_headers};
     use axum::http::{HeaderMap, HeaderValue};
     use std::{collections::HashMap, sync::Arc};
     use tempfile::TempDir;
     use tokio::fs;
+
+    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(cache_dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     // Helper function to convert headers to OptionalAuth for testing
     fn headers_to_optional_auth(
@@ -1801,7 +1808,7 @@ roles = ["viewer"]
             name: "test".to_string(),
             url_prefix: "/test".to_string(),
             source_directory: gallery_dir,
-            cache_directory: cache_dir,
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "test.html".to_string(),
             image_detail_template: "test.html".to_string(),
             images_per_page: 50,
@@ -1837,7 +1844,8 @@ roles = ["viewer"]
             tiles: None,
         };
 
-        let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config));
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config, cache_storage));
         let mut galleries = HashMap::new();
         galleries.insert("test".to_string(), gallery);
 

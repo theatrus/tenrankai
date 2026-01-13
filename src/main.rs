@@ -384,10 +384,10 @@ async fn handle_cache_command(
 
             match cache_type.as_str() {
                 "composite" => {
-                    commands::cache::invalidate_composite(gallery_config, &path, dry_run)?;
+                    commands::cache::invalidate_composite(gallery_config, &path, dry_run).await?;
                 }
                 "image" => {
-                    commands::cache::invalidate_image(gallery_config, &path, dry_run)?;
+                    commands::cache::invalidate_image(gallery_config, &path, dry_run).await?;
                 }
                 _ => {
                     eprintln!(
@@ -474,7 +474,21 @@ async fn run_server(
 
     if let Some(gallery_configs) = &config.galleries {
         for gallery_config in gallery_configs {
-            let gallery = std::sync::Arc::new(Gallery::new(gallery_config.clone()));
+            // Create cache storage backend from cache_directory URL
+            let cache_storage =
+                match storage::create_storage_from_url(&gallery_config.cache_directory).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to create cache storage for gallery '{}': {}",
+                            gallery_config.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+            let gallery = std::sync::Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
             // Initialize gallery and check for version changes
             if let Err(e) = gallery.initialize_and_check_version().await {

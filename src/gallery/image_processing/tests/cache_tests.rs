@@ -1,22 +1,26 @@
 use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
+use crate::storage::FilesystemStorage;
 use axum::http::StatusCode;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // Helper function to create a test gallery
 async fn create_test_gallery() -> (Gallery, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let cache_dir = temp_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
         source_directory: temp_dir.path().to_path_buf(),
-        cache_directory: cache_dir,
+        cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
-    let gallery = Gallery::new(config);
+    let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
+    let gallery = Gallery::new(config, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -48,12 +52,12 @@ async fn test_serve_cached_image_mime_types() {
     let test_data = b"dummy image data";
 
     // Ensure cache directory exists
-    tokio::fs::create_dir_all(&gallery.config.cache_directory)
+    tokio::fs::create_dir_all(&gallery.cache_path)
         .await
         .unwrap();
 
     // Test JPEG
-    let jpeg_path = gallery.config.cache_directory.join("test.jpg");
+    let jpeg_path = gallery.cache_path.join("test.jpg");
     tokio::fs::write(&jpeg_path, test_data).await.unwrap();
 
     let jpeg_response = gallery
@@ -71,7 +75,7 @@ async fn test_serve_cached_image_mime_types() {
     );
 
     // Test WebP
-    let webp_path = gallery.config.cache_directory.join("test.webp");
+    let webp_path = gallery.cache_path.join("test.webp");
     tokio::fs::write(&webp_path, test_data).await.unwrap();
 
     let webp_response = gallery
@@ -89,7 +93,7 @@ async fn test_serve_cached_image_mime_types() {
     );
 
     // Test PNG
-    let png_path = gallery.config.cache_directory.join("test.png");
+    let png_path = gallery.cache_path.join("test.png");
     tokio::fs::write(&png_path, test_data).await.unwrap();
 
     let png_response = gallery
@@ -113,11 +117,11 @@ async fn test_cache_headers_for_cached_images() {
 
     // Create a test cached file
     let test_data = b"test image data";
-    tokio::fs::create_dir_all(&gallery.config.cache_directory)
+    tokio::fs::create_dir_all(&gallery.cache_path)
         .await
         .unwrap();
 
-    let cache_file = gallery.config.cache_directory.join("cached.jpg");
+    let cache_file = gallery.cache_path.join("cached.jpg");
     tokio::fs::write(&cache_file, test_data).await.unwrap();
 
     // Serve the cached file

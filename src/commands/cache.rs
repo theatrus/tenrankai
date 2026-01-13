@@ -1,13 +1,16 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::GallerySystemConfig;
 use crate::gallery::Gallery;
+use crate::storage;
 
 /// Report format coverage for a gallery's image cache
 pub async fn report(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
+    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
     // Initialize gallery to load metadata cache
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -30,7 +33,8 @@ pub async fn report(
 pub async fn cleanup(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
+    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
     // Initialize gallery to load metadata cache
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -50,13 +54,14 @@ pub async fn cleanup(
 }
 
 /// Invalidate composite cache files for a gallery path
-pub fn invalidate_composite(
+pub async fn invalidate_composite(
     gallery_config: &GallerySystemConfig,
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cache_dir = &gallery_config.cache_directory;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+    let cache_dir = Path::new(&gallery_config.cache_directory);
+    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
+    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
     // Use the gallery's method to generate the composite cache key prefix
     let composite_key = gallery.generate_composite_cache_key_with_context(path);
@@ -111,13 +116,14 @@ pub fn invalidate_composite(
 }
 
 /// Invalidate image cache files for a specific image
-pub fn invalidate_image(
+pub async fn invalidate_image(
     gallery_config: &GallerySystemConfig,
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cache_dir = &gallery_config.cache_directory;
-    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+    let cache_dir = Path::new(&gallery_config.cache_directory);
+    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
+    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
     // Generate the hash prefix for this image path
     let hash = gallery.generate_cache_key(path, "");
@@ -176,7 +182,7 @@ pub fn invalidate_image(
 pub fn list_composites(
     gallery_config: &GallerySystemConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cache_dir = &gallery_config.cache_directory;
+    let cache_dir = Path::new(&gallery_config.cache_directory);
     let gallery_name = &gallery_config.name;
     let pattern = format!("composite_{}_", gallery_name);
 

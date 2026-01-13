@@ -1092,8 +1092,16 @@ pub(crate) struct ImageMetadataWithSize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
+    use std::sync::Arc;
     use tempfile::TempDir;
     use tokio::fs;
+
+    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(cache_dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     #[tokio::test]
     async fn test_folder_config_no_toml_defaults_to_false() {
@@ -1103,7 +1111,8 @@ mod tests {
             source_directory: temp_dir.path().to_path_buf(),
             ..Default::default()
         };
-        let gallery = Gallery::new(config);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, cache_storage);
 
         // Test folder with just markdown (no TOML front matter)
         let folder_path = temp_dir.path().join("markdown-only");

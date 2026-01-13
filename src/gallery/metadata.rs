@@ -723,7 +723,15 @@ impl Gallery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
     use std::path::PathBuf;
+    use std::sync::Arc;
+
+    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(cache_dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     #[tokio::test]
     async fn test_location_extraction_a7c5795() {
@@ -732,12 +740,13 @@ mod tests {
             name: "test".to_string(),
             url_prefix: "/gallery".to_string(),
             source_directory: PathBuf::from("photos"),
-            cache_directory: PathBuf::from("test_cache"),
+            cache_directory: "test_cache".to_string(),
             cache_refresh_interval_minutes: Some(60),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(gallery_config);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, cache_storage);
 
         // Test the specific image
         let image_path = PathBuf::from("photos/landscapes/_A7C5795.jpg");

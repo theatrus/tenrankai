@@ -84,7 +84,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),
             source_directory: gallery_dir,
-            cache_directory: cache_dir,
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             images_per_page: 20,
             ..Default::default()
         }]),

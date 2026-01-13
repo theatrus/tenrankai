@@ -9,10 +9,11 @@ use tracing::{debug, info};
 
 /// Load image metadata cache from disk
 pub(crate) fn load_image_metadata_cache(
-    config: &crate::GallerySystemConfig,
+    _config: &crate::GallerySystemConfig,
+    cache_path: &Path,
 ) -> Result<HashMap<String, ImageMetadata>, crate::gallery::GalleryError> {
     let cache_type = CacheType::ImageMetadata;
-    let cache_file = config.cache_directory.join(cache_type.filename(None));
+    let cache_file = cache_path.join(cache_type.filename(None));
 
     if !cache_file.exists() {
         debug!("Metadata cache file not found, starting with empty cache");
@@ -28,10 +29,11 @@ pub(crate) fn load_image_metadata_cache(
 
 /// Load cache version metadata from disk
 pub(crate) fn load_cache_version_metadata(
-    config: &crate::GallerySystemConfig,
+    _config: &crate::GallerySystemConfig,
+    cache_path: &Path,
 ) -> Result<CacheMetadata, crate::gallery::GalleryError> {
     let cache_type = CacheType::CacheMetadata;
-    let metadata_file = config.cache_directory.join(cache_type.filename(None));
+    let metadata_file = cache_path.join(cache_type.filename(None));
 
     if !metadata_file.exists() {
         debug!("Cache metadata file not found");

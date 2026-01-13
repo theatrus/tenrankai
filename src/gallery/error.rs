@@ -14,6 +14,9 @@ pub enum GalleryError {
     #[error("Task join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
 
+    #[error("Storage error: {0}")]
+    StorageError(#[from] crate::storage::StorageError),
+
     #[error("Invalid path")]
     InvalidPath,
 

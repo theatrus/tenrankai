@@ -25,7 +25,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
         GallerySystemConfig {
             name: "main".to_string(),
             source_directory: photos_dir.clone(),
-            cache_directory: cache_dir.join("main"),
+            cache_directory: cache_dir.join("main").to_string_lossy().to_string(),
             images_per_page: 20,
             preview: tenrankai::PreviewConfig {
                 max_images: 6,
@@ -78,7 +78,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             name: "portfolio".to_string(),
             url_prefix: "/my-portfolio".to_string(),
             source_directory: portfolio_dir.clone(),
-            cache_directory: cache_dir.join("portfolio"),
+            cache_directory: cache_dir.join("portfolio").to_string_lossy().to_string(),
             images_per_page: 12,
             preview: tenrankai::PreviewConfig {
                 max_images: 9,

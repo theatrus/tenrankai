@@ -171,7 +171,7 @@ impl Gallery {
         use std::sync::atomic::Ordering;
 
         let cache = self.metadata_cache.read().await;
-        crate::cache::save_image_metadata_cache(&self.config.cache_directory, &cache).await?;
+        crate::cache::save_image_metadata_cache(&self.cache_path, &cache).await?;
 
         // Reset dirty flag after successful save
         self.metadata_cache_dirty.store(false, Ordering::Relaxed);
@@ -182,13 +182,13 @@ impl Gallery {
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
         let metadata = self.cache_metadata.read().await;
-        crate::cache::save_cache_version_metadata(&self.config.cache_directory, &metadata).await?;
+        crate::cache::save_cache_version_metadata(&self.cache_path, &metadata).await?;
         Ok(())
     }
 
     pub async fn save_caches(&self) -> Result<(), super::GalleryError> {
         // Create cache directory if it doesn't exist
-        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        tokio::fs::create_dir_all(&self.cache_path).await?;
 
         // Save both caches
         self.save_metadata_cache().await?;
@@ -741,7 +741,7 @@ impl Gallery {
         let mut removed_count = 0;
 
         // Walk the cache directory and check each file
-        if let Ok(mut entries) = tokio::fs::read_dir(&self.config.cache_directory).await {
+        if let Ok(mut entries) = tokio::fs::read_dir(&self.cache_path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let filename = entry.file_name().to_string_lossy().to_string();
 
@@ -815,7 +815,7 @@ impl Gallery {
                 format.extension(),
                 apply_watermark,
             );
-            let cache_path = self.config.cache_directory.join(&cache_filename);
+            let cache_path = self.cache_path.join(&cache_filename);
             let source_path = self.config.source_directory.join(relative_path);
 
             // Check if cache file exists and is newer than source
@@ -1026,11 +1026,20 @@ impl Gallery {
 #[cfg(test)]
 mod tests {
     use super::super::Gallery;
+    use crate::storage::FilesystemStorage;
+    use std::sync::Arc;
+
+    fn create_test_storage(cache_dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(cache_dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     #[test]
     fn test_cache_key_consistency() {
         let gallery_config = crate::config::GallerySystemConfig::default();
-        let gallery = Gallery::new(gallery_config);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, cache_storage);
 
         // Test regular image cache keys
         let path = "vacation/beach.jpg";
@@ -1074,7 +1083,8 @@ mod tests {
     fn test_improved_composite_cache_structure() {
         use base64::{Engine as _, engine::general_purpose};
         let gallery_config = crate::config::GallerySystemConfig::default();
-        let gallery = Gallery::new(gallery_config);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, cache_storage);
 
         // Test safe path key generation
         let safe_key_simple = gallery.generate_safe_path_key("vacation/2024");
@@ -1115,7 +1125,8 @@ mod tests {
     #[test]
     fn test_cache_filename_generation() {
         let gallery_config = crate::config::GallerySystemConfig::default();
-        let gallery = Gallery::new(gallery_config);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, cache_storage);
 
         let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp", false);
         assert!(
@@ -1169,13 +1180,14 @@ This folder should not appear in listings.
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
             source_directory: source_dir,
-            cache_directory: cache_dir,
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, cache_storage);
 
         let items = gallery.scan_directory("").await.unwrap();
 
@@ -1215,13 +1227,14 @@ Hidden folder
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
             source_directory: source_dir,
-            cache_directory: cache_dir,
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, cache_storage);
 
         // Should be able to access hidden folder directly
         let items = gallery.scan_directory("hidden").await.unwrap();
@@ -1244,13 +1257,14 @@ Hidden folder
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
             source_directory: source_dir.clone(),
-            cache_directory: cache_dir,
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, cache_storage);
 
         // Insert metadata for "existing" and "deleted" images
         let metadata = ImageMetadata {
@@ -1301,13 +1315,14 @@ Hidden folder
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
             source_directory: source_dir.clone(),
-            cache_directory: cache_dir.clone(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, cache_storage);
 
         // Insert metadata for an image that "exists"
         let metadata = ImageMetadata {
@@ -1397,13 +1412,14 @@ Hidden folder
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
             source_directory: source_dir.clone(),
-            cache_directory: cache_dir.clone(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Arc::new(Gallery::new(config));
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Arc::new(Gallery::new(config, cache_storage));
 
         // Simulate: metadata for an image that was deleted
         let metadata = ImageMetadata {

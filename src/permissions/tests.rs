@@ -10,7 +10,7 @@ fn create_test_gallery_config(name: &str) -> GallerySystemConfig {
         name: name.to_string(),
         url_prefix: format!("/{}", name),
         source_directory: std::path::PathBuf::from(format!("test/{}", name)),
-        cache_directory: std::path::PathBuf::from(format!("cache/{}", name)),
+        cache_directory: format!("cache/{}", name),
         gallery_template: "gallery.html".to_string(),
         image_detail_template: "detail.html".to_string(),
         images_per_page: 50,

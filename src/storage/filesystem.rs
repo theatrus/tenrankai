@@ -98,6 +98,18 @@ impl FilesystemStorage {
     pub fn base_path(&self) -> &Path {
         &self.base_path
     }
+
+    /// Generate an ETag from file metadata (mtime + size).
+    fn generate_etag(meta: &std::fs::Metadata) -> String {
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let size = meta.len();
+        format!("{:x}-{:x}", mtime, size)
+    }
 }
 
 #[async_trait]
@@ -133,12 +145,16 @@ impl Storage for FilesystemStorage {
     async fn metadata(&self, path: &str) -> Result<ObjectMetadata, StorageError> {
         let full_path = self.resolve_path(path)?;
         match tokio::fs::metadata(&full_path).await {
-            Ok(meta) => Ok(ObjectMetadata {
-                size: meta.len(),
-                last_modified: meta.modified().ok(),
-                content_type: None, // Could use mime_guess here if needed
-                etag: None,
-            }),
+            Ok(meta) => {
+                // Generate ETag from mtime + size for conditional writes
+                let etag = Self::generate_etag(&meta);
+                Ok(ObjectMetadata {
+                    size: meta.len(),
+                    last_modified: meta.modified().ok(),
+                    content_type: None, // Could use mime_guess here if needed
+                    etag: Some(etag),
+                })
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(StorageError::NotFound(path.to_string()))
             }
@@ -269,5 +285,58 @@ impl Storage for FilesystemStorage {
 
     fn storage_type(&self) -> &'static str {
         "filesystem"
+    }
+
+    async fn write_if_match(
+        &self,
+        path: &str,
+        data: Bytes,
+        expected_etag: Option<&str>,
+    ) -> Result<String, StorageError> {
+        let full_path = self.resolve_path(path)?;
+
+        // Check current state
+        let current_meta = tokio::fs::metadata(&full_path).await.ok();
+
+        match (expected_etag, &current_meta) {
+            // Expect file to not exist, but it does
+            (None, Some(_)) => {
+                return Err(StorageError::PreconditionFailed(format!(
+                    "File already exists: {}",
+                    path
+                )));
+            }
+            // Expect specific ETag, but file doesn't exist
+            (Some(expected), None) => {
+                return Err(StorageError::PreconditionFailed(format!(
+                    "File does not exist, expected etag {}: {}",
+                    expected, path
+                )));
+            }
+            // Expect specific ETag, check it matches
+            (Some(expected), Some(meta)) => {
+                let current_etag = Self::generate_etag(meta);
+                if current_etag != expected {
+                    return Err(StorageError::PreconditionFailed(format!(
+                        "ETag mismatch: expected {}, got {}: {}",
+                        expected, current_etag, path
+                    )));
+                }
+            }
+            // No expectation and file doesn't exist - OK to create
+            (None, None) => {}
+        }
+
+        // Create parent directories if needed
+        if let Some(parent) = full_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        // Write the file
+        tokio::fs::write(&full_path, &data).await?;
+
+        // Get the new ETag after write
+        let new_meta = tokio::fs::metadata(&full_path).await?;
+        Ok(Self::generate_etag(&new_meta))
     }
 }

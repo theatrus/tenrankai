@@ -2,6 +2,7 @@ use crate::Config;
 use crate::gallery::Gallery;
 use crate::metadata_storage::{MetadataStorage, SidecarMetadataStorage};
 use crate::openai::{ImageContext, LocationContext, OpenAIClient, OpenAIError};
+use crate::storage;
 use base64::{Engine as _, engine::general_purpose};
 use std::path::Path;
 use std::sync::Arc;
@@ -29,7 +30,8 @@ pub async fn handle_analyze_command(
         .find(|g| g.name == gallery_name)
         .ok_or_else(|| format!("Gallery '{}' not found", gallery_name))?;
 
-    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
+    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
     // Create OpenAI client (unless dry run)
     let client = if !dry_run {
@@ -260,7 +262,7 @@ async fn get_image_for_analysis(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
 
     if cache_path.exists() {
         debug!("Using cached medium image for analysis");

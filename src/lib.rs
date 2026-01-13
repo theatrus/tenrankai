@@ -141,7 +141,27 @@ pub async fn create_app(
         let mut galleries = HashMap::new();
         if let Some(gallery_configs) = &config.galleries {
             for gallery_config in gallery_configs {
-                let gallery = Arc::new(gallery::Gallery::new(gallery_config.clone()));
+                // Create cache storage backend from cache_directory URL
+                let cache_storage =
+                    match storage::create_storage_from_url(&gallery_config.cache_directory).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!(
+                                "Failed to create cache storage for gallery '{}': {}",
+                                gallery_config.name, e
+                            );
+                            continue;
+                        }
+                    };
+
+                info!(
+                    "Initializing gallery '{}' with cache storage: {}",
+                    gallery_config.name,
+                    cache_storage.storage_type()
+                );
+
+                let gallery =
+                    Arc::new(gallery::Gallery::new(gallery_config.clone(), cache_storage));
                 galleries.insert(gallery_config.name.clone(), gallery);
             }
         }

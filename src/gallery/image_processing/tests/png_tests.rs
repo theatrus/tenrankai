@@ -1,22 +1,26 @@
 use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
+use crate::storage::FilesystemStorage;
 use image::{ImageBuffer, Rgba};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // Helper function to create a test gallery
 async fn create_test_gallery() -> (Gallery, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let cache_dir = temp_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
         source_directory: temp_dir.path().to_path_buf(),
-        cache_directory: cache_dir,
+        cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
-    let gallery = Gallery::new(config);
+    let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
+    let gallery = Gallery::new(config, cache_storage);
 
     (gallery, temp_dir)
 }

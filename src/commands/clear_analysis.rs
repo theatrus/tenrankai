@@ -1,6 +1,7 @@
 use crate::Config;
 use crate::gallery::Gallery;
 use crate::metadata_storage::{MetadataStorage, SidecarMetadataStorage};
+use crate::storage;
 use std::path::Path;
 use std::sync::Arc;
 use tracing::debug;
@@ -20,7 +21,8 @@ pub async fn handle_clear_analysis_command(
         .find(|g| g.name == gallery_name)
         .ok_or_else(|| format!("Gallery '{}' not found", gallery_name))?;
 
-    let gallery = Arc::new(Gallery::new(gallery_config.clone()));
+    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
+    let gallery = Arc::new(Gallery::new(gallery_config.clone(), cache_storage));
 
     // Create metadata storage
     let metadata_storage = SidecarMetadataStorage::new();

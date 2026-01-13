@@ -21,6 +21,10 @@ pub enum StorageError {
     #[error("Storage I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Precondition failed for conditional write (ETag mismatch).
+    #[error("Precondition failed: {0}")]
+    PreconditionFailed(String),
+
     /// Generic storage error for backend-specific issues.
     #[error("Storage error: {0}")]
     Other(String),
@@ -41,6 +45,9 @@ impl From<StorageError> for std::io::Error {
                 std::io::Error::new(std::io::ErrorKind::PermissionDenied, msg)
             }
             StorageError::Io(e) => e,
+            StorageError::PreconditionFailed(msg) => {
+                std::io::Error::new(std::io::ErrorKind::AlreadyExists, msg)
+            }
             StorageError::InvalidUrl(msg) | StorageError::Other(msg) => std::io::Error::other(msg),
         }
     }

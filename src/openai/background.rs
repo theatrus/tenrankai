@@ -257,7 +257,7 @@ async fn get_image_for_analysis(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
 
     if cache_path.exists() {
         return Ok(tokio::fs::read(&cache_path).await?);

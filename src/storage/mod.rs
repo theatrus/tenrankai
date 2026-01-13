@@ -193,6 +193,42 @@ pub trait Storage: Send + Sync + 'static {
         String::from_utf8(bytes.to_vec())
             .map_err(|e| StorageError::Other(format!("Invalid UTF-8 in {}: {}", path, e)))
     }
+
+    /// Conditional write: only write if the current ETag matches.
+    ///
+    /// This provides optimistic concurrency control for distributed systems.
+    /// If `expected_etag` is `None`, the write succeeds only if the file doesn't exist.
+    /// If `expected_etag` is `Some(etag)`, the write succeeds only if the current ETag matches.
+    ///
+    /// # Arguments
+    /// * `path` - Relative path to write to
+    /// * `data` - The data to write
+    /// * `expected_etag` - Expected ETag for conditional write, or None for create-only
+    ///
+    /// # Returns
+    /// * `Ok(new_etag)` - Write succeeded, returns the new ETag
+    /// * `Err(PreconditionFailed)` - ETag mismatch, write rejected
+    /// * `Err(other)` - Other error occurred
+    async fn write_if_match(
+        &self,
+        path: &str,
+        data: Bytes,
+        expected_etag: Option<&str>,
+    ) -> Result<String, StorageError>;
+
+    /// Read an object with its ETag for subsequent conditional writes.
+    ///
+    /// # Arguments
+    /// * `path` - Relative path to the object
+    ///
+    /// # Returns
+    /// Tuple of (data, etag) where etag can be used for `write_if_match`.
+    async fn read_with_etag(&self, path: &str) -> Result<(Bytes, String), StorageError> {
+        let data = self.read(path).await?;
+        let meta = self.metadata(path).await?;
+        let etag = meta.etag.unwrap_or_default();
+        Ok((data, etag))
+    }
 }
 
 /// Type alias for a thread-safe storage backend.

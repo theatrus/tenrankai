@@ -60,20 +60,17 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
     None
 }
 
-/// Save image as JPEG with optional ICC profile
-pub fn save_with_profile(
+/// Encode image as JPEG with optional ICC profile, returning bytes
+pub fn encode_with_profile(
     image: &DynamicImage,
-    path: &Path,
     quality: u8,
     icc_profile: Option<&[u8]>,
-) -> Result<(), GalleryError> {
-    // JPEG doesn't support alpha channel, so convert to RGB
+) -> Result<Vec<u8>, GalleryError> {
     let rgb_image = image.to_rgb8();
-    let output = std::fs::File::create(path)?;
+    let mut buffer = Vec::new();
 
     if let Some(profile_data) = icc_profile {
-        // Create encoder with ICC profile
-        let mut encoder = JpegEncoder::new_with_quality(output, quality);
+        let mut encoder = JpegEncoder::new_with_quality(&mut buffer, quality);
         match encoder.set_icc_profile(profile_data.to_vec()) {
             Ok(()) => {
                 encoder.write_image(
@@ -83,16 +80,17 @@ pub fn save_with_profile(
                     image::ExtendedColorType::Rgb8,
                 )?;
                 debug!(
-                    "JPEG written with ICC profile: {} bytes",
+                    "JPEG encoded with ICC profile: {} bytes",
                     profile_data.len()
                 );
             }
             Err(e) => {
                 debug!(
-                    "Failed to set ICC profile on JPEG encoder ({}), using standard JPEG",
+                    "Failed to set ICC profile on JPEG encoder ({}), encoding without profile",
                     e
                 );
-                let encoder = JpegEncoder::new_with_quality(std::fs::File::create(path)?, quality);
+                buffer.clear();
+                let encoder = JpegEncoder::new_with_quality(&mut buffer, quality);
                 encoder.write_image(
                     &rgb_image,
                     rgb_image.width(),
@@ -102,8 +100,7 @@ pub fn save_with_profile(
             }
         }
     } else {
-        // No ICC profile, use standard encoder
-        let encoder = JpegEncoder::new_with_quality(output, quality);
+        let encoder = JpegEncoder::new_with_quality(&mut buffer, quality);
         encoder.write_image(
             &rgb_image,
             rgb_image.width(),
@@ -112,5 +109,17 @@ pub fn save_with_profile(
         )?;
     }
 
+    Ok(buffer)
+}
+
+/// Save image as JPEG with optional ICC profile
+pub fn save_with_profile(
+    image: &DynamicImage,
+    path: &Path,
+    quality: u8,
+    icc_profile: Option<&[u8]>,
+) -> Result<(), GalleryError> {
+    let data = encode_with_profile(image, quality, icc_profile)?;
+    std::fs::write(path, data)?;
     Ok(())
 }
