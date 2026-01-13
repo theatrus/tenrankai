@@ -11,39 +11,7 @@ fn create_test_gallery_config(name: &str) -> GallerySystemConfig {
         url_prefix: format!("/{}", name),
         source_directory: format!("test/{}", name),
         cache_directory: format!("cache/{}", name),
-        gallery_template: "gallery.html".to_string(),
-        image_detail_template: "detail.html".to_string(),
-        images_per_page: 50,
-        thumbnail: crate::config::ImageSizeConfig {
-            width: 300,
-            height: 300,
-        },
-        gallery_size: crate::config::ImageSizeConfig {
-            width: 800,
-            height: 800,
-        },
-        medium: crate::config::ImageSizeConfig {
-            width: 1200,
-            height: 1200,
-        },
-        large: crate::config::ImageSizeConfig {
-            width: 1600,
-            height: 1600,
-        },
-        preview: crate::config::PreviewConfig {
-            max_images: 6,
-            max_depth: 3,
-            max_per_folder: 3,
-        },
-        jpeg_quality: Some(85),
-        webp_quality: Some(85.0),
-        new_threshold_days: None,
-        copyright_holder: None,
-        pregenerate: None,
-        image_indexing: crate::config::ImageIndexingMode::Filename,
-        permissions: Default::default(),
-        cache_refresh_interval_minutes: Some(60),
-        tiles: None,
+        ..Default::default()
     }
 }
 

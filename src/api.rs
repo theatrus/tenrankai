@@ -1831,6 +1831,7 @@ roles = ["viewer"]
             image_indexing: crate::config::ImageIndexingMode::Filename,
             permissions: Default::default(),
             tiles: None,
+            ..Default::default()
         };
 
         let source_storage = create_test_storage_from_path(&gallery_dir);

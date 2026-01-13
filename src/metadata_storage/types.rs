@@ -2,8 +2,97 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// User-editable metadata for images
+///
+/// This struct combines data from two sources:
+/// - `.md` sidecar files: title, description, location, and technical overrides
+/// - `.toml` sidecar files: picks, comments, tags, AI analysis
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ImageUserMetadata {
+    // === From .md sidecar (human-editable description) ===
+    /// Image title (from .md frontmatter)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// Markdown description (body of .md file)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Human-readable location name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+
+    // === Technical overrides from .md frontmatter ===
+    /// Camera make override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_make: Option<String>,
+
+    /// Camera model override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_model: Option<String>,
+
+    /// Lens model override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lens_model: Option<String>,
+
+    /// ISO override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iso: Option<u32>,
+
+    /// Aperture override (e.g., "f/2.8")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aperture: Option<String>,
+
+    /// Shutter speed override (e.g., "1/200")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shutter_speed: Option<String>,
+
+    /// Focal length override (e.g., "85mm")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focal_length: Option<String>,
+
+    /// Capture date override (ISO 8601 format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture_date: Option<String>,
+
+    // === Astronomical fields (from .md frontmatter) ===
+    /// Telescope used
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telescope: Option<String>,
+
+    /// Mount used
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mount: Option<String>,
+
+    /// Filters used
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filters: Option<String>,
+
+    /// Total exposure time in hours
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_exposure_time: Option<f32>,
+
+    /// Right ascension (e.g., "00h 42m 44s")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ra: Option<String>,
+
+    /// Declination (e.g., "+41° 16' 09\"")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dec: Option<String>,
+
+    /// Additional details/notes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_details: Option<String>,
+
+    // === Location coordinates (from .md frontmatter) ===
+    /// Latitude override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latitude: Option<f64>,
+
+    /// Longitude override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub longitude: Option<f64>,
+
+    // === From .toml sidecar (app-managed) ===
     /// Discussion-style comments thread
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
@@ -20,11 +109,11 @@ pub struct ImageUserMetadata {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
-    /// Last modified timestamp
+    /// Last modified timestamp (for .toml fields)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_modified: Option<DateTime<Utc>>,
 
-    /// Username of last editor
+    /// Username of last editor (for .toml fields)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_by: Option<String>,
 
@@ -124,6 +213,35 @@ impl ImageUserMetadata {
 
     /// Check if metadata has any actual content
     pub fn is_empty(&self) -> bool {
+        self.is_md_empty() && self.is_toml_empty()
+    }
+
+    /// Check if .md sidecar fields are empty
+    pub fn is_md_empty(&self) -> bool {
+        self.title.is_none()
+            && self.description.is_none()
+            && self.location.is_none()
+            && self.camera_make.is_none()
+            && self.camera_model.is_none()
+            && self.lens_model.is_none()
+            && self.iso.is_none()
+            && self.aperture.is_none()
+            && self.shutter_speed.is_none()
+            && self.focal_length.is_none()
+            && self.capture_date.is_none()
+            && self.telescope.is_none()
+            && self.mount.is_none()
+            && self.filters.is_none()
+            && self.total_exposure_time.is_none()
+            && self.ra.is_none()
+            && self.dec.is_none()
+            && self.additional_details.is_none()
+            && self.latitude.is_none()
+            && self.longitude.is_none()
+    }
+
+    /// Check if .toml sidecar fields are empty
+    pub fn is_toml_empty(&self) -> bool {
         self.comments.is_empty()
             && !self.highlighted
             && self.pick_status.is_none()

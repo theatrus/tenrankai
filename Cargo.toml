@@ -61,6 +61,7 @@ webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"]
 webauthn-rs-proto = "0.5"
 env_logger = "0.11"
 fnv = "1.0"
+lru = "0.12"
 quick-xml = "0.37"
 futures = "0.3"
 num_cpus = "1.16"

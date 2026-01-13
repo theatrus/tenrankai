@@ -138,6 +138,10 @@ pub struct GallerySystemConfig {
     /// Permission configuration for this gallery
     #[serde(default)]
     pub permissions: crate::permissions::types::PermissionConfig,
+    /// LRU cache size for user metadata (picks, comments, etc.)
+    /// Default: 1000 entries
+    #[serde(default = "super::defaults::default_metadata_cache_size")]
+    pub metadata_cache_size: usize,
 }
 
 /// Image indexing mode for gallery URLs

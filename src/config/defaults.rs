@@ -31,6 +31,11 @@ pub fn default_image_indexing() -> ImageIndexingMode {
     ImageIndexingMode::Filename
 }
 
+/// Default LRU cache size for user metadata storage
+pub fn default_metadata_cache_size() -> usize {
+    1000
+}
+
 /// Default AWS SDK log level (warn to reduce noise)
 pub fn default_aws_log_level() -> LogLevel {
     LogLevel::Warn
@@ -140,6 +145,7 @@ impl Default for GallerySystemConfig {
             image_indexing: default_image_indexing(),
             permissions: Default::default(),
             tiles: None,
+            metadata_cache_size: default_metadata_cache_size(),
         }
     }
 }
@@ -188,6 +194,7 @@ impl Default for Config {
                 image_indexing: default_image_indexing(),
                 permissions: Default::default(),
                 tiles: None,
+                metadata_cache_size: default_metadata_cache_size(),
             }]),
             posts: None,
             email: None,

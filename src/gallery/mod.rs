@@ -106,7 +106,10 @@ impl Gallery {
         // Create storage-backed metadata storage using source storage
         // User metadata is stored alongside source images in the same storage backend
         let user_metadata_storage: Arc<dyn crate::metadata_storage::MetadataStorage> = Arc::new(
-            crate::metadata_storage::StorageMetadataBackend::new(source_storage.clone()),
+            crate::metadata_storage::StorageMetadataBackend::with_cache_size(
+                source_storage.clone(),
+                config.metadata_cache_size,
+            ),
         );
 
         Self {
