@@ -767,7 +767,7 @@ pub async fn download_folder_handler(
     // Check if user can view and download gallery
     if !user_permissions.permissions.can_view {
         if !auth.is_authenticated() {
-            let return_url = format!("/{}/download/{}", gallery_name, path);
+            let return_url = format!("/{}/_download/{}", gallery_name, path);
             let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
             return axum::response::Redirect::temporary(&login_url).into_response();
         }

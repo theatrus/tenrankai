@@ -40,7 +40,7 @@
             <div id="gallery-filter-mount"></div>
 
             {% if permissions.can_download_gallery %}
-                <a href="{{ gallery_url }}/download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-download" title="Download all images as ZIP">
+                <a href="{{ gallery_url }}/_download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-download" title="Download all images as ZIP">
                     Download All
                 </a>
             {% endif %}

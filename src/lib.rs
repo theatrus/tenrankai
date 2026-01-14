@@ -460,7 +460,7 @@ async fn create_app_internal(
 
         // Gallery folder download (zip)
         router = router.route(
-            &format!("{}/download/{{*path}}", prefix),
+            &format!("{}/_download/{{*path}}", prefix),
             axum::routing::get({
                 let name = name.clone();
                 move |state, path: Path<String>, auth| {
@@ -472,7 +472,7 @@ async fn create_app_internal(
 
         // Gallery root download (zip)
         router = router.route(
-            &format!("{}/download", prefix),
+            &format!("{}/_download", prefix),
             axum::routing::get({
                 let name = name.clone();
                 move |state, auth| {
