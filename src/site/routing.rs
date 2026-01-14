@@ -113,10 +113,10 @@ mod tests {
     use super::*;
     use crate::site::{Site, SiteManager, SiteResources};
     use axum::{
+        Router,
         body::Body,
         http::{Request, StatusCode},
         routing::get,
-        Router,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -131,6 +131,7 @@ mod tests {
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_database_manager: None,
+            email_config: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }
@@ -266,7 +267,10 @@ mod tests {
         let site_manager = Arc::new(SiteManager::new());
         // No catch-all site
         site_manager
-            .add_site(default_site.clone(), vec!["specific.example.com".to_string()])
+            .add_site(
+                default_site.clone(),
+                vec!["specific.example.com".to_string()],
+            )
             .await;
 
         let app_state = AppState {

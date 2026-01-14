@@ -11,5 +11,5 @@ pub mod defaults;
 pub mod multi_site;
 
 // Re-export all public types for easier access
-pub use types::*;
 pub use multi_site::{MultiSiteConfig, SiteConfigSection};
+pub use types::*;

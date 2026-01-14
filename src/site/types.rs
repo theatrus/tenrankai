@@ -2,13 +2,14 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 
 use crate::{
+    Config, GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig,
+    email::SiteEmailConfig,
     favicon::FaviconRenderer,
     gallery::SharedGallery,
-    login::{types::UserDatabaseManager, LoginState},
+    login::{LoginState, types::UserDatabaseManager},
     posts::PostsManager,
     static_files::StaticFileHandler,
     templating::TemplateEngine,
-    Config, GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig,
 };
 
 /// Configuration for a single site (extracted from legacy Config or multi-site config)
@@ -20,11 +21,15 @@ pub struct SiteConfig {
     pub galleries: Option<Vec<GallerySystemConfig>>,
     pub posts: Option<Vec<PostsSystemConfig>>,
     pub user_database: Option<PathBuf>,
+    pub email: Option<SiteEmailConfig>,
 }
 
 impl SiteConfig {
     /// Create a default site config from legacy Config (backward compatibility)
-    pub fn from_legacy_config(config: &Config) -> Self {
+    pub fn from_legacy_config(
+        config: &Config,
+        email_config: Option<&crate::email::EmailConfig>,
+    ) -> Self {
         Self {
             name: "default".to_string(),
             templates: config.templates.clone(),
@@ -32,6 +37,7 @@ impl SiteConfig {
             galleries: config.galleries.clone(),
             posts: config.posts.clone(),
             user_database: config.app.user_database.clone(),
+            email: email_config.map(SiteEmailConfig::from),
         }
     }
 }
@@ -45,6 +51,7 @@ pub struct SiteResources {
     pub posts_managers: Arc<HashMap<String, Arc<PostsManager>>>,
     pub login_state: Arc<RwLock<LoginState>>,
     pub user_database_manager: Option<UserDatabaseManager>,
+    pub email_config: Option<SiteEmailConfig>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -84,5 +91,9 @@ impl Site {
 
     pub fn user_database_manager(&self) -> &Option<UserDatabaseManager> {
         &self.resources.user_database_manager
+    }
+
+    pub fn email_config(&self) -> Option<&SiteEmailConfig> {
+        self.resources.email_config.as_ref()
     }
 }

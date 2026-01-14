@@ -132,9 +132,10 @@ pub async fn login_request(
         let login_url = format!("{}/_login/verify?token={}", base_url, token);
 
         // Send email if provider is configured, otherwise log the URL
+        // Use site-specific email config for sender identity
         if let Some(email_provider) = &app_state.email_provider {
-            if let Some(email_config) = &app_state.config.email {
-                // Create the email message
+            if let Some(email_config) = app_state.email_config() {
+                // Create the email message using site-specific sender settings
                 let mut email_message = crate::email::EmailMessage::new(
                     &user.email,
                     email_config.format_from(),

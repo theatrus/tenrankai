@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use super::types::{
     AppConfig, GallerySystemConfig, PostsSystemConfig, ServerConfig, StaticConfig, TemplateConfig,
 };
+use crate::email::SiteEmailConfig;
 use crate::{email, openai};
 
 /// Multi-site configuration
@@ -107,6 +108,11 @@ pub struct SiteConfigSection {
     /// User database path for this site's authentication
     #[serde(default)]
     pub user_database: Option<PathBuf>,
+
+    /// Per-site email sender configuration (from address, name, reply-to)
+    /// The email provider is shared globally, but each site can have its own sender identity
+    #[serde(default)]
+    pub email: Option<SiteEmailConfig>,
 }
 
 impl MultiSiteConfig {
@@ -124,6 +130,8 @@ impl MultiSiteConfig {
             self.sites.clone().unwrap_or_default()
         } else {
             // Migrate legacy config to a single default site
+            let email = self.email.as_ref().map(SiteEmailConfig::from);
+
             let mut sites = HashMap::new();
             sites.insert(
                 "default".to_string(),
@@ -139,6 +147,7 @@ impl MultiSiteConfig {
                     galleries: self.galleries.clone(),
                     posts: self.posts.clone(),
                     user_database: self.app.user_database.clone(),
+                    email,
                 },
             );
             sites
@@ -148,14 +157,29 @@ impl MultiSiteConfig {
 
 impl SiteConfigSection {
     /// Convert to SiteConfig for use with SiteBuilder
-    pub fn to_site_config(&self, name: &str, app: &AppConfig) -> crate::site::SiteConfig {
+    pub fn to_site_config(
+        &self,
+        name: &str,
+        app: &AppConfig,
+        global_email: Option<&email::EmailConfig>,
+    ) -> crate::site::SiteConfig {
+        // Use site-specific email config, or fall back to global email config
+        let email = self
+            .email
+            .clone()
+            .or_else(|| global_email.map(SiteEmailConfig::from));
+
         crate::site::SiteConfig {
             name: name.to_string(),
             templates: self.templates.clone(),
             static_files: self.static_files.clone(),
             galleries: self.galleries.clone(),
             posts: self.posts.clone(),
-            user_database: self.user_database.clone().or_else(|| app.user_database.clone()),
+            user_database: self
+                .user_database
+                .clone()
+                .or_else(|| app.user_database.clone()),
+            email,
         }
     }
 }
@@ -253,6 +277,7 @@ mod tests {
                 galleries: None,
                 posts: None,
                 user_database: None,
+                email: None,
             },
         );
 

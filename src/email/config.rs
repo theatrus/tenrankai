@@ -1,6 +1,35 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Per-site email sender settings (from address, name, reply-to)
+/// The actual email provider is shared globally across all sites.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteEmailConfig {
+    pub from_address: String,
+    pub from_name: Option<String>,
+    pub reply_to: Option<String>,
+}
+
+impl SiteEmailConfig {
+    pub fn format_from(&self) -> String {
+        match &self.from_name {
+            Some(name) => format!("{} <{}>", name, self.from_address),
+            None => self.from_address.clone(),
+        }
+    }
+}
+
+impl From<&EmailConfig> for SiteEmailConfig {
+    fn from(config: &EmailConfig) -> Self {
+        Self {
+            from_address: config.from_address.clone(),
+            from_name: config.from_name.clone(),
+            reply_to: config.reply_to.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EmailConfig {
     pub from_address: String,

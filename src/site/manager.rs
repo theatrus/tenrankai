@@ -101,7 +101,10 @@ impl SiteManager {
             if let Some(site_name) = hostname_index.get(hostname_no_port) {
                 let sites = self.sites.read().await;
                 if let Some(site) = sites.get(site_name) {
-                    debug!("Exact match found: hostname '{}' -> site '{}'", hostname_no_port, site_name);
+                    debug!(
+                        "Exact match found: hostname '{}' -> site '{}'",
+                        hostname_no_port, site_name
+                    );
                     return Some(site.clone());
                 }
             }
@@ -114,8 +117,10 @@ impl SiteManager {
                 if hostname_matches_glob(pattern, hostname_no_port) {
                     let sites = self.sites.read().await;
                     if let Some(site) = sites.get(site_name) {
-                        debug!("Glob match found: hostname '{}' matches '{}' -> site '{}'",
-                            hostname_no_port, pattern, site_name);
+                        debug!(
+                            "Glob match found: hostname '{}' matches '{}' -> site '{}'",
+                            hostname_no_port, pattern, site_name
+                        );
                         return Some(site.clone());
                     }
                 }
@@ -128,7 +133,10 @@ impl SiteManager {
             if let Some(default_name) = default_site.as_ref() {
                 let sites = self.sites.read().await;
                 if let Some(site) = sites.get(default_name) {
-                    debug!("Using default site '{}' for hostname '{}'", default_name, hostname_no_port);
+                    debug!(
+                        "Using default site '{}' for hostname '{}'",
+                        default_name, hostname_no_port
+                    );
                     return Some(site.clone());
                 }
             }
@@ -266,6 +274,7 @@ mod tests {
             posts_managers: Arc::new(std::collections::HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_database_manager: None,
+            email_config: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }
@@ -283,7 +292,10 @@ mod tests {
         assert!(hostname_matches_glob("*.example.com", "bar.example.com"));
         assert!(!hostname_matches_glob("*.example.com", "example.com"));
         // Multi-level subdomains should not match single wildcard
-        assert!(!hostname_matches_glob("*.example.com", "foo.bar.example.com"));
+        assert!(!hostname_matches_glob(
+            "*.example.com",
+            "foo.bar.example.com"
+        ));
     }
 
     #[test]
@@ -349,9 +361,7 @@ mod tests {
         let default_site = create_test_site("default");
 
         // Add in reverse priority order to test matching priority
-        manager
-            .add_site(default_site, vec!["*".to_string()])
-            .await;
+        manager.add_site(default_site, vec!["*".to_string()]).await;
         manager
             .add_site(glob_site, vec!["*.example.com".to_string()])
             .await;

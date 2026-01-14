@@ -2,11 +2,11 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
-use super::{Site, SiteConfig, SiteBuilderError, SiteResources};
+use super::{Site, SiteBuilderError, SiteConfig, SiteResources};
 use crate::{
     favicon::FaviconRenderer,
     gallery::{Gallery, SharedGallery},
-    login::{types::UserDatabaseManager, LoginState},
+    login::{LoginState, types::UserDatabaseManager},
     posts::{PostsConfig, PostsManager},
     static_files::StaticFileHandler,
     storage,
@@ -65,6 +65,7 @@ impl SiteBuilder {
             posts_managers,
             login_state,
             user_database_manager,
+            email_config: self.config.email.clone(),
         };
 
         info!("Site '{}' built successfully", self.config.name);
@@ -97,7 +98,11 @@ impl SiteBuilder {
     async fn build_galleries(&self) -> Result<HashMap<String, SharedGallery>, SiteBuilderError> {
         let mut galleries = HashMap::new();
 
-        let gallery_configs = self.config.galleries.as_ref().map_or(&[][..], |v| v.as_slice());
+        let gallery_configs = self
+            .config
+            .galleries
+            .as_ref()
+            .map_or(&[][..], |v| v.as_slice());
 
         for gallery_config in gallery_configs {
             info!(

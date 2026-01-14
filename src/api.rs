@@ -1908,6 +1908,7 @@ roles = ["viewer"]
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_database_manager: None,
+            email_config: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);

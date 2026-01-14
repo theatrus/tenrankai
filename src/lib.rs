@@ -107,6 +107,10 @@ impl AppState {
     pub fn user_database_manager(&self) -> &Option<login::types::UserDatabaseManager> {
         self.site.user_database_manager()
     }
+
+    pub fn email_config(&self) -> Option<&email::SiteEmailConfig> {
+        self.site.email_config()
+    }
 }
 
 // FromRef is automatically implemented for AppState since it implements Clone
@@ -179,7 +183,7 @@ async fn create_app_internal(
         }
     } else {
         // Single-site mode: build the site from config
-        let site_config = site::SiteConfig::from_legacy_config(&config);
+        let site_config = site::SiteConfig::from_legacy_config(&config, config.email.as_ref());
         let mut site_builder = site::SiteBuilder::new(site_config);
 
         // Inject provided galleries if any (for testing)

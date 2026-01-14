@@ -162,7 +162,11 @@ impl ConfigReloader {
 
             info!("Adding new site '{}'", site_name);
 
-            let site_config = site_section.to_site_config(&site_name, &multi_config.app);
+            let site_config = site_section.to_site_config(
+                &site_name,
+                &multi_config.app,
+                multi_config.email.as_ref(),
+            );
             let site_builder = SiteBuilder::new(site_config);
 
             match site_builder.build().await {
@@ -202,7 +206,11 @@ impl ConfigReloader {
 
             info!("Updating site '{}'", site_name);
 
-            let site_config = site_section.to_site_config(&site_name, &multi_config.app);
+            let site_config = site_section.to_site_config(
+                &site_name,
+                &multi_config.app,
+                multi_config.email.as_ref(),
+            );
             let site_builder = SiteBuilder::new(site_config);
 
             match site_builder.build().await {
@@ -303,7 +311,9 @@ mod tests {
         assert!(result.summary().contains("added: site1"));
         assert!(result.summary().contains("updated: site2"));
 
-        result.failed.push(("site3".to_string(), "error".to_string()));
+        result
+            .failed
+            .push(("site3".to_string(), "error".to_string()));
         assert!(result.summary().contains("failed: site3"));
     }
 
@@ -315,7 +325,9 @@ mod tests {
         result.added.push("site1".to_string());
         assert!(result.is_success());
 
-        result.failed.push(("site2".to_string(), "error".to_string()));
+        result
+            .failed
+            .push(("site2".to_string(), "error".to_string()));
         assert!(!result.is_success());
     }
 }

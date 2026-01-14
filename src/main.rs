@@ -7,11 +7,14 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
-    Config, LogLevel, commands, create_app, create_app_with_site_manager,
+    Config, LogLevel, commands,
     config::MultiSiteConfig,
+    create_app, create_app_with_site_manager,
     gallery::Gallery,
     login::{User, UserDatabase},
-    openai, posts, site::{ConfigReloader, SiteBuilder, SiteManager}, startup_checks, storage,
+    openai, posts,
+    site::{ConfigReloader, SiteBuilder, SiteManager},
+    startup_checks, storage,
 };
 
 #[derive(Parser, Debug)]
@@ -265,10 +268,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             port,
             host,
             quit_after,
-        }) => run_server(config, multi_site_config, cli.config.clone(), port, host, quit_after).await,
+        }) => {
+            run_server(
+                config,
+                multi_site_config,
+                cli.config.clone(),
+                port,
+                host,
+                quit_after,
+            )
+            .await
+        }
         None => {
             // Default to serve command if no subcommand specified
-            run_server(config, multi_site_config, cli.config.clone(), None, None, None).await
+            run_server(
+                config,
+                multi_site_config,
+                cli.config.clone(),
+                None,
+                None,
+                None,
+            )
+            .await
         }
     }
 }
@@ -519,7 +540,11 @@ async fn run_server(
             info!("Building site '{}'...", site_name);
 
             // Convert site section to SiteConfig
-            let site_config = site_section.to_site_config(&site_name, &multi_config.app);
+            let site_config = site_section.to_site_config(
+                &site_name,
+                &multi_config.app,
+                multi_config.email.as_ref(),
+            );
 
             // Build the site
             let site_builder = SiteBuilder::new(site_config);
@@ -598,17 +623,18 @@ async fn run_server(
                 galleries_for_shutdown.push(gallery.clone());
 
                 // Add to combined galleries map (use site_name prefix for uniqueness)
-                all_galleries_map.insert(
-                    format!("{}:{}", site_name, gallery_name),
-                    gallery.clone(),
-                );
+                all_galleries_map
+                    .insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
             }
 
             // Add site to manager with its hostnames
             site_manager
                 .add_site(site, site_section.hostnames.clone())
                 .await;
-            info!("Site '{}' ready with hostnames: {:?}", site_name, site_section.hostnames);
+            info!(
+                "Site '{}' ready with hostnames: {:?}",
+                site_name, site_section.hostnames
+            );
         }
 
         // Create app with site manager
@@ -621,18 +647,21 @@ async fn run_server(
         if let Some(gallery_configs) = &config.galleries {
             for gallery_config in gallery_configs {
                 // Create source storage backend from source_directory URL
-                let source_storage =
-                    match storage::create_storage_from_url(&gallery_config.source_directory).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to create source storage for gallery '{}': {}",
-                                gallery_config.name,
-                                e
-                            );
-                            continue;
-                        }
-                    };
+                let source_storage = match storage::create_storage_from_url(
+                    &gallery_config.source_directory,
+                )
+                .await
+                {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to create source storage for gallery '{}': {}",
+                            gallery_config.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
 
                 // Create cache storage backend from cache_directory URL
                 let cache_storage =
@@ -815,7 +844,7 @@ async fn run_server(
         let reload_token_clone = reload_token.clone();
 
         tokio::spawn(async move {
-            use tokio::signal::unix::{signal, SignalKind};
+            use tokio::signal::unix::{SignalKind, signal};
 
             let mut sighup = match signal(SignalKind::hangup()) {
                 Ok(s) => s,
