@@ -136,8 +136,28 @@ impl SiteBuilder {
                     }
                 };
 
-            let gallery = Gallery::new(gallery_config.clone(), source_storage, cache_storage);
-            galleries.insert(gallery_config.name.clone(), Arc::new(gallery));
+            info!(
+                "Gallery '{}' using source: {}, cache: {}",
+                gallery_config.name,
+                source_storage.storage_type(),
+                cache_storage.storage_type()
+            );
+
+            let gallery = Arc::new(Gallery::new(
+                gallery_config.clone(),
+                source_storage,
+                cache_storage,
+            ));
+
+            // Initialize folder cache (mandatory for gallery operations)
+            if let Err(e) = gallery.refresh_folder_cache().await {
+                error!(
+                    "Failed to initialize folder cache for gallery '{}': {}",
+                    gallery_config.name, e
+                );
+            }
+
+            galleries.insert(gallery_config.name.clone(), gallery);
         }
 
         Ok(galleries)
@@ -173,6 +193,13 @@ impl SiteBuilder {
                     }
                 };
 
+            info!(
+                "Posts '{}' from {} (storage: {})",
+                posts_system_config.name,
+                posts_system_config.source_directory,
+                posts_storage.storage_type()
+            );
+
             // Convert PostsSystemConfig to PostsConfig
             let posts_config = PostsConfig {
                 source_directory: posts_system_config.source_directory.clone(),
@@ -186,10 +213,17 @@ impl SiteBuilder {
             let mut posts_manager = PostsManager::new(posts_config, posts_storage);
             posts_manager.set_galleries(galleries.clone());
 
-            posts_managers.insert(
-                posts_system_config.name.clone(),
-                Arc::new(posts_manager),
-            );
+            let posts_manager = Arc::new(posts_manager);
+
+            // Load posts on startup
+            if let Err(e) = posts_manager.refresh_posts().await {
+                error!(
+                    "Failed to initialize posts for '{}': {}",
+                    posts_system_config.name, e
+                );
+            }
+
+            posts_managers.insert(posts_system_config.name.clone(), posts_manager);
         }
 
         Ok(posts_managers)

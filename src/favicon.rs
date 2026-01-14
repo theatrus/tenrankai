@@ -267,17 +267,17 @@ impl FaviconRenderer {
 }
 
 pub async fn favicon_ico_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
-    app_state.favicon_renderer.render_favicon_ico().await
+    app_state.favicon_renderer().render_favicon_ico().await
 }
 
 pub async fn favicon_png_16_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
-    app_state.favicon_renderer.render_favicon_png(16).await
+    app_state.favicon_renderer().render_favicon_png(16).await
 }
 
 pub async fn favicon_png_32_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
-    app_state.favicon_renderer.render_favicon_png(32).await
+    app_state.favicon_renderer().render_favicon_png(32).await
 }
 
 pub async fn favicon_png_48_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
-    app_state.favicon_renderer.render_favicon_png(48).await
+    app_state.favicon_renderer().render_favicon_png(48).await
 }

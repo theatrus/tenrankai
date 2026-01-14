@@ -39,7 +39,7 @@ pub async fn start_passkey_registration(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -95,7 +95,7 @@ pub async fn start_passkey_registration(
 
     // Store registration state
     {
-        let mut login_state = app_state.login_state.write().await;
+        let mut login_state = app_state.login_state().write().await;
         let reg_id = Uuid::new_v4().to_string();
         login_state.pending_registrations.insert(
             reg_id.clone(),
@@ -148,7 +148,7 @@ pub async fn finish_passkey_registration(
 
     // Get registration state
     let registration_state = {
-        let mut login_state = app_state.login_state.write().await;
+        let mut login_state = app_state.login_state().write().await;
         login_state
             .pending_registrations
             .remove(&reg_id)
@@ -182,7 +182,7 @@ pub async fn finish_passkey_registration(
         })?;
 
     // Get user database manager
-    let db_manager = app_state.user_database_manager.as_ref().ok_or_else(|| {
+    let db_manager = app_state.user_database_manager().as_ref().ok_or_else(|| {
         error!("User database manager not configured");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -232,7 +232,7 @@ pub async fn start_passkey_authentication(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -269,7 +269,7 @@ pub async fn start_passkey_authentication(
 
     // Store authentication state
     {
-        let mut login_state = app_state.login_state.write().await;
+        let mut login_state = app_state.login_state().write().await;
         let auth_id = Uuid::new_v4().to_string();
         login_state.pending_authentications.insert(
             auth_id.clone(),
@@ -307,7 +307,7 @@ pub async fn finish_passkey_authentication(
 
     // Get authentication state
     let authentication_state = {
-        let mut login_state = app_state.login_state.write().await;
+        let mut login_state = app_state.login_state().write().await;
         login_state
             .pending_authentications
             .remove(&auth_id)
@@ -324,7 +324,7 @@ pub async fn finish_passkey_authentication(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -390,7 +390,7 @@ pub async fn list_passkeys(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -430,7 +430,7 @@ pub async fn delete_passkey(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -467,7 +467,7 @@ pub async fn check_user_has_passkeys(
 ) -> Result<Json<HasPasskeysResponse>, StatusCode> {
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -503,7 +503,7 @@ pub async fn update_passkey_name(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
