@@ -162,27 +162,8 @@ impl ConfigReloader {
 
             info!("Adding new site '{}'", site_name);
 
-            let site_config = site_section.to_site_config(
-                &site_name,
-                &multi_config.app,
-                multi_config.email.as_ref(),
-            );
-            let site_builder = SiteBuilder::new(site_config);
-
-            match site_builder.build().await {
+            match Self::build_site_with_galleries(&site_name, site_section, &multi_config).await {
                 Ok(site) => {
-                    let site = Arc::new(site);
-
-                    // Initialize galleries for this site
-                    for (gallery_name, gallery) in site.galleries().iter() {
-                        if let Err(e) = Self::initialize_gallery(gallery).await {
-                            warn!(
-                                "Failed to initialize gallery '{}' for site '{}': {}",
-                                gallery_name, site_name, e
-                            );
-                        }
-                    }
-
                     site_manager
                         .add_site(site, site_section.hostnames.clone())
                         .await;
@@ -190,7 +171,7 @@ impl ConfigReloader {
                 }
                 Err(e) => {
                     error!("Failed to build new site '{}': {}", site_name, e);
-                    result.failed.push((site_name, e.to_string()));
+                    result.failed.push((site_name, e));
                 }
             }
         }
@@ -206,28 +187,8 @@ impl ConfigReloader {
 
             info!("Updating site '{}'", site_name);
 
-            let site_config = site_section.to_site_config(
-                &site_name,
-                &multi_config.app,
-                multi_config.email.as_ref(),
-            );
-            let site_builder = SiteBuilder::new(site_config);
-
-            match site_builder.build().await {
+            match Self::build_site_with_galleries(&site_name, site_section, &multi_config).await {
                 Ok(new_site) => {
-                    let new_site = Arc::new(new_site);
-
-                    // Initialize galleries for this site
-                    for (gallery_name, gallery) in new_site.galleries().iter() {
-                        if let Err(e) = Self::initialize_gallery(gallery).await {
-                            warn!(
-                                "Failed to initialize gallery '{}' for site '{}': {}",
-                                gallery_name, site_name, e
-                            );
-                        }
-                    }
-
-                    // Replace the old site with the new one
                     site_manager
                         .replace_site(&site_name, new_site, site_section.hostnames.clone())
                         .await;
@@ -238,7 +199,7 @@ impl ConfigReloader {
                         "Failed to rebuild site '{}', keeping old version: {}",
                         site_name, e
                     );
-                    result.failed.push((site_name, e.to_string()));
+                    result.failed.push((site_name, e));
                     // Old site remains in place - this is the resilient behavior
                 }
             }
@@ -246,6 +207,32 @@ impl ConfigReloader {
 
         info!("Configuration reload complete: {}", result.summary());
         result
+    }
+
+    /// Build a site and initialize its galleries
+    async fn build_site_with_galleries(
+        site_name: &str,
+        site_section: &crate::config::multi_site::SiteConfigSection,
+        multi_config: &MultiSiteConfig,
+    ) -> Result<Arc<crate::site::Site>, String> {
+        let site_config =
+            site_section.to_site_config(site_name, &multi_config.app, multi_config.email.as_ref());
+        let site_builder = SiteBuilder::new(site_config);
+
+        let site = site_builder.build().await.map_err(|e| e.to_string())?;
+        let site = Arc::new(site);
+
+        // Initialize galleries for this site
+        for (gallery_name, gallery) in site.galleries().iter() {
+            if let Err(e) = Self::initialize_gallery(gallery).await {
+                warn!(
+                    "Failed to initialize gallery '{}' for site '{}': {}",
+                    gallery_name, site_name, e
+                );
+            }
+        }
+
+        Ok(site)
     }
 
     /// Initialize a gallery (version check, metadata refresh, background tasks)
