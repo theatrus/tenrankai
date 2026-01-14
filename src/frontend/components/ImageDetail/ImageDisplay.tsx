@@ -69,9 +69,9 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
 export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
-  
+
   // Calculate initial dimensions immediately to prevent flicker
-  const [dimensions, setDimensions] = useState(() => 
+  const [dimensions, setDimensions] = useState(() =>
     calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight)
   );
   
@@ -1121,8 +1121,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                   left: 0,
                   width: '100%',
                   height: 'auto',
-                  filter: 'blur(20px)',
-                  transform: 'scale(1.1)', // Hide blur edges
+                  filter: 'blur(12px)',
                   opacity: imageLoading ? 1 : 0,
                   transition: 'opacity 200ms ease-out',
                   zIndex: 0,
