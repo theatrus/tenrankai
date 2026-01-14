@@ -145,8 +145,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     return { maxPanX, maxPanY };
   };
   
-  // Only show loading indicator after 500ms
-  const showLoading = useDelayedLoading(imageLoading);
+  // Only show loading indicator after 2 seconds (for slow connections)
+  const showLoading = useDelayedLoading(imageLoading, 2000);
 
   // Calculate dimensions based on viewport and image aspect ratio
   const calculateDimensions = () => {
@@ -1073,8 +1073,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         onTouchMove={handleTouchMove}
         onTouchEnd={(e) => { handleTouchEnd(e); handleDoubleTap(e); }}
       >
-        {/* Only show loading spinner if no thumbnail placeholder available */}
-        {showLoading && !image.thumbnail_url && (
+        {/* Show loading spinner after delay if image is still loading */}
+        {showLoading && (
           <div className="image-loading">
             <div className="loading-spinner">Loading...</div>
           </div>
