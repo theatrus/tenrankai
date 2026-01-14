@@ -1061,7 +1061,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
         style={{
           width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
-          height: imageLoading ? (dimensions.height > 0 ? `${dimensions.height}px` : undefined) : 'auto',
+          minHeight: dimensions.height > 0 ? `${dimensions.height}px` : undefined,
           position: 'relative',
           overflow: 'hidden',
           touchAction: canUseZoom && isMobile ? 'none' : 'pan-x pan-y'
@@ -1114,6 +1114,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
               alt={altText}
               style={{
+                display: 'block', // Remove inline baseline spacing
                 width: '100%',
                 height: 'auto'
               }}
