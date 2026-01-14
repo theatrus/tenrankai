@@ -1108,29 +1108,6 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             role="img"
             aria-label={image.name}
           >
-            {/* Blurred thumbnail as placeholder - fades out as medium image fades in */}
-            {image.thumbnail_url && (
-              <img
-                key={`thumb-${image.path}`}
-                src={image.thumbnail_url}
-                srcSet={`${image.thumbnail_url} 1x, ${image.thumbnail_url.replace('/thumbnail', '/thumbnail@2x')} 2x`}
-                alt=""
-                aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: 'auto',
-                  filter: 'blur(12px)',
-                  transform: 'scale(1.03)',
-                  opacity: imageLoading ? 1 : 0,
-                  transition: 'opacity 200ms ease-out',
-                  zIndex: 0,
-                  pointerEvents: 'none'
-                }}
-              />
-            )}
             {/* Medium image display with retina support - using img element for HDR compatibility */}
             <img
               src={image.medium_url}
@@ -1138,11 +1115,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
               alt={altText}
               style={{
                 width: '100%',
-                height: 'auto',
-                opacity: imageLoading ? 0 : 1,
-                transition: 'opacity 200ms ease-out',
-                position: 'relative',
-                zIndex: 1
+                height: 'auto'
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
