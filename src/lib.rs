@@ -47,13 +47,34 @@ use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct AppState {
-    // Site-specific resources (will eventually support multiple sites)
+    // Site-specific resources (resolved per-request in multi-site mode)
     pub site: Arc<site::Site>,
+    // Site manager for multi-site routing (None in single-site mode for backward compat)
+    pub site_manager: Option<Arc<site::SiteManager>>,
     // Global resources (shared across all sites)
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub config: Config,
+}
+
+impl AppState {
+    /// Create a new AppState with a different site (used by site resolution middleware)
+    pub fn with_site(&self, site: Arc<site::Site>) -> Self {
+        Self {
+            site,
+            site_manager: self.site_manager.clone(),
+            email_provider: self.email_provider.clone(),
+            webauthn: self.webauthn.clone(),
+            openai_client: self.openai_client.clone(),
+            config: self.config.clone(),
+        }
+    }
+
+    /// Check if this is multi-site mode
+    pub fn is_multi_site(&self) -> bool {
+        self.site_manager.is_some()
+    }
 }
 
 // Accessor methods for site-specific resources
@@ -120,28 +141,67 @@ pub async fn create_app(
     config: Config,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
-    // Build the site using SiteBuilder
-    let site_config = site::SiteConfig::from_legacy_config(&config);
-    let mut site_builder = site::SiteBuilder::new(site_config);
+    create_app_internal(config, galleries, None).await
+}
 
-    // Inject provided galleries if any (for testing)
-    if let Some(provided_galleries) = galleries {
-        site_builder = site_builder.with_galleries(provided_galleries);
-    }
+/// Create an app with multi-site support using SiteManager
+pub async fn create_app_with_site_manager(
+    config: Config,
+    site_manager: Arc<site::SiteManager>,
+) -> axum::Router {
+    create_app_internal(config, None, Some(site_manager)).await
+}
 
-    let built_site = match site_builder.build().await {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Failed to build site: {}", e);
-            // Create a minimal site for error cases
-            panic!("Cannot start without a valid site configuration: {}", e);
+async fn create_app_internal(
+    config: Config,
+    galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
+    site_manager: Option<Arc<site::SiteManager>>,
+) -> axum::Router {
+    // Get or build the site
+    let built_site = if let Some(ref manager) = site_manager {
+        // In multi-site mode, get the default site from SiteManager
+        // The site_resolution_middleware will swap in the correct site per-request
+        match manager.get_default_site().await {
+            Some(site) => {
+                info!("Using default site '{}' from SiteManager", site.name);
+                // Start periodic login cleanup for all sites with user databases
+                for site in manager.sites().await {
+                    if site.user_database_manager().is_some() {
+                        login::start_periodic_cleanup(site.login_state().clone());
+                    }
+                }
+                // Return the Arc<Site> directly, we'll handle conversion below
+                site
+            }
+            None => {
+                panic!("SiteManager has no default site configured");
+            }
         }
-    };
+    } else {
+        // Single-site mode: build the site from config
+        let site_config = site::SiteConfig::from_legacy_config(&config);
+        let mut site_builder = site::SiteBuilder::new(site_config);
 
-    // Start periodic cleanup for login if user database is configured
-    if config.app.user_database.is_some() {
-        login::start_periodic_cleanup(built_site.login_state().clone());
-    }
+        // Inject provided galleries if any (for testing)
+        if let Some(provided_galleries) = galleries {
+            site_builder = site_builder.with_galleries(provided_galleries);
+        }
+
+        let site = match site_builder.build().await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to build site: {}", e);
+                panic!("Cannot start without a valid site configuration: {}", e);
+            }
+        };
+
+        // Start periodic cleanup for login if user database is configured
+        if config.app.user_database.is_some() {
+            login::start_periodic_cleanup(site.login_state().clone());
+        }
+
+        Arc::new(site)
+    };
 
     // Initialize global resources (shared across all sites)
 
@@ -194,7 +254,8 @@ pub async fn create_app(
     };
 
     let app_state = AppState {
-        site: Arc::new(built_site),
+        site: built_site,
+        site_manager: site_manager.clone(),
         email_provider,
         webauthn,
         openai_client,
@@ -597,6 +658,16 @@ pub async fn create_app(
         "/{*path}",
         axum::routing::get(templating::template_with_gallery_handler),
     );
+
+    // Add site resolution middleware if in multi-site mode
+    let router = if site_manager.is_some() {
+        router.layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            site::site_resolution_middleware,
+        ))
+    } else {
+        router
+    };
 
     router
         .layer(middleware::from_fn(server_header_middleware))

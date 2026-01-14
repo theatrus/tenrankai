@@ -1914,6 +1914,7 @@ roles = ["viewer"]
 
         let app_state = AppState {
             site: Arc::new(site),
+            site_manager: None,
             email_provider: None,
             webauthn: None,
             openai_client: None,

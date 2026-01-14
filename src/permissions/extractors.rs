@@ -413,6 +413,7 @@ mod tests {
 
         let app_state = AppState {
             site: std::sync::Arc::new(site),
+            site_manager: None,
             email_provider: None,
             webauthn: None,
             openai_client: None,
