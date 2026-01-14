@@ -1,6 +1,9 @@
-use crate::{ApiResponse, TemplateType, api_response::no_cache_headers, storage::DynStorage};
+use crate::{
+    ApiResponse, TemplateType, api_response::no_cache_headers, site::ResolvedState,
+    storage::DynStorage,
+};
 use axum::{
-    extract::{Path, State},
+    extract::Path,
     http::StatusCode,
     response::{Html, IntoResponse},
 };
@@ -484,9 +487,9 @@ impl TemplateEngine {
     }
 }
 
-#[axum::debug_handler]
+#[axum::debug_handler(state = crate::AppState)]
 pub async fn template_with_gallery_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let path = path.map(|p| p.0).unwrap_or_default();

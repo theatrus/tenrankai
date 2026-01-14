@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, Query},
     http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::{Html, IntoResponse, Redirect},
 };
@@ -10,9 +10,10 @@ use tracing::{error, info};
 
 use super::AuthScope;
 use crate::{
-    ApiResponse, AppState,
+    ApiResponse,
     api::{create_signed_cookie, get_scoped_cookie_value},
     api_response::no_cache_headers,
+    site::ResolvedState,
 };
 
 use super::{LoginError, LoginRequest, LoginResponse};
@@ -43,11 +44,11 @@ pub struct LoginQuery {
 }
 
 pub async fn login_page(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Query(query): Query<LoginQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
-        "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
+        "base_url": app_state.base_url().unwrap_or(""),
     });
 
     let html = match app_state
@@ -82,7 +83,7 @@ pub async fn login_page(
 }
 
 pub async fn login_request(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, LoginError> {
@@ -139,7 +140,7 @@ pub async fn login_request(
                 let mut email_message = crate::email::EmailMessage::new(
                     &user.email,
                     email_config.format_from(),
-                    format!("Login to {}", app_state.config.app.name),
+                    format!("Login to {}", app_state.app_name()),
                 );
 
                 if let Some(reply_to) = &email_config.reply_to {
@@ -149,14 +150,14 @@ pub async fn login_request(
                 email_message = email_message.with_both(
                     format!(
                         "Click this link to login to {}:\n\n{}\n\nThis link will expire in 10 minutes.\n\nIf you did not request this login, please ignore this email.",
-                        app_state.config.app.name, login_url
+                        app_state.app_name(), login_url
                     ),
                     format!(
                         r#"<p>Click this link to login to {}:</p>
 <p><a href="{}">{}</a></p>
 <p>This link will expire in 10 minutes.</p>
 <p>If you did not request this login, please ignore this email.</p>"#,
-                        app_state.config.app.name, login_url, login_url
+                        app_state.app_name(), login_url, login_url
                     ),
                 );
 
@@ -189,7 +190,7 @@ pub async fn login_request(
 }
 
 pub async fn verify_login(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Query(query): Query<VerifyQuery>,
     req_headers: HeaderMap,
 ) -> Result<impl IntoResponse, LoginError> {
@@ -205,7 +206,7 @@ pub async fn verify_login(
     let return_url = get_return_url_from_cookies(&req_headers);
 
     // Create secure session cookie
-    let signed_value = create_signed_cookie(&app_state.config.app.cookie_secret, &username)
+    let signed_value = create_signed_cookie(app_state.cookie_secret(), &username)
         .map_err(LoginError::InternalError)?;
 
     let auth_cookie = AuthScope::Session.format_cookie(
@@ -283,10 +284,10 @@ pub async fn logout() -> impl IntoResponse {
 }
 
 pub async fn login_success(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
-        "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
+        "base_url": app_state.base_url().unwrap_or(""),
     });
 
     match app_state
@@ -313,10 +314,10 @@ pub struct AuthStatusResponse {
 }
 
 pub async fn check_auth_status(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let response = if app_state.config.app.user_database.is_none() {
+    let response = if app_state.user_database_manager().is_none() {
         // If no user database is configured, return not authorized
         AuthStatusResponse {
             authorized: false,
@@ -333,7 +334,7 @@ pub async fn check_auth_status(
 }
 
 pub async fn passkey_enrollment_page(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
     Query(query): Query<LoginQuery>,
 ) -> Result<Html<String>, StatusCode> {
@@ -347,7 +348,7 @@ pub async fn passkey_enrollment_page(
         .unwrap_or_else(|| "/gallery".to_string());
 
     let globals = liquid::object!({
-        "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
+        "base_url": app_state.base_url().unwrap_or(""),
         "username": username,
         "redirect_url": redirect_url,
     });
@@ -367,7 +368,7 @@ pub async fn passkey_enrollment_page(
 
 /// Profile page handler - shows user information and passkey management
 pub async fn profile_page(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
 ) -> Result<Html<String>, StatusCode> {
     // Get authenticated username
@@ -400,7 +401,7 @@ pub async fn profile_page(
         "passkey_count": passkey_count,
         "has_passkeys": passkey_count > 0,
         "webauthn_available": webauthn_available,
-        "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
+        "base_url": app_state.base_url().unwrap_or(""),
     });
 
     match app_state

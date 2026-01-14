@@ -2,9 +2,10 @@ use crate::{
     ApiResponse,
     api_response::{no_cache_headers, short_cache_headers},
     login::AuthScope,
+    site::ResolvedState,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json, Response},
 };
@@ -116,7 +117,7 @@ pub struct TileConfigInfo {
 
 // Named gallery API handlers for multiple gallery support
 pub async fn gallery_preview_handler_for_named(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path(gallery_name): Path<String>,
     Query(query): Query<GalleryPreviewQuery>,
 ) -> Result<Response, StatusCode> {
@@ -140,7 +141,7 @@ pub async fn gallery_preview_handler_for_named(
 }
 
 pub async fn gallery_composite_preview_handler_for_named(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
 ) -> Result<Response, StatusCode> {
     let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
@@ -214,7 +215,7 @@ pub struct RefreshResponse {
 }
 
 pub async fn refresh_static_versions(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     _auth: crate::login::RequireAuth,
 ) -> Result<Response, StatusCode> {
     // Refresh static file versions
@@ -233,7 +234,7 @@ pub async fn refresh_static_versions(
 
 /// Gallery API handler that returns JSON data for internal use
 pub async fn gallery_api_handler_for_named(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<crate::gallery::GalleryQuery>,
     auth: crate::login::OptionalAuth,
@@ -310,13 +311,13 @@ pub async fn gallery_api_handler_for_named(
 
 /// Gallery API handler wrapper for HTTP endpoints (adds cache headers)
 pub async fn gallery_api_handler_for_named_http(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<crate::gallery::GalleryQuery>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Response, StatusCode> {
     let json_response = gallery_api_handler_for_named(
-        State(app_state),
+        ResolvedState(app_state),
         Path((gallery_name, path)),
         Query(query),
         auth,
@@ -330,7 +331,7 @@ pub async fn gallery_api_handler_for_named_http(
 }
 
 pub async fn image_detail_api_handler_for_named(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Json<ImageDetailApiResponse>, StatusCode> {
@@ -558,13 +559,16 @@ pub async fn image_detail_api_handler_for_named(
 
 /// Image detail API handler wrapper for HTTP endpoints (adds cache headers)
 pub async fn image_detail_api_handler_for_named_http(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Response, StatusCode> {
-    let json_response =
-        image_detail_api_handler_for_named(State(app_state), Path((gallery_name, path)), auth)
-            .await?;
+    let json_response = image_detail_api_handler_for_named(
+        ResolvedState(app_state),
+        Path((gallery_name, path)),
+        auth,
+    )
+    .await?;
 
     let mut response = json_response.into_response();
     // Add short cache headers (60 seconds) - metadata can change
@@ -627,7 +631,7 @@ pub struct MetadataResponse {
 
 /// Get metadata for an image
 pub async fn get_metadata_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, image_path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
@@ -718,7 +722,7 @@ pub async fn get_metadata_handler(
 
 /// Update metadata for an image
 pub async fn update_metadata_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, image_path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
     Json(request): Json<UpdateMetadataRequest>,
@@ -851,7 +855,7 @@ pub async fn update_metadata_handler(
 
 /// Add a comment to an image
 pub async fn add_comment_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, image_path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
     Json(request): Json<AddCommentRequest>,
@@ -967,7 +971,7 @@ pub struct EditCommentRequest {
 
 /// Edit a comment
 pub async fn edit_comment_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, image_path, comment_id)): Path<(String, String, String)>,
     auth: crate::login::OptionalAuth,
     Json(request): Json<EditCommentRequest>,
@@ -1100,7 +1104,7 @@ pub async fn edit_comment_handler(
 
 /// Delete a comment
 pub async fn delete_comment_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, image_path, comment_id)): Path<(String, String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
@@ -1252,7 +1256,7 @@ pub struct AnalyzeFolderResponse {
 
 /// Analyze a single image using OpenAI Vision API
 pub async fn analyze_image_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, image_path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
@@ -1505,7 +1509,7 @@ fn default_analyze_limit() -> usize {
 
 /// Analyze multiple images in a folder using OpenAI Vision API
 pub async fn analyze_folder_handler(
-    State(app_state): State<crate::AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, folder_path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
     Json(request): Json<AnalyzeFolderRequest>,
@@ -1897,8 +1901,27 @@ roles = ["viewer"]
             })
             .collect();
 
+        // Create a user database file with test users
+        let users_path = temp_dir.path().join("users.toml");
+        let mut user_db = crate::login::UserDatabase::new();
+        user_db.add_user(
+            "testuser".to_string(),
+            crate::login::User {
+                email: "testuser@example.com".to_string(),
+                passkeys: vec![],
+            },
+        );
+        user_db.save_to_file(&users_path).await.unwrap();
+
+        // Create UserDatabaseManager
+        let user_database_manager = crate::login::UserDatabaseManager::new(users_path)
+            .await
+            .ok();
+
         // Create Site with test resources
         let site_resources = crate::site::SiteResources {
+            base_url: Some("http://test.com".to_string()),
+            cookie_secret: "test-secret".to_string(),
             template_engine: Arc::new(crate::templating::TemplateEngine::new(template_storages)),
             static_handler: static_handler.clone(),
             favicon_renderer: crate::favicon::FaviconRenderer::new(
@@ -1907,7 +1930,7 @@ roles = ["viewer"]
             galleries: Arc::new(galleries),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
-            user_database_manager: None,
+            user_database_manager,
             email_config: None,
         };
 
@@ -1940,7 +1963,7 @@ roles = ["viewer"]
         let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             auth,
@@ -1963,7 +1986,7 @@ roles = ["viewer"]
         let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             auth,
@@ -1984,7 +2007,7 @@ roles = ["viewer"]
         let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             auth,
@@ -2013,7 +2036,7 @@ roles = ["viewer"]
         let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "private".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             auth,
@@ -2073,7 +2096,7 @@ roles = ["viewer"]
 
         let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             auth,
         )
@@ -2148,7 +2171,7 @@ roles = ["viewer"]
 
         let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             auth,
         )
@@ -2184,7 +2207,7 @@ roles = ["viewer"]
 
         let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "private/private.jpg".to_string())),
             auth,
         )
@@ -2204,7 +2227,7 @@ roles = ["viewer"]
 
         let auth = headers_to_optional_auth(&headers, &app_state);
         let result = image_detail_api_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("nonexistent".to_string(), "test.jpg".to_string())),
             auth,
         )
@@ -2219,7 +2242,7 @@ roles = ["viewer"]
         let (app_state, _temp_dir) = create_test_app_state().await;
 
         let result = gallery_preview_handler_for_named(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path("test".to_string()),
             axum::extract::Query(GalleryPreviewQuery { count: Some(6) }),
         )
@@ -2279,7 +2302,7 @@ roles = ["viewer"]
         let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = gallery_api_handler_for_named_http(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "".to_string())),
             axum::extract::Query(crate::gallery::GalleryQuery::default()),
             auth,
@@ -2304,7 +2327,7 @@ roles = ["viewer"]
         let auth = headers_to_optional_auth(&headers, &app_state);
 
         let result = image_detail_api_handler_for_named_http(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             auth,
         )
@@ -2329,7 +2352,7 @@ roles = ["viewer"]
 
         // Call the metadata handler - it should work even if metadata is not found
         let response = get_metadata_handler(
-            axum::extract::State(app_state),
+            ResolvedState(app_state),
             axum::extract::Path(("test".to_string(), "test.jpg".to_string())),
             auth,
         )

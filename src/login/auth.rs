@@ -26,23 +26,23 @@ pub fn get_authenticated_user_for_app(
 ) -> Option<String> {
     // If no user database is configured, return None (no authentication)
     #[allow(clippy::question_mark)]
-    if app_state.config.app.user_database.is_none() {
+    if app_state.user_database_manager().is_none() {
         return None;
     }
 
     // Get authenticated user from headers
-    get_authenticated_user(headers, &app_state.config.app.cookie_secret)
+    get_authenticated_user(headers, app_state.cookie_secret())
 }
 
 /// Check if user has download permission
 pub fn has_download_permission(app_state: &crate::AppState, headers: &HeaderMap) -> bool {
     // If no user database is configured, allow all downloads
-    if app_state.config.app.user_database.is_none() {
+    if app_state.user_database_manager().is_none() {
         return true;
     }
 
     // Check if user is authenticated with the login system
-    is_authenticated(headers, &app_state.config.app.cookie_secret)
+    is_authenticated(headers, app_state.cookie_secret())
 }
 
 /// Create a login redirect URL with return path

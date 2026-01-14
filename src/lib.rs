@@ -36,11 +36,12 @@ pub use template_system::{TemplateCategory, TemplatePath, TemplateType};
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::Path,
     http::{HeaderValue, Request},
     middleware::{self, Next},
     response::IntoResponse,
 };
+use site::ResolvedState;
 use std::{collections::HashMap, sync::Arc};
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
@@ -55,7 +56,9 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
-    pub config: Config,
+    // Config is pub(crate) to discourage direct access - use accessor methods instead
+    // Direct access to config.app.user_database caused multi-site bugs (see PR #121)
+    pub(crate) config: Config,
 }
 
 impl AppState {
@@ -113,10 +116,29 @@ impl AppState {
     }
 }
 
+// Accessor methods for site-specific config values
+// Use these instead of accessing config fields directly to prevent multi-site bugs
+impl AppState {
+    /// Get the cookie secret for signing authentication cookies (per-site)
+    pub fn cookie_secret(&self) -> &str {
+        self.site.cookie_secret()
+    }
+
+    /// Get the base URL for generating absolute URLs (per-site)
+    pub fn base_url(&self) -> Option<&str> {
+        self.site.base_url()
+    }
+
+    /// Get the application/site name (per-site)
+    pub fn app_name(&self) -> &str {
+        self.site.app_name()
+    }
+}
+
 // FromRef is automatically implemented for AppState since it implements Clone
 
 async fn static_file_handler(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path(path): Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
@@ -200,7 +222,7 @@ async fn create_app_internal(
         };
 
         // Start periodic cleanup for login if user database is configured
-        if config.app.user_database.is_some() {
+        if site.user_database_manager().is_some() {
             login::start_periodic_cleanup(site.login_state().clone());
         }
 
@@ -258,7 +280,7 @@ async fn create_app_internal(
     };
 
     let app_state = AppState {
-        site: built_site,
+        site: built_site.clone(),
         site_manager: site_manager.clone(),
         email_provider,
         webauthn,
@@ -294,7 +316,8 @@ async fn create_app_internal(
         .route("/static/{*path}", axum::routing::get(static_file_handler));
 
     // Add login routes only if user database is configured
-    if config.app.user_database.is_some() {
+    // In multi-site mode, check the site's user_database_manager; in legacy mode, check config
+    if built_site.user_database_manager().is_some() {
         router = router
             .route("/_login", axum::routing::get(login::login_page))
             .route("/_login/request", axum::routing::post(login::login_request))
@@ -353,308 +376,286 @@ async fn create_app_internal(
         }
     }
 
-    // Add gallery routes dynamically based on configuration
-    if let Some(gallery_configs) = &config.galleries {
-        for gallery_config in gallery_configs {
-            let prefix = &gallery_config.url_prefix;
-            let name = gallery_config.name.clone();
+    // Add gallery routes dynamically based on site's galleries
+    // In multi-site mode, galleries come from the site; in legacy mode, from config
+    for (gallery_name, gallery) in built_site.galleries().iter() {
+        let gallery_config = gallery.get_config();
+        let prefix = &gallery_config.url_prefix;
+        let name = gallery_name.clone();
 
-            // Root route for gallery
-            router = router.route(
-                prefix,
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, query, auth| {
-                        gallery::gallery_root_handler_for_named(state, Path(name), query, auth)
-                    }
-                }),
-            );
+        // Root route for gallery
+        router = router.route(
+            prefix,
+            axum::routing::get({
+                let name = name.clone();
+                move |state, query, auth| {
+                    gallery::gallery_root_handler_for_named(state, Path(name), query, auth)
+                }
+            }),
+        );
 
-            // Gallery folder browsing
-            router = router.route(
-                &format!("{}/{{*path}}", prefix),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>, query, auth| {
-                        let gallery_path = path.0;
-                        gallery::gallery_handler_for_named(
-                            state,
-                            Path((name, gallery_path)),
-                            query,
-                            auth,
-                        )
-                    }
-                }),
-            );
+        // Gallery folder browsing
+        router = router.route(
+            &format!("{}/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, query, auth| {
+                    let gallery_path = path.0;
+                    gallery::gallery_handler_for_named(
+                        state,
+                        Path((name, gallery_path)),
+                        query,
+                        auth,
+                    )
+                }
+            }),
+        );
 
-            // Image serving (legacy query parameter format)
-            router = router.route(
-                &format!("{}/image/{{*path}}", prefix),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>, query, headers, auth| {
-                        let image_path = path.0;
-                        gallery::image_handler_for_named(
-                            state,
-                            Path((name, image_path)),
-                            query,
-                            headers,
-                            auth,
-                        )
-                    }
-                }),
-            );
+        // Image serving (legacy query parameter format)
+        router = router.route(
+            &format!("{}/image/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, query, headers, auth| {
+                    let image_path = path.0;
+                    gallery::image_handler_for_named(
+                        state,
+                        Path((name, image_path)),
+                        query,
+                        headers,
+                        auth,
+                    )
+                }
+            }),
+        );
 
-            // Image serving (new path-based format)
-            router = router.route(
-                &format!("{}/_image/{{*path}}", prefix),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>, headers, auth| {
-                        let full_path = path.0;
-                        gallery::image_handler_for_named_v2(
-                            state,
-                            Path((name, full_path)),
-                            headers,
-                            auth,
-                        )
-                    }
-                }),
-            );
+        // Image serving (new path-based format)
+        router = router.route(
+            &format!("{}/_image/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, headers, auth| {
+                    let full_path = path.0;
+                    gallery::image_handler_for_named_v2(
+                        state,
+                        Path((name, full_path)),
+                        headers,
+                        auth,
+                    )
+                }
+            }),
+        );
 
-            // Image detail view
-            router = router.route(
-                &format!("{}/detail/{{*path}}", prefix),
+        // Image detail view
+        router = router.route(
+            &format!("{}/detail/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let detail_path = path.0;
+                    gallery::image_detail_handler_for_named(state, Path((name, detail_path)), auth)
+                }
+            }),
+        );
+
+        // API routes for gallery
+        router = router.route(
+            &format!("/api/gallery/{}/preview", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, query| api::gallery_preview_handler_for_named(state, Path(name), query)
+            }),
+        );
+
+        router = router.route(
+            &format!("/api/gallery/{}/composite/{{*path}}", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>| {
+                    let composite_path = path.0;
+                    api::gallery_composite_preview_handler_for_named(
+                        state,
+                        Path((name, composite_path)),
+                    )
+                }
+            }),
+        );
+
+        // API route for gallery data (JSON response)
+        router = router.route(
+            &format!("/api/gallery/{}/data/{{*path}}", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, query, auth| {
+                    let gallery_path = path.0;
+                    api::gallery_api_handler_for_named_http(
+                        state,
+                        Path((name, gallery_path)),
+                        query,
+                        auth,
+                    )
+                }
+            }),
+        );
+
+        // API route for image detail data (JSON response)
+        router = router.route(
+            &format!("/api/gallery/{}/image/{{*path}}", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let image_path = path.0;
+                    api::image_detail_api_handler_for_named_http(
+                        state,
+                        Path((name, image_path)),
+                        auth,
+                    )
+                }
+            }),
+        );
+
+        // API route for image metadata (get/update)
+        router = router
+            .route(
+                &format!("/api/gallery/{}/metadata/{{*path}}", name),
                 axum::routing::get({
                     let name = name.clone();
                     move |state, path: Path<String>, auth| {
-                        let detail_path = path.0;
-                        gallery::image_detail_handler_for_named(
-                            state,
-                            Path((name, detail_path)),
-                            auth,
-                        )
-                    }
-                }),
-            );
-
-            // API routes for gallery
-            router = router.route(
-                &format!("/api/gallery/{}/preview", name),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, query| {
-                        api::gallery_preview_handler_for_named(state, Path(name), query)
-                    }
-                }),
-            );
-
-            router = router.route(
-                &format!("/api/gallery/{}/composite/{{*path}}", name),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>| {
-                        let composite_path = path.0;
-                        api::gallery_composite_preview_handler_for_named(
-                            state,
-                            Path((name, composite_path)),
-                        )
-                    }
-                }),
-            );
-
-            // API route for gallery data (JSON response)
-            router = router.route(
-                &format!("/api/gallery/{}/data/{{*path}}", name),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>, query, auth| {
-                        let gallery_path = path.0;
-                        api::gallery_api_handler_for_named_http(
-                            state,
-                            Path((name, gallery_path)),
-                            query,
-                            auth,
-                        )
-                    }
-                }),
-            );
-
-            // API route for image detail data (JSON response)
-            router = router.route(
-                &format!("/api/gallery/{}/image/{{*path}}", name),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>, auth| {
                         let image_path = path.0;
-                        api::image_detail_api_handler_for_named_http(
-                            state,
-                            Path((name, image_path)),
-                            auth,
-                        )
+                        api::get_metadata_handler(state, Path((name, image_path)), auth)
                     }
                 }),
-            );
-
-            // API route for image metadata (get/update)
-            router = router
-                .route(
-                    &format!("/api/gallery/{}/metadata/{{*path}}", name),
-                    axum::routing::get({
-                        let name = name.clone();
-                        move |state, path: Path<String>, auth| {
-                            let image_path = path.0;
-                            api::get_metadata_handler(state, Path((name, image_path)), auth)
-                        }
-                    }),
-                )
-                .route(
-                    &format!("/api/gallery/{}/metadata/{{*path}}", name),
-                    axum::routing::put({
-                        let name = name.clone();
-                        move |state, path: Path<String>, auth, request| {
-                            let image_path = path.0;
-                            api::update_metadata_handler(
-                                state,
-                                Path((name, image_path)),
-                                auth,
-                                request,
-                            )
-                        }
-                    }),
-                );
-
-            // API route for adding comments
-            router = router.route(
-                &format!("/api/gallery/{}/comments/{{*path}}", name),
-                axum::routing::post({
-                    let name = name.clone();
-                    move |state, path: Path<String>, auth, request| {
-                        let image_path = path.0;
-                        api::add_comment_handler(state, Path((name, image_path)), auth, request)
-                    }
-                }),
-            );
-
-            // API route for editing comments - using separate path structure
-            router = router.route(
-                &format!(
-                    "/api/gallery/{}/comment/{{comment_id}}/edit/{{*image_path}}",
-                    name
-                ),
+            )
+            .route(
+                &format!("/api/gallery/{}/metadata/{{*path}}", name),
                 axum::routing::put({
                     let name = name.clone();
-                    move |state, path: Path<(String, String)>, auth, request| {
-                        let (comment_id, image_path) = path.0;
-                        api::edit_comment_handler(
-                            state,
-                            Path((name, image_path, comment_id)),
-                            auth,
-                            request,
-                        )
-                    }
-                }),
-            );
-
-            // API route for deleting comments - using separate path structure
-            router = router.route(
-                &format!(
-                    "/api/gallery/{}/comment/{{comment_id}}/delete/{{*image_path}}",
-                    name
-                ),
-                axum::routing::delete({
-                    let name = name.clone();
-                    move |state, path: Path<(String, String)>, auth| {
-                        let (comment_id, image_path) = path.0;
-                        api::delete_comment_handler(
-                            state,
-                            Path((name, image_path, comment_id)),
-                            auth,
-                        )
-                    }
-                }),
-            );
-
-            // API route for AI image analysis
-            router = router.route(
-                &format!("/api/gallery/{}/analyze/{{*path}}", name),
-                axum::routing::post({
-                    let name = name.clone();
-                    move |state, path: Path<String>, auth| {
-                        let image_path = path.0;
-                        api::analyze_image_handler(state, Path((name, image_path)), auth)
-                    }
-                }),
-            );
-
-            // API route for AI folder analysis (batch)
-            router = router.route(
-                &format!("/api/gallery/{}/analyze-folder/{{*path}}", name),
-                axum::routing::post({
-                    let name = name.clone();
                     move |state, path: Path<String>, auth, request| {
-                        let folder_path = path.0;
-                        api::analyze_folder_handler(state, Path((name, folder_path)), auth, request)
+                        let image_path = path.0;
+                        api::update_metadata_handler(state, Path((name, image_path)), auth, request)
                     }
                 }),
             );
 
-            // API route for AI analysis of root folder
-            router = router.route(
-                &format!("/api/gallery/{}/analyze-folder", name),
-                axum::routing::post({
-                    let name = name.clone();
-                    move |state, auth, request| {
-                        api::analyze_folder_handler(
-                            state,
-                            Path((name, String::new())),
-                            auth,
-                            request,
-                        )
-                    }
-                }),
-            );
-        }
+        // API route for adding comments
+        router = router.route(
+            &format!("/api/gallery/{}/comments/{{*path}}", name),
+            axum::routing::post({
+                let name = name.clone();
+                move |state, path: Path<String>, auth, request| {
+                    let image_path = path.0;
+                    api::add_comment_handler(state, Path((name, image_path)), auth, request)
+                }
+            }),
+        );
+
+        // API route for editing comments - using separate path structure
+        router = router.route(
+            &format!(
+                "/api/gallery/{}/comment/{{comment_id}}/edit/{{*image_path}}",
+                name
+            ),
+            axum::routing::put({
+                let name = name.clone();
+                move |state, path: Path<(String, String)>, auth, request| {
+                    let (comment_id, image_path) = path.0;
+                    api::edit_comment_handler(
+                        state,
+                        Path((name, image_path, comment_id)),
+                        auth,
+                        request,
+                    )
+                }
+            }),
+        );
+
+        // API route for deleting comments - using separate path structure
+        router = router.route(
+            &format!(
+                "/api/gallery/{}/comment/{{comment_id}}/delete/{{*image_path}}",
+                name
+            ),
+            axum::routing::delete({
+                let name = name.clone();
+                move |state, path: Path<(String, String)>, auth| {
+                    let (comment_id, image_path) = path.0;
+                    api::delete_comment_handler(state, Path((name, image_path, comment_id)), auth)
+                }
+            }),
+        );
+
+        // API route for AI image analysis
+        router = router.route(
+            &format!("/api/gallery/{}/analyze/{{*path}}", name),
+            axum::routing::post({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let image_path = path.0;
+                    api::analyze_image_handler(state, Path((name, image_path)), auth)
+                }
+            }),
+        );
+
+        // API route for AI folder analysis (batch)
+        router = router.route(
+            &format!("/api/gallery/{}/analyze-folder/{{*path}}", name),
+            axum::routing::post({
+                let name = name.clone();
+                move |state, path: Path<String>, auth, request| {
+                    let folder_path = path.0;
+                    api::analyze_folder_handler(state, Path((name, folder_path)), auth, request)
+                }
+            }),
+        );
+
+        // API route for AI analysis of root folder
+        router = router.route(
+            &format!("/api/gallery/{}/analyze-folder", name),
+            axum::routing::post({
+                let name = name.clone();
+                move |state, auth, request| {
+                    api::analyze_folder_handler(state, Path((name, String::new())), auth, request)
+                }
+            }),
+        );
     }
 
-    // Add posts routes dynamically based on configuration
-    if let Some(posts_configs) = &config.posts {
-        for posts_config in posts_configs {
-            let prefix = &posts_config.url_prefix;
-            let name = posts_config.name.clone();
+    // Add posts routes dynamically based on site's posts managers
+    // In multi-site mode, posts come from the site; in legacy mode, from config
+    for (posts_name, posts_manager) in built_site.posts_managers().iter() {
+        let posts_config = posts_manager.get_config();
+        let prefix = &posts_config.url_prefix;
+        let name = posts_name.clone();
 
-            // Index route for posts listing
-            router = router.route(
-                prefix,
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, query| {
-                        posts::handlers::posts_index_handler(state, Path(name), query)
-                    }
-                }),
-            );
+        // Index route for posts listing
+        router = router.route(
+            prefix,
+            axum::routing::get({
+                let name = name.clone();
+                move |state, query| posts::handlers::posts_index_handler(state, Path(name), query)
+            }),
+        );
 
-            // Detail route for individual posts
-            router = router.route(
-                &format!("{}/{{*slug}}", prefix),
-                axum::routing::get({
-                    let name = name.clone();
-                    move |state, path: Path<String>| {
-                        let slug = path.0;
-                        posts::handlers::post_detail_handler(state, Path((name, slug)))
-                    }
-                }),
-            );
+        // Detail route for individual posts
+        router = router.route(
+            &format!("{}/{{*slug}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>| {
+                    let slug = path.0;
+                    posts::handlers::post_detail_handler(state, Path((name, slug)))
+                }
+            }),
+        );
 
-            // Refresh route for posts
-            router = router.route(
-                &format!("/api/posts/{}/refresh", name),
-                axum::routing::post({
-                    let name = name.clone();
-                    move |state| posts::handlers::refresh_posts_handler(state, Path(name))
-                }),
-            );
-        }
+        // Refresh route for posts
+        router = router.route(
+            &format!("/api/posts/{}/refresh", name),
+            axum::routing::post({
+                let name = name.clone();
+                move |state| posts::handlers::refresh_posts_handler(state, Path(name))
+            }),
+        );
     }
 
     // Add catch-all route for templates

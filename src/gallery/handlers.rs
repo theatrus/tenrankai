@@ -1,23 +1,23 @@
 use super::types::ImageSize;
 use super::{GalleryQuery, NavigationImage};
-use crate::{ApiResponse, AppState};
+use crate::{ApiResponse, site::ResolvedState};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
 use tracing::{debug, error};
 
 // Named gallery handlers for multiple gallery support
-#[axum::debug_handler]
+#[axum::debug_handler(state = crate::AppState)]
 pub async fn gallery_root_handler_for_named(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path(gallery_name): Path<String>,
     Query(query): Query<GalleryQuery>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     gallery_handler_for_named(
-        State(app_state),
+        ResolvedState(app_state),
         Path((gallery_name, "".to_string())),
         Query(query),
         auth,
@@ -25,9 +25,9 @@ pub async fn gallery_root_handler_for_named(
     .await
 }
 
-#[axum::debug_handler]
+#[axum::debug_handler(state = crate::AppState)]
 pub async fn gallery_handler_for_named(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
     auth: crate::login::OptionalAuth,
@@ -94,7 +94,7 @@ pub async fn gallery_handler_for_named(
 
     // Get the JSON data from the API endpoint to ensure consistency
     let gallery_api_response = crate::api::gallery_api_handler_for_named(
-        axum::extract::State(app_state.clone()),
+        ResolvedState(app_state.clone()),
         axum::extract::Path((gallery_name.clone(), path.clone())),
         axum::extract::Query(query.clone()),
         auth.clone(),
@@ -222,9 +222,9 @@ pub async fn gallery_handler_for_named(
                 }
             }
         }).unwrap_or_else(|| "".to_string()),
-        "app_name": app_state.config.app.name,
+        "app_name": app_state.app_name(),
         "copyright_holder": gallery.config.copyright_holder,
-        "base_url": app_state.config.app.base_url,
+        "base_url": app_state.base_url(),
         "og_title": folder_title.clone().unwrap_or_else(|| {
             if is_root {
                 "Photo Gallery".to_string()
@@ -280,9 +280,9 @@ pub async fn gallery_handler_for_named(
     }
 }
 
-#[axum::debug_handler]
+#[axum::debug_handler(state = crate::AppState)]
 pub async fn image_detail_handler_for_named(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
@@ -481,7 +481,7 @@ pub async fn image_detail_handler_for_named(
 
     // Get the JSON data from the API endpoint to ensure consistency
     let image_detail_response = crate::api::image_detail_api_handler_for_named(
-        axum::extract::State(app_state.clone()),
+        ResolvedState(app_state.clone()),
         axum::extract::Path((gallery_name.clone(), path.clone())), // Use original path for API consistency
         auth.clone(),
     )
@@ -527,12 +527,12 @@ pub async fn image_detail_handler_for_named(
         "image_detail_json": image_detail_json,
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
-        "app_name": app_state.config.app.name,
+        "app_name": app_state.app_name(),
         "copyright_holder": gallery.config.copyright_holder,
-        "base_url": app_state.config.app.base_url,
+        "base_url": app_state.base_url(),
         "og_title": image_info.name,
         "og_description": format!("Photo: {}", image_info.name),
-        "og_image": format!("{}{}", app_state.config.app.base_url.as_ref().unwrap_or(&String::new()), image_info.medium_url),
+        "og_image": format!("{}{}", app_state.base_url().unwrap_or(""), image_info.medium_url),
         "og_image_width": image_info.dimensions.0,
         "og_image_height": image_info.dimensions.1,
         "twitter_card_type": "summary_large_image",
@@ -555,7 +555,7 @@ pub async fn image_detail_handler_for_named(
 }
 
 pub async fn image_handler_for_named(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
     headers: axum::http::HeaderMap,
@@ -683,7 +683,7 @@ pub async fn image_handler_for_named(
 /// URL format: /gallery/_image/{path}/{size}
 /// Example: /gallery/_image/vacation/photo.jpg/medium
 pub async fn image_handler_for_named_v2(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, full_path)): Path<(String, String)>,
     headers: axum::http::HeaderMap,
     auth: crate::login::OptionalAuth,
@@ -725,7 +725,7 @@ pub async fn image_handler_for_named_v2(
 
     // Call the original handler with the parsed parameters
     image_handler_for_named(
-        State(app_state),
+        ResolvedState(app_state),
         Path((gallery_name, actual_identifier)),
         Query(query),
         headers,

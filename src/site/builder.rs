@@ -58,6 +58,8 @@ impl SiteBuilder {
         let (login_state, user_database_manager) = self.build_login_state().await?;
 
         let resources = SiteResources {
+            base_url: self.config.base_url.clone(),
+            cookie_secret: self.config.cookie_secret.clone(),
             template_engine,
             static_handler,
             favicon_renderer,
