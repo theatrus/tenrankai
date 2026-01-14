@@ -1,4 +1,7 @@
-use crate::{ApiResponse, TemplateType, api_response::no_cache_headers, site::ResolvedState, storage::DynStorage};
+use crate::{
+    ApiResponse, TemplateType, api_response::no_cache_headers, site::ResolvedState,
+    storage::DynStorage,
+};
 use axum::{
     extract::Path,
     http::StatusCode,

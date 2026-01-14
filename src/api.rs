@@ -563,9 +563,12 @@ pub async fn image_detail_api_handler_for_named_http(
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Response, StatusCode> {
-    let json_response =
-        image_detail_api_handler_for_named(ResolvedState(app_state), Path((gallery_name, path)), auth)
-            .await?;
+    let json_response = image_detail_api_handler_for_named(
+        ResolvedState(app_state),
+        Path((gallery_name, path)),
+        auth,
+    )
+    .await?;
 
     let mut response = json_response.into_response();
     // Add short cache headers (60 seconds) - metadata can change

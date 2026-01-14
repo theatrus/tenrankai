@@ -361,9 +361,8 @@ pub async fn finish_passkey_authentication(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         // Create session cookie
-        let signed_value =
-            crate::api::create_signed_cookie(app_state.cookie_secret(), &username)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let signed_value = crate::api::create_signed_cookie(app_state.cookie_secret(), &username)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let cookie = AuthScope::Session.format_cookie(
             &signed_value,

@@ -1,6 +1,6 @@
 use crate::site::ResolvedState;
 use axum::{
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
 };
 
@@ -8,38 +8,26 @@ use axum::{
 /// Returns a permissive robots.txt that allows all crawlers
 pub async fn robots_txt_handler(ResolvedState(app_state): ResolvedState) -> Response {
     // Check if a custom robots.txt exists in any static directory (in order)
-    // Note: Only checks filesystem paths, not S3 URLs
-    for (index, static_url) in app_state.config.static_files.directories.iter().enumerate() {
-        // Skip S3 URLs - they don't support direct filesystem checks
-        if static_url.starts_with("s3://") {
-            continue;
-        }
-
-        let static_dir = std::path::Path::new(static_url);
-        let custom_robots_path = static_dir.join("robots.txt");
-        if custom_robots_path.exists() {
-            // Serve the custom robots.txt file
-            match tokio::fs::read_to_string(&custom_robots_path).await {
-                Ok(content) => {
-                    tracing::debug!(
-                        "Found robots.txt in directory {}: {:?}",
-                        index,
-                        custom_robots_path
-                    );
-                    return (
-                        StatusCode::OK,
-                        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                        content,
-                    )
-                        .into_response();
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to read custom robots.txt from {:?}: {}",
-                        custom_robots_path,
-                        e
-                    );
-                }
+    // Uses the site's static handler storages for multi-site support
+    for (index, storage) in app_state.static_handler().storages().iter().enumerate() {
+        match storage.read_to_string("robots.txt").await {
+            Ok(content) => {
+                tracing::debug!("Found robots.txt in static directory {}", index);
+                return (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    content,
+                )
+                    .into_response();
+            }
+            Err(crate::storage::StorageError::NotFound(_)) => {
+                // Not found in this storage, try next
+                continue;
+            }
+            Err(e) => {
+                tracing::error!("Failed to read robots.txt from storage {}: {}", index, e);
+                // Continue to next storage on error
+                continue;
             }
         }
     }
