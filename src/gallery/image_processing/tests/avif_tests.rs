@@ -2,22 +2,27 @@ use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
 use crate::gallery::image_processing::OutputFormat;
 use crate::gallery::image_processing::formats::avif;
+use crate::storage::FilesystemStorage;
 use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 async fn create_test_gallery() -> (Gallery, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let cache_dir = temp_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
-        source_directory: temp_dir.path().to_path_buf(),
-        cache_directory: cache_dir,
+        source_directory: temp_dir.path().to_string_lossy().to_string(),
+        cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
-    let gallery = Gallery::new(config);
+    let source_storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
+    let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
+    let gallery = Gallery::new(config, source_storage, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -181,7 +186,7 @@ async fn test_avif_in_gallery_pipeline() {
     // Process to AVIF
     let relative_path = "test.jpg";
     let result = gallery
-        .get_resized_image(&source_path, relative_path, "thumbnail", OutputFormat::Avif)
+        .get_resized_image(relative_path, "thumbnail", OutputFormat::Avif)
         .await;
 
     assert!(

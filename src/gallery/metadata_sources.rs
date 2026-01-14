@@ -1,4 +1,6 @@
 use super::{CameraInfo, ImageMarkdownConfig, ImageMarkdownMetadata, LocationInfo};
+use crate::metadata_storage::ImageUserMetadata;
+use crate::storage::DynStorage;
 use chrono::DateTime;
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -6,7 +8,18 @@ use std::path::Path;
 use std::time::SystemTime;
 use tracing::{debug, trace};
 
-/// Reads XMP metadata from a sidecar file
+/// Reads XMP metadata from a sidecar file using storage abstraction
+pub async fn read_xmp_metadata_from_storage(
+    storage: &DynStorage,
+    xmp_path: &str,
+) -> Option<XmpMetadata> {
+    match storage.read_to_string(xmp_path).await {
+        Ok(content) => parse_xmp_content(&content),
+        Err(_) => None,
+    }
+}
+
+/// Reads XMP metadata from a sidecar file (filesystem path version)
 pub async fn read_xmp_metadata(xmp_path: &Path) -> Option<XmpMetadata> {
     match tokio::fs::read_to_string(xmp_path).await {
         Ok(content) => parse_xmp_content(&content),
@@ -127,6 +140,34 @@ fn get_attribute_value(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option
         .map(|a| String::from_utf8_lossy(&a.value).to_string())
 }
 
+/// Reads image markdown metadata file using storage abstraction (e.g., image.jpg.md or image.md)
+pub async fn read_image_markdown_metadata_from_storage(
+    storage: &DynStorage,
+    image_path: &str,
+) -> Option<ImageMarkdownMetadata> {
+    // Extract extension and stem from the image path
+    let extension = image_path.rsplit('.').next().unwrap_or("");
+    let stem = if let Some(dot_pos) = image_path.rfind('.') {
+        &image_path[..dot_pos]
+    } else {
+        image_path
+    };
+
+    // First try IMAGE.jpg.md format
+    let full_extension_path = format!("{}.{}.md", stem, extension);
+    if let Ok(content) = storage.read_to_string(&full_extension_path).await {
+        return parse_markdown_content(&content);
+    }
+
+    // Then try IMAGE.md format
+    let simple_md_path = format!("{}.md", stem);
+    if let Ok(content) = storage.read_to_string(&simple_md_path).await {
+        return parse_markdown_content(&content);
+    }
+
+    None
+}
+
 /// Reads image markdown metadata file (e.g., image.jpg.md or image.md)
 pub async fn read_image_markdown_metadata(image_path: &Path) -> Option<ImageMarkdownMetadata> {
     // First try IMAGE.jpg.md format
@@ -153,64 +194,67 @@ pub async fn read_image_markdown_metadata(image_path: &Path) -> Option<ImageMark
     None
 }
 
-/// Internal helper to read and parse markdown file
+/// Internal helper to read and parse markdown file from filesystem
 async fn read_markdown_file(markdown_path: &Path) -> Option<ImageMarkdownMetadata> {
     match tokio::fs::read_to_string(markdown_path).await {
-        Ok(content) => {
-            // Check if content starts with TOML front matter
-            if content.trim_start().starts_with("+++") {
-                // Parse TOML front matter
-                let parts: Vec<&str> = content.splitn(3, "+++").collect();
-
-                if parts.len() >= 3 {
-                    let toml_content = parts[1];
-                    let markdown_content = parts[2].trim_start();
-
-                    match toml_edit::de::from_str::<ImageMarkdownConfig>(toml_content) {
-                        Ok(config) => {
-                            debug!("Successfully parsed image markdown config: {:?}", config);
-                            Some(ImageMarkdownMetadata {
-                                config,
-                                description_markdown: markdown_content.to_string(),
-                            })
-                        }
-                        Err(e) => {
-                            debug!("Failed to parse image TOML front matter: {}", e);
-                            // Return just the markdown content
-                            Some(ImageMarkdownMetadata {
-                                config: ImageMarkdownConfig::default(),
-                                description_markdown: content,
-                            })
-                        }
-                    }
-                } else {
-                    // No valid front matter, return the whole content as markdown
-                    Some(ImageMarkdownMetadata {
-                        config: ImageMarkdownConfig::default(),
-                        description_markdown: content,
-                    })
-                }
-            } else {
-                // No front matter, just markdown
-                Some(ImageMarkdownMetadata {
-                    config: ImageMarkdownConfig::default(),
-                    description_markdown: content,
-                })
-            }
-        }
+        Ok(content) => parse_markdown_content(&content),
         Err(_) => None,
     }
 }
 
+/// Parse markdown content with optional TOML front matter
+fn parse_markdown_content(content: &str) -> Option<ImageMarkdownMetadata> {
+    // Check if content starts with TOML front matter
+    if content.trim_start().starts_with("+++") {
+        // Parse TOML front matter
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
+
+        if parts.len() >= 3 {
+            let toml_content = parts[1];
+            let markdown_content = parts[2].trim_start();
+
+            match toml_edit::de::from_str::<ImageMarkdownConfig>(toml_content) {
+                Ok(config) => {
+                    debug!("Successfully parsed image markdown config: {:?}", config);
+                    Some(ImageMarkdownMetadata {
+                        config,
+                        description_markdown: markdown_content.to_string(),
+                    })
+                }
+                Err(e) => {
+                    debug!("Failed to parse image TOML front matter: {}", e);
+                    // Return just the markdown content
+                    Some(ImageMarkdownMetadata {
+                        config: ImageMarkdownConfig::default(),
+                        description_markdown: content.to_string(),
+                    })
+                }
+            }
+        } else {
+            // No valid front matter, return the whole content as markdown
+            Some(ImageMarkdownMetadata {
+                config: ImageMarkdownConfig::default(),
+                description_markdown: content.to_string(),
+            })
+        }
+    } else {
+        // No front matter, just markdown
+        Some(ImageMarkdownMetadata {
+            config: ImageMarkdownConfig::default(),
+            description_markdown: content.to_string(),
+        })
+    }
+}
+
 /// Merge metadata from multiple sources with priority:
-/// 1. Markdown frontmatter (highest priority)
+/// 1. User metadata from .md file (highest priority)
 /// 2. XMP sidecar
 /// 3. EXIF data (lowest priority)
 pub fn merge_metadata_sources(
     exif_camera: Option<CameraInfo>,
     exif_location: Option<LocationInfo>,
     xmp: Option<XmpMetadata>,
-    markdown: Option<ImageMarkdownConfig>,
+    user_metadata: Option<&ImageUserMetadata>,
 ) -> (Option<CameraInfo>, Option<LocationInfo>) {
     let mut camera_info = exif_camera.unwrap_or(CameraInfo {
         camera_make: None,
@@ -240,24 +284,24 @@ pub fn merge_metadata_sources(
         camera_info.focal_length = xmp_data.focal_length.clone().or(camera_info.focal_length);
     }
 
-    // Apply markdown overrides (highest priority)
-    if let Some(ref md) = markdown {
-        camera_info.camera_make = md.camera_make.clone().or(camera_info.camera_make);
-        camera_info.camera_model = md.camera_model.clone().or(camera_info.camera_model);
-        camera_info.lens_model = md.lens_model.clone().or(camera_info.lens_model);
-        camera_info.iso = md.iso.or(camera_info.iso);
-        camera_info.aperture = md.aperture.clone().or(camera_info.aperture);
-        camera_info.shutter_speed = md.shutter_speed.clone().or(camera_info.shutter_speed);
-        camera_info.focal_length = md.focal_length.clone().or(camera_info.focal_length);
+    // Apply user metadata overrides (highest priority)
+    if let Some(um) = user_metadata {
+        camera_info.camera_make = um.camera_make.clone().or(camera_info.camera_make);
+        camera_info.camera_model = um.camera_model.clone().or(camera_info.camera_model);
+        camera_info.lens_model = um.lens_model.clone().or(camera_info.lens_model);
+        camera_info.iso = um.iso.or(camera_info.iso);
+        camera_info.aperture = um.aperture.clone().or(camera_info.aperture);
+        camera_info.shutter_speed = um.shutter_speed.clone().or(camera_info.shutter_speed);
+        camera_info.focal_length = um.focal_length.clone().or(camera_info.focal_length);
 
-        // Astronomical fields (only from markdown)
-        camera_info.telescope = md.telescope.clone();
-        camera_info.mount = md.mount.clone();
-        camera_info.filters = md.filters.clone();
-        camera_info.total_exposure_time = md.total_exposure_time;
-        camera_info.ra = md.ra.clone();
-        camera_info.dec = md.dec.clone();
-        camera_info.additional_details = md.additional_details.clone();
+        // Astronomical fields (only from user metadata)
+        camera_info.telescope = um.telescope.clone();
+        camera_info.mount = um.mount.clone();
+        camera_info.filters = um.filters.clone();
+        camera_info.total_exposure_time = um.total_exposure_time;
+        camera_info.ra = um.ra.clone();
+        camera_info.dec = um.dec.clone();
+        camera_info.additional_details = um.additional_details.clone();
     }
 
     // Handle location info
@@ -278,13 +322,13 @@ pub fn merge_metadata_sources(
         });
     }
 
-    // Apply markdown location overrides (highest priority)
-    if let Some(ref md) = markdown
-        && md.latitude.is_some()
-        && md.longitude.is_some()
+    // Apply user metadata location overrides (highest priority)
+    if let Some(um) = user_metadata
+        && um.latitude.is_some()
+        && um.longitude.is_some()
     {
-        let lat = md.latitude.unwrap();
-        let lon = md.longitude.unwrap();
+        let lat = um.latitude.unwrap();
+        let lon = um.longitude.unwrap();
         location_info = Some(LocationInfo {
             latitude: lat,
             longitude: lon,
@@ -566,8 +610,8 @@ This is just a regular markdown file without frontmatter."#;
             longitude: Some(-122.4194),
         });
 
-        let markdown = Some(ImageMarkdownConfig {
-            title: Some("Markdown Title".to_string()), // Should override XMP
+        let user_metadata = ImageUserMetadata {
+            title: Some("User Metadata Title".to_string()), // Should override XMP
             camera_make: None,
             camera_model: Some("EOS R5 Mark II".to_string()), // Should override all
             lens_model: None,
@@ -585,7 +629,8 @@ This is just a regular markdown file without frontmatter."#;
             latitude: Some(40.7128),
             longitude: Some(-74.0060),
             capture_date: None,
-        });
+            ..Default::default()
+        };
 
         let exif_location = Some(LocationInfo {
             latitude: 34.0522,
@@ -594,24 +639,28 @@ This is just a regular markdown file without frontmatter."#;
             apple_maps_url: "old_url".to_string(),
         });
 
-        let (camera, location) =
-            merge_metadata_sources(exif_camera, exif_location, xmp.clone(), markdown.clone());
+        let (camera, location) = merge_metadata_sources(
+            exif_camera,
+            exif_location,
+            xmp.clone(),
+            Some(&user_metadata),
+        );
 
         let camera = camera.unwrap();
 
-        // Check priority: Markdown > XMP > EXIF
+        // Check priority: User metadata > XMP > EXIF
         assert_eq!(camera.camera_make, Some("Canon Updated".to_string())); // From XMP
-        assert_eq!(camera.camera_model, Some("EOS R5 Mark II".to_string())); // From Markdown
+        assert_eq!(camera.camera_model, Some("EOS R5 Mark II".to_string())); // From user metadata
         assert_eq!(
             camera.lens_model,
             Some("Canon RF 50mm f/1.2L USM".to_string())
         ); // From XMP
-        assert_eq!(camera.iso, Some(800)); // From Markdown
-        assert_eq!(camera.aperture, Some("f/2.8".to_string())); // From Markdown
+        assert_eq!(camera.iso, Some(800)); // From user metadata
+        assert_eq!(camera.aperture, Some("f/2.8".to_string())); // From user metadata
         assert_eq!(camera.shutter_speed, Some("1/100".to_string())); // From EXIF
         assert_eq!(camera.focal_length, Some("50mm".to_string())); // From EXIF
 
-        // Astronomical fields only from markdown
+        // Astronomical fields only from user metadata
         assert_eq!(camera.telescope, Some("RedCat 51".to_string()));
         assert_eq!(camera.mount, Some("EQ6-R Pro".to_string()));
         assert_eq!(camera.filters, Some("L-eXtreme".to_string()));
@@ -620,10 +669,10 @@ This is just a regular markdown file without frontmatter."#;
         assert_eq!(camera.dec, Some("+41° 16'".to_string()));
         assert_eq!(camera.additional_details, Some("Test details".to_string()));
 
-        // Location priority: Markdown > XMP > EXIF
+        // Location priority: User metadata > XMP > EXIF
         let location = location.unwrap();
-        assert_eq!(location.latitude, 40.7128); // From Markdown
-        assert_eq!(location.longitude, -74.0060); // From Markdown
+        assert_eq!(location.latitude, 40.7128); // From user metadata
+        assert_eq!(location.longitude, -74.0060); // From user metadata
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use super::types::*;
 use crate::LogLevel;
-use std::path::PathBuf;
 
 /// Default posts index template path
 pub fn default_posts_index_template() -> String {
@@ -30,6 +29,16 @@ pub fn default_true() -> bool {
 /// Default image indexing mode (filename)
 pub fn default_image_indexing() -> ImageIndexingMode {
     ImageIndexingMode::Filename
+}
+
+/// Default LRU cache size for user metadata storage
+pub fn default_metadata_cache_size() -> usize {
+    1000
+}
+
+/// Default AWS SDK log level (warn to reduce noise)
+pub fn default_aws_log_level() -> LogLevel {
+    LogLevel::Warn
 }
 
 /// Default gallery template path
@@ -117,8 +126,8 @@ impl Default for GallerySystemConfig {
         Self {
             name: "default".to_string(),
             url_prefix: "/gallery".to_string(),
-            source_directory: PathBuf::from("photos"),
-            cache_directory: PathBuf::from("cache"),
+            source_directory: "photos".to_string(),
+            cache_directory: "cache".to_string(),
             gallery_template: default_gallery_template(),
             image_detail_template: default_image_detail_template(),
             images_per_page: default_images_per_page(),
@@ -136,6 +145,7 @@ impl Default for GallerySystemConfig {
             image_indexing: default_image_indexing(),
             permissions: Default::default(),
             tiles: None,
+            metadata_cache_size: default_metadata_cache_size(),
         }
     }
 }
@@ -150,21 +160,23 @@ impl Default for Config {
             app: AppConfig {
                 name: "Tenrankai".to_string(),
                 log_level: LogLevel::Info,
+                aws_log_level: default_aws_log_level(),
                 cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
                 base_url: None,
                 user_database: None,
             },
             templates: TemplateConfig {
-                directories: vec![PathBuf::from("templates")],
+                directories: vec!["templates".to_string()],
             },
             static_files: StaticConfig {
-                directories: vec![PathBuf::from("static")],
+                directories: vec!["static".to_string()],
+                use_redirects: false,
             },
             galleries: Some(vec![GallerySystemConfig {
                 name: "default".to_string(),
                 url_prefix: "/gallery".to_string(),
-                source_directory: PathBuf::from("photos"),
-                cache_directory: PathBuf::from("cache"),
+                source_directory: "photos".to_string(),
+                cache_directory: "cache".to_string(),
                 gallery_template: default_gallery_template(),
                 image_detail_template: default_image_detail_template(),
                 images_per_page: default_images_per_page(),
@@ -182,6 +194,7 @@ impl Default for Config {
                 image_indexing: default_image_indexing(),
                 permissions: Default::default(),
                 tiles: None,
+                metadata_cache_size: default_metadata_cache_size(),
             }]),
             posts: None,
             email: None,

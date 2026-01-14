@@ -9,7 +9,14 @@ use axum::{
 /// Returns a permissive robots.txt that allows all crawlers
 pub async fn robots_txt_handler(State(app_state): State<AppState>) -> Response {
     // Check if a custom robots.txt exists in any static directory (in order)
-    for (index, static_dir) in app_state.config.static_files.directories.iter().enumerate() {
+    // Note: Only checks filesystem paths, not S3 URLs
+    for (index, static_url) in app_state.config.static_files.directories.iter().enumerate() {
+        // Skip S3 URLs - they don't support direct filesystem checks
+        if static_url.starts_with("s3://") {
+            continue;
+        }
+
+        let static_dir = std::path::Path::new(static_url);
         let custom_robots_path = static_dir.join("robots.txt");
         if custom_robots_path.exists() {
             // Serve the custom robots.txt file

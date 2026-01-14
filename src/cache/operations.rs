@@ -1,77 +1,60 @@
 use crate::{
     CacheType,
-    gallery::{CacheMetadata, ImageMetadata},
+    gallery::CacheMetadata,
+    storage::{DynStorage, StorageError},
 };
+use bytes::Bytes;
 use serde::Serialize;
-use std::collections::HashMap;
-use std::path::Path;
-use tracing::{debug, info};
+use tracing::debug;
 
-/// Load image metadata cache from disk
-pub(crate) fn load_image_metadata_cache(
-    config: &crate::GallerySystemConfig,
-) -> Result<HashMap<String, ImageMetadata>, crate::gallery::GalleryError> {
-    let cache_type = CacheType::ImageMetadata;
-    let cache_file = config.cache_directory.join(cache_type.filename(None));
-
-    if !cache_file.exists() {
-        debug!("Metadata cache file not found, starting with empty cache");
-        return Ok(HashMap::new());
-    }
-
-    let json = std::fs::read_to_string(&cache_file)?;
-    let cache: HashMap<String, ImageMetadata> = serde_json::from_str(&json)?;
-
-    info!("Loaded {} cached image metadata entries", cache.len());
-    Ok(cache)
-}
-
-/// Load cache version metadata from disk
-pub(crate) fn load_cache_version_metadata(
-    config: &crate::GallerySystemConfig,
+/// Load cache version metadata from storage
+pub(crate) async fn load_cache_version_metadata(
+    storage: &DynStorage,
 ) -> Result<CacheMetadata, crate::gallery::GalleryError> {
     let cache_type = CacheType::CacheMetadata;
-    let metadata_file = config.cache_directory.join(cache_type.filename(None));
+    let metadata_file = cache_type.filename(None);
 
-    if !metadata_file.exists() {
-        debug!("Cache metadata file not found");
-        return Err(crate::gallery::GalleryError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Cache metadata not found",
-        )));
+    match storage.exists(&metadata_file).await {
+        Ok(true) => {}
+        Ok(false) => {
+            debug!("Cache metadata file not found");
+            return Err(crate::gallery::GalleryError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cache metadata not found",
+            )));
+        }
+        Err(e) => {
+            return Err(crate::gallery::GalleryError::IoError(
+                std::io::Error::other(e.to_string()),
+            ));
+        }
     }
 
-    let json = std::fs::read_to_string(&metadata_file)?;
+    let data = storage.read(&metadata_file).await?;
+    let json = String::from_utf8(data.to_vec())
+        .map_err(|e| crate::gallery::GalleryError::IoError(std::io::Error::other(e)))?;
     let metadata: CacheMetadata = serde_json::from_str(&json)?;
 
     debug!("Loaded cache metadata: version={}", metadata.version);
     Ok(metadata)
 }
 
-/// Save any serializable data as JSON to a cache file
+/// Save any serializable data as JSON to storage
 pub(crate) async fn save_cache_json<T: Serialize>(
     cache_type: CacheType,
-    cache_directory: &Path,
+    storage: &DynStorage,
     data: &T,
-) -> Result<(), std::io::Error> {
-    let cache_file = cache_directory.join(cache_type.filename(None));
-    let json = serde_json::to_string_pretty(data)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    tokio::fs::write(cache_file, json).await
+) -> Result<(), StorageError> {
+    let cache_file = cache_type.filename(None);
+    let json =
+        serde_json::to_string_pretty(data).map_err(|e| StorageError::Other(e.to_string()))?;
+    storage.write(&cache_file, Bytes::from(json)).await
 }
 
-/// Save image metadata cache to disk
-pub(crate) async fn save_image_metadata_cache(
-    cache_directory: &Path,
-    metadata: &HashMap<String, ImageMetadata>,
-) -> Result<(), std::io::Error> {
-    save_cache_json(CacheType::ImageMetadata, cache_directory, metadata).await
-}
-
-/// Save cache version metadata to disk
+/// Save cache version metadata to storage
 pub(crate) async fn save_cache_version_metadata(
-    cache_directory: &Path,
+    storage: &DynStorage,
     metadata: &CacheMetadata,
-) -> Result<(), std::io::Error> {
-    save_cache_json(CacheType::CacheMetadata, cache_directory, metadata).await
+) -> Result<(), StorageError> {
+    save_cache_json(CacheType::CacheMetadata, storage, metadata).await
 }

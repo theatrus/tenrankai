@@ -1,12 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, time::SystemTime};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Post {
     pub slug: String,
-    pub path: PathBuf,
+    /// Relative path within the storage backend
+    pub path: String,
     pub title: String,
     pub summary: String,
     pub date: DateTime<Utc>,
@@ -36,7 +37,8 @@ pub struct PostSummary {
 
 #[derive(Debug, Clone)]
 pub struct PostsConfig {
-    pub source_directory: PathBuf,
+    /// Storage URL for posts source (filesystem path or s3://...)
+    pub source_directory: String,
     pub url_prefix: String,
     pub index_template: String,
     pub post_template: String,
@@ -47,12 +49,25 @@ pub struct PostsConfig {
 impl Default for PostsConfig {
     fn default() -> Self {
         Self {
-            source_directory: PathBuf::from("posts"),
+            source_directory: "posts".to_string(),
             url_prefix: String::from("/posts"),
             index_template: String::from("modules/posts_index.html.liquid"),
             post_template: String::from("modules/post_detail.html.liquid"),
             posts_per_page: 20,
             refresh_interval_minutes: None,
+        }
+    }
+}
+
+impl From<&crate::config::types::PostsSystemConfig> for PostsConfig {
+    fn from(config: &crate::config::types::PostsSystemConfig) -> Self {
+        Self {
+            source_directory: config.source_directory.clone(),
+            url_prefix: config.url_prefix.clone(),
+            index_template: config.index_template.clone(),
+            post_template: config.post_template.clone(),
+            posts_per_page: config.posts_per_page,
+            refresh_interval_minutes: config.refresh_interval_minutes,
         }
     }
 }

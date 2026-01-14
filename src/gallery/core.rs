@@ -3,7 +3,6 @@ use pulldown_cmark::{Parser, html};
 use std::path::Path as StdPath;
 use std::time::SystemTime;
 use tracing::debug;
-use walkdir::WalkDir;
 
 impl Gallery {
     pub async fn scan_directory(
@@ -18,190 +17,182 @@ impl Gallery {
         relative_path: &str,
         user: Option<&str>,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
-        let full_path = self.config.source_directory.join(relative_path);
+        debug!("Scanning directory: {:?}", relative_path);
 
-        debug!("Scanning directory: {:?}", full_path);
+        // Use cached folder data (cache is mandatory, populated on startup)
+        let cached = self
+            .get_cached_folder_data(relative_path)
+            .await
+            .ok_or_else(|| {
+                tracing::debug!("Folder '{}' not found in cache", relative_path);
+                GalleryError::NotFound(format!("Folder not found: {}", relative_path))
+            })?;
 
-        if !full_path.starts_with(&self.config.source_directory) {
-            return Err(GalleryError::InvalidPath);
-        }
+        self.build_gallery_items_from_cache(relative_path, &cached, user)
+            .await
+    }
 
+    /// Build gallery items from cached folder data (fast path - no S3 calls)
+    async fn build_gallery_items_from_cache(
+        &self,
+        relative_path: &str,
+        cached: &super::CachedFolderMetadata,
+        user: Option<&str>,
+    ) -> Result<Vec<GalleryItem>, GalleryError> {
         let mut items = Vec::new();
 
-        let entries = tokio::fs::read_dir(&full_path).await?;
-
-        let mut entries = entries;
-        while let Some(entry) = entries.next_entry().await? {
-            let file_name = entry.file_name().to_string_lossy().to_string();
-
-            if file_name.starts_with('.') || file_name.ends_with(".md") {
-                continue;
-            }
-
-            let metadata = entry.metadata().await?;
-            let is_directory = metadata.is_dir();
-
-            let item_path = if relative_path.is_empty() {
-                file_name.clone()
+        // Add subdirectories from cache
+        for subdir_name in &cached.subdirectories {
+            let subdir_path = if relative_path.is_empty() {
+                subdir_name.clone()
             } else {
-                format!("{}/{}", relative_path, file_name)
+                format!("{}/{}", relative_path, subdir_name)
             };
 
-            if is_directory {
-                // Check if this directory is hidden
-                let folder_metadata = self.read_folder_metadata_full(&item_path).await;
-                let is_hidden = folder_metadata
-                    .as_ref()
-                    .map(|m| m.config.hidden)
-                    .unwrap_or(false);
+            // Get cached data for this subdirectory
+            let subdir_cached = self.get_cached_folder_data(&subdir_path).await;
 
-                // Skip hidden directories in listings
-                if is_hidden {
-                    continue;
-                }
+            let (display_name, description) = if let Some(ref sc) = subdir_cached {
+                Self::extract_folder_display_info(sc.metadata.clone())
+            } else {
+                (None, None)
+            };
 
-                let item_count = self.count_images_in_directory(&item_path).await;
-                let preview_images = self
-                    .get_directory_preview_images_for_user(&item_path, user)
-                    .await;
-                let (display_name, description) = self.read_folder_metadata(&item_path).await;
-                items.push(GalleryItem {
-                    name: file_name,
-                    display_name,
-                    description,
-                    path: item_path,
-                    file_path: None, // Directories don't need file_path
-                    parent_path: Some(relative_path.to_string()),
-                    is_directory: true,
-                    thumbnail_url: None,
-                    gallery_url: None,
-                    preview_images: Some(preview_images),
-                    item_count: Some(item_count),
-                    dimensions: None,
-                    capture_date: None,
-                    is_new: false,
-                    user_metadata: None, // Folders don't have user metadata
-                });
-            } else if self.is_image(&file_name) {
-                // Found image
-                // Get the indexed identifier for this image
-                let url_identifier = {
-                    let indexer = self.image_indexer.read().await;
-                    let indexed = indexer.get_index(&item_path);
-                    indexed
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| urlencoding::encode(&item_path).to_string())
-                };
+            let item_count = subdir_cached
+                .as_ref()
+                .map(|sc| sc.recursive_image_count)
+                .unwrap_or(0);
 
-                let thumbnail_url = format!(
-                    "{}/_image/{}/thumbnail",
-                    self.config.url_prefix, url_identifier
-                );
-                let gallery_url = format!(
-                    "{}/_image/{}/gallery",
-                    self.config.url_prefix, url_identifier
-                );
+            let preview_images: Vec<String> = subdir_cached
+                .as_ref()
+                .map(|sc| {
+                    sc.preview_items
+                        .iter()
+                        .map(|p| p.thumbnail_url.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
 
-                // Get metadata from cache if available
-                let (dimensions, capture_date, modification_date) = {
-                    let cache = self.metadata_cache.read().await;
-                    if let Some(metadata) = cache.get(&item_path) {
-                        (
-                            Some(metadata.dimensions),
-                            metadata.capture_date,
-                            metadata.modification_date,
-                        )
-                    } else {
-                        // If not in cache, try to extract it now
-                        drop(cache);
-                        match self.get_image_metadata_cached(&item_path).await {
-                            Ok(metadata) => (
-                                Some(metadata.dimensions),
-                                metadata.capture_date,
-                                metadata.modification_date,
-                            ),
-                            Err(_) => (None, None, None),
-                        }
-                    }
-                };
-
-                let is_new = self.is_new(modification_date);
-
-                // Get the display name from the indexer
-                let display_name = {
-                    let indexer = self.image_indexer.read().await;
-                    indexer.get_display_name(&item_path)
-                };
-
-                // Load user metadata based on permissions
-                // We need to check permissions for this specific folder
-                let user_metadata = if user.is_some() {
-                    // Get folder metadata to check permissions
-                    let image_folder_path = if let Some(last_slash) = item_path.rfind('/') {
-                        &item_path[..last_slash]
-                    } else {
-                        "" // Image is in root folder
-                    };
-
-                    let folder_metadata = self.read_folder_metadata_full(image_folder_path).await;
-
-                    // Create permission resolver
-                    let resolver = crate::permissions::PermissionResolver::new(
-                        &self.config.permissions,
-                        folder_metadata.as_ref().map(|m| &m.config.permissions),
-                    );
-
-                    // Resolve permissions for the user
-                    let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
-
-                    // Only load metadata if user has permission
-                    if permissions.can_read_metadata {
-                        let full_image_path = self.config.source_directory.join(&item_path);
-                        match self.user_metadata_storage.load(&full_image_path).await {
-                            Ok(metadata) => metadata,
-                            Err(e) => {
-                                debug!("Failed to load user metadata for {}: {}", item_path, e);
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-
-                items.push(GalleryItem {
-                    name: display_name,
-                    display_name: None,
-                    description: None,
-                    path: url_identifier.clone(), // Use indexed identifier as path
-                    file_path: Some(item_path.clone()), // Actual filesystem path for internal use
-                    parent_path: Some(relative_path.to_string()),
-                    is_directory: false,
-                    thumbnail_url: Some(thumbnail_url),
-                    gallery_url: Some(gallery_url),
-                    preview_images: None,
-                    item_count: None,
-                    dimensions,
-                    capture_date,
-                    is_new,
-                    user_metadata,
-                });
-            }
+            items.push(GalleryItem {
+                name: subdir_name.clone(),
+                display_name,
+                description,
+                path: subdir_path,
+                file_path: None,
+                parent_path: Some(relative_path.to_string()),
+                is_directory: true,
+                thumbnail_url: None,
+                gallery_url: None,
+                preview_images: Some(preview_images),
+                item_count: Some(item_count),
+                dimensions: None,
+                capture_date: None,
+                is_new: false,
+                user_metadata: None,
+            });
         }
 
+        // Add images from cache
+        for image_path in &cached.images {
+            // Get the indexed identifier for this image
+            let url_identifier = {
+                let indexer = self.image_indexer.read().await;
+                indexer
+                    .get_index(image_path)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| urlencoding::encode(image_path).to_string())
+            };
+
+            let thumbnail_url = self.build_thumbnail_url(&url_identifier);
+            let gallery_url = self.build_gallery_url(&url_identifier);
+
+            // Get metadata from image cache
+            let (dimensions, capture_date, modification_date) = {
+                let cache = self.image_cache.read_all().await;
+                if let Some(metadata) = cache.get(image_path) {
+                    (
+                        Some(metadata.dimensions),
+                        metadata.capture_date,
+                        metadata.modification_date,
+                    )
+                } else {
+                    (None, None, None)
+                }
+            };
+
+            let is_new = self.is_new(modification_date);
+
+            // Get the display name from the indexer
+            let display_name = {
+                let indexer = self.image_indexer.read().await;
+                indexer.get_display_name(image_path)
+            };
+
+            // Load user metadata based on permissions
+            let user_metadata = if user.is_some() {
+                let folder_metadata = cached.metadata.as_ref();
+                let resolver = crate::permissions::PermissionResolver::new(
+                    &self.config.permissions,
+                    folder_metadata.map(|m| &m.config.permissions),
+                );
+                let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
+
+                if permissions.can_read_metadata {
+                    self.user_metadata_storage
+                        .load(image_path)
+                        .await
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            items.push(GalleryItem {
+                name: display_name,
+                display_name: None,
+                description: None,
+                path: url_identifier,
+                file_path: Some(image_path.clone()),
+                parent_path: Some(relative_path.to_string()),
+                is_directory: false,
+                thumbnail_url: Some(thumbnail_url),
+                gallery_url: Some(gallery_url),
+                preview_images: None,
+                item_count: None,
+                dimensions,
+                capture_date,
+                is_new,
+                user_metadata,
+            });
+        }
+
+        // Sort items
+        self.sort_gallery_items(&mut items);
+
+        debug!(
+            "Built {} items from cache ({} directories, {} images)",
+            items.len(),
+            items.iter().filter(|i| i.is_directory).count(),
+            items.iter().filter(|i| !i.is_directory).count()
+        );
+
+        Ok(items)
+    }
+
+    /// Sort gallery items: directories first, then by name/date
+    fn sort_gallery_items(&self, items: &mut [GalleryItem]) {
         items.sort_by(|a, b| match (a.is_directory, b.is_directory) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => {
-                // For directories, sort by display_name if available, otherwise by name
                 if a.is_directory && b.is_directory {
                     let a_sort_name = a.display_name.as_ref().unwrap_or(&a.name);
                     let b_sort_name = b.display_name.as_ref().unwrap_or(&b.name);
                     a_sort_name.cmp(b_sort_name)
                 } else {
-                    // For files, sort by capture date first, then by name
                     match (&a.capture_date, &b.capture_date) {
                         (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
                         (Some(_), None) => std::cmp::Ordering::Less,
@@ -211,15 +202,6 @@ impl Gallery {
                 }
             }
         });
-
-        debug!(
-            "Found {} items total ({} directories, {} images)",
-            items.len(),
-            items.iter().filter(|i| i.is_directory).count(),
-            items.iter().filter(|i| !i.is_directory).count()
-        );
-
-        Ok(items)
     }
 
     pub async fn list_directory(
@@ -276,166 +258,6 @@ impl Gallery {
         Ok((directories, paginated_images, total_pages))
     }
 
-    async fn count_images_in_directory(&self, relative_path: &str) -> usize {
-        let full_path = self.config.source_directory.join(relative_path);
-        let mut count = 0;
-
-        // Pre-load hidden folder paths for this directory tree
-        let hidden_folders = self.collect_hidden_folders(relative_path).await;
-
-        for entry in WalkDir::new(full_path).min_depth(1).into_iter().flatten() {
-            if entry.file_type().is_dir() {
-                // Check if this subdirectory is hidden
-                if let Ok(subdir_relative) =
-                    entry.path().strip_prefix(&self.config.source_directory)
-                {
-                    let subdir_path = subdir_relative.to_string_lossy().replace('\\', "/");
-                    if hidden_folders.contains(&subdir_path) {
-                        // Skip this entire directory tree
-                        continue;
-                    }
-                }
-            } else if entry.file_type().is_file()
-                && let Some(name) = entry.file_name().to_str()
-                && self.is_image(name)
-                && !name.starts_with('.')
-            {
-                // Check if this file is in a hidden directory
-                if let Ok(file_relative) = entry.path().strip_prefix(&self.config.source_directory)
-                {
-                    let file_path = file_relative.to_string_lossy().replace('\\', "/");
-                    let is_in_hidden = hidden_folders.iter().any(|hidden| {
-                        file_path.starts_with(hidden) && file_path[hidden.len()..].starts_with('/')
-                    });
-                    if !is_in_hidden {
-                        count += 1;
-                    }
-                }
-            }
-        }
-
-        count
-    }
-
-    async fn collect_hidden_folders(&self, base_path: &str) -> Vec<String> {
-        let mut hidden_folders = Vec::new();
-        let full_base_path = self.config.source_directory.join(base_path);
-
-        for entry in WalkDir::new(&full_base_path).into_iter().flatten() {
-            if entry.file_type().is_dir()
-                && let Ok(relative) = entry.path().strip_prefix(&self.config.source_directory)
-            {
-                let relative_str = relative.to_string_lossy().replace('\\', "/");
-
-                // Check if _folder.md exists with hidden flag
-                let folder_md_path = entry.path().join("_folder.md");
-                if folder_md_path.exists()
-                    && let Ok(content) = std::fs::read_to_string(&folder_md_path)
-                    && content.trim_start().starts_with("+++")
-                {
-                    let parts: Vec<&str> = content.splitn(3, "+++").collect();
-                    if parts.len() >= 3
-                        && let Ok(config) = toml_edit::de::from_str::<super::FolderConfig>(parts[1])
-                        && config.hidden
-                    {
-                        hidden_folders.push(relative_str);
-                    }
-                }
-            }
-        }
-
-        hidden_folders
-    }
-
-    async fn get_directory_preview_images_for_user(
-        &self,
-        relative_path: &str,
-        user: Option<&str>,
-    ) -> Vec<String> {
-        let full_path = self.config.source_directory.join(relative_path);
-        let mut preview_images = Vec::new();
-
-        // Get up to configured number of images for preview
-        let max_preview_images = self.config.preview.max_images;
-
-        // Pre-load hidden folder paths
-        let hidden_folders = self.collect_hidden_folders(relative_path).await;
-
-        for entry in WalkDir::new(&full_path)
-            .min_depth(1)
-            .max_depth(self.config.preview.max_depth)
-            .into_iter()
-            .flatten()
-        {
-            if preview_images.len() >= max_preview_images {
-                break;
-            }
-
-            // Skip if in hidden directory or access restricted
-            if let Ok(entry_relative) = entry.path().strip_prefix(&self.config.source_directory) {
-                let entry_path = entry_relative.to_string_lossy().replace('\\', "/");
-                let is_in_hidden = hidden_folders.iter().any(|hidden| {
-                    entry_path.starts_with(hidden)
-                        && (entry_path.len() == hidden.len()
-                            || entry_path[hidden.len()..].starts_with('/'))
-                });
-                if is_in_hidden {
-                    continue;
-                }
-
-                // Check access control for the folder containing this image
-                let image_folder_path = if let Some(last_slash) = entry_path.rfind('/') {
-                    &entry_path[..last_slash]
-                } else {
-                    "" // Image is in root folder
-                };
-
-                // Get folder metadata to check permissions
-                let folder_metadata = self.read_folder_metadata_full(image_folder_path).await;
-
-                // Create permission resolver
-                let resolver = crate::permissions::PermissionResolver::new(
-                    &self.config.permissions,
-                    folder_metadata.as_ref().map(|m| &m.config.permissions),
-                );
-
-                // Resolve permissions for the user
-                if let Ok(permissions) = resolver.resolve_user_permissions(user) {
-                    if !permissions.can_view {
-                        continue;
-                    }
-                } else {
-                    continue; // Skip on permission resolution errors
-                }
-            }
-
-            if entry.file_type().is_file()
-                && let Some(name) = entry.file_name().to_str()
-                && self.is_image(name)
-                && !name.starts_with('.')
-                && let Ok(relative_to_source) =
-                    entry.path().strip_prefix(&self.config.source_directory)
-            {
-                let path_string = relative_to_source.to_string_lossy().to_string();
-                // Get the indexed identifier for this image
-                let url_identifier = {
-                    let indexer = self.image_indexer.read().await;
-                    indexer
-                        .get_index(&path_string)
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| urlencoding::encode(&path_string).to_string())
-                };
-                let thumbnail_url = format!(
-                    "{}/_image/{}/thumbnail",
-                    self.config.url_prefix, url_identifier
-                );
-                preview_images.push(thumbnail_url);
-            }
-        }
-
-        preview_images
-    }
-
     pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, GalleryError> {
         self.get_image_info_with_user(relative_path, None).await
     }
@@ -445,9 +267,8 @@ impl Gallery {
         relative_path: &str,
         user: Option<&str>,
     ) -> Result<ImageInfo, GalleryError> {
-        let full_path = self.config.source_directory.join(relative_path);
-
-        if !full_path.starts_with(&self.config.source_directory) {
+        // Security check - prevent path traversal attacks
+        if relative_path.contains("..") || relative_path.starts_with('/') {
             return Err(GalleryError::InvalidPath);
         }
 
@@ -456,60 +277,72 @@ impl Gallery {
         let file_size = cached_metadata.file_size;
         let dimensions = cached_metadata.dimensions;
 
-        // Extract title and description from markdown and XMP metadata
+        // Extract title and description from user metadata and XMP
         let (title, description) = {
-            let image_full_path = self.config.source_directory.join(relative_path);
-
-            // Check for XMP sidecar file
-            let xmp_path = image_full_path.with_extension("xmp");
-            let xmp_metadata = if xmp_path.exists() {
-                super::metadata_sources::read_xmp_metadata(&xmp_path).await
+            // Build XMP sidecar path (replace extension with .xmp)
+            let xmp_path = if let Some(dot_pos) = relative_path.rfind('.') {
+                format!("{}.xmp", &relative_path[..dot_pos])
             } else {
-                None
+                format!("{}.xmp", relative_path)
             };
 
-            // Check for markdown metadata file (handles both image.jpg.md and image.md)
-            match super::metadata_sources::read_image_markdown_metadata(&image_full_path).await {
-                Some(md_metadata) => {
-                    // Use title from frontmatter if available
-                    let title = md_metadata
-                        .config
+            // Check for XMP sidecar file using storage
+            let xmp_metadata = super::metadata_sources::read_xmp_metadata_from_storage(
+                &self.source_storage,
+                &xmp_path,
+            )
+            .await;
+
+            // Load user metadata from storage (handles both .md and .toml sidecars with caching)
+            match self
+                .user_metadata_storage
+                .load(relative_path)
+                .await
+                .ok()
+                .flatten()
+            {
+                Some(user_metadata) => {
+                    // Use title from user metadata if available
+                    let title = user_metadata
                         .title
+                        .clone()
                         .or_else(|| {
-                            // Fall back to extracting title from markdown content
-                            md_metadata
-                                .description_markdown
-                                .lines()
-                                .find(|line| line.trim().starts_with("# "))
-                                .map(|line| line.trim_start_matches("# ").trim().to_string())
+                            // Fall back to extracting title from description markdown content
+                            user_metadata.description.as_ref().and_then(|desc| {
+                                desc.lines()
+                                    .find(|line| line.trim().starts_with("# "))
+                                    .map(|line| line.trim_start_matches("# ").trim().to_string())
+                            })
                         })
                         .or_else(|| {
                             // Fall back to XMP title
                             xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone())
                         });
 
-                    // Process markdown to HTML, removing title if present
-                    let content_without_title =
-                        if title.is_some() && md_metadata.description_markdown.contains("# ") {
-                            md_metadata
-                                .description_markdown
+                    // Process markdown description to HTML, removing title if present
+                    let description_html = user_metadata.description.as_ref().map(|description| {
+                        let content_without_title = if title.is_some() && description.contains("# ")
+                        {
+                            description
                                 .lines()
                                 .skip_while(|line| !line.trim().starts_with("# "))
                                 .skip(1)
                                 .collect::<Vec<_>>()
                                 .join("\n")
                         } else {
-                            md_metadata.description_markdown.clone()
+                            description.clone()
                         };
 
-                    let parser = Parser::new(&content_without_title);
-                    let mut html_output = String::new();
-                    html::push_html(&mut html_output, parser);
+                        let parser = Parser::new(&content_without_title);
+                        let mut html_output = String::new();
+                        html::push_html(&mut html_output, parser);
+                        html_output
+                    });
 
-                    (title, Some(html_output))
+                    (title, description_html)
                 }
                 None => {
-                    // Fall back to XMP title/description if no markdown exists
+                    // Fall back to XMP title/description if no user metadata exists
                     let title = xmp_metadata.as_ref().and_then(|xmp| xmp.title.clone());
                     let description = xmp_metadata
                         .as_ref()
@@ -606,7 +439,7 @@ impl Gallery {
 
         // Load user metadata if the user has permission to see any part of it
         let user_metadata = if permissions.can_read_metadata || permissions.can_see_ai_analysis {
-            match self.user_metadata_storage.load(&full_path).await {
+            match self.user_metadata_storage.load(relative_path).await {
                 Ok(Some(mut metadata)) => {
                     // Filter metadata based on permissions
                     if !permissions.can_read_metadata {
@@ -644,19 +477,10 @@ impl Gallery {
                 .to_string(),
             title,
             path: relative_path.to_string(),
-            url: format!("{}/_image/{}", self.config.url_prefix, url_identifier),
-            thumbnail_url: format!(
-                "{}/_image/{}/thumbnail",
-                self.config.url_prefix, url_identifier
-            ),
-            gallery_url: format!(
-                "{}/_image/{}/gallery",
-                self.config.url_prefix, url_identifier
-            ),
-            medium_url: format!(
-                "{}/_image/{}/medium",
-                self.config.url_prefix, url_identifier
-            ),
+            url: self.build_image_base_url(&url_identifier),
+            thumbnail_url: self.build_thumbnail_url(&url_identifier),
+            gallery_url: self.build_gallery_url(&url_identifier),
+            medium_url: self.build_medium_url(&url_identifier),
             description,
             camera_info,
             location_info,
@@ -674,6 +498,14 @@ impl Gallery {
         folder_path: &str,
     ) -> (Option<String>, Option<String>) {
         let metadata = self.read_folder_metadata_full(folder_path).await;
+        Self::extract_folder_display_info(metadata)
+    }
+
+    /// Extract display name and description from pre-fetched FolderMetadata.
+    /// Use this when you already have the FolderMetadata to avoid duplicate S3 calls.
+    fn extract_folder_display_info(
+        metadata: Option<super::FolderMetadata>,
+    ) -> (Option<String>, Option<String>) {
         match metadata {
             Some(meta) => {
                 let has_config_title = meta.config.title.is_some();
@@ -719,17 +551,48 @@ impl Gallery {
         }
     }
 
+    /// Get folder metadata (permissions, hidden status, title, description)
+    /// Returns cached metadata only - cache is mandatory and populated on startup.
     pub(crate) async fn read_folder_metadata_full(
         &self,
         folder_path: &str,
     ) -> Option<super::FolderMetadata> {
-        let folder_md_path = self
-            .config
-            .source_directory
-            .join(folder_path)
-            .join("_folder.md");
+        if let Some(cached) = self.folder_cache.get(folder_path).await {
+            return cached.metadata;
+        }
 
-        match tokio::fs::read_to_string(&folder_md_path).await {
+        // Cache miss - this should not happen after startup
+        // Return None (no special permissions/metadata for this folder)
+        tracing::debug!(
+            "Folder metadata cache miss for '{}' - using default permissions",
+            folder_path
+        );
+        None
+    }
+
+    /// Get the full cached folder data (metadata, contents, counts, previews)
+    /// Returns None if not in cache - use this for fast directory listings
+    pub(crate) async fn get_cached_folder_data(
+        &self,
+        folder_path: &str,
+    ) -> Option<super::CachedFolderMetadata> {
+        self.folder_cache.get(folder_path).await
+    }
+
+    /// Read folder metadata directly from storage (bypasses cache)
+    /// Use read_folder_metadata_full() for cached access
+    pub(crate) async fn read_folder_metadata_from_storage(
+        &self,
+        folder_path: &str,
+    ) -> Option<super::FolderMetadata> {
+        // Build the path to _folder.md using storage abstraction
+        let folder_md_path = if folder_path.is_empty() {
+            "_folder.md".to_string()
+        } else {
+            format!("{}/_folder.md", folder_path)
+        };
+
+        match self.source_storage.read_to_string(&folder_md_path).await {
             Ok(content) => {
                 // Check if content starts with TOML front matter
                 if content.trim_start().starts_with("+++") {
@@ -774,31 +637,32 @@ impl Gallery {
     ) -> Result<ImageMetadataWithSize, GalleryError> {
         // Check if we have cached metadata
         {
-            let cache = self.metadata_cache.read().await;
+            let cache = self.image_cache.read_all().await;
             if let Some(metadata) = cache.get(relative_path) {
-                // We have metadata, just need to add file size
-                let full_path = self.config.source_directory.join(relative_path);
-                let file_metadata = tokio::fs::metadata(&full_path).await?;
+                // We have metadata, just need to add file size from storage
+                let storage_metadata = self.source_storage.metadata(relative_path).await?;
 
                 return Ok(ImageMetadataWithSize {
                     dimensions: metadata.dimensions,
                     capture_date: metadata.capture_date,
                     camera_info: metadata.camera_info.clone(),
                     location_info: metadata.location_info.clone(),
-                    file_size: file_metadata.len(),
+                    file_size: storage_metadata.size,
                     modification_date: metadata.modification_date,
                     color_profile: metadata.color_profile.clone(),
                 });
             }
         }
 
-        // No cached metadata, extract it
-        let full_path = self.config.source_directory.join(relative_path);
-        let file_metadata = tokio::fs::metadata(&full_path).await?;
-        let file_size = file_metadata.len();
+        // No cached metadata, extract it using storage
+        let storage_metadata = self.source_storage.metadata(relative_path).await?;
+        let file_size = storage_metadata.size;
+        let modification_date = storage_metadata.last_modified;
 
-        // Extract metadata
-        let metadata = self.extract_image_metadata(&full_path).await?;
+        // Extract metadata using storage
+        let metadata = self
+            .extract_image_metadata(relative_path, modification_date)
+            .await?;
 
         // Cache it with tracking
         self.insert_metadata_with_tracking(relative_path.to_string(), metadata.clone())
@@ -830,209 +694,65 @@ impl Gallery {
         use rand::seq::SliceRandom;
         use rand::{Rng, rng};
 
-        let mut all_items = Vec::new();
+        // Use pre-computed preview items from root folder cache (mandatory)
+        let cached = self.get_cached_folder_data("").await.ok_or_else(|| {
+            tracing::warn!("Root folder cache miss - cache should be populated on startup");
+            GalleryError::NotFound("Gallery root folder not found in cache".to_string())
+        })?;
 
-        // Recursively collect images up to max_depth
-        self.collect_preview_items_for_user(
-            "",
-            &mut all_items,
-            0,
-            self.config.preview.max_depth,
-            self.config.preview.max_per_folder,
-            user,
-        )
-        .await?;
+        // Check permission for root folder
+        let resolver = crate::permissions::PermissionResolver::new(
+            &self.config.permissions,
+            cached.metadata.as_ref().map(|m| &m.config.permissions),
+        );
 
-        // If we have more items than requested, randomly select a subset
-        if all_items.len() > max_items {
-            let mut rng = rng();
-            // Add some extra randomness by shuffling multiple times
-            for _ in 0..rng.random_range(1..4) {
-                all_items.shuffle(&mut rng);
+        if let Ok(perms) = resolver.resolve_user_permissions(user)
+            && perms.can_view
+        {
+            // Convert cached preview items to GalleryItem (minimal conversion)
+            let mut items: Vec<GalleryItem> = cached
+                .preview_items
+                .iter()
+                .map(|p| GalleryItem {
+                    name: p.path.rsplit('/').next().unwrap_or(&p.path).to_string(),
+                    display_name: None,
+                    description: None,
+                    path: p.url_id.clone(),
+                    file_path: Some(p.path.clone()),
+                    parent_path: Some(
+                        p.path
+                            .rfind('/')
+                            .map(|pos| p.path[..pos].to_string())
+                            .unwrap_or_default(),
+                    ),
+                    is_directory: false,
+                    thumbnail_url: Some(p.thumbnail_url.clone()),
+                    gallery_url: Some(p.gallery_url.clone()),
+                    preview_images: None,
+                    item_count: None,
+                    dimensions: p.dimensions,
+                    capture_date: None, // Not needed for preview
+                    is_new: false,      // Not needed for preview
+                    user_metadata: None,
+                })
+                .collect();
+
+            // Shuffle items for variety, then truncate to requested count
+            if !items.is_empty() {
+                let mut rng = rng();
+                for _ in 0..rng.random_range(1..4) {
+                    items.shuffle(&mut rng);
+                }
+                if items.len() > max_items {
+                    items.truncate(max_items);
+                }
             }
-            all_items.truncate(max_items);
 
-            // Keep the random order - don't sort by date to ensure different results each time
+            return Ok(items);
         }
 
-        Ok(all_items)
-    }
-
-    fn collect_preview_items_for_user<'a>(
-        &'a self,
-        path: &'a str,
-        items: &'a mut Vec<GalleryItem>,
-        current_depth: usize,
-        max_depth: usize,
-        max_per_folder: usize,
-        user: Option<&'a str>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), GalleryError>> + Send + 'a>>
-    {
-        Box::pin(async move {
-            if current_depth > max_depth {
-                return Ok(());
-            }
-
-            // Check access control for current folder
-            let folder_metadata = self.read_folder_metadata_full(path).await;
-
-            // Create permission resolver
-            let resolver = crate::permissions::PermissionResolver::new(
-                &self.config.permissions,
-                folder_metadata.as_ref().map(|m| &m.config.permissions),
-            );
-
-            // Resolve permissions for the user
-            match resolver.resolve_user_permissions(user) {
-                Ok(permissions) if permissions.can_view => {
-                    // User has view access, continue
-                }
-                _ => {
-                    // No access or error resolving permissions
-                    return Ok(());
-                }
-            }
-
-            let full_path = if path.is_empty() {
-                self.config.source_directory.clone()
-            } else {
-                self.config.source_directory.join(path)
-            };
-
-            let mut dir_entries = tokio::fs::read_dir(&full_path).await?;
-            let mut folder_items = Vec::new();
-
-            while let Some(entry) = dir_entries.next_entry().await? {
-                let file_name = entry.file_name().to_string_lossy().to_string();
-
-                if file_name.starts_with('.') || file_name.ends_with(".md") {
-                    continue;
-                }
-
-                let metadata = entry.metadata().await?;
-                let item_path = if path.is_empty() {
-                    file_name.clone()
-                } else {
-                    format!("{}/{}", path, file_name)
-                };
-
-                if metadata.is_dir() {
-                    // Check if this subdirectory is hidden
-                    let folder_metadata = self.read_folder_metadata_full(&item_path).await;
-                    let is_hidden = folder_metadata
-                        .as_ref()
-                        .map(|m| m.config.hidden)
-                        .unwrap_or(false);
-
-                    // Skip hidden directories
-                    if is_hidden {
-                        continue;
-                    }
-
-                    // Check access control for this directory
-                    let subfolder_metadata = self.read_folder_metadata_full(&item_path).await;
-
-                    // Create permission resolver
-                    let resolver = crate::permissions::PermissionResolver::new(
-                        &self.config.permissions,
-                        subfolder_metadata.as_ref().map(|m| &m.config.permissions),
-                    );
-
-                    // Resolve permissions for the user
-                    match resolver.resolve_user_permissions(user) {
-                        Ok(permissions) if permissions.can_view => {
-                            // User has view access, continue
-                        }
-                        _ => {
-                            // No access or error resolving permissions
-                            continue;
-                        }
-                    }
-
-                    // Recursively collect from subdirectories
-                    self.collect_preview_items_for_user(
-                        &item_path,
-                        items,
-                        current_depth + 1,
-                        max_depth,
-                        max_per_folder,
-                        user,
-                    )
-                    .await?;
-                } else if self.is_image(&file_name) && folder_items.len() < max_per_folder {
-                    // Get metadata from cache if available
-                    let (dimensions, capture_date, modification_date) = {
-                        let cache = self.metadata_cache.read().await;
-                        if let Some(metadata) = cache.get(&item_path) {
-                            (
-                                Some(metadata.dimensions),
-                                metadata.capture_date,
-                                metadata.modification_date,
-                            )
-                        } else {
-                            // If not in cache, try to extract it now
-                            drop(cache);
-                            match self.get_image_metadata_cached(&item_path).await {
-                                Ok(metadata) => (
-                                    Some(metadata.dimensions),
-                                    metadata.capture_date,
-                                    metadata.modification_date,
-                                ),
-                                Err(_) => (None, None, None),
-                            }
-                        }
-                    };
-
-                    let is_new = self.is_new(modification_date);
-
-                    // Get the indexed identifier for this image
-                    let url_identifier = {
-                        let indexer = self.image_indexer.read().await;
-                        indexer
-                            .get_index(&item_path)
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| urlencoding::encode(&item_path).to_string())
-                    };
-                    let thumbnail_url = format!(
-                        "/{}/image/{}?size=thumbnail",
-                        self.config.url_prefix.trim_start_matches('/'),
-                        url_identifier
-                    );
-                    let gallery_url = format!(
-                        "/{}/image/{}?size=gallery",
-                        self.config.url_prefix.trim_start_matches('/'),
-                        url_identifier
-                    );
-
-                    // Get the display name from the indexer
-                    let display_name = {
-                        let indexer = self.image_indexer.read().await;
-                        indexer.get_display_name(&item_path)
-                    };
-
-                    folder_items.push(GalleryItem {
-                        name: display_name,
-                        display_name: None,
-                        description: None,
-                        path: url_identifier.clone(), // Use indexed identifier as path
-                        file_path: Some(item_path.clone()), // Actual filesystem path for internal use
-                        parent_path: Some(path.to_string()),
-                        is_directory: false,
-                        thumbnail_url: Some(thumbnail_url),
-                        gallery_url: Some(gallery_url),
-                        preview_images: None,
-                        item_count: None,
-                        dimensions,
-                        capture_date,
-                        is_new,
-                        user_metadata: None, // Not loading metadata in preview mode
-                    });
-                }
-            }
-
-            items.extend(folder_items);
-            Ok(())
-        })
+        // No permission to view
+        Ok(Vec::new())
     }
 
     pub async fn build_breadcrumbs(&self, path: &str) -> Vec<BreadcrumbItem> {
@@ -1092,18 +812,33 @@ pub(crate) struct ImageMetadataWithSize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
+    use std::sync::Arc;
     use tempfile::TempDir;
     use tokio::fs;
+
+    fn create_test_storage(dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
+
+    fn create_test_storage_from_path(path: &std::path::Path) -> crate::storage::DynStorage {
+        std::fs::create_dir_all(path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     #[tokio::test]
     async fn test_folder_config_no_toml_defaults_to_false() {
         let temp_dir = TempDir::new().unwrap();
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: temp_dir.path().to_path_buf(),
+            source_directory: temp_dir.path().to_string_lossy().to_string(),
             ..Default::default()
         };
-        let gallery = Gallery::new(config);
+        let source_storage = create_test_storage_from_path(temp_dir.path());
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         // Test folder with just markdown (no TOML front matter)
         let folder_path = temp_dir.path().join("markdown-only");
@@ -1114,9 +849,15 @@ mod tests {
         let folder_md_path = folder_path.join("_folder.md");
         fs::write(&folder_md_path, folder_md_content).await.unwrap();
 
+        // Populate the folder cache first (mandatory for read_folder_metadata_full)
+        gallery.refresh_folder_cache().await.unwrap();
+
         // Test reading the folder metadata
         let metadata = gallery.read_folder_metadata_full("markdown-only").await;
-        assert!(metadata.is_some());
+        assert!(
+            metadata.is_some(),
+            "metadata should be cached after refresh"
+        );
 
         let metadata = metadata.unwrap();
         assert!(metadata.config.title.is_none());

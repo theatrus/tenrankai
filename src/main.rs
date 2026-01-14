@@ -4,13 +4,13 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
     Config, LogLevel, commands, create_app,
     gallery::Gallery,
     login::{User, UserDatabase},
-    openai, posts, startup_checks,
+    openai, posts, startup_checks, storage,
 };
 
 #[derive(Parser, Debug)]
@@ -194,16 +194,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.app.log_level = cli.log_level;
 
     // Set up logging using the final log level
-    let level = config.app.log_level.to_tracing_level();
+    let app_level = config.app.log_level;
+    let aws_level = config.app.aws_log_level;
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(level.into())
-                .from_env_lossy(),
-        )
-        .finish();
+    // Build filter with separate levels for app and AWS SDK
+    // Format: "default_level,crate1=level,crate2=level"
+    let filter_str = format!(
+        "{},aws_smithy_runtime={},aws_smithy_runtime_api={},aws_config={},aws_sdk_s3={},aws_sdk_ses={},aws_credential_types={},aws_sigv4={}",
+        app_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+        aws_level.as_str(),
+    );
+
+    let filter = EnvFilter::builder()
+        .with_default_directive(app_level.to_tracing_filter().into())
+        .parse_lossy(&filter_str);
+
+    // Allow RUST_LOG to override
+    let filter = EnvFilter::try_from_default_env().unwrap_or(filter);
+
+    let subscriber = fmt::Subscriber::builder().with_env_filter(filter).finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
     // Handle commands
@@ -384,10 +399,10 @@ async fn handle_cache_command(
 
             match cache_type.as_str() {
                 "composite" => {
-                    commands::cache::invalidate_composite(gallery_config, &path, dry_run)?;
+                    commands::cache::invalidate_composite(gallery_config, &path, dry_run).await?;
                 }
                 "image" => {
-                    commands::cache::invalidate_image(gallery_config, &path, dry_run)?;
+                    commands::cache::invalidate_image(gallery_config, &path, dry_run).await?;
                 }
                 _ => {
                     eprintln!(
@@ -406,7 +421,7 @@ async fn handle_cache_command(
                 .find(|g| g.name == gallery_name)
                 .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
 
-            commands::cache::list_composites(gallery_config)?;
+            commands::cache::list_composites(gallery_config).await?;
         }
     }
 
@@ -474,7 +489,39 @@ async fn run_server(
 
     if let Some(gallery_configs) = &config.galleries {
         for gallery_config in gallery_configs {
-            let gallery = std::sync::Arc::new(Gallery::new(gallery_config.clone()));
+            // Create source storage backend from source_directory URL
+            let source_storage =
+                match storage::create_storage_from_url(&gallery_config.source_directory).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to create source storage for gallery '{}': {}",
+                            gallery_config.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+            // Create cache storage backend from cache_directory URL
+            let cache_storage =
+                match storage::create_storage_from_url(&gallery_config.cache_directory).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to create cache storage for gallery '{}': {}",
+                            gallery_config.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+            let gallery = std::sync::Arc::new(Gallery::new(
+                gallery_config.clone(),
+                source_storage,
+                cache_storage,
+            ));
 
             // Initialize gallery and check for version changes
             if let Err(e) = gallery.initialize_and_check_version().await {
@@ -555,21 +602,32 @@ async fn run_server(
             if let Some(interval_minutes) = posts_config.refresh_interval_minutes
                 && interval_minutes > 0
             {
+                // Create storage backend from source_directory URL
+                let posts_storage =
+                    match storage::create_storage_from_url(&posts_config.source_directory).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to create posts storage for '{}': {}",
+                                posts_config.name,
+                                e
+                            );
+                            continue;
+                        }
+                    };
+
                 info!(
-                    "Starting background posts refresh for '{}' every {} minutes",
-                    posts_config.name, interval_minutes
+                    "Starting background posts refresh for '{}' every {} minutes (storage: {})",
+                    posts_config.name,
+                    interval_minutes,
+                    posts_storage.storage_type()
                 );
 
                 // Create a new posts manager for background refresh
-                let posts_manager =
-                    std::sync::Arc::new(posts::PostsManager::new(posts::PostsConfig {
-                        source_directory: posts_config.source_directory.clone(),
-                        url_prefix: posts_config.url_prefix.clone(),
-                        index_template: posts_config.index_template.clone(),
-                        post_template: posts_config.post_template.clone(),
-                        posts_per_page: posts_config.posts_per_page,
-                        refresh_interval_minutes: posts_config.refresh_interval_minutes,
-                    }));
+                let posts_manager = std::sync::Arc::new(posts::PostsManager::new(
+                    posts::PostsConfig::from(posts_config),
+                    posts_storage,
+                ));
 
                 // Initial refresh
                 if let Err(e) = posts_manager.refresh_posts().await {
@@ -648,9 +706,7 @@ async fn run_server(
         }
     }
 
-    // Give background tasks a moment to shut down cleanly
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
+    info!("Shutdown complete");
     Ok(())
 }
 

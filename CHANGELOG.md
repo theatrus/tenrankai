@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pluggable Storage Abstraction**: Full S3 support for all storage operations
+  - Unified `Storage` trait with async read, write, list, delete, and metadata operations
+  - Filesystem backend (default) and S3 backend with presigned URL support
+  - URL-based configuration: `s3://bucket/prefix?region=us-west-2`
+  - `SyncStorageAdapter` bridges async storage to sync contexts for image processing
+  - `SyncStorageReader` implements `Read + Seek` with range-based seeking for S3
+  - Components with S3 support: galleries, caches, templates, posts, static files
+  - Signed URL redirects for direct S3 downloads (reduces server bandwidth)
+  - Hybrid configurations: local source with S3 cache for optimal performance
+
+- **MetadataStorage System**: Pluggable storage for image sidecar files
+  - LRU cache with configurable size and TTL for metadata
+  - Supports `.md` (markdown with TOML frontmatter) and `.toml` formats
+  - Automatic cache invalidation based on file modification time
+  - Migrated all sidecar reads to use the new abstraction
+
+- **Gallery Preview Improvements**: Better variety and correct URL handling
+  - Randomized preview cache seeding for image variety across restarts
+  - Fixed anchor tags to use url_id instead of filename (unique_id mode)
+  - Fixed parent_path in preview API responses
+
 - **AVIF Browser Fallback**: AVIF sources can now be served as WebP or JPEG for browsers without AVIF support
   - Original AVIF images are always served as AVIF (preserving HDR and gain maps)
   - Resized images fall back to WebP or JPEG when browser doesn't support AVIF

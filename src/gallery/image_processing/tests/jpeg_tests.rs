@@ -1,22 +1,27 @@
 use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
+use crate::storage::FilesystemStorage;
 use image::{ImageBuffer, ImageEncoder};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // Helper function to create a test gallery
 async fn create_test_gallery() -> (Gallery, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let cache_dir = temp_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
-        source_directory: temp_dir.path().to_path_buf(),
-        cache_directory: cache_dir,
+        source_directory: temp_dir.path().to_string_lossy().to_string(),
+        cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
-    let gallery = Gallery::new(config);
+    let source_storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
+    let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
+    let gallery = Gallery::new(config, source_storage, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -154,7 +159,7 @@ async fn test_jpeg_icc_profile_preservation() {
 
     // Use the actual JPEG encoder with ICC profile to create a proper test file
     use image::codecs::jpeg::JpegEncoder;
-    let output_path = gallery.config.source_directory.join("test_icc.jpg");
+    let output_path = gallery.source_directory().join("test_icc.jpg");
     let output_file = std::fs::File::create(&output_path).unwrap();
     let mut encoder = JpegEncoder::new_with_quality(output_file, 90);
 
@@ -170,7 +175,6 @@ async fn test_jpeg_icc_profile_preservation() {
     let relative_path = "test_icc.jpg";
     let result = gallery
         .get_resized_image(
-            &output_path,
             relative_path,
             "thumbnail",
             crate::gallery::image_processing::OutputFormat::Jpeg,
@@ -211,7 +215,7 @@ async fn test_jpeg_icc_profile_preservation_with_watermark() {
 
     // Save with ICC profile
     use image::codecs::jpeg::JpegEncoder;
-    let output_path = gallery.config.source_directory.join("test_watermark.jpg");
+    let output_path = gallery.source_directory().join("test_watermark.jpg");
     let output_file = std::fs::File::create(&output_path).unwrap();
     let mut encoder = JpegEncoder::new_with_quality(output_file, 90);
 
@@ -227,7 +231,6 @@ async fn test_jpeg_icc_profile_preservation_with_watermark() {
     let relative_path = "test_watermark.jpg";
     let result = gallery
         .get_resized_image(
-            &output_path,
             relative_path,
             "medium",
             crate::gallery::image_processing::OutputFormat::Jpeg,

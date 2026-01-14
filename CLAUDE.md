@@ -731,6 +731,56 @@ The command shows:
 
 ## Major Features
 
+### Pluggable Storage Abstraction (January 2026)
+1. **Storage Trait Architecture** (`src/storage/`):
+   - Unified `Storage` trait with async operations (read, write, list, delete, metadata)
+   - `DynStorage` type alias for `Arc<dyn Storage>` enables runtime polymorphism
+   - Streaming support with `read_stream()` and range reads via `read_range()`
+   - Signed URL generation for S3 redirect support
+
+2. **Storage Backends**:
+   - **Filesystem** (`filesystem.rs`): Default backend using tokio async filesystem
+   - **S3** (`s3.rs`): Full AWS S3 support with presigned URLs, streaming, and metadata
+   - URL-based configuration: `s3://bucket/prefix?region=us-west-2`
+
+3. **Sync/Async Bridge** (`sync_adapter.rs`):
+   - `SyncStorageAdapter` for `spawn_blocking` contexts (image processing)
+   - `SyncStorageReader` implements `Read + Seek` with range-based seeking
+   - Chunked caching for efficient random access on remote storage
+   - Optional prefetch mode for full-file downloads
+
+4. **Components with S3 Support**:
+   | Component | S3 Support | Notes |
+   |-----------|------------|-------|
+   | Static files | ✅ | With signed URL redirects |
+   | Templates | ✅ | Multi-directory with precedence |
+   | Posts | ✅ | Markdown from S3 |
+   | Gallery cache | ✅ | Metadata + processed images |
+   | Gallery source | ✅ | Images from S3 |
+
+5. **Configuration Examples**:
+   ```toml
+   # S3 cache with local source
+   [[galleries]]
+   source_directory = "photos"
+   cache_directory = "s3://bucket/cache?region=us-west-2"
+
+   # Static files from S3 with redirects
+   [static_files]
+   directories = ["s3://bucket/static?region=us-west-2"]
+   use_redirects = true
+
+   # Templates with S3 fallback
+   [templates]
+   directories = ["templates-local", "s3://bucket/templates"]
+   ```
+
+6. **MetadataStorage System** (`src/metadata_storage/`):
+   - Pluggable metadata storage for image sidecar files
+   - LRU cache with configurable size and TTL
+   - Supports `.md` (markdown with TOML frontmatter) and `.toml` formats
+   - Automatic cache invalidation based on file modification time
+
 ### Pluggable Email Provider System
 1. **Email Module Architecture**:
    - Trait-based architecture for easy provider addition

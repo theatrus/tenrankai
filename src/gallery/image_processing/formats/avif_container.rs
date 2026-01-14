@@ -88,6 +88,11 @@ pub fn extract_dimensions(path: &Path) -> Option<(u32, u32)> {
     extract_dimensions_from_container(&data)
 }
 
+/// Extract dimensions from AVIF data in memory (alias for extract_dimensions_from_container)
+pub fn extract_dimensions_from_bytes(data: &[u8]) -> Option<(u32, u32)> {
+    extract_dimensions_from_container(data)
+}
+
 /// Extract dimensions by parsing AVIF container directly
 pub fn extract_dimensions_from_container(data: &[u8]) -> Option<(u32, u32)> {
     // Look for ispe (image spatial extents) box

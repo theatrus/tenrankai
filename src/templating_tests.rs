@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use crate::storage::FilesystemStorage;
     use crate::templating::TemplateEngine;
     use std::fs;
+    use std::sync::Arc;
     use tempfile::TempDir;
 
     async fn setup_test_templates() -> (TempDir, TemplateEngine) {
@@ -106,7 +108,8 @@ mod tests {
         )
         .unwrap();
 
-        let template_engine = TemplateEngine::new(vec![template_path.to_path_buf()]);
+        let storage = Arc::new(FilesystemStorage::new(template_path));
+        let template_engine = TemplateEngine::new(vec![storage]);
 
         (temp_dir, template_engine)
     }
@@ -208,7 +211,8 @@ mod tests {
         let bad_content = r#"{% include "_missing.html.liquid" %}"#;
         fs::write(template_path.join("pages/bad.html.liquid"), bad_content).unwrap();
 
-        let engine = TemplateEngine::new(vec![template_path.to_path_buf()]);
+        let storage = Arc::new(FilesystemStorage::new(template_path));
+        let engine = TemplateEngine::new(vec![storage]);
         let globals = liquid::object!({});
 
         let result = engine

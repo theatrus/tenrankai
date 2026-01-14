@@ -128,20 +128,22 @@ This is the content of the second test post."#;
         app: tenrankai::AppConfig {
             name: "TestServer".to_string(),
             log_level: tenrankai::LogLevel::Error,
+            aws_log_level: tenrankai::LogLevel::Error,
             cookie_secret: "test-cookie-secret".to_string(),
             base_url: Some("http://localhost:3000".to_string()),
             user_database: None,
         },
         templates: tenrankai::TemplateConfig {
-            directories: vec![templates_dir],
+            directories: vec![templates_dir.to_string_lossy().to_string()],
         },
         static_files: tenrankai::StaticConfig {
-            directories: vec![static_dir],
+            directories: vec![static_dir.to_string_lossy().to_string()],
+            use_redirects: false,
         },
         galleries: Some(vec![tenrankai::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: gallery_dir,
-            cache_directory: cache_dir,
+            source_directory: gallery_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html.liquid".to_string(),
             image_detail_template: "image_detail.html.liquid".to_string(),
             images_per_page: 20,
@@ -149,7 +151,7 @@ This is the content of the second test post."#;
         }]),
         posts: Some(vec![PostsSystemConfig {
             name: "blog".to_string(),
-            source_directory: blog_dir,
+            source_directory: blog_dir.to_string_lossy().to_string(),
             url_prefix: "/blog".to_string(),
             index_template: "modules/posts_index.html.liquid".to_string(),
             post_template: "modules/post_detail.html.liquid".to_string(),

@@ -1,38 +1,39 @@
 use crate::metadata_storage::{ImageUserMetadata, MetadataStorage, MetadataStorageError};
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-/// Sidecar file metadata storage
+/// Sidecar file metadata storage (filesystem-based)
 ///
 /// Stores metadata in TOML files alongside images with the naming convention:
 /// - For image.jpg -> image.toml
 /// - Same pattern as markdown files (image.jpg -> image.md)
+///
+/// This implementation uses a base path and relative paths.
 pub struct SidecarMetadataStorage {
+    /// Base path for resolving relative paths
+    base_path: PathBuf,
     /// Whether to create parent directories if they don't exist
     create_dirs: bool,
 }
 
 impl SidecarMetadataStorage {
-    pub fn new() -> Self {
-        Self { create_dirs: true }
+    pub fn new(base_path: PathBuf) -> Self {
+        Self {
+            base_path,
+            create_dirs: true,
+        }
     }
 
     /// Get the sidecar file path for an image
-    fn get_sidecar_path(image_path: &Path) -> PathBuf {
+    fn get_sidecar_path(&self, relative_path: &str) -> PathBuf {
         // Replace extension with .toml
         // e.g., image.jpg -> image.toml
-        // Same pattern as markdown: image.jpg -> image.md
-        let mut sidecar_path = image_path.to_path_buf();
+        let full_path = self.base_path.join(relative_path);
+        let mut sidecar_path = full_path;
         sidecar_path.set_extension("toml");
         sidecar_path
-    }
-}
-
-impl Default for SidecarMetadataStorage {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -40,9 +41,9 @@ impl Default for SidecarMetadataStorage {
 impl MetadataStorage for SidecarMetadataStorage {
     async fn load(
         &self,
-        image_path: &Path,
+        relative_path: &str,
     ) -> Result<Option<ImageUserMetadata>, MetadataStorageError> {
-        let sidecar_path = Self::get_sidecar_path(image_path);
+        let sidecar_path = self.get_sidecar_path(relative_path);
 
         match fs::read_to_string(&sidecar_path).await {
             Ok(content) => {
@@ -58,10 +59,10 @@ impl MetadataStorage for SidecarMetadataStorage {
 
     async fn save(
         &self,
-        image_path: &Path,
+        relative_path: &str,
         metadata: &ImageUserMetadata,
     ) -> Result<(), MetadataStorageError> {
-        let sidecar_path = Self::get_sidecar_path(image_path);
+        let sidecar_path = self.get_sidecar_path(relative_path);
 
         // Create parent directory if needed
         if self.create_dirs
@@ -87,8 +88,8 @@ impl MetadataStorage for SidecarMetadataStorage {
         Ok(())
     }
 
-    async fn delete(&self, image_path: &Path) -> Result<(), MetadataStorageError> {
-        let sidecar_path = Self::get_sidecar_path(image_path);
+    async fn delete(&self, relative_path: &str) -> Result<(), MetadataStorageError> {
+        let sidecar_path = self.get_sidecar_path(relative_path);
 
         match fs::remove_file(&sidecar_path).await {
             Ok(()) => Ok(()),
@@ -109,28 +110,31 @@ mod tests {
     use super::*;
     use crate::metadata_storage::PickStatus;
 
-    #[tokio::test]
-    async fn test_sidecar_path_generation() {
-        let path = Path::new("/photos/vacation/beach.jpg");
-        let sidecar = SidecarMetadataStorage::get_sidecar_path(path);
-        assert_eq!(sidecar, PathBuf::from("/photos/vacation/beach.toml"));
+    #[test]
+    fn test_sidecar_path_generation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = SidecarMetadataStorage::new(temp_dir.path().to_path_buf());
 
-        // Test with different extension
-        let path_png = Path::new("/photos/vacation/sunset.png");
-        let sidecar_png = SidecarMetadataStorage::get_sidecar_path(path_png);
-        assert_eq!(sidecar_png, PathBuf::from("/photos/vacation/sunset.toml"));
+        let sidecar = storage.get_sidecar_path("photos/vacation/beach.jpg");
+        assert_eq!(sidecar, temp_dir.path().join("photos/vacation/beach.toml"));
 
-        // Test with no extension
-        let path_no_ext = Path::new("/photos/vacation/beach");
-        let sidecar_no_ext = SidecarMetadataStorage::get_sidecar_path(path_no_ext);
-        assert_eq!(sidecar_no_ext, PathBuf::from("/photos/vacation/beach.toml"));
+        let sidecar_png = storage.get_sidecar_path("photos/vacation/sunset.png");
+        assert_eq!(
+            sidecar_png,
+            temp_dir.path().join("photos/vacation/sunset.toml")
+        );
+
+        let sidecar_no_ext = storage.get_sidecar_path("photos/vacation/beach");
+        assert_eq!(
+            sidecar_no_ext,
+            temp_dir.path().join("photos/vacation/beach.toml")
+        );
     }
 
     #[tokio::test]
     async fn test_save_and_load() {
-        let storage = SidecarMetadataStorage::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let image_path = temp_dir.path().join("test_image.jpg");
+        let storage = SidecarMetadataStorage::new(temp_dir.path().to_path_buf());
 
         let mut metadata = ImageUserMetadata::new();
         metadata.highlighted = true;
@@ -138,16 +142,16 @@ mod tests {
         metadata.add_comment("user1".to_string(), "Great shot!".to_string(), None);
         metadata.tags = vec!["landscape".to_string(), "sunset".to_string()];
 
-        // Save metadata
-        storage.save(&image_path, &metadata).await.unwrap();
+        // Save metadata using relative path
+        storage.save("test_image.jpg", &metadata).await.unwrap();
 
         // Verify sidecar file exists
-        let sidecar_path = SidecarMetadataStorage::get_sidecar_path(&image_path);
+        let sidecar_path = temp_dir.path().join("test_image.toml");
         assert!(tokio::fs::metadata(&sidecar_path).await.is_ok());
 
         // Load it back
-        let loaded = storage.load(&image_path).await.unwrap().unwrap();
-        assert_eq!(loaded.highlighted, true);
+        let loaded = storage.load("test_image.jpg").await.unwrap().unwrap();
+        assert!(loaded.highlighted);
         assert_eq!(loaded.pick_status, Some(PickStatus::Pick));
         assert_eq!(loaded.comments.len(), 1);
         assert_eq!(loaded.comments[0].text, "Great shot!");
@@ -157,15 +161,14 @@ mod tests {
         assert_eq!(loaded.tags[1], "sunset");
 
         // Test delete
-        storage.delete(&image_path).await.unwrap();
-        assert!(storage.load(&image_path).await.unwrap().is_none());
+        storage.delete("test_image.jpg").await.unwrap();
+        assert!(storage.load("test_image.jpg").await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn test_toml_format() {
-        let storage = SidecarMetadataStorage::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let image_path = temp_dir.path().join("photo.jpg");
+        let storage = SidecarMetadataStorage::new(temp_dir.path().to_path_buf());
 
         let mut metadata = ImageUserMetadata::new();
         metadata.highlighted = true;
@@ -175,7 +178,7 @@ mod tests {
         metadata.tags = vec!["nature".to_string(), "macro".to_string()];
 
         // Save metadata
-        storage.save(&image_path, &metadata).await.unwrap();
+        storage.save("photo.jpg", &metadata).await.unwrap();
 
         // Read the TOML file directly
         let sidecar_path = temp_dir.path().join("photo.toml");
@@ -196,20 +199,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_metadata() {
-        let storage = SidecarMetadataStorage::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let image_path = temp_dir.path().join("empty.jpg");
+        let storage = SidecarMetadataStorage::new(temp_dir.path().to_path_buf());
 
         // Load non-existent metadata
-        let loaded = storage.load(&image_path).await.unwrap();
+        let loaded = storage.load("empty.jpg").await.unwrap();
         assert!(loaded.is_none());
 
         // Save empty metadata
         let metadata = ImageUserMetadata::new();
-        storage.save(&image_path, &metadata).await.unwrap();
+        storage.save("empty.jpg", &metadata).await.unwrap();
 
         // Load it back
-        let loaded = storage.load(&image_path).await.unwrap().unwrap();
+        let loaded = storage.load("empty.jpg").await.unwrap().unwrap();
         assert!(!loaded.highlighted);
         assert!(loaded.pick_status.is_none());
         assert!(loaded.comments.is_empty());

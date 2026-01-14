@@ -98,14 +98,8 @@ export class GalleryPreviewTemplate {
   }
 
   private createPreviewImageElement(image: GalleryImage, displayDimensions: { width: number; height: number }): HTMLElement {
-    const cleanName = image.name
-      .replace(/\./g, '')
-      .replace(/\s/g, '')
-      .replace(/-/g, '')
-      .replace(/_/g, '');
-    
     const link = document.createElement('a');
-    link.href = `${this.galleryUrl}/${image.parent_path}#${cleanName}`;
+    link.href = `${this.galleryUrl}/${image.parent_path}#${image.path}`;
     link.className = 'preview-item image-preview-item' + (image.is_new ? ' is-new' : '');
     link.style.width = displayDimensions.width + 'px';
     link.style.display = 'inline-block';

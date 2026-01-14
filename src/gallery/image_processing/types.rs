@@ -1,5 +1,8 @@
 use crate::gallery::GalleryError;
+use crate::storage::{DynStorage, PreloadedReader};
 use image::{DynamicImage, ImageFormat};
+use std::io::{BufReader, Cursor};
+use tokio::runtime::Handle;
 
 /// A loaded image with all its metadata preserved
 /// This struct encapsulates an image and its associated metadata
@@ -85,6 +88,92 @@ impl LoadedImage {
             avif_info,
             format: detected_format,
             source_path: path.to_path_buf(),
+        })
+    }
+
+    /// Load an image from storage with all metadata preserved.
+    ///
+    /// This method uses the storage abstraction to load images from either
+    /// local filesystem or remote storage (S3). It uses the FullFetch strategy
+    /// since we need the entire image for processing.
+    ///
+    /// # Arguments
+    /// * `storage` - The storage backend to read from
+    /// * `relative_path` - Path relative to the storage root
+    /// * `handle` - Tokio runtime handle for async operations
+    pub fn load_from_storage(
+        storage: &DynStorage,
+        relative_path: &str,
+        handle: &Handle,
+    ) -> Result<Self, GalleryError> {
+        // Use FullFetch strategy since we need the entire image
+        let reader = PreloadedReader::open(storage, relative_path, handle)?;
+        let data = reader.into_bytes();
+
+        Self::load_from_bytes(&data, relative_path)
+    }
+
+    /// Load an image from bytes with all metadata preserved.
+    ///
+    /// This is useful when the image data is already in memory (e.g., from storage).
+    pub fn load_from_bytes(data: &[u8], source_path_hint: &str) -> Result<Self, GalleryError> {
+        // Detect the format from the data
+        let cursor = Cursor::new(data);
+        let buf_reader = BufReader::new(cursor);
+        let decoder = image::ImageReader::new(buf_reader).with_guessed_format()?;
+        let detected_format = decoder.format();
+
+        // Extract ICC profile based on format
+        let icc_profile = match detected_format {
+            Some(ImageFormat::Jpeg) => {
+                crate::gallery::image_processing::formats::jpeg::extract_icc_profile_from_bytes(
+                    data,
+                )
+            }
+            Some(ImageFormat::Png) => {
+                crate::gallery::image_processing::formats::png::extract_icc_profile_from_bytes(data)
+            }
+            #[cfg(feature = "avif")]
+            Some(ImageFormat::Avif) => {
+                crate::gallery::image_processing::formats::avif_container::extract_icc_profile_from_container(data)
+            }
+            _ => None,
+        };
+
+        // Load the image with special handling for AVIF
+        #[cfg(feature = "avif")]
+        let (image, avif_info) = if detected_format == Some(ImageFormat::Avif) {
+            // Use our custom AVIF reader to preserve color properties and gain maps
+            match crate::gallery::image_processing::formats::avif::read_avif_info_from_bytes(data) {
+                Ok((img, info)) => (img, Some(info)),
+                Err(e) => {
+                    tracing::debug!(
+                        "Failed to read AVIF with custom reader: {}, falling back",
+                        e
+                    );
+                    // Fall back to standard decoding
+                    match image::load_from_memory(data) {
+                        Ok(img) => (img, None),
+                        Err(e) => {
+                            return Err(GalleryError::ImageError(e));
+                        }
+                    }
+                }
+            }
+        } else {
+            (image::load_from_memory(data)?, None)
+        };
+
+        #[cfg(not(feature = "avif"))]
+        let image = image::load_from_memory(data)?;
+
+        Ok(Self {
+            image,
+            icc_profile,
+            #[cfg(feature = "avif")]
+            avif_info,
+            format: detected_format,
+            source_path: std::path::PathBuf::from(source_path_hint),
         })
     }
 
@@ -188,37 +277,32 @@ impl LoadedImage {
         }
     }
 
-    /// Save the image to a file in the specified format
-    pub fn save_as(
+    /// Encode the image to bytes in the specified format
+    pub fn encode(
         &self,
-        path: &std::path::Path,
         format: OutputFormat,
         jpeg_quality: u8,
         webp_quality: f32,
-    ) -> Result<(), GalleryError> {
+    ) -> Result<Vec<u8>, GalleryError> {
         use crate::gallery::image_processing::formats;
 
         match format {
-            OutputFormat::Jpeg => formats::jpeg::save_with_profile(
+            OutputFormat::Jpeg => formats::jpeg::encode_with_profile(
                 &self.image,
-                path,
                 jpeg_quality,
                 self.icc_profile.as_deref(),
             ),
-            OutputFormat::WebP => formats::webp::save_with_profile(
+            OutputFormat::WebP => formats::webp::encode_with_profile(
                 &self.image,
-                path,
                 webp_quality,
                 self.icc_profile.as_deref(),
             ),
-            OutputFormat::Png => formats::png::save(&self.image, path),
+            OutputFormat::Png => formats::png::encode(&self.image),
             #[cfg(feature = "avif")]
             OutputFormat::Avif => {
-                // Use the preserved AVIF info if available
                 if let Some(ref info) = self.avif_info {
-                    formats::avif::save_with_info(&self.image, path, 85, 6, Some(info))
+                    formats::avif::encode_with_info(&self.image, 85, 6, Some(info))
                 } else {
-                    // Fallback: preserve HDR if the source is 16-bit
                     let preserve_hdr = matches!(
                         self.image,
                         DynamicImage::ImageLuma16(_)
@@ -226,9 +310,8 @@ impl LoadedImage {
                             | DynamicImage::ImageRgb16(_)
                             | DynamicImage::ImageRgba16(_)
                     );
-                    formats::avif::save_with_profile(
+                    formats::avif::encode_with_profile(
                         &self.image,
-                        path,
                         85,
                         6,
                         self.icc_profile.as_deref(),
@@ -237,6 +320,19 @@ impl LoadedImage {
                 }
             }
         }
+    }
+
+    /// Save the image to a file in the specified format
+    pub fn save_as(
+        &self,
+        path: &std::path::Path,
+        format: OutputFormat,
+        jpeg_quality: u8,
+        webp_quality: f32,
+    ) -> Result<(), GalleryError> {
+        let data = self.encode(format, jpeg_quality, webp_quality)?;
+        std::fs::write(path, data)?;
+        Ok(())
     }
 
     /// Extract a tile from the image

@@ -6,13 +6,15 @@ use axum::{
 };
 use image::{ImageBuffer, RgbaImage};
 use resvg::{tiny_skia, usvg};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::error;
 
+use crate::storage::DynStorage;
+
 #[derive(Clone)]
 pub struct FaviconRenderer {
-    static_dirs: Vec<PathBuf>,
+    storages: Vec<DynStorage>,
     cache: Arc<RwLock<FaviconCache>>,
 }
 
@@ -25,9 +27,9 @@ struct FaviconCache {
 }
 
 impl FaviconRenderer {
-    pub fn new(static_dirs: Vec<PathBuf>) -> Self {
+    pub fn new(storages: Vec<DynStorage>) -> Self {
         Self {
-            static_dirs,
+            storages,
             cache: Arc::new(RwLock::new(FaviconCache::default())),
         }
     }
@@ -132,25 +134,28 @@ impl FaviconRenderer {
     }
 
     async fn load_svg(&self) -> Result<String, String> {
-        // Try each directory in order until we find favicon.svg
-        for (index, static_dir) in self.static_dirs.iter().enumerate() {
-            let svg_path = static_dir.join("favicon.svg");
-            match tokio::fs::read_to_string(&svg_path).await {
+        // Try each storage backend in order until we find favicon.svg
+        for (index, storage) in self.storages.iter().enumerate() {
+            match storage.read_to_string("favicon.svg").await {
                 Ok(content) => {
-                    tracing::debug!("Found favicon.svg in directory {}: {:?}", index, svg_path);
+                    tracing::debug!(
+                        "Found favicon.svg in storage {}: {}",
+                        index,
+                        storage.storage_type()
+                    );
                     return Ok(content);
                 }
                 Err(e) => {
                     tracing::debug!(
-                        "favicon.svg not found in directory {}: {:?} - {}",
+                        "favicon.svg not found in storage {} ({}): {}",
                         index,
-                        svg_path,
+                        storage.storage_type(),
                         e
                     );
                 }
             }
         }
-        Err("Failed to find favicon.svg in any static directory".to_string())
+        Err("Failed to find favicon.svg in any storage backend".to_string())
     }
 
     async fn generate_png(&self, size: u32) -> Result<Vec<u8>, String> {

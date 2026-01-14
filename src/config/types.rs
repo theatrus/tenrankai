@@ -36,6 +36,10 @@ pub struct AppConfig {
     pub name: String,
     #[serde(default)]
     pub log_level: LogLevel,
+    /// Log level for AWS SDK (defaults to warn to reduce noise).
+    /// Set to "debug" or "trace" to see detailed AWS API calls.
+    #[serde(default = "super::defaults::default_aws_log_level")]
+    pub aws_log_level: LogLevel,
     pub cookie_secret: String,
     #[serde(default)]
     pub base_url: Option<String>,
@@ -44,35 +48,60 @@ pub struct AppConfig {
 }
 
 /// Template directory configuration with custom serialization
+///
+/// Directories can be filesystem paths or S3 URLs:
+/// - `"templates"` - relative filesystem path
+/// - `"/var/data/templates"` - absolute filesystem path
+/// - `"s3://bucket/prefix"` - S3 bucket with optional prefix
+/// - `"s3://bucket/prefix?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateConfig {
     #[serde(
-        deserialize_with = "super::serialization::deserialize_template_directories",
-        serialize_with = "super::serialization::serialize_template_directories"
+        deserialize_with = "super::serialization::deserialize_storage_urls",
+        serialize_with = "super::serialization::serialize_storage_urls"
     )]
-    pub directories: Vec<PathBuf>,
+    pub directories: Vec<String>,
 }
 
 /// Static files directory configuration with custom serialization
+///
+/// Directories can be filesystem paths or S3 URLs:
+/// - `"static"` - relative filesystem path
+/// - `"/var/data/static"` - absolute filesystem path
+/// - `"s3://bucket/prefix"` - S3 bucket with optional prefix
+/// - `"s3://bucket/prefix?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StaticConfig {
     #[serde(
-        deserialize_with = "super::serialization::deserialize_static_directories",
-        serialize_with = "super::serialization::serialize_static_directories"
+        deserialize_with = "super::serialization::deserialize_storage_urls",
+        serialize_with = "super::serialization::serialize_storage_urls"
     )]
-    pub directories: Vec<PathBuf>,
+    pub directories: Vec<String>,
+    /// Whether to use signed URL redirects for S3 backends (default: false).
+    /// When true, requests for S3-backed files return a 307 redirect to a signed S3 URL.
+    /// When false, the server proxies the content through itself.
+    #[serde(default)]
+    pub use_redirects: bool,
 }
 
 /// Gallery system configuration with image processing settings
+///
+/// Both source and cache directories can be filesystem paths or storage URLs:
+/// - `"photos"` - relative filesystem path
+/// - `"/var/data/photos"` - absolute filesystem path
+/// - `"s3://bucket/prefix"` - S3 bucket with optional prefix
+/// - `"s3://bucket/prefix?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GallerySystemConfig {
     pub name: String,
     pub url_prefix: String,
-    pub source_directory: PathBuf,
-    pub cache_directory: PathBuf,
+    /// Source directory for gallery images (filesystem path or S3 URL)
+    pub source_directory: String,
+    /// Cache directory for processed images (filesystem path or S3 URL)
+    pub cache_directory: String,
     #[serde(default = "super::defaults::default_gallery_template")]
     pub gallery_template: String,
     #[serde(default = "super::defaults::default_image_detail_template")]
@@ -109,6 +138,10 @@ pub struct GallerySystemConfig {
     /// Permission configuration for this gallery
     #[serde(default)]
     pub permissions: crate::permissions::types::PermissionConfig,
+    /// LRU cache size for user metadata (picks, comments, etc.)
+    /// Default: 1000 entries
+    #[serde(default = "super::defaults::default_metadata_cache_size")]
+    pub metadata_cache_size: usize,
 }
 
 /// Image indexing mode for gallery URLs
@@ -192,11 +225,17 @@ pub struct PregenerateSizes {
 }
 
 /// Posts system configuration for markdown-based content
+///
+/// Source directory can be a filesystem path or S3 URL:
+/// - `"posts/blog"` - relative filesystem path
+/// - `"/var/data/posts"` - absolute filesystem path
+/// - `"s3://bucket/posts"` - S3 bucket with prefix
+/// - `"s3://bucket/posts?region=us-east-1"` - S3 with region
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PostsSystemConfig {
     pub name: String,
-    pub source_directory: PathBuf,
+    pub source_directory: String,
     pub url_prefix: String,
     #[serde(default = "super::defaults::default_posts_index_template")]
     pub index_template: String,

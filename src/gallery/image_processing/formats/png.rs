@@ -18,6 +18,11 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
 
+    extract_icc_profile_from_bytes(&buffer)
+}
+
+/// Extract ICC profile from PNG data in memory
+pub fn extract_icc_profile_from_bytes(buffer: &[u8]) -> Option<Vec<u8>> {
     // PNG signature check
     if buffer.len() < 8 || &buffer[0..8] != b"\x89PNG\r\n\x1a\n" {
         return None;
@@ -88,10 +93,17 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
     None
 }
 
+/// Encode image as PNG, returning bytes
+pub fn encode(image: &DynamicImage) -> Result<Vec<u8>, GalleryError> {
+    let mut buffer = Vec::new();
+    let encoder = PngEncoder::new(&mut buffer);
+    image.write_with_encoder(encoder)?;
+    Ok(buffer)
+}
+
 /// Save image as PNG
 pub fn save(image: &DynamicImage, path: &Path) -> Result<(), GalleryError> {
-    let output = std::fs::File::create(path)?;
-    let encoder = PngEncoder::new(output);
-    image.write_with_encoder(encoder)?;
+    let data = encode(image)?;
+    std::fs::write(path, data)?;
     Ok(())
 }

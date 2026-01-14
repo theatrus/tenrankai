@@ -1,21 +1,21 @@
 use crate::gallery::types::ImageSize as SizeVariant;
 use crate::gallery::{Gallery, GalleryError};
-use std::path::{Path, PathBuf};
+use crate::storage::{DynStorage, storage_exists_sync, storage_write_sync};
+use bytes::Bytes;
+use std::path::PathBuf;
+use tokio::runtime::Handle;
 use tracing::{debug, info};
 
-use super::types::{ImageSize, OutputFormat};
+use super::types::{ImageSize, LoadedImage, OutputFormat};
 
 impl Gallery {
     /// Process multiple variants of an image in a single batch
     /// This loads the image once and generates all requested sizes/formats
     pub async fn process_image_batch(
         &self,
-        original_path: &Path,
         relative_path: &str,
         variants: Vec<(String, ImageSize, bool, OutputFormat)>, // (size_str, dimensions, apply_watermark, format)
     ) -> Result<Vec<PathBuf>, GalleryError> {
-        use super::types::LoadedImage;
-
         // Generate batch deduplication key
         let variants_hash = {
             use std::collections::hash_map::DefaultHasher;
@@ -39,17 +39,17 @@ impl Gallery {
         if handle.is_executor() {
             // We're the executor, process all variants
 
-            // Ensure cache directory exists
-            tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+            // Ensure cache directory exists using storage
+            self.cache_storage.create_dir("").await?;
 
             // Process in blocking thread
-            let original_path = original_path.to_path_buf();
+            let relative_path_owned = relative_path.to_string();
             let copyright_holder = self.config.copyright_holder.clone();
             let static_dir = std::path::PathBuf::from("static");
             let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
             let webp_quality = self.config.webp_quality.unwrap_or(85.0);
 
-            // Pre-generate cache filenames and paths
+            // Pre-generate cache filenames (not full paths)
             let mut variant_configs = Vec::new();
             for (size_str, dimensions, apply_watermark, output_format) in &variants {
                 let cache_filename = self.generate_cache_filename(
@@ -58,22 +58,31 @@ impl Gallery {
                     output_format.extension(),
                     *apply_watermark,
                 );
-                let cache_path = self.config.cache_directory.join(&cache_filename);
                 variant_configs.push((
                     size_str.clone(),
                     dimensions.clone(),
                     *apply_watermark,
                     *output_format,
-                    cache_path,
+                    cache_filename,
                 ));
             }
 
             // Get cancellation tokens for inner checks (both pregeneration and shutdown)
             let pregen_token = self.pregeneration_token.lock().await.clone();
             let shutdown_token = self.shutdown_token.clone();
+            let cache_storage = self.cache_storage.clone();
+            let source_storage = self.source_storage.clone();
+            let cache_path = self.cache_path.clone();
+            let runtime_handle = Handle::current();
 
-            let paths =
+            // Track this blocking task for graceful shutdown
+            let _task_guard = self.track_blocking_task();
+
+            // Process and write all variants in blocking thread
+            let generated_paths =
                 tokio::task::spawn_blocking(move || -> Result<Vec<PathBuf>, GalleryError> {
+                    // Guard is moved into blocking task, dropped when task completes
+                    let _guard = _task_guard;
                     // Helper to check if cancelled
                     let is_cancelled =
                         || pregen_token.is_cancelled() || shutdown_token.is_cancelled();
@@ -84,21 +93,29 @@ impl Gallery {
                         return Ok(Vec::new());
                     }
 
-                    // Load image once with all metadata
-                    debug!("Loading image for batch processing: {:?}", original_path);
-                    let loaded_image = LoadedImage::load(&original_path)?;
+                    // Load image once with all metadata from storage
+                    debug!(
+                        "Loading image for batch processing from storage: {}",
+                        relative_path_owned
+                    );
+                    let loaded_image = LoadedImage::load_from_storage(
+                        &source_storage,
+                        &relative_path_owned,
+                        &runtime_handle,
+                    )?;
                     let mut paths = Vec::new();
 
                     let total_variants = variant_configs.len();
                     info!(
-                        "Processing {} variants for image: {:?}",
-                        total_variants,
-                        original_path.file_name()
+                        "Processing {} variants for image: {}",
+                        total_variants, relative_path_owned
                     );
 
                     // Process each variant
-                    for (idx, (size_str, dimensions, apply_watermark, output_format, cache_path)) in
-                        variant_configs.into_iter().enumerate()
+                    for (
+                        idx,
+                        (size_str, dimensions, apply_watermark, output_format, cache_filename),
+                    ) in variant_configs.into_iter().enumerate()
                     {
                         // Check cancellation between variants
                         if is_cancelled() {
@@ -132,28 +149,29 @@ impl Gallery {
                             variant_image.apply_watermark(holder, &font_path)?;
                         }
 
-                        // Save the variant
-                        variant_image.save_as(
-                            &cache_path,
-                            output_format,
-                            jpeg_quality,
-                            webp_quality,
+                        // Encode the variant (returns bytes)
+                        let data =
+                            variant_image.encode(output_format, jpeg_quality, webp_quality)?;
+
+                        // Write to cache storage synchronously
+                        storage_write_sync(
+                            &cache_storage,
+                            &cache_filename,
+                            Bytes::from(data),
+                            &runtime_handle,
                         )?;
-                        paths.push(cache_path);
+                        paths.push(cache_path.join(&cache_filename));
                     }
 
-                    debug!(
-                        "Completed batch processing for {:?}",
-                        original_path.file_name()
-                    );
+                    debug!("Completed batch processing for {}", relative_path_owned);
                     Ok(paths)
                 })
                 .await??;
 
+            result_paths = generated_paths;
+
             // Mark task as complete
             handle.complete().await;
-
-            result_paths = paths;
         } else {
             // We're a waiter, wait for the executor to finish
             handle.wait().await;
@@ -166,7 +184,7 @@ impl Gallery {
                     output_format.extension(),
                     *apply_watermark,
                 );
-                let cache_path = self.config.cache_directory.join(&cache_filename);
+                let cache_path = self.cache_path.join(&cache_filename);
                 result_paths.push(cache_path);
             }
         }
@@ -213,7 +231,6 @@ impl Gallery {
     /// Get resized image from cache or generate it
     pub(crate) async fn get_resized_image(
         &self,
-        original_path: &Path,
         relative_path: &str,
         size: &str,
         output_format: OutputFormat,
@@ -230,10 +247,13 @@ impl Gallery {
             output_format.extension(),
             apply_watermark,
         );
-        let cache_path = self.config.cache_directory.join(&cache_filename);
+        let cache_path = self.cache_path.join(&cache_filename);
 
-        // Check if cache file exists and is newer than original
-        if self.is_cache_valid(&cache_path, original_path).await? {
+        // Check if cache file exists and is newer than original using storage abstraction
+        if self
+            .is_cache_valid_by_key(&cache_filename, relative_path)
+            .await?
+        {
             return Ok(cache_path);
         }
 
@@ -259,21 +279,28 @@ impl Gallery {
                     GalleryError::ProcessingError("Image processing semaphore closed".to_string())
                 })?;
 
-            // Ensure cache directory exists
-            tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+            // Ensure cache directory exists using storage
+            self.cache_storage.create_dir("").await?;
 
-            // Process image in blocking thread
-            let original_path = original_path.to_path_buf();
-            let cache_path_clone = cache_path.clone();
+            // Process image and write to cache in blocking thread
+            let relative_path_owned = relative_path.to_string();
             let copyright_holder = self.config.copyright_holder.clone();
-            let static_dir = std::path::PathBuf::from("static"); // TODO: Make configurable
+            let static_dir = std::path::PathBuf::from("static");
             let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
             let webp_quality = self.config.webp_quality.unwrap_or(85.0);
+            let cache_storage = self.cache_storage.clone();
+            let source_storage = self.source_storage.clone();
+            let runtime_handle = Handle::current();
 
-            let result = tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-                process_image(
-                    &original_path,
-                    &cache_path_clone,
+            // Track this blocking task for graceful shutdown
+            let _task_guard = self.track_blocking_task();
+
+            tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                // Guard is moved into blocking task, dropped when task completes
+                let _guard = _task_guard;
+                let data = process_image_from_storage(
+                    &source_storage,
+                    &relative_path_owned,
                     dimensions,
                     output_format,
                     apply_watermark,
@@ -281,14 +308,22 @@ impl Gallery {
                     &static_dir,
                     jpeg_quality,
                     webp_quality,
-                )
+                    &runtime_handle,
+                )?;
+
+                // Write to cache storage synchronously
+                storage_write_sync(
+                    &cache_storage,
+                    &cache_filename,
+                    Bytes::from(data),
+                    &runtime_handle,
+                )?;
+                Ok(())
             })
-            .await?;
+            .await??;
 
             // Mark task as complete
             handle.complete().await;
-
-            result?;
         } else {
             // We're a waiter, wait for the executor to finish
             handle.wait().await;
@@ -297,14 +332,12 @@ impl Gallery {
         Ok(cache_path)
     }
 
-    /// Get a specific tile from an image
+    /// Get a specific tile from an image (tiles are always AVIF/WebP based on feature flags)
     pub(crate) async fn get_image_tile(
         &self,
-        original_path: &Path,
         relative_path: &str,
         tile_x: u32,
         tile_y: u32,
-        _output_format: OutputFormat, // Ignored - tiles are always AVIF
     ) -> Result<PathBuf, GalleryError> {
         // Get default tile size from config
         let tile_size = self
@@ -314,26 +347,18 @@ impl Gallery {
             .map(|tc| tc.tile_size)
             .unwrap_or(1024);
 
-        self.get_image_tile_with_size(
-            original_path,
-            relative_path,
-            tile_x,
-            tile_y,
-            tile_size,
-            _output_format,
-        )
-        .await
+        self.get_image_tile_with_size(relative_path, tile_x, tile_y, tile_size)
+            .await
     }
 
     /// Get a specific tile from an image with custom size (for retina)
+    /// Note: Tiles are always AVIF (or WebP fallback) regardless of source format
     pub(crate) async fn get_image_tile_with_size(
         &self,
-        original_path: &Path,
         relative_path: &str,
         tile_x: u32,
         tile_y: u32,
         tile_size: u32,
-        _output_format: OutputFormat, // Ignored - tiles are always AVIF
     ) -> Result<PathBuf, GalleryError> {
         // Check if tiles are configured
         let _tile_config = self
@@ -358,10 +383,13 @@ impl Gallery {
             is_retina,
             output_format.extension(),
         );
-        let cache_path = self.config.cache_directory.join(&cache_filename);
+        let cache_path = self.cache_path.join(&cache_filename);
 
-        // Check if cache file exists and is newer than original
-        if self.is_cache_valid(&cache_path, original_path).await? {
+        // Check if cache file exists and is newer than original (async)
+        if self
+            .is_cache_valid_by_key(&cache_filename, relative_path)
+            .await?
+        {
             return Ok(cache_path);
         }
 
@@ -381,32 +409,37 @@ impl Gallery {
                     GalleryError::ProcessingError("Image processing semaphore closed".to_string())
                 })?;
 
-            // Ensure cache directory exists
-            tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+            // Ensure cache directory exists using storage
+            self.cache_storage.create_dir("").await?;
 
             // Process all tiles for this image in blocking thread
             // This ensures we load the source image only once
-            let original_path = original_path.to_path_buf();
-            let cache_dir = self.config.cache_directory.clone();
             let relative_path_owned = relative_path.to_string();
             let shutdown_flag = self.shutdown_flag.clone();
+            let cache_storage = self.cache_storage.clone();
+            let source_storage = self.source_storage.clone();
+            let runtime_handle = Handle::current();
 
-            let result = tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
-                process_all_tiles_for_image(
-                    &original_path,
-                    &cache_dir,
+            // Track this blocking task for graceful shutdown
+            let _task_guard = self.track_blocking_task();
+
+            tokio::task::spawn_blocking(move || -> Result<(), GalleryError> {
+                // Guard is moved into blocking task, dropped when task completes
+                let _guard = _task_guard;
+                process_all_tiles_from_storage(
+                    &source_storage,
                     &relative_path_owned,
                     tile_size,
                     output_format,
                     &shutdown_flag,
+                    &cache_storage,
+                    &runtime_handle,
                 )
             })
-            .await?;
+            .await??;
 
             // Mark task as complete
             handle.complete().await;
-
-            result?;
         } else {
             // We're a waiter, wait for the executor to finish
             handle.wait().await;
@@ -416,46 +449,60 @@ impl Gallery {
     }
 
     /// Check if cache file is valid (exists and newer than source)
-    pub(crate) async fn is_cache_valid(
+    /// Uses storage abstraction for both cache and source
+    pub(crate) async fn is_cache_valid_by_key(
         &self,
-        cache_path: &Path,
-        original_path: &Path,
+        cache_key: &str,
+        source_path: &str,
     ) -> Result<bool, GalleryError> {
-        if !cache_path.exists() {
-            return Ok(false);
-        }
+        // Get cache metadata from storage (returns NotFound if doesn't exist)
+        let cache_meta = match self.cache_storage.metadata(cache_key).await {
+            Ok(meta) => meta,
+            Err(_) => return Ok(false),
+        };
 
-        let cache_metadata = tokio::fs::metadata(cache_path).await?;
-        let original_metadata = tokio::fs::metadata(original_path).await?;
+        // Get source metadata from source storage
+        let source_meta = match self.source_storage.metadata(source_path).await {
+            Ok(meta) => meta,
+            Err(_) => return Ok(false),
+        };
 
-        if let (Ok(cache_modified), Ok(original_modified)) =
-            (cache_metadata.modified(), original_metadata.modified())
-            && cache_modified >= original_modified
-        {
-            Ok(true)
-        } else {
-            Ok(false)
+        // Compare timestamps if both are available
+        match (cache_meta.last_modified, source_meta.last_modified) {
+            // Both have timestamps - compare them
+            (Some(cache_modified), Some(source_modified)) => Ok(cache_modified >= source_modified),
+            // Cache exists but no timestamps available - consider it valid
+            // (optimistic caching: if the file exists, it was created for a reason)
+            (None, _) | (_, None) => {
+                tracing::trace!(
+                    "Cache exists but missing timestamps for {} (cache: {:?}, source: {:?})",
+                    cache_key,
+                    cache_meta.last_modified,
+                    source_meta.last_modified
+                );
+                Ok(true)
+            }
         }
     }
 }
 
-/// Process and resize image
+/// Process and resize image from storage, returning encoded bytes
 #[allow(clippy::too_many_arguments)]
-fn process_image(
-    original_path: &Path,
-    cache_path: &Path,
+fn process_image_from_storage(
+    source_storage: &DynStorage,
+    relative_path: &str,
     dimensions: ImageSize,
     output_format: OutputFormat,
     apply_watermark: bool,
     copyright_holder: Option<String>,
-    static_dir: &Path,
+    static_dir: &std::path::Path,
     jpeg_quality: u8,
     webp_quality: f32,
-) -> Result<(), GalleryError> {
-    use super::types::LoadedImage;
-
-    // Load image with all metadata
-    let mut loaded_image = LoadedImage::load(original_path)?;
+    runtime_handle: &Handle,
+) -> Result<Vec<u8>, GalleryError> {
+    // Load image with all metadata from storage
+    let mut loaded_image =
+        LoadedImage::load_from_storage(source_storage, relative_path, runtime_handle)?;
 
     // Resize the image (this also handles gain maps)
     loaded_image.resize(dimensions.width, dimensions.height)?;
@@ -466,30 +513,28 @@ fn process_image(
         loaded_image.apply_watermark(&holder, &font_path)?;
     }
 
-    // Save in requested format
-    loaded_image.save_as(cache_path, output_format, jpeg_quality, webp_quality)?;
-
-    Ok(())
+    // Encode in requested format (returns bytes)
+    loaded_image.encode(output_format, jpeg_quality, webp_quality)
 }
 
-/// Process all tiles for an image at once
-fn process_all_tiles_for_image(
-    original_path: &Path,
-    cache_dir: &Path,
+/// Process all tiles for an image from storage, writing each tile to cache storage
+fn process_all_tiles_from_storage(
+    source_storage: &DynStorage,
     relative_path: &str,
     tile_size: u32,
     output_format: OutputFormat,
     shutdown_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cache_storage: &DynStorage,
+    runtime_handle: &Handle,
 ) -> Result<(), GalleryError> {
-    use super::types::LoadedImage;
-
     debug!(
-        "Loading image once to generate all tiles for: {:?}",
-        original_path
+        "Loading image from storage to generate all tiles for: {}",
+        relative_path
     );
 
-    // Load image with all metadata preserved
-    let mut loaded_image = LoadedImage::load(original_path)?;
+    // Load image with all metadata preserved from storage
+    let mut loaded_image =
+        LoadedImage::load_from_storage(source_storage, relative_path, runtime_handle)?;
 
     let (img_width, img_height) = loaded_image.dimensions();
 
@@ -528,7 +573,7 @@ fn process_all_tiles_for_image(
         grid_height
     );
 
-    let mut generated_count = 0;
+    let mut written_count = 0;
     let mut skipped_count = 0;
 
     // Generate all tiles for this image
@@ -536,8 +581,8 @@ fn process_all_tiles_for_image(
         // Check for shutdown at the start of each row
         if shutdown_flag.load(std::sync::atomic::Ordering::Relaxed) {
             info!(
-                "Tile generation cancelled for {} after {} tiles",
-                relative_path, generated_count
+                "Tile generation cancelled for {} after {} tiles written",
+                relative_path, written_count
             );
             return Ok(());
         }
@@ -614,7 +659,7 @@ fn process_all_tiles_for_image(
                     tile_loaded_image.avif_info = Some(tile_avif_info);
                 }
 
-                // Save both regular and @2x versions of this tile
+                // Encode both regular and @2x versions of this tile
                 for is_retina in [false, true] {
                     let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
                         relative_path,
@@ -624,33 +669,38 @@ fn process_all_tiles_for_image(
                         is_retina,
                         output_format.extension(),
                     );
-                    let cache_path = cache_dir.join(&cache_filename);
 
-                    // Skip if this tile already exists
-                    if cache_path.exists() {
+                    // Skip if this tile already exists (using sync adapter for storage)
+                    if storage_exists_sync(cache_storage, &cache_filename, runtime_handle) {
                         skipped_count += 1;
                         continue;
                     }
 
-                    // Save the tile with preserved metadata
+                    // Encode the tile with preserved metadata (returns bytes)
                     // For tiles, use high quality settings
-                    tile_loaded_image.save_as(
-                        &cache_path,
+                    let data = tile_loaded_image.encode(
                         output_format,
                         90,   // High quality for JPEG fallback
                         90.0, // High quality for WebP fallback
                     )?;
 
-                    generated_count += 1;
+                    // Write to cache storage synchronously
+                    storage_write_sync(
+                        cache_storage,
+                        &cache_filename,
+                        Bytes::from(data),
+                        runtime_handle,
+                    )?;
+                    written_count += 1;
                 }
             }
         }
     }
 
-    if generated_count > 0 {
+    if written_count > 0 {
         info!(
-            "Generated {} tiles for image, skipped {} existing tiles",
-            generated_count, skipped_count
+            "Wrote {} tiles for image, skipped {} existing tiles",
+            written_count, skipped_count
         );
     } else if skipped_count > 0 {
         debug!("All {} tiles already exist for image", skipped_count);

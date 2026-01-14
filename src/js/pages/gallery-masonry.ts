@@ -63,15 +63,9 @@ export class GalleryMasonry {
   }
 
   private createImageElement(image: GalleryImage, displayDimensions: { width: number; height: number }): HTMLElement {
-    const cleanName = image.name
-      .replace(/\./g, '')
-      .replace(/\s/g, '')
-      .replace(/-/g, '')
-      .replace(/_/g, '');
-    
     const itemDiv = document.createElement('div');
     itemDiv.className = 'image-item' + (image.is_new ? ' is-new' : '');
-    itemDiv.id = cleanName;
+    itemDiv.id = image.path;
     itemDiv.setAttribute('data-path', image.path);
     itemDiv.style.width = displayDimensions.width + 'px';
     itemDiv.style.height = displayDimensions.height + 'px';

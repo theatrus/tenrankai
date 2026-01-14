@@ -3,7 +3,7 @@ use super::image_processing::OutputFormat;
 use super::types::ImageSize;
 use crate::{CacheType, FormatCoverage};
 use futures::stream::{self, StreamExt};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, error, info, warn};
@@ -49,31 +49,67 @@ impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
         let current_version = env!("CARGO_PKG_VERSION");
 
-        let mut metadata = self.cache_metadata.write().await;
-        let needs_refresh = metadata.version != current_version;
+        // Load image metadata cache from storage
+        if let Err(e) = self.image_cache.load(&self.cache_storage).await {
+            warn!("Failed to load image metadata cache: {}", e);
+        }
+
+        // Load folder metadata cache from storage
+        if let Err(e) = self.folder_cache.load(&self.cache_storage).await {
+            warn!("Failed to load folder metadata cache: {}", e);
+        }
+
+        // Load cache version metadata
+        let loaded_cache_metadata =
+            crate::cache::load_cache_version_metadata(&self.cache_storage).await;
+
+        let needs_refresh = match loaded_cache_metadata {
+            Ok(cm) => {
+                let mut metadata = self.cache_metadata.write().await;
+                *metadata = cm;
+                metadata.version != current_version
+            }
+            Err(_) => {
+                // No cache metadata found, needs refresh
+                true
+            }
+        };
 
         if needs_refresh {
             info!(
-                "Version change detected ({}), refreshing metadata cache",
-                current_version
+                "Version change detected ({}), refreshing metadata cache for gallery '{}'",
+                current_version, self.config.name
             );
 
-            // Clear the old metadata cache
-            let mut cache = self.metadata_cache.write().await;
-            cache.clear();
-            drop(cache);
+            // Clear the old caches
+            self.image_cache.clear().await;
+            self.folder_cache.clear().await;
 
             // Update version and trigger refresh
+            let mut metadata = self.cache_metadata.write().await;
             metadata.version = current_version.to_string();
             metadata.last_full_refresh = std::time::SystemTime::now();
             drop(metadata);
 
             // Save the updated cache metadata
             self.save_cache_metadata().await?;
+
+            // Pre-populate folder metadata cache for fast initial page loads
+            info!("Pre-populating folder metadata cache...");
+            if let Err(e) = self.refresh_folder_metadata().await {
+                warn!("Failed to pre-populate folder metadata cache: {}", e);
+            }
         } else {
+            // Check if folder cache is empty (cache file might not have existed)
+            if self.folder_cache.is_empty().await {
+                info!("Folder cache is empty, pre-populating...");
+                if let Err(e) = self.refresh_folder_metadata().await {
+                    warn!("Failed to pre-populate folder metadata cache: {}", e);
+                }
+            }
             // Build the indexer from the existing cache
             let all_paths: Vec<String> = {
-                let cache = self.metadata_cache.read().await;
+                let cache = self.image_cache.read_all().await;
                 cache.keys().cloned().collect()
             };
 
@@ -131,8 +167,6 @@ impl Gallery {
     }
 
     pub fn start_periodic_cache_save(gallery: super::SharedGallery, interval_minutes: u64) {
-        use std::sync::atomic::Ordering;
-
         let shutdown_token = gallery.shutdown_token.clone();
         tokio::spawn(async move {
             let mut interval =
@@ -146,20 +180,18 @@ impl Gallery {
                         break;
                     }
                     _ = interval.tick() => {
-                        // Check if cache is dirty
-                        if gallery.metadata_cache_dirty.load(Ordering::Relaxed) {
-                            debug!("Cache is dirty, saving to disk");
+                        // Save image cache if dirty (dirty flag check is internal)
+                        match gallery.image_cache.save_if_dirty(&gallery.cache_storage).await {
+                            Ok(true) => info!("Periodic image metadata cache save completed"),
+                            Ok(false) => debug!("Image cache not dirty, skipping save"),
+                            Err(e) => error!("Failed to save image metadata cache: {}", e),
+                        }
 
-                            if let Err(e) = gallery.save_metadata_cache().await {
-                                error!("Failed to save metadata cache: {}", e);
-                            } else {
-                                // Reset dirty flag and update counter
-                                gallery.metadata_cache_dirty.store(false, Ordering::Relaxed);
-                                gallery
-                                    .metadata_updates_since_save
-                                    .store(0, Ordering::Relaxed);
-                                info!("Periodic metadata cache save completed");
-                            }
+                        // Save folder cache if dirty
+                        match gallery.folder_cache.save_if_dirty(&gallery.cache_storage).await {
+                            Ok(true) => info!("Periodic folder metadata cache save completed"),
+                            Ok(false) => debug!("Folder cache not dirty, skipping save"),
+                            Err(e) => error!("Failed to save folder metadata cache: {}", e),
                         }
                     }
                 }
@@ -168,33 +200,45 @@ impl Gallery {
     }
 
     pub(crate) async fn save_metadata_cache(&self) -> Result<(), super::GalleryError> {
-        use std::sync::atomic::Ordering;
+        // Save image metadata cache if dirty
+        let image_saved = self
+            .image_cache
+            .save_if_dirty(&self.cache_storage)
+            .await
+            .map_err(|e| super::GalleryError::CacheError(e.to_string()))?;
 
-        let cache = self.metadata_cache.read().await;
-        crate::cache::save_image_metadata_cache(&self.config.cache_directory, &cache).await?;
+        // Save folder metadata cache if dirty
+        let folder_saved = self
+            .folder_cache
+            .save_if_dirty(&self.cache_storage)
+            .await
+            .map_err(|e| super::GalleryError::CacheError(e.to_string()))?;
 
-        // Reset dirty flag after successful save
-        self.metadata_cache_dirty.store(false, Ordering::Relaxed);
-        self.metadata_updates_since_save.store(0, Ordering::Relaxed);
+        if image_saved || folder_saved {
+            debug!(
+                "Saved metadata caches (image: {}, folder: {})",
+                image_saved, folder_saved
+            );
+        }
 
         Ok(())
     }
 
     pub(crate) async fn save_cache_metadata(&self) -> Result<(), super::GalleryError> {
         let metadata = self.cache_metadata.read().await;
-        crate::cache::save_cache_version_metadata(&self.config.cache_directory, &metadata).await?;
+        crate::cache::save_cache_version_metadata(&self.cache_storage, &metadata).await?;
         Ok(())
     }
 
     pub async fn save_caches(&self) -> Result<(), super::GalleryError> {
-        // Create cache directory if it doesn't exist
-        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        // Ensure cache storage is ready (creates directory for filesystem, no-op for S3)
+        self.cache_storage.create_dir("").await?;
 
-        // Save both caches
+        // Save all caches
         self.save_metadata_cache().await?;
         self.save_cache_metadata().await?;
 
-        info!("Saved gallery caches to disk");
+        info!("Saved gallery caches to storage");
         Ok(())
     }
 
@@ -342,6 +386,7 @@ impl Gallery {
     pub async fn pregenerate_image_cache(
         &self,
         relative_path: &str,
+        cache_files: &HashSet<String>,
     ) -> Result<(), super::GalleryError> {
         // Check for cancellation (both pregeneration and shutdown)
         if self.pregeneration_token.lock().await.is_cancelled()
@@ -354,8 +399,13 @@ impl Gallery {
             return Ok(());
         }
 
-        let full_path = self.config.source_directory.join(relative_path);
-        if !full_path.exists() {
+        // Check if source image exists using storage
+        if !self
+            .source_storage
+            .exists(relative_path)
+            .await
+            .unwrap_or(false)
+        {
             return Ok(());
         }
 
@@ -370,16 +420,8 @@ impl Gallery {
 
         // Collect all missing variants to generate
         for size in &sizes {
-            let formats_to_generate = match self.check_format_coverage(relative_path, *size).await {
-                Ok(coverage) => coverage.missing_formats(relative_path),
-                Err(e) => {
-                    debug!(
-                        "Failed to check format coverage for {} {}: {}",
-                        relative_path, size, e
-                    );
-                    continue;
-                }
-            };
+            let coverage = self.check_format_coverage_fast(relative_path, *size, cache_files);
+            let formats_to_generate = coverage.missing_formats(relative_path);
 
             // Parse size and determine watermark
             let (dimensions, supports_watermark) = match self.parse_size(&size.as_str()) {
@@ -417,10 +459,7 @@ impl Gallery {
         );
         let start = std::time::Instant::now();
 
-        match self
-            .process_image_batch(&full_path, relative_path, variants)
-            .await
-        {
+        match self.process_image_batch(relative_path, variants).await {
             Ok(paths) => {
                 let elapsed = start.elapsed();
                 info!(
@@ -439,9 +478,12 @@ impl Gallery {
     }
 
     /// Pre-generate tiles for a single image
+    ///
+    /// Uses the cache_files set for fast lookup to avoid regenerating existing tiles.
     pub async fn pregenerate_tiles_for_image(
         &self,
         relative_path: &str,
+        cache_files: &HashSet<String>,
     ) -> Result<(), super::GalleryError> {
         // Check for cancellation (both pregeneration and shutdown)
         if self.pregeneration_token.lock().await.is_cancelled()
@@ -460,15 +502,10 @@ impl Gallery {
             return Ok(());
         }
 
-        let full_path = self.config.source_directory.join(relative_path);
-        if !full_path.exists() {
-            return Ok(());
-        }
-
         let tile_size = tile_config.tile_size;
 
         // Get image dimensions to calculate grid size
-        let metadata = self.metadata_cache.read().await;
+        let metadata = self.image_cache.read_all().await;
         let image_metadata = match metadata.get(relative_path) {
             Some(meta) => meta,
             None => return Ok(()), // No metadata available
@@ -483,38 +520,47 @@ impl Gallery {
         let grid_height = max_dimension.div_ceil(tile_size);
         drop(metadata);
 
-        // Tiles are always AVIF for best compression and quality
-        #[cfg(feature = "avif")]
-        let formats = vec![OutputFormat::Avif];
-        #[cfg(not(feature = "avif"))]
-        let formats = vec![OutputFormat::WebP]; // Fallback to WebP if AVIF is disabled
+        // Skip if no tiles to generate
+        if grid_width == 0 || grid_height == 0 {
+            return Ok(());
+        }
 
-        // Generate all tiles at once by requesting any tile
-        // The tile generation function will generate all tiles for the image
-        if grid_width > 0 && grid_height > 0 {
-            // Just request tile 0,0 - the backend will generate all tiles
-            for format in &formats {
-                // Check for cancellation before each format (both pregeneration and shutdown)
-                if self.pregeneration_token.lock().await.is_cancelled()
-                    || self.shutdown_token.is_cancelled()
-                {
-                    return Ok(());
-                }
+        // Fast check: see if tiles already exist using the cache_files set
+        // We check for tile (0,0) as a representative - if it exists, all tiles should exist
+        let first_tile_filename = generate_tile_cache_filename(
+            relative_path,
+            0,
+            0,
+            tile_size,
+            false, // non-retina
+            #[cfg(feature = "avif")]
+            "avif",
+            #[cfg(not(feature = "avif"))]
+            "webp",
+        );
 
-                match self
-                    .get_image_tile(&full_path, relative_path, 0, 0, *format)
-                    .await
-                {
-                    Ok(_) => {
-                        info!(
-                            "Pre-generated all tiles ({}x{} grid) for {}",
-                            grid_width, grid_height, relative_path
-                        );
-                    }
-                    Err(e) => {
-                        warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
-                    }
-                }
+        if cache_files.contains(&first_tile_filename) {
+            // Tiles already exist, skip regeneration
+            return Ok(());
+        }
+
+        // Check for cancellation (both pregeneration and shutdown)
+        if self.pregeneration_token.lock().await.is_cancelled()
+            || self.shutdown_token.is_cancelled()
+        {
+            return Ok(());
+        }
+
+        // Just request tile 0,0 - the backend will generate all tiles
+        match self.get_image_tile(relative_path, 0, 0).await {
+            Ok(_) => {
+                info!(
+                    "Pre-generated all tiles ({}x{} grid) for {}",
+                    grid_width, grid_height, relative_path
+                );
+            }
+            Err(e) => {
+                warn!("Failed to pre-generate tiles for {}: {}", relative_path, e);
             }
         }
 
@@ -532,10 +578,13 @@ impl Gallery {
             self.config.name
         );
 
+        // Load all cache files once for fast lookups (avoids per-image storage API calls)
+        let cache_files = Arc::new(self.load_cache_file_set().await);
+
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
+            let cache = self.image_cache.read_all().await;
+            cache.keys().cloned().collect()
         };
 
         let total_images = image_paths.len();
@@ -564,6 +613,7 @@ impl Gallery {
                 let cancelled = cancelled.clone();
                 let pregen_token = pregen_token.clone();
                 let shutdown_token = shutdown_token.clone();
+                let cache_files = cache_files.clone();
 
                 async move {
                     // Helper to check if cancelled
@@ -576,7 +626,9 @@ impl Gallery {
                         return (index, image_path, Err(super::GalleryError::InvalidPath));
                     }
 
-                    let result = gallery.pregenerate_image_cache(&image_path).await;
+                    let result = gallery
+                        .pregenerate_image_cache(&image_path, &cache_files)
+                        .await;
 
                     // Check for cancellation between operations
                     if is_cancelled() {
@@ -587,7 +639,9 @@ impl Gallery {
                     // Also pre-generate tiles if configured and enabled
                     if result.is_ok()
                         && gallery.should_pregenerate_tiles()
-                        && let Err(e) = gallery.pregenerate_tiles_for_image(&image_path).await
+                        && let Err(e) = gallery
+                            .pregenerate_tiles_for_image(&image_path, &cache_files)
+                            .await
                     {
                         error!("Failed to pre-generate tiles for {}: {}", image_path, e);
                         failed.fetch_add(1, Ordering::Relaxed);
@@ -652,38 +706,8 @@ impl Gallery {
             self.config.name
         );
 
-        // Get all image paths from metadata cache
-        let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
-        };
-
-        let sizes = ImageSize::ALL;
-
-        for image_path in &image_paths {
-            if !self.is_image(image_path) {
-                continue;
-            }
-
-            for &size in sizes {
-                // This will automatically remove outdated cache files via check_format_coverage
-                match self.check_format_coverage(image_path, size).await {
-                    Ok(_) => {
-                        // Coverage check handles cleanup internally
-                    }
-                    Err(e) => {
-                        debug!(
-                            "Failed to check format coverage for {} {}: {}",
-                            image_path,
-                            size.as_str(),
-                            e
-                        );
-                    }
-                }
-            }
-        }
-
         // Remove orphaned cache files (cache files for images that no longer exist)
+        // Stale files (source newer than cache) are regenerated on-demand during serving
         let orphaned_count = self.remove_orphaned_cache_files().await?;
         if orphaned_count > 0 {
             info!("Removed {} orphaned cache files", orphaned_count);
@@ -702,10 +726,10 @@ impl Gallery {
 
         // Build a set of all valid cache filename prefixes (hashes) for current images
         let valid_prefixes: HashSet<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
+            let cache = self.image_cache.read_all().await;
             let mut prefixes = HashSet::new();
 
-            for image_path in metadata_cache.keys() {
+            for image_path in cache.keys() {
                 // Generate the base hash for this image (used as prefix for all cached versions)
                 let base_hash = self.generate_cache_key(image_path, "");
                 prefixes.insert(base_hash);
@@ -740,40 +764,50 @@ impl Gallery {
 
         let mut removed_count = 0;
 
-        // Walk the cache directory and check each file
-        if let Ok(mut entries) = tokio::fs::read_dir(&self.config.cache_directory).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let filename = entry.file_name().to_string_lossy().to_string();
+        // List files from cache storage
+        let entries = match self.cache_storage.list("").await {
+            Ok(entries) => entries,
+            Err(e) => {
+                debug!("Failed to list cache storage: {}", e);
+                return Ok(0);
+            }
+        };
 
-                // Skip protected files
-                if protected_files.contains(&filename.as_str()) {
-                    continue;
-                }
+        for entry in entries {
+            let filename = &entry.path;
 
-                // Skip composite files (they have their own lifecycle)
-                if filename.starts_with(&composite_prefix) {
-                    continue;
-                }
+            // Skip directories
+            if entry.is_dir {
+                continue;
+            }
 
-                // Check if this is an image cache file (hash-based filename)
-                // Cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
-                let hash_part = filename
-                    .split('.')
-                    .next()
-                    .unwrap_or("")
-                    .trim_end_matches("_watermarked");
+            // Skip protected files
+            if protected_files.contains(&filename.as_str()) {
+                continue;
+            }
 
-                // If the hash doesn't match any valid prefix, it's orphaned
-                if !hash_part.is_empty() && !valid_prefixes.contains(hash_part) {
-                    let file_path = entry.path();
-                    match tokio::fs::remove_file(&file_path).await {
-                        Ok(_) => {
-                            debug!("Removed orphaned cache file: {}", filename);
-                            removed_count += 1;
-                        }
-                        Err(e) => {
-                            debug!("Failed to remove orphaned cache file {}: {}", filename, e);
-                        }
+            // Skip composite files (they have their own lifecycle)
+            if filename.starts_with(&composite_prefix) {
+                continue;
+            }
+
+            // Check if this is an image cache file (hash-based filename)
+            // Cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
+            let hash_part = filename
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches("_watermarked");
+
+            // If the hash doesn't match any valid prefix, it's orphaned
+            if !hash_part.is_empty() && !valid_prefixes.contains(hash_part) {
+                match self.cache_storage.delete(filename).await {
+                    Ok(_) => {
+                        debug!("Removed orphaned cache file: {}", filename);
+                        removed_count += 1;
+                    }
+                    Err(e) => {
+                        debug!("Failed to remove orphaned cache file {}: {}", filename, e);
                     }
                 }
             }
@@ -782,12 +816,29 @@ impl Gallery {
         Ok(removed_count)
     }
 
+    /// Load all cache filenames into a HashSet for fast lookups
+    async fn load_cache_file_set(&self) -> HashSet<String> {
+        match self.cache_storage.list("").await {
+            Ok(entries) => entries
+                .into_iter()
+                .filter(|e| !e.is_dir)
+                .map(|e| e.path)
+                .collect(),
+            Err(e) => {
+                debug!("Failed to list cache files: {}", e);
+                HashSet::new()
+            }
+        }
+    }
+
     /// Check what formats are available for a specific image and size in cache
-    pub async fn check_format_coverage(
+    /// Uses pre-loaded cache file set for fast lookups (no storage API calls)
+    pub fn check_format_coverage_fast(
         &self,
         relative_path: &str,
         size: ImageSize,
-    ) -> Result<FormatCoverage, super::GalleryError> {
+        cache_files: &HashSet<String>,
+    ) -> FormatCoverage {
         let mut coverage = FormatCoverage::default();
 
         let formats_to_check = vec![
@@ -815,49 +866,12 @@ impl Gallery {
                 format.extension(),
                 apply_watermark,
             );
-            let cache_path = self.config.cache_directory.join(&cache_filename);
-            let source_path = self.config.source_directory.join(relative_path);
 
-            // Check if cache file exists and is newer than source
-            *has_format = if cache_path.exists() {
-                match (
-                    tokio::fs::metadata(&cache_path).await,
-                    tokio::fs::metadata(&source_path).await,
-                ) {
-                    (Ok(cache_meta), Ok(source_meta)) => {
-                        match (cache_meta.modified(), source_meta.modified()) {
-                            (Ok(cache_time), Ok(source_time)) => {
-                                if cache_time >= source_time {
-                                    true
-                                } else {
-                                    // Cache is outdated, remove it
-                                    debug!(
-                                        "Cache file is outdated, removing: {} (cache: {:?}, source: {:?})",
-                                        cache_path.display(),
-                                        cache_time,
-                                        source_time
-                                    );
-                                    if let Err(e) = tokio::fs::remove_file(&cache_path).await {
-                                        debug!(
-                                            "Failed to remove outdated cache file {}: {}",
-                                            cache_path.display(),
-                                            e
-                                        );
-                                    }
-                                    false
-                                }
-                            }
-                            _ => false,
-                        }
-                    }
-                    _ => false,
-                }
-            } else {
-                false
-            };
+            // Fast lookup in pre-loaded set
+            *has_format = cache_files.contains(&cache_filename);
         }
 
-        Ok(coverage)
+        coverage
     }
 
     /// Get missing formats for all images and sizes
@@ -867,10 +881,13 @@ impl Gallery {
         let mut missing_formats = HashMap::new();
         let sizes = ImageSize::ALL;
 
+        // Load all cache files once for fast lookups
+        let cache_files = self.load_cache_file_set().await;
+
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
+            let cache = self.image_cache.read_all().await;
+            cache.keys().cloned().collect()
         };
 
         for image_path in image_paths {
@@ -879,21 +896,10 @@ impl Gallery {
             }
 
             for &size in sizes {
-                match self.check_format_coverage(&image_path, size).await {
-                    Ok(coverage) => {
-                        let missing = coverage.missing_formats(&image_path);
-                        if !missing.is_empty() {
-                            missing_formats.insert((image_path.clone(), size), missing);
-                        }
-                    }
-                    Err(e) => {
-                        debug!(
-                            "Failed to check format coverage for {} {}: {}",
-                            image_path,
-                            size.as_str(),
-                            e
-                        );
-                    }
+                let coverage = self.check_format_coverage_fast(&image_path, size, &cache_files);
+                let missing = coverage.missing_formats(&image_path);
+                if !missing.is_empty() {
+                    missing_formats.insert((image_path.clone(), size), missing);
                 }
             }
         }
@@ -908,13 +914,14 @@ impl Gallery {
             self.config.name
         );
 
-        let missing_formats_map = self.analyze_missing_formats().await?;
+        // Load all cache files once for fast lookups
+        let cache_files = self.load_cache_file_set().await;
         let sizes = ImageSize::ALL;
 
         // Get all image paths from metadata cache
         let image_paths: Vec<String> = {
-            let metadata_cache = self.metadata_cache.read().await;
-            metadata_cache.keys().cloned().collect()
+            let cache = self.image_cache.read_all().await;
+            cache.keys().cloned().collect()
         };
 
         let total_images = image_paths.len();
@@ -940,26 +947,19 @@ impl Gallery {
                     continue;
                 }
 
-                match self.check_format_coverage(image_path, size).await {
-                    Ok(coverage) => {
-                        if coverage.has_jpeg {
-                            *format_counts.get_mut("jpeg").unwrap() += 1;
-                        }
-                        if coverage.has_webp || image_path.to_lowercase().ends_with(".png") {
-                            *format_counts.get_mut("webp").unwrap() += 1;
-                        }
-                        if coverage.has_png {
-                            *format_counts.get_mut("png").unwrap() += 1;
-                        }
-                        #[cfg(feature = "avif")]
-                        if coverage.has_avif {
-                            *format_counts.get_mut("avif").unwrap() += 1;
-                        }
-                    }
-                    Err(e) => debug!(
-                        "Failed to check format coverage for {} {}: {}",
-                        image_path, size, e
-                    ),
+                let coverage = self.check_format_coverage_fast(image_path, size, &cache_files);
+                if coverage.has_jpeg {
+                    *format_counts.get_mut("jpeg").unwrap() += 1;
+                }
+                if coverage.has_webp || image_path.to_lowercase().ends_with(".png") {
+                    *format_counts.get_mut("webp").unwrap() += 1;
+                }
+                if coverage.has_png {
+                    *format_counts.get_mut("png").unwrap() += 1;
+                }
+                #[cfg(feature = "avif")]
+                if coverage.has_avif {
+                    *format_counts.get_mut("avif").unwrap() += 1;
                 }
             }
 
@@ -995,20 +995,27 @@ impl Gallery {
             }
         }
 
-        let total_missing = missing_formats_map.len();
+        // Calculate total missing across all sizes and formats
+        let mut total_missing = 0;
+        let mut missing_by_format: HashMap<&str, usize> = HashMap::new();
+
+        for &size in sizes {
+            if let Some(format_counts) = coverage_stats.get(&size.as_str()) {
+                for (&format, &count) in format_counts {
+                    let missing = total_images.saturating_sub(count);
+                    if missing > 0 {
+                        total_missing += missing;
+                        *missing_by_format.entry(format).or_insert(0) += missing;
+                    }
+                }
+            }
+        }
+
         if total_missing > 0 {
             info!(
                 "Found {} missing format variants across all sizes",
                 total_missing
             );
-
-            // Count missing by format type
-            let mut missing_by_format = HashMap::new();
-            for (_, formats) in missing_formats_map {
-                for format in formats {
-                    *missing_by_format.entry(format.extension()).or_insert(0) += 1;
-                }
-            }
 
             info!("Missing formats breakdown:");
             for (format, count) in missing_by_format {
@@ -1026,11 +1033,26 @@ impl Gallery {
 #[cfg(test)]
 mod tests {
     use super::super::Gallery;
+    use crate::storage::FilesystemStorage;
+    use std::sync::Arc;
+
+    fn create_test_storage(dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
+
+    fn create_test_storage_from_path(path: &std::path::Path) -> crate::storage::DynStorage {
+        std::fs::create_dir_all(path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     #[test]
     fn test_cache_key_consistency() {
         let gallery_config = crate::config::GallerySystemConfig::default();
-        let gallery = Gallery::new(gallery_config);
+        let source_storage = create_test_storage(&gallery_config.source_directory);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, source_storage, cache_storage);
 
         // Test regular image cache keys
         let path = "vacation/beach.jpg";
@@ -1074,7 +1096,9 @@ mod tests {
     fn test_improved_composite_cache_structure() {
         use base64::{Engine as _, engine::general_purpose};
         let gallery_config = crate::config::GallerySystemConfig::default();
-        let gallery = Gallery::new(gallery_config);
+        let source_storage = create_test_storage(&gallery_config.source_directory);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, source_storage, cache_storage);
 
         // Test safe path key generation
         let safe_key_simple = gallery.generate_safe_path_key("vacation/2024");
@@ -1115,7 +1139,9 @@ mod tests {
     #[test]
     fn test_cache_filename_generation() {
         let gallery_config = crate::config::GallerySystemConfig::default();
-        let gallery = Gallery::new(gallery_config);
+        let source_storage = create_test_storage(&gallery_config.source_directory);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Gallery::new(gallery_config, source_storage, cache_storage);
 
         let filename = gallery.generate_cache_filename("test.jpg", "thumbnail", "webp", false);
         assert!(
@@ -1168,14 +1194,19 @@ This folder should not appear in listings.
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir,
-            cache_directory: cache_dir,
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
+
+        // Populate the folder cache first (mandatory for scan_directory)
+        gallery.refresh_folder_cache().await.unwrap();
 
         let items = gallery.scan_directory("").await.unwrap();
 
@@ -1214,14 +1245,19 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir,
-            cache_directory: cache_dir,
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
+
+        // Populate the folder cache first (mandatory for scan_directory)
+        gallery.refresh_folder_cache().await.unwrap();
 
         // Should be able to access hidden folder directly
         let items = gallery.scan_directory("hidden").await.unwrap();
@@ -1243,14 +1279,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir.clone(),
-            cache_directory: cache_dir,
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         // Insert metadata for "existing" and "deleted" images
         let metadata = ImageMetadata {
@@ -1263,7 +1301,7 @@ Hidden folder
         };
 
         {
-            let mut cache = gallery.metadata_cache.write().await;
+            let mut cache = gallery.image_cache.write_all().await;
             cache.insert("existing.jpg".to_string(), metadata.clone());
             cache.insert("deleted.jpg".to_string(), metadata.clone());
             cache.insert("also_deleted.jpg".to_string(), metadata);
@@ -1279,7 +1317,7 @@ Hidden folder
         assert_eq!(removed_count, 2);
 
         // Verify remaining cache entries
-        let cache = gallery.metadata_cache.read().await;
+        let cache = gallery.image_cache.read_all().await;
         assert!(cache.contains_key("existing.jpg"));
         assert!(!cache.contains_key("deleted.jpg"));
         assert!(!cache.contains_key("also_deleted.jpg"));
@@ -1300,14 +1338,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir.clone(),
-            cache_directory: cache_dir.clone(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Gallery::new(config);
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
 
         // Insert metadata for an image that "exists"
         let metadata = ImageMetadata {
@@ -1320,7 +1360,7 @@ Hidden folder
         };
 
         {
-            let mut cache = gallery.metadata_cache.write().await;
+            let mut cache = gallery.image_cache.write_all().await;
             cache.insert("valid_image.jpg".to_string(), metadata);
         }
 
@@ -1396,14 +1436,16 @@ Hidden folder
 
         let config = crate::GallerySystemConfig {
             name: "test".to_string(),
-            source_directory: source_dir.clone(),
-            cache_directory: cache_dir.clone(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html".to_string(),
             image_detail_template: "image.html".to_string(),
             ..Default::default()
         };
 
-        let gallery = Arc::new(Gallery::new(config));
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Arc::new(Gallery::new(config, source_storage, cache_storage));
 
         // Simulate: metadata for an image that was deleted
         let metadata = ImageMetadata {
@@ -1416,7 +1458,7 @@ Hidden folder
         };
 
         {
-            let mut cache = gallery.metadata_cache.write().await;
+            let mut cache = gallery.image_cache.write_all().await;
             // Add both real and deleted image metadata
             cache.insert("real_image.jpg".to_string(), metadata.clone());
             cache.insert("deleted_image.jpg".to_string(), metadata);
@@ -1430,7 +1472,7 @@ Hidden folder
 
         // Verify initial state
         {
-            let cache = gallery.metadata_cache.read().await;
+            let cache = gallery.image_cache.read_all().await;
             assert_eq!(cache.len(), 2);
         }
 
@@ -1440,7 +1482,7 @@ Hidden folder
 
         // After refresh, only real_image.jpg should be in metadata cache
         {
-            let cache = gallery.metadata_cache.read().await;
+            let cache = gallery.image_cache.read_all().await;
             assert!(cache.contains_key("real_image.jpg"));
             assert!(!cache.contains_key("deleted_image.jpg"));
         }

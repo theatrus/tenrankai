@@ -156,10 +156,7 @@ pub async fn gallery_composite_preview_handler_for_named(
     let cache_filename = gallery.generate_composite_cache_filename(&gallery_path);
 
     // Try to serve from cache first
-    if let Ok(cached_response) = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await
-    {
+    if let Ok(cached_response) = gallery.serve_cached_image(&cache_filename).await {
         // Only return if it's not a 404 (i.e., cache exists)
         if cached_response.status() != StatusCode::NOT_FOUND {
             return Ok(cached_response);
@@ -695,11 +692,8 @@ pub async fn get_metadata_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Get the full path
-    let full_path = gallery.source_directory().join(&resolved_path);
-
-    // Load metadata
-    match gallery.user_metadata_storage.load(&full_path).await {
+    // Load metadata using relative path
+    match gallery.user_metadata_storage.load(&resolved_path).await {
         Ok(Some(metadata)) => {
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
@@ -808,11 +802,8 @@ pub async fn update_metadata_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Get the full path
-    let full_path = gallery.source_directory().join(&resolved_path);
-
-    // Load existing metadata or create new
-    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+    // Load existing metadata or create new using relative path
+    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
         Ok(Some(m)) => m,
         Ok(None) => crate::metadata_storage::ImageUserMetadata::new(),
         Err(e) => {
@@ -841,7 +832,7 @@ pub async fn update_metadata_handler(
     // Save metadata
     match gallery
         .user_metadata_storage
-        .save(&full_path, &metadata)
+        .save(&resolved_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -935,11 +926,8 @@ pub async fn add_comment_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Get the full path
-    let full_path = gallery.source_directory().join(&resolved_path);
-
-    // Load existing metadata or create new
-    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+    // Load existing metadata or create new using relative path
+    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
         Ok(Some(m)) => m,
         Ok(None) => crate::metadata_storage::ImageUserMetadata::new(),
         Err(e) => {
@@ -954,7 +942,7 @@ pub async fn add_comment_handler(
     // Save metadata
     match gallery
         .user_metadata_storage
-        .save(&full_path, &metadata)
+        .save(&resolved_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -1037,11 +1025,8 @@ pub async fn edit_comment_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Get the full path
-    let full_path = gallery.source_directory().join(&resolved_path);
-
-    // Load existing metadata
-    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+    // Load existing metadata using relative path
+    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
         Ok(Some(m)) => m,
         Ok(None) => {
             let mut response = ApiResponse::NotFound.into_response();
@@ -1096,7 +1081,7 @@ pub async fn edit_comment_handler(
     // Save metadata
     match gallery
         .user_metadata_storage
-        .save(&full_path, &metadata)
+        .save(&resolved_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -1172,11 +1157,8 @@ pub async fn delete_comment_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Get the full path
-    let full_path = gallery.source_directory().join(&resolved_path);
-
-    // Load existing metadata
-    let mut metadata = match gallery.user_metadata_storage.load(&full_path).await {
+    // Load existing metadata using relative path
+    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
         Ok(Some(m)) => m,
         Ok(None) => {
             let mut response = ApiResponse::NotFound.into_response();
@@ -1232,7 +1214,7 @@ pub async fn delete_comment_handler(
     // Save metadata
     match gallery
         .user_metadata_storage
-        .save(&full_path, &metadata)
+        .save(&resolved_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -1344,21 +1326,17 @@ pub async fn analyze_image_handler(
         return response;
     }
 
-    // Get the full path
-    let full_path = gallery.source_directory().join(&resolved_path);
-
     // Get or generate a medium-sized version of the image for API efficiency
-    let image_data =
-        match get_image_for_analysis(gallery.as_ref(), &full_path, &resolved_path).await {
-            Ok(data) => data,
-            Err(e) => {
-                error!("Failed to read image for analysis: {}", e);
-                let mut response =
-                    ApiResponse::InternalServerError.with_message("Failed to read image");
-                response.headers_mut().extend(no_cache_headers());
-                return response;
-            }
-        };
+    let image_data = match get_image_for_analysis(gallery.as_ref(), &resolved_path).await {
+        Ok(data) => data,
+        Err(e) => {
+            error!("Failed to read image for analysis: {}", e);
+            let mut response =
+                ApiResponse::InternalServerError.with_message("Failed to read image");
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
 
     // Encode as base64
     let base64_image = general_purpose::STANDARD.encode(&image_data);
@@ -1381,10 +1359,10 @@ pub async fn analyze_image_handler(
         }
     };
 
-    // Load existing metadata or create new
+    // Load existing metadata or create new using relative path
     let mut metadata = gallery
         .user_metadata_storage
-        .load(&full_path)
+        .load(&resolved_path)
         .await
         .ok()
         .flatten()
@@ -1396,7 +1374,7 @@ pub async fn analyze_image_handler(
     // Save metadata
     if let Err(e) = gallery
         .user_metadata_storage
-        .save(&full_path, &metadata)
+        .save(&resolved_path, &metadata)
         .await
     {
         error!("Failed to save AI analysis metadata: {}", e);
@@ -1423,21 +1401,28 @@ pub async fn analyze_image_handler(
 /// Get image data for analysis (preferring cached medium size)
 async fn get_image_for_analysis(
     gallery: &crate::gallery::Gallery,
-    full_path: &std::path::Path,
     relative_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
 
-    if cache_path.exists() {
+    if gallery
+        .cache_storage()
+        .exists(&cache_filename)
+        .await
+        .unwrap_or(false)
+    {
         debug!("Using cached medium image for analysis");
-        return Ok(tokio::fs::read(&cache_path).await?);
+        return Ok(gallery
+            .cache_storage()
+            .read(&cache_filename)
+            .await?
+            .to_vec());
     }
 
-    // Fall back to original image
+    // Fall back to original image using source storage
     debug!("Using original image for analysis");
-    Ok(tokio::fs::read(full_path).await?)
+    Ok(gallery.source_storage().read(relative_path).await?.to_vec())
 }
 
 /// Build context for image analysis from available metadata
@@ -1445,8 +1430,6 @@ async fn build_image_context(
     gallery: &crate::gallery::Gallery,
     relative_path: &str,
 ) -> crate::openai::ImageContext {
-    use crate::gallery::metadata_sources::read_image_markdown_metadata;
-
     let mut context = crate::openai::ImageContext::default();
 
     // Get image metadata (location, camera info, capture date from EXIF)
@@ -1478,12 +1461,19 @@ async fn build_image_context(
         }
     }
 
-    // Get title and description from image markdown
-    let full_path = gallery.source_directory().join(relative_path);
-    if let Some(md_meta) = read_image_markdown_metadata(&full_path).await {
-        context.title = md_meta.config.title;
-        if !md_meta.description_markdown.is_empty() {
-            context.description = Some(md_meta.description_markdown);
+    // Get title and description from user metadata storage
+    if let Some(user_meta) = gallery
+        .user_metadata_storage
+        .load(relative_path)
+        .await
+        .ok()
+        .flatten()
+    {
+        context.title = user_meta.title;
+        if let Some(ref desc) = user_meta.description
+            && !desc.is_empty()
+        {
+            context.description = Some(desc.clone());
         }
     }
 
@@ -1598,18 +1588,17 @@ pub async fn analyze_folder_handler(
         } else {
             format!("{}/{}", folder_path, image.name)
         };
-        let full_path = gallery.source_directory().join(&relative_path);
 
         // Check if already analyzed (unless force is set)
         if !request.force
-            && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&full_path).await
+            && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
             && metadata.has_ai_analysis()
         {
             debug!("Skipping {} - already analyzed", relative_path);
             continue;
         }
 
-        images_to_analyze.push((relative_path, full_path));
+        images_to_analyze.push(relative_path);
     }
 
     let total = images_to_analyze.len();
@@ -1618,17 +1607,16 @@ pub async fn analyze_folder_handler(
     let mut errors = 0;
 
     // Analyze each image
-    for (relative_path, full_path) in images_to_analyze {
+    for relative_path in images_to_analyze {
         // Get or generate a medium-sized version of the image for API efficiency
-        let image_data =
-            match get_image_for_analysis(gallery.as_ref(), &full_path, &relative_path).await {
-                Ok(data) => data,
-                Err(e) => {
-                    error!("Failed to read image {}: {}", relative_path, e);
-                    errors += 1;
-                    continue;
-                }
-            };
+        let image_data = match get_image_for_analysis(gallery.as_ref(), &relative_path).await {
+            Ok(data) => data,
+            Err(e) => {
+                error!("Failed to read image {}: {}", relative_path, e);
+                errors += 1;
+                continue;
+            }
+        };
 
         // Encode as base64
         let base64_image = general_purpose::STANDARD.encode(&image_data);
@@ -1659,10 +1647,10 @@ pub async fn analyze_folder_handler(
             }
         };
 
-        // Load existing metadata or create new
+        // Load existing metadata or create new using relative path
         let mut metadata = gallery
             .user_metadata_storage
-            .load(&full_path)
+            .load(&relative_path)
             .await
             .ok()
             .flatten()
@@ -1674,7 +1662,7 @@ pub async fn analyze_folder_handler(
         // Save metadata
         if let Err(e) = gallery
             .user_metadata_storage
-            .save(&full_path, &metadata)
+            .save(&relative_path, &metadata)
             .await
         {
             error!(
@@ -1706,11 +1694,23 @@ pub async fn analyze_folder_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
     use crate::{AppState, Config, GallerySystemConfig, api_response::short_cache_headers};
     use axum::http::{HeaderMap, HeaderValue};
     use std::{collections::HashMap, sync::Arc};
     use tempfile::TempDir;
     use tokio::fs;
+
+    fn create_test_storage(dir: &str) -> crate::storage::DynStorage {
+        let path = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
+
+    fn create_test_storage_from_path(path: &std::path::Path) -> crate::storage::DynStorage {
+        std::fs::create_dir_all(path).ok();
+        Arc::new(FilesystemStorage::new(path))
+    }
 
     // Helper function to convert headers to OptionalAuth for testing
     fn headers_to_optional_auth(
@@ -1800,8 +1800,8 @@ roles = ["viewer"]
         let gallery_config = GallerySystemConfig {
             name: "test".to_string(),
             url_prefix: "/test".to_string(),
-            source_directory: gallery_dir,
-            cache_directory: cache_dir,
+            source_directory: gallery_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "test.html".to_string(),
             image_detail_template: "test.html".to_string(),
             images_per_page: 50,
@@ -1835,9 +1835,18 @@ roles = ["viewer"]
             image_indexing: crate::config::ImageIndexingMode::Filename,
             permissions: Default::default(),
             tiles: None,
+            ..Default::default()
         };
 
-        let gallery = Arc::new(crate::gallery::Gallery::new(gallery_config));
+        let source_storage = create_test_storage_from_path(&gallery_dir);
+        let cache_storage = create_test_storage(&gallery_config.cache_directory);
+        let gallery = Arc::new(crate::gallery::Gallery::new(
+            gallery_config,
+            source_storage,
+            cache_storage,
+        ));
+        // Populate the folder cache (mandatory for gallery operations)
+        gallery.refresh_folder_cache().await.unwrap();
         let mut galleries = HashMap::new();
         galleries.insert("test".to_string(), gallery);
 
@@ -1848,6 +1857,7 @@ roles = ["viewer"]
                 user_database: Some("users.toml".into()),
                 cookie_secret: "test-secret".to_string(),
                 log_level: crate::LogLevel::Info,
+                aws_log_level: crate::LogLevel::Warn,
             },
             server: crate::ServerConfig {
                 host: "127.0.0.1".to_string(),
@@ -1855,6 +1865,7 @@ roles = ["viewer"]
             },
             static_files: crate::StaticConfig {
                 directories: vec!["static".into()],
+                use_redirects: false,
             },
             templates: crate::TemplateConfig {
                 directories: vec!["templates".into()],
@@ -1865,16 +1876,33 @@ roles = ["viewer"]
             openai: None,
         };
 
+        // Convert static directory strings to PathBufs for testing
+        let static_paths: Vec<std::path::PathBuf> = config
+            .static_files
+            .directories
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+        let static_handler = crate::static_files::StaticFileHandler::from_paths(static_paths);
+
+        // Convert template directories to storage backends
+        let template_storages: Vec<crate::storage::DynStorage> = config
+            .templates
+            .directories
+            .iter()
+            .map(|dir| {
+                Arc::new(crate::storage::FilesystemStorage::new(
+                    std::path::Path::new(dir),
+                )) as crate::storage::DynStorage
+            })
+            .collect();
+
         let app_state = AppState {
-            template_engine: Arc::new(crate::templating::TemplateEngine::new(
-                config.templates.directories.clone(),
-            )),
-            static_handler: crate::static_files::StaticFileHandler::new(
-                config.static_files.directories.clone(),
-            ),
+            template_engine: Arc::new(crate::templating::TemplateEngine::new(template_storages)),
+            static_handler: static_handler.clone(),
             galleries: Arc::new(galleries),
             favicon_renderer: crate::favicon::FaviconRenderer::new(
-                config.static_files.directories.clone(),
+                static_handler.storages().to_vec(),
             ),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
@@ -1998,38 +2026,40 @@ roles = ["viewer"]
         // Add metadata to the test image
         {
             let gallery = app_state.galleries.get("test").unwrap();
-            let mut cache = gallery.metadata_cache.write().await;
-            cache.insert(
-                "test.jpg".to_string(),
-                crate::gallery::ImageMetadata {
-                    dimensions: (1920, 1080),
-                    capture_date: None,
-                    camera_info: Some(crate::gallery::CameraInfo {
-                        camera_make: Some("Canon".to_string()),
-                        camera_model: Some("EOS R5".to_string()),
-                        lens_model: Some("RF 24-70mm".to_string()),
-                        iso: Some(800),
-                        aperture: Some("f/2.8".to_string()),
-                        shutter_speed: Some("1/60s".to_string()),
-                        focal_length: Some("50mm".to_string()),
-                        telescope: None,
-                        mount: None,
-                        filters: None,
-                        total_exposure_time: None,
-                        ra: None,
-                        dec: None,
-                        additional_details: None,
-                    }),
-                    location_info: Some(crate::gallery::LocationInfo {
-                        latitude: 37.7749,
-                        longitude: -122.4194,
-                        google_maps_url: "https://maps.google.com/...".to_string(),
-                        apple_maps_url: "https://maps.apple.com/...".to_string(),
-                    }),
-                    modification_date: None,
-                    color_profile: Some("sRGB".to_string()),
-                },
-            );
+            gallery
+                .image_cache
+                .insert(
+                    "test.jpg".to_string(),
+                    crate::gallery::ImageMetadata {
+                        dimensions: (1920, 1080),
+                        capture_date: None,
+                        camera_info: Some(crate::gallery::CameraInfo {
+                            camera_make: Some("Canon".to_string()),
+                            camera_model: Some("EOS R5".to_string()),
+                            lens_model: Some("RF 24-70mm".to_string()),
+                            iso: Some(800),
+                            aperture: Some("f/2.8".to_string()),
+                            shutter_speed: Some("1/60s".to_string()),
+                            focal_length: Some("50mm".to_string()),
+                            telescope: None,
+                            mount: None,
+                            filters: None,
+                            total_exposure_time: None,
+                            ra: None,
+                            dec: None,
+                            additional_details: None,
+                        }),
+                        location_info: Some(crate::gallery::LocationInfo {
+                            latitude: 37.7749,
+                            longitude: -122.4194,
+                            google_maps_url: "https://maps.google.com/...".to_string(),
+                            apple_maps_url: "https://maps.apple.com/...".to_string(),
+                        }),
+                        modification_date: None,
+                        color_profile: Some("sRGB".to_string()),
+                    },
+                )
+                .await;
         }
 
         let auth = headers_to_optional_auth(&headers, &app_state);
@@ -2071,38 +2101,40 @@ roles = ["viewer"]
         // Add metadata to the test image
         {
             let gallery = app_state.galleries.get("test").unwrap();
-            let mut cache = gallery.metadata_cache.write().await;
-            cache.insert(
-                "test.jpg".to_string(),
-                crate::gallery::ImageMetadata {
-                    dimensions: (1920, 1080),
-                    capture_date: None,
-                    camera_info: Some(crate::gallery::CameraInfo {
-                        camera_make: Some("Canon".to_string()),
-                        camera_model: Some("EOS R5".to_string()),
-                        lens_model: Some("RF 24-70mm".to_string()),
-                        iso: Some(800),
-                        aperture: Some("f/2.8".to_string()),
-                        shutter_speed: Some("1/60s".to_string()),
-                        focal_length: Some("50mm".to_string()),
-                        telescope: None,
-                        mount: None,
-                        filters: None,
-                        total_exposure_time: None,
-                        ra: None,
-                        dec: None,
-                        additional_details: None,
-                    }),
-                    location_info: Some(crate::gallery::LocationInfo {
-                        latitude: 37.7749,
-                        longitude: -122.4194,
-                        google_maps_url: "https://maps.google.com/...".to_string(),
-                        apple_maps_url: "https://maps.apple.com/...".to_string(),
-                    }),
-                    modification_date: None,
-                    color_profile: Some("sRGB".to_string()),
-                },
-            );
+            gallery
+                .image_cache
+                .insert(
+                    "test.jpg".to_string(),
+                    crate::gallery::ImageMetadata {
+                        dimensions: (1920, 1080),
+                        capture_date: None,
+                        camera_info: Some(crate::gallery::CameraInfo {
+                            camera_make: Some("Canon".to_string()),
+                            camera_model: Some("EOS R5".to_string()),
+                            lens_model: Some("RF 24-70mm".to_string()),
+                            iso: Some(800),
+                            aperture: Some("f/2.8".to_string()),
+                            shutter_speed: Some("1/60s".to_string()),
+                            focal_length: Some("50mm".to_string()),
+                            telescope: None,
+                            mount: None,
+                            filters: None,
+                            total_exposure_time: None,
+                            ra: None,
+                            dec: None,
+                            additional_details: None,
+                        }),
+                        location_info: Some(crate::gallery::LocationInfo {
+                            latitude: 37.7749,
+                            longitude: -122.4194,
+                            google_maps_url: "https://maps.google.com/...".to_string(),
+                            apple_maps_url: "https://maps.apple.com/...".to_string(),
+                        }),
+                        modification_date: None,
+                        color_profile: Some("sRGB".to_string()),
+                    },
+                )
+                .await;
         }
 
         let auth = headers_to_optional_auth(&headers, &app_state);

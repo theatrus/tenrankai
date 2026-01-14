@@ -103,9 +103,15 @@ pub struct GainMapInfo {
 pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
     // Read the file
     let data = std::fs::read(path)?;
+    read_avif_info_from_bytes(&data)
+}
 
+/// Read AVIF data from memory with HDR support
+pub fn read_avif_info_from_bytes(
+    data: &[u8],
+) -> Result<(DynamicImage, AvifImageInfo), GalleryError> {
     // Check if it's a valid AVIF file
-    if !is_avif(&data) {
+    if !is_avif(data) {
         return Err(GalleryError::ProcessingError(
             "Not a valid AVIF file".to_string(),
         ));
@@ -114,7 +120,7 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
     // First do a quick gain map detection using our container parser
     // This ensures we can detect gain maps even if libavif decoding fails
     let (container_has_gain_map, container_gain_map_info) =
-        avif_container::detect_gain_map_in_container(&data);
+        avif_container::detect_gain_map_in_container(data);
     debug!(
         "Container gain map detection: has_gain_map={}",
         container_has_gain_map
@@ -544,6 +550,29 @@ pub fn read_avif_info(path: &Path) -> Result<(DynamicImage, AvifImageInfo), Gall
     }
 }
 
+/// Encode a DynamicImage as AVIF preserving color properties, returning bytes
+pub fn encode_with_info(
+    image: &DynamicImage,
+    quality: u8,
+    speed: u8,
+    info: Option<&AvifImageInfo>,
+) -> Result<Vec<u8>, GalleryError> {
+    let icc_profile = info.and_then(|i| i.icc_profile.as_deref());
+    let preserve_hdr = info.map(|i| i.is_hdr).unwrap_or(false);
+    encode_with_profile_and_color(image, quality, speed, icc_profile, preserve_hdr, info)
+}
+
+/// Encode a DynamicImage as AVIF with HDR support, returning bytes
+pub fn encode_with_profile(
+    image: &DynamicImage,
+    quality: u8,
+    speed: u8,
+    icc_profile: Option<&[u8]>,
+    preserve_hdr: bool,
+) -> Result<Vec<u8>, GalleryError> {
+    encode_with_profile_and_color(image, quality, speed, icc_profile, preserve_hdr, None)
+}
+
 /// Save a DynamicImage as AVIF preserving color properties
 pub fn save_with_info(
     image: &DynamicImage,
@@ -552,10 +581,9 @@ pub fn save_with_info(
     speed: u8,
     info: Option<&AvifImageInfo>,
 ) -> Result<(), GalleryError> {
-    // For backward compatibility
-    let icc_profile = info.and_then(|i| i.icc_profile.as_deref());
-    let preserve_hdr = info.map(|i| i.is_hdr).unwrap_or(false);
-    save_with_profile_and_color(image, path, quality, speed, icc_profile, preserve_hdr, info)
+    let data = encode_with_info(image, quality, speed, info)?;
+    std::fs::write(path, data)?;
+    Ok(())
 }
 
 /// Save a DynamicImage as AVIF with HDR support
@@ -567,19 +595,20 @@ pub fn save_with_profile(
     icc_profile: Option<&[u8]>,
     preserve_hdr: bool,
 ) -> Result<(), GalleryError> {
-    save_with_profile_and_color(image, path, quality, speed, icc_profile, preserve_hdr, None)
+    let data = encode_with_profile(image, quality, speed, icc_profile, preserve_hdr)?;
+    std::fs::write(path, data)?;
+    Ok(())
 }
 
-/// Internal save function with full color property support
-fn save_with_profile_and_color(
+/// Internal encode function with full color property support
+fn encode_with_profile_and_color(
     image: &DynamicImage,
-    path: &Path,
     quality: u8,
     speed: u8,
     icc_profile: Option<&[u8]>,
     preserve_hdr: bool,
     color_info: Option<&AvifImageInfo>,
-) -> Result<(), GalleryError> {
+) -> Result<Vec<u8>, GalleryError> {
     let (width, height) = image.dimensions();
 
     // Check if we have an HDR image
@@ -950,9 +979,9 @@ fn save_with_profile_and_color(
             )));
         }
 
-        // Write to file
+        // Copy encoded data
         let data = std::slice::from_raw_parts(output.data, output.size);
-        std::fs::write(path, data)?;
+        let result_data = data.to_vec();
 
         // Clean up
         sys::avifRWDataFree(&mut output);
@@ -960,11 +989,11 @@ fn save_with_profile_and_color(
         sys::avifImageDestroy(avif_image);
 
         debug!(
-            "Successfully saved {} AVIF to {:?}",
+            "Successfully encoded {} AVIF ({} bytes)",
             if bit_depth > 8 { "HDR" } else { "SDR" },
-            path
+            result_data.len()
         );
-        Ok(())
+        Ok(result_data)
     }
 }
 
@@ -1034,10 +1063,22 @@ pub fn extract_color_description(path: &Path) -> Option<String> {
     }
 }
 
+/// Extract color space description from AVIF data in memory
+pub fn extract_color_description_from_bytes(data: &[u8]) -> Option<String> {
+    match read_avif_info_from_bytes(data) {
+        Ok((_, info)) => Some(get_color_space_description(&info)),
+        Err(_) => None,
+    }
+}
+
 /// Extract EXIF data from an AVIF file
 pub fn extract_exif_data(path: &Path) -> Option<Vec<u8>> {
     let data = std::fs::read(path).ok()?;
+    extract_exif_data_from_bytes(&data)
+}
 
+/// Extract EXIF data from AVIF data in memory
+pub fn extract_exif_data_from_bytes(data: &[u8]) -> Option<Vec<u8>> {
     unsafe {
         let decoder = sys::avifDecoderCreate();
         if decoder.is_null() {
@@ -1089,6 +1130,19 @@ pub fn extract_dimensions(path: &Path) -> Option<(u32, u32)> {
 
     // Parse AVIF container directly for dimensions
     avif_container::extract_dimensions(path)
+}
+
+/// Extract dimensions from AVIF data in memory
+pub fn extract_dimensions_from_bytes(data: &[u8]) -> Option<(u32, u32)> {
+    // Try using libavif first
+    if is_avif(data)
+        && let Ok(rgb_pixels) = decode_rgb(data)
+    {
+        return Some((rgb_pixels.width(), rgb_pixels.height()));
+    }
+
+    // Parse AVIF container directly for dimensions
+    avif_container::extract_dimensions_from_bytes(data)
 }
 
 /// Check if a browser supports AVIF based on Accept header

@@ -14,11 +14,17 @@ pub enum GalleryError {
     #[error("Task join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
 
+    #[error("Storage error: {0}")]
+    StorageError(#[from] crate::storage::StorageError),
+
+    #[error("Cache error: {0}")]
+    CacheError(String),
+
     #[error("Invalid path")]
     InvalidPath,
 
-    #[error("Not found")]
-    NotFound,
+    #[error("Not found: {0}")]
+    NotFound(String),
 
     #[error("Access denied")]
     AccessDenied,

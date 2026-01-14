@@ -17,6 +17,7 @@ pub mod posts;
 pub mod robots;
 pub mod startup_checks;
 pub mod static_files;
+pub mod storage;
 pub mod template_system;
 pub mod templating;
 pub mod webp_encoder;
@@ -90,10 +91,30 @@ pub async fn create_app(
     config: Config,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
-    let mut template_engine = templating::TemplateEngine::new(config.templates.directories.clone());
+    // Create template storage backends from URLs (supports both filesystem and S3)
+    let template_storages =
+        match storage::create_storages_from_urls(&config.templates.directories).await {
+            Ok(storages) => storages,
+            Err(e) => {
+                tracing::error!("Failed to initialize template storage: {}", e);
+                vec![]
+            }
+        };
 
+    let mut template_engine = templating::TemplateEngine::new(template_storages);
+
+    // Create static file handler from storage URLs (supports both filesystem and S3)
     let static_handler =
-        static_files::StaticFileHandler::new(config.static_files.directories.clone());
+        match static_files::StaticFileHandler::from_urls(config.static_files.directories.clone())
+            .await
+        {
+            Ok(handler) => handler.with_redirects(config.static_files.use_redirects),
+            Err(e) => {
+                tracing::error!("Failed to initialize static file storage: {}", e);
+                // Fall back to empty handler
+                static_files::StaticFileHandler::from_paths(vec![])
+            }
+        };
 
     // Ensure file versions are loaded before proceeding
     static_handler.refresh_file_versions().await;
@@ -109,7 +130,8 @@ pub async fn create_app(
 
     let template_engine = Arc::new(template_engine);
 
-    let favicon_renderer = favicon::FaviconRenderer::new(config.static_files.directories.clone());
+    // Create favicon renderer using the same storage backends
+    let favicon_renderer = favicon::FaviconRenderer::new(static_handler.storages().to_vec());
 
     // Use provided galleries or create new ones
     let galleries_arc = if let Some(provided_galleries) = galleries {
@@ -119,7 +141,56 @@ pub async fn create_app(
         let mut galleries = HashMap::new();
         if let Some(gallery_configs) = &config.galleries {
             for gallery_config in gallery_configs {
-                let gallery = Arc::new(gallery::Gallery::new(gallery_config.clone()));
+                // Create source storage backend from source_directory URL
+                let source_storage = match storage::create_storage_from_url(
+                    &gallery_config.source_directory,
+                )
+                .await
+                {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!(
+                            "Failed to create source storage for gallery '{}': {}",
+                            gallery_config.name, e
+                        );
+                        continue;
+                    }
+                };
+
+                // Create cache storage backend from cache_directory URL
+                let cache_storage =
+                    match storage::create_storage_from_url(&gallery_config.cache_directory).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!(
+                                "Failed to create cache storage for gallery '{}': {}",
+                                gallery_config.name, e
+                            );
+                            continue;
+                        }
+                    };
+
+                info!(
+                    "Initializing gallery '{}' with source: {}, cache: {}",
+                    gallery_config.name,
+                    source_storage.storage_type(),
+                    cache_storage.storage_type()
+                );
+
+                let gallery = Arc::new(gallery::Gallery::new(
+                    gallery_config.clone(),
+                    source_storage,
+                    cache_storage,
+                ));
+
+                // Initialize folder cache (mandatory for gallery operations)
+                if let Err(e) = gallery.refresh_folder_cache().await {
+                    error!(
+                        "Failed to initialize folder cache for gallery '{}': {}",
+                        gallery_config.name, e
+                    );
+                }
+
                 galleries.insert(gallery_config.name.clone(), gallery);
             }
         }
@@ -130,25 +201,35 @@ pub async fn create_app(
     let mut posts_managers = HashMap::new();
     if let Some(posts_configs) = &config.posts {
         for posts_config in posts_configs {
-            let mut posts_manager = posts::PostsManager::new(posts::PostsConfig {
-                source_directory: posts_config.source_directory.clone(),
-                url_prefix: posts_config.url_prefix.clone(),
-                index_template: posts_config.index_template.clone(),
-                post_template: posts_config.post_template.clone(),
-                posts_per_page: posts_config.posts_per_page,
-                refresh_interval_minutes: posts_config.refresh_interval_minutes,
-            });
+            // Create storage backend from source_directory URL
+            let posts_storage =
+                match storage::create_storage_from_url(&posts_config.source_directory).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!(
+                            "Failed to create posts storage for '{}': {}",
+                            posts_config.name, e
+                        );
+                        continue;
+                    }
+                };
+
+            info!(
+                "Initializing posts for '{}' from {} (storage: {})",
+                posts_config.name,
+                posts_config.source_directory,
+                posts_storage.storage_type()
+            );
+
+            let mut posts_manager =
+                posts::PostsManager::new(posts::PostsConfig::from(posts_config), posts_storage);
 
             // Set galleries reference
             posts_manager.set_galleries(galleries_arc.clone());
 
             let posts_manager = Arc::new(posts_manager);
 
-            // Initialize posts on startup
-            info!(
-                "Initializing posts for '{}' from {:?}",
-                posts_config.name, posts_config.source_directory
-            );
+            // Load posts on startup
             if let Err(e) = posts_manager.refresh_posts().await {
                 error!(
                     "Failed to initialize posts for '{}': {}",

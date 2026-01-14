@@ -1,4 +1,4 @@
-use crate::{ApiResponse, TemplateType, api_response::no_cache_headers};
+use crate::{ApiResponse, TemplateType, api_response::no_cache_headers, storage::DynStorage};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -6,7 +6,11 @@ use axum::{
 };
 use liquid::Parser;
 use liquid_core::{Filter, FilterReflection, ParseFilter, Runtime, Value, ValueView};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
@@ -178,28 +182,57 @@ impl ParseFilter for JsonFilter {
     }
 }
 
+/// Default TTL for template cache entries (5 minutes).
+/// Templates are re-checked against storage only after this duration.
+const DEFAULT_TEMPLATE_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
+
 pub struct TemplateEngine {
-    pub template_dirs: Vec<PathBuf>,
+    /// Storage backends for templates (first match wins)
+    storages: Vec<DynStorage>,
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
     static_handler: Option<crate::static_files::StaticFileHandler>,
     has_user_auth: bool,
     file_versions: Arc<RwLock<HashMap<String, u64>>>,
+    /// TTL for cached templates. Within this duration, cached templates are
+    /// returned without checking file modification time (useful for S3 backends).
+    cache_ttl: Duration,
 }
 
 struct CachedTemplate {
     content: String,
     modified: SystemTime,
+    fetched_at: Instant,
 }
 
 impl TemplateEngine {
-    pub fn new(template_dirs: Vec<PathBuf>) -> Self {
+    /// Create a new TemplateEngine with the given storage backends
+    pub fn new(storages: Vec<DynStorage>) -> Self {
         Self {
-            template_dirs,
+            storages,
             cache: Arc::new(RwLock::new(HashMap::new())),
             static_handler: None,
             has_user_auth: false,
             file_versions: Arc::new(RwLock::new(HashMap::new())),
+            cache_ttl: DEFAULT_TEMPLATE_CACHE_TTL,
         }
+    }
+
+    /// Set a custom TTL for template caching.
+    /// Use Duration::ZERO to disable TTL caching and always check modification time.
+    pub fn with_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = ttl;
+        self
+    }
+
+    /// Check if a template exists in any storage backend
+    pub async fn template_exists(&self, path: &str) -> bool {
+        for storage in &self.storages {
+            match storage.exists(path).await {
+                Ok(true) => return true,
+                _ => continue,
+            }
+        }
+        false
     }
 
     pub fn set_static_handler(&mut self, handler: crate::static_files::StaticFileHandler) {
@@ -240,52 +273,85 @@ impl TemplateEngine {
     }
 
     async fn load_template(&self, path: &str) -> Result<String, String> {
-        // Try to find the template in each directory, returning the first match
-        for template_dir in &self.template_dirs {
-            let template_path = template_dir.join(path);
+        // Fast path: check if we have a fresh cache entry (within TTL)
+        // This avoids storage/network calls for frequently accessed templates
+        if self.cache_ttl > Duration::ZERO {
+            let cache = self.cache.read().await;
+            if let Some(cached) = cache.get(path)
+                && cached.fetched_at.elapsed() < self.cache_ttl
+            {
+                debug!(
+                    "Using TTL-cached template for {} (age: {:?})",
+                    path,
+                    cached.fetched_at.elapsed()
+                );
+                return Ok(cached.content.clone());
+            }
+        }
 
-            // Check if file exists in this directory
-            match tokio::fs::metadata(&template_path).await {
+        // Try to find the template in each storage backend, returning the first match
+        for (idx, storage) in self.storages.iter().enumerate() {
+            // Check if file exists in this storage
+            match storage.metadata(path).await {
                 Ok(metadata) => {
-                    let modified = metadata
-                        .modified()
-                        .map_err(|e| format!("Failed to get modified time: {}", e))?;
+                    let modified = metadata.last_modified.unwrap_or(SystemTime::UNIX_EPOCH);
 
                     let mut cache = self.cache.write().await;
 
+                    // Check modification time for cache validation
                     if let Some(cached) = cache.get(path)
                         && cached.modified >= modified
                     {
-                        debug!("Using cached template for {}", path);
-                        return Ok(cached.content.clone());
+                        debug!("Using cached template for {} (modification check)", path);
+                        // Update fetched_at to extend TTL
+                        let content = cached.content.clone();
+                        cache.insert(
+                            path.to_string(),
+                            CachedTemplate {
+                                content: content.clone(),
+                                modified,
+                                fetched_at: Instant::now(),
+                            },
+                        );
+                        return Ok(content);
                     }
 
-                    info!("Loading template: {} from {:?}", path, template_dir);
+                    info!(
+                        "Loading template: {} from storage {} ({})",
+                        path,
+                        idx,
+                        storage.storage_type()
+                    );
 
-                    let content = tokio::fs::read_to_string(&template_path)
+                    let data = storage
+                        .read(path)
                         .await
                         .map_err(|e| format!("Failed to read template {}: {}", path, e))?;
+
+                    let content = String::from_utf8(data.to_vec())
+                        .map_err(|e| format!("Template {} is not valid UTF-8: {}", path, e))?;
 
                     cache.insert(
                         path.to_string(),
                         CachedTemplate {
                             content: content.clone(),
                             modified,
+                            fetched_at: Instant::now(),
                         },
                     );
 
                     return Ok(content);
                 }
                 Err(_) => {
-                    // File doesn't exist in this directory, try the next one
+                    // File doesn't exist in this storage, try the next one
                     continue;
                 }
             }
         }
 
         Err(format!(
-            "Template {} not found in any of the configured directories: {:?}",
-            path, self.template_dirs
+            "Template {} not found in any of the configured storage backends",
+            path
         ))
     }
 
@@ -432,15 +498,11 @@ pub async fn template_with_gallery_handler(
         TemplateType::dynamic_page_path(path.trim_start_matches('/')).path()
     };
 
-    // Check if template exists in any of the template directories
-    let mut template_exists = false;
-    for template_dir in &app_state.template_engine.template_dirs {
-        let template_file_path = template_dir.join(&template_path);
-        if template_file_path.exists() {
-            template_exists = true;
-            break;
-        }
-    }
+    // Check if template exists in any of the storage backends
+    let template_exists = app_state
+        .template_engine
+        .template_exists(&template_path)
+        .await;
 
     if !template_exists {
         debug!(
@@ -456,18 +518,12 @@ pub async fn template_with_gallery_handler(
             &path
         };
 
-        // Check each static directory in order
-        for (index, static_dir) in app_state.static_handler.static_dirs.iter().enumerate() {
-            let static_file_path = static_dir.join(check_path);
-            if static_file_path.exists() && static_file_path.starts_with(static_dir) {
-                debug!(
-                    "Found static file for path: {} in directory {}, serving it",
-                    path, index
-                );
-                // Pass the path without the "static/" prefix to the serve method
-                // Templates don't have version parameters, so pass false
-                return app_state.static_handler.serve(check_path, false).await;
-            }
+        // Check if file exists in any storage backend
+        if app_state.static_handler.exists(check_path).await {
+            debug!("Found static file for path: {}, serving it", path);
+            // Pass the path without the "static/" prefix to the serve method
+            // Templates don't have version parameters, so pass false
+            return app_state.static_handler.serve(check_path, false).await;
         }
 
         debug!(
@@ -489,7 +545,9 @@ pub async fn template_with_gallery_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::FilesystemStorage;
     use liquid::model;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_asset_url_filter_with_versions() {
@@ -545,7 +603,8 @@ mod tests {
     #[tokio::test]
     async fn test_template_with_asset_url_filter() {
         // Create a template engine with file versions
-        let mut template_engine = TemplateEngine::new(vec![PathBuf::from("templates")]);
+        let storage = Arc::new(FilesystemStorage::new(&PathBuf::from("templates")));
+        let mut template_engine = TemplateEngine::new(vec![storage]);
 
         // Set up file versions
         let file_versions = Arc::new(RwLock::new(HashMap::new()));

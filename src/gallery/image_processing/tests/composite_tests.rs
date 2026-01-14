@@ -1,22 +1,27 @@
 use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
+use crate::storage::FilesystemStorage;
 use image::{ImageBuffer, Rgba};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // Helper function to create a test gallery
 async fn create_test_gallery() -> (Gallery, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let cache_dir = temp_dir.path().join("cache");
+    std::fs::create_dir_all(&cache_dir).unwrap();
 
     let config = GallerySystemConfig {
         name: "test".to_string(),
-        source_directory: temp_dir.path().to_path_buf(),
-        cache_directory: cache_dir,
+        source_directory: temp_dir.path().to_string_lossy().to_string(),
+        cache_directory: cache_dir.to_string_lossy().to_string(),
         image_indexing: ImageIndexingMode::Filename,
         ..Default::default()
     };
 
-    let gallery = Gallery::new(config);
+    let source_storage = Arc::new(FilesystemStorage::new(temp_dir.path()));
+    let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
+    let gallery = Gallery::new(config, source_storage, cache_storage);
 
     (gallery, temp_dir)
 }
@@ -40,7 +45,7 @@ async fn test_store_and_serve_composite() {
     // Check that the file was created
     let hash = gallery.generate_cache_key(cache_key, "jpg");
     let cache_filename = format!("{}.jpg", hash);
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
     assert!(
         tokio::fs::metadata(&cache_path).await.is_ok(),
         "Cache file not created"
@@ -50,9 +55,7 @@ async fn test_store_and_serve_composite() {
     assert!(cache_path.exists(), "Composite file should exist on disk");
 
     // Test serving from cache using the generated filename
-    let cached_result = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
+    let cached_result = gallery.serve_cached_image(&cache_filename).await;
     assert!(
         cached_result.is_ok(),
         "Failed to serve from cache: {:?}",
@@ -93,7 +96,7 @@ async fn test_store_composite_with_complex_key() {
             format!("{}.jpg", hash)
         };
 
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
     assert!(
         tokio::fs::metadata(&cache_path).await.is_ok(),
         "Cache file not created for complex key"
@@ -165,8 +168,8 @@ async fn test_serve_cached_composite_with_proper_filename() {
     assert!(result.is_ok(), "Failed to store composite");
 
     // List all files in cache directory to debug
-    println!("Cache directory: {:?}", gallery.config.cache_directory);
-    if let Ok(mut entries) = tokio::fs::read_dir(&gallery.config.cache_directory).await {
+    println!("Cache directory: {:?}", gallery.cache_path);
+    if let Ok(mut entries) = tokio::fs::read_dir(&gallery.cache_path).await {
         println!("Files in cache:");
         while let Ok(Some(entry)) = entries.next_entry().await {
             println!("  - {}", entry.file_name().to_string_lossy());
@@ -178,14 +181,12 @@ async fn test_serve_cached_composite_with_proper_filename() {
     println!("Looking for cache_filename: {}", cache_filename);
 
     // Check if the file actually exists
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
     let exists = tokio::fs::metadata(&cache_path).await.is_ok();
     println!("Cache file exists at {:?}: {}", cache_path, exists);
 
     // Now try to serve it using the full filename (as the API handler does)
-    let serve_result = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
+    let serve_result = gallery.serve_cached_image(&cache_filename).await;
     assert!(
         serve_result.is_ok(),
         "Failed to serve cached composite with proper filename"
@@ -225,7 +226,7 @@ async fn test_composite_rgb_conversion() {
     // Check that the file was created
     let hash = gallery.generate_cache_key(cache_key, "jpg");
     let cache_filename = format!("{}.jpg", hash);
-    let cache_path = gallery.config.cache_directory.join(&cache_filename);
+    let cache_path = gallery.cache_path.join(&cache_filename);
 
     // Load the saved image and verify it's RGB (no alpha)
     let saved_img = image::open(&cache_path).unwrap();
@@ -294,9 +295,7 @@ async fn test_composite_mime_type_for_cached_composite() {
     let cache_filename = format!("{}.jpg", hash);
 
     // Serve the composite from cache
-    let cached_response = gallery
-        .serve_cached_image(&cache_filename, "composite", "")
-        .await;
+    let cached_response = gallery.serve_cached_image(&cache_filename).await;
     assert!(cached_response.is_ok());
 
     // Check that the response has the correct MIME type for a composite (JPEG)

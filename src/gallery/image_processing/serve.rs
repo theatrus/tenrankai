@@ -1,15 +1,14 @@
 use crate::{
     ApiResponse,
     gallery::{Gallery, GalleryError},
+    storage::StorageError,
 };
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use std::path::Path;
-use tokio::fs::File;
-use tokio_util::io::ReaderStream;
+use futures::TryStreamExt;
 use tracing::{debug, error};
 
 impl Gallery {
@@ -20,17 +19,13 @@ impl Gallery {
         size: Option<String>,
         accept_header: &str,
     ) -> Response {
-        // Security check
-        let full_path = self.config.source_directory.join(relative_path);
-        if !full_path.starts_with(&self.config.source_directory) {
+        // Security check - prevent path traversal
+        if relative_path.contains("..") || relative_path.starts_with('/') {
             return ApiResponse::Forbidden.into_response();
         }
 
-        // Ensure the file exists
-        if !full_path.exists() {
-            error!("Image file not found: {:?}", full_path);
-            return ApiResponse::ImageNotFound.into_response();
-        }
+        // Note: We defer the source existence check until we actually need to access
+        // the source file. If serving from cache, we skip the check for better performance.
 
         let output_format = self.determine_output_format(accept_header, relative_path);
         debug!(
@@ -66,28 +61,31 @@ impl Gallery {
                         is_retina_tile,
                         output_format.extension(),
                     );
-                    let cache_path = self.config.cache_directory.join(&cache_filename);
 
-                    // Check if already cached
+                    // Fast path: if tile cache exists, serve directly without validation
+                    // This avoids expensive S3 metadata calls on every request
                     if self
-                        .is_cache_valid(&cache_path, &full_path)
+                        .cache_storage
+                        .exists(&cache_filename)
                         .await
                         .unwrap_or(false)
                     {
-                        return self.serve_file_with_cache_header(&cache_path, true).await;
+                        let mime_type = output_format.mime_type();
+                        return self
+                            .serve_from_cache_storage(&cache_filename, mime_type)
+                            .await;
                     }
 
                     // Generate the tile
                     // Note: For retina, we use the same tile coordinates but cache with @2x suffix
                     debug!("Generating tile ({}, {}) retina={}", x, y, is_retina_tile);
 
-                    match self
-                        .get_image_tile(&full_path, relative_path, x, y, output_format)
-                        .await
-                    {
-                        Ok(generated_path) => {
+                    match self.get_image_tile(relative_path, x, y).await {
+                        Ok(_) => {
+                            // Tile was generated and written to storage, serve it
+                            let mime_type = output_format.mime_type();
                             return self
-                                .serve_file_with_cache_header(&generated_path, false)
+                                .serve_from_cache_storage(&cache_filename, mime_type)
                                 .await;
                         }
                         Err(e) => {
@@ -112,16 +110,32 @@ impl Gallery {
                         output_format.extension(),
                         apply_watermark,
                     );
-                    let cache_path = self.config.cache_directory.join(&cache_filename);
-                    let was_cached = cache_path.exists();
 
+                    // Fast path: if cache exists, serve directly without validation
+                    // This avoids expensive S3 metadata calls on every request
+                    if self
+                        .cache_storage
+                        .exists(&cache_filename)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        debug!("Serving cached image: {}", cache_filename);
+                        let mime_type = output_format.mime_type();
+                        return self
+                            .serve_from_cache_storage(&cache_filename, mime_type)
+                            .await;
+                    }
+
+                    // Cache miss - generate the image
                     match self
-                        .get_resized_image(&full_path, relative_path, size, output_format)
+                        .get_resized_image(relative_path, size, output_format)
                         .await
                     {
-                        Ok(cached_path) => {
+                        Ok(_) => {
+                            // Image was generated and written to storage, serve it
+                            let mime_type = output_format.mime_type();
                             return self
-                                .serve_file_with_cache_header(&cached_path, was_cached)
+                                .serve_from_cache_storage(&cache_filename, mime_type)
                                 .await;
                         }
                         Err(e) => {
@@ -135,46 +149,35 @@ impl Gallery {
             }
         }
 
-        // Serve original file
-        self.serve_file_with_cache_header(&full_path, false).await
+        // Serve original file from source storage
+        self.serve_from_source_storage(relative_path).await
     }
 
-    /// Serve file with appropriate cache headers
-    pub(crate) async fn serve_file_with_cache_header(
-        &self,
-        path: &Path,
-        was_cached: bool,
-    ) -> Response {
+    /// Serve file from source storage with streaming
+    pub(crate) async fn serve_from_source_storage(&self, path: &str) -> Response {
+        // Determine MIME type from path
         let mime_type = mime_guess::from_path(path)
             .first_or_octet_stream()
             .to_string();
-        self.serve_file_with_content_type_and_cache_header(path, &mime_type, was_cached)
-            .await
-    }
 
-    /// Serve file with content type and cache headers
-    async fn serve_file_with_content_type_and_cache_header(
-        &self,
-        path: &Path,
-        content_type: &str,
-        _was_cached: bool,
-    ) -> Response {
-        match File::open(path).await {
-            Ok(file) => {
-                let metadata = match file.metadata().await {
-                    Ok(m) => m,
-                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-                };
+        // Get metadata for content-length
+        let size = match self.source_storage.metadata(path).await {
+            Ok(meta) => Some(meta.size),
+            Err(_) => None,
+        };
 
-                let stream = ReaderStream::new(file);
-                let body = Body::from_stream(stream);
+        // Get stream from storage
+        match self.source_storage.read_stream(path).await {
+            Ok(stream) => {
+                // Convert StorageError stream to std::io::Error stream for axum Body
+                let mapped_stream = stream.map_err(|e| std::io::Error::other(e.to_string()));
+                let body = Body::from_stream(mapped_stream);
 
                 let mut headers = HeaderMap::new();
-                headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-                headers.insert(
-                    header::CONTENT_LENGTH,
-                    metadata.len().to_string().parse().unwrap(),
-                );
+                headers.insert(header::CONTENT_TYPE, mime_type.parse().unwrap());
+                if let Some(len) = size {
+                    headers.insert(header::CONTENT_LENGTH, len.to_string().parse().unwrap());
+                }
 
                 // Add cache headers - max 1 day for all images
                 headers.insert(
@@ -184,34 +187,64 @@ impl Gallery {
 
                 (StatusCode::OK, headers, body).into_response()
             }
+            Err(StorageError::NotFound(_)) => ApiResponse::ImageNotFound.into_response(),
             Err(e) => {
-                error!("Failed to open file: {:?}, error: {}", path, e);
-                (StatusCode::NOT_FOUND).into_response()
+                error!("Failed to read from source storage: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
             }
         }
     }
 
-    /// Serve cached image by key
-    pub async fn serve_cached_image(
-        &self,
-        cache_key: &str,
-        _size: &str,
-        _accept_header: &str,
-    ) -> Result<Response, GalleryError> {
-        let cache_path = self.config.cache_directory.join(cache_key);
-
-        if !cache_path.exists() {
-            return Ok(ApiResponse::CacheEntryNotFound.into_response());
-        }
-
+    /// Serve cached image by key using storage abstraction
+    pub async fn serve_cached_image(&self, cache_key: &str) -> Result<Response, GalleryError> {
         // Determine MIME type from extension using OutputFormat
         let mime_type = super::types::OutputFormat::from_file_extension(cache_key)
             .map(|format| format.mime_type())
             .unwrap_or("image/jpeg");
 
-        Ok(self
-            .serve_file_with_content_type_and_cache_header(&cache_path, mime_type, true)
-            .await)
+        // Serve from cache storage (handles NotFound internally)
+        Ok(self.serve_from_cache_storage(cache_key, mime_type).await)
+    }
+
+    /// Serve file from cache storage with streaming
+    pub(crate) async fn serve_from_cache_storage(
+        &self,
+        path: &str,
+        content_type: &str,
+    ) -> Response {
+        // Get metadata for content-length
+        let size = match self.cache_storage.metadata(path).await {
+            Ok(meta) => Some(meta.size),
+            Err(_) => None,
+        };
+
+        // Get stream from storage
+        match self.cache_storage.read_stream(path).await {
+            Ok(stream) => {
+                // Convert StorageError stream to std::io::Error stream for axum Body
+                let mapped_stream = stream.map_err(|e| std::io::Error::other(e.to_string()));
+                let body = Body::from_stream(mapped_stream);
+
+                let mut headers = HeaderMap::new();
+                headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+                if let Some(len) = size {
+                    headers.insert(header::CONTENT_LENGTH, len.to_string().parse().unwrap());
+                }
+
+                // Add cache headers - max 1 day for all images
+                headers.insert(
+                    header::CACHE_CONTROL,
+                    "public, max-age=86400".parse().unwrap(),
+                );
+
+                (StatusCode::OK, headers, body).into_response()
+            }
+            Err(StorageError::NotFound(_)) => ApiResponse::CacheEntryNotFound.into_response(),
+            Err(e) => {
+                error!("Failed to read from cache storage: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+            }
+        }
     }
 
     /// Store and serve composite image
@@ -220,6 +253,10 @@ impl Gallery {
         cache_key: &str,
         image: image::DynamicImage,
     ) -> Result<Response, GalleryError> {
+        use bytes::Bytes;
+        use image::ImageEncoder;
+        use std::io::Cursor;
+
         // Always use JPEG for composites
         let output_format = super::types::OutputFormat::Jpeg;
         // Note: cache_key is the enhanced composite key (e.g., "composite_default_MjAwOC1ldXJla2E")
@@ -227,35 +264,16 @@ impl Gallery {
         let hash = self.generate_cache_key(cache_key, output_format.extension());
 
         // Use the enhanced CacheType system for consistent filename generation
-        if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
-            let cache_filename = cache_type.filename(Some(&hash));
-            let cache_path = self.config.cache_directory.join(&cache_filename);
-
-            // Store the cache_filename for later use in response
-            self.store_composite_with_path(image, cache_path, output_format, cache_filename)
-                .await
-        } else {
-            // Fallback to old method if cache_key format is unexpected
-            let cache_filename = format!("{}.{}", hash, output_format.extension());
-            let cache_path = self.config.cache_directory.join(&cache_filename);
-            self.store_composite_with_path(image, cache_path, output_format, cache_filename)
-                .await
-        }
-    }
-
-    /// Helper method to store composite with given path and return response
-    async fn store_composite_with_path(
-        &self,
-        image: image::DynamicImage,
-        cache_path: std::path::PathBuf,
-        output_format: super::types::OutputFormat,
-        cache_filename: String,
-    ) -> Result<Response, GalleryError> {
-        use image::ImageEncoder;
-        use std::io::Cursor;
+        let cache_filename =
+            if let Some(cache_type) = crate::CacheType::from_composite_cache_key(cache_key) {
+                cache_type.filename(Some(&hash))
+            } else {
+                // Fallback to old method if cache_key format is unexpected
+                format!("{}.{}", hash, output_format.extension())
+            };
 
         // Ensure cache directory exists
-        tokio::fs::create_dir_all(&self.config.cache_directory).await?;
+        self.cache_storage.create_dir("").await?;
 
         // Convert to RGB (JPEG doesn't support alpha)
         let rgb_image = image.to_rgb8();
@@ -275,8 +293,10 @@ impl Gallery {
 
         let image_data = buffer.into_inner();
 
-        // Write to cache
-        tokio::fs::write(&cache_path, &image_data).await?;
+        // Write to cache storage
+        self.cache_storage
+            .write(&cache_filename, Bytes::from(image_data.clone()))
+            .await?;
         tracing::debug!("Stored composite image: {}", cache_filename);
 
         // Create response

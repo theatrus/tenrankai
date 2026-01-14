@@ -35,6 +35,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Email Provider Support**: Pluggable email provider system with Amazon SES and null providers
 - **Cascading Static Files**: Support for multiple static directories with file overlay precedence
 - **WebAuthn/Passkey Support**: Modern passwordless authentication with biometric login
+- **S3 Storage Support**: Store galleries, caches, templates, posts, and static files on Amazon S3
 
 ## Installation
 
@@ -293,6 +294,52 @@ region = "us-east-1"
 - **Null Provider Options:**
   - For development/testing: logs emails instead of sending them
   - No additional configuration required
+
+### S3 Storage Configuration
+
+Tenrankai supports Amazon S3 for storing galleries, caches, templates, posts, and static files. Use URL-based configuration with the `s3://` scheme:
+
+```toml
+# Gallery with S3 source and cache
+[[galleries]]
+name = "main"
+source_directory = "s3://mybucket/photos?region=us-west-2"
+cache_directory = "s3://mybucket/cache/main?region=us-west-2"
+
+# Static files from S3 with signed URL redirects
+[static_files]
+directories = ["s3://mybucket/static?region=us-west-2"]
+use_redirects = true  # Redirect to presigned URLs for direct S3 download
+
+# Templates from S3 with local override
+[templates]
+directories = ["templates-local", "s3://mybucket/templates?region=us-west-2"]
+
+# Posts from S3
+[[posts]]
+name = "blog"
+source_directory = "s3://mybucket/posts?region=us-west-2"
+```
+
+**S3 URL Format:**
+- Basic: `s3://bucket/prefix`
+- With region: `s3://bucket/prefix?region=us-west-2`
+- With custom endpoint (MinIO): `s3://bucket/prefix?endpoint=http://localhost:9000`
+
+**AWS Credentials:**
+The S3 backend uses the AWS SDK default credential chain:
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+2. AWS credentials file (`~/.aws/credentials`)
+3. IAM role credentials (for EC2, ECS, Lambda)
+
+**Hybrid Configurations:**
+Mix local and S3 storage for optimal performance:
+```toml
+# Local source for fast processing, S3 cache for CDN distribution
+[[galleries]]
+source_directory = "photos"  # Local filesystem
+cache_directory = "s3://mybucket/cache?region=us-west-2"  # S3 for cached images
+```
 
 ## Usage
 
@@ -891,6 +938,9 @@ Tenrankai is under active development with a comprehensive codebase and document
 
 ### Recent Major Features
 
+- ✅ **Pluggable Storage Abstraction**: S3 and filesystem backends for all components
+- ✅ **S3 Storage Support**: Galleries, caches, templates, posts, and static files on S3
+- ✅ **Signed URL Redirects**: Direct S3 downloads for reduced server bandwidth
 - ✅ **WebAuthn/Passkey Authentication**: Biometric and hardware key login support
 - ✅ **Gallery Access Control**: Folder-level authentication and user restrictions
 - ✅ **User Profile Page**: Centralized passkey management interface
@@ -920,7 +970,7 @@ Contributions are welcome! Please:
 
 - **Async Rust**: Built on Tokio with Axum web framework
 - **Thread-Safe Operations**: Arc<RwLock<T>> for concurrent access
-- **Comprehensive Testing**: 95+ unit tests and integration tests (with AVIF), 76+ without AVIF
+- **Comprehensive Testing**: 243+ unit tests and integration tests (with AVIF), 180+ without AVIF
 - **Modular Design**: Clean separation of concerns across modules
 - **Configuration-Driven**: Flexible TOML-based configuration system
 - **Cross-Platform CI**: Automated testing on Ubuntu, macOS, and Windows
