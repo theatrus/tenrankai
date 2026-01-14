@@ -1108,8 +1108,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             role="img"
             aria-label={image.name}
           >
-            {/* Blurred thumbnail as placeholder while medium image loads */}
-            {imageLoading && image.thumbnail_url && (
+            {/* Blurred thumbnail as placeholder - fades out as medium image fades in */}
+            {image.thumbnail_url && (
               <img
                 src={image.thumbnail_url}
                 srcSet={`${image.thumbnail_url} 1x, ${image.thumbnail_url.replace('/thumbnail', '/thumbnail@2x')} 2x`}
@@ -1123,7 +1123,10 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                   height: 'auto',
                   filter: 'blur(20px)',
                   transform: 'scale(1.1)', // Hide blur edges
-                  zIndex: 0
+                  opacity: imageLoading ? 1 : 0,
+                  transition: 'opacity 200ms ease-out',
+                  zIndex: 0,
+                  pointerEvents: 'none'
                 }}
               />
             )}
