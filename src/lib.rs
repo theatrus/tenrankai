@@ -458,6 +458,29 @@ async fn create_app_internal(
             }),
         );
 
+        // Gallery folder download (zip)
+        router = router.route(
+            &format!("{}/download/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let download_path = path.0;
+                    gallery::download_folder_handler(state, Path((name, download_path)), auth)
+                }
+            }),
+        );
+
+        // Gallery root download (zip)
+        router = router.route(
+            &format!("{}/download", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, auth| {
+                    gallery::download_folder_handler(state, Path((name, String::new())), auth)
+                }
+            }),
+        );
+
         // API routes for gallery
         router = router.route(
             &format!("/api/gallery/{}/preview", name),

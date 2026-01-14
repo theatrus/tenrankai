@@ -27,16 +27,24 @@
             {% if folder_title %}
                 <h2>{{ folder_title }}</h2>
             {% endif %}
-            
+
             {% if folder_description %}
                 <div class="folder-description">
                     {{ folder_description }}
                 </div>
             {% endif %}
         </div>
-        
-        <!-- Filter bar will be injected here by React if user has permissions -->
-        <div id="gallery-filter-mount"></div>
+
+        <div class="gallery-actions">
+            <!-- Filter bar will be injected here by React if user has permissions -->
+            <div id="gallery-filter-mount"></div>
+
+            {% if permissions.can_download_gallery %}
+                <a href="{{ gallery_url }}/download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-download" title="Download all images as ZIP">
+                    Download All
+                </a>
+            {% endif %}
+        </div>
     </div>
     
     {% if items.size > 0 %}

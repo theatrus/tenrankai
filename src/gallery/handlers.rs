@@ -734,3 +734,136 @@ pub async fn image_handler_for_named_v2(
     .await
     .into_response()
 }
+
+/// Download a gallery folder as a zip file
+/// URL format: /gallery/download/{path}
+#[axum::debug_handler]
+pub async fn download_folder_handler(
+    State(app_state): State<AppState>,
+    Path((gallery_name, path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+) -> Response {
+    let gallery = match app_state.galleries().get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            error!("Gallery '{}' not found", gallery_name);
+            return ApiResponse::GalleryNotFound.into_response();
+        }
+    };
+
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view and download gallery
+    if !user_permissions.permissions.can_view {
+        if !auth.is_authenticated() {
+            let return_url = format!("/{}/download/{}", gallery_name, path);
+            let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
+            return axum::response::Redirect::temporary(&login_url).into_response();
+        }
+        return ApiResponse::AccessDenied.into_response();
+    }
+
+    if !user_permissions.permissions.can_download_gallery {
+        return (
+            StatusCode::FORBIDDEN,
+            "Gallery download permission required",
+        )
+            .into_response();
+    }
+
+    // Get all images in the directory (not paginated)
+    let items = match gallery
+        .scan_directory_with_user(&path, auth.username())
+        .await
+    {
+        Ok(items) => items,
+        Err(e) => {
+            error!("Failed to scan directory for download: {}", e);
+            return ApiResponse::DirectoryNotFound.into_response();
+        }
+    };
+
+    // Filter to only images
+    let images: Vec<_> = items
+        .into_iter()
+        .filter(|item| !item.is_directory)
+        .collect();
+
+    if images.is_empty() {
+        return (StatusCode::NOT_FOUND, "No images in this folder").into_response();
+    }
+
+    // Create zip file in memory
+    let mut zip_buffer = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut zip_buffer);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for image in &images {
+            // Read the original image from storage
+            let image_path = if path.is_empty() {
+                image.name.clone()
+            } else {
+                format!("{}/{}", path, image.name)
+            };
+
+            match gallery.source_storage().read(&image_path).await {
+                Ok(data) => {
+                    if let Err(e) = zip.start_file(&image.name, options) {
+                        error!("Failed to start zip file entry '{}': {}", image.name, e);
+                        continue;
+                    }
+                    if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
+                        error!("Failed to write image '{}' to zip: {}", image.name, e);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to read image '{}' for zip: {}", image_path, e);
+                }
+            }
+        }
+
+        if let Err(e) = zip.finish() {
+            error!("Failed to finish zip file: {}", e);
+            return ApiResponse::InternalServerError.into_response();
+        }
+    }
+
+    // Generate filename for the zip
+    let folder_name = if path.is_empty() {
+        gallery_name.clone()
+    } else {
+        path.rsplit('/').next().unwrap_or(&gallery_name).to_string()
+    };
+    let zip_filename = format!("{}.zip", folder_name);
+
+    // Return the zip file
+    let body = zip_buffer.into_inner();
+    (
+        StatusCode::OK,
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/zip".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", zip_filename),
+            ),
+        ],
+        body,
+    )
+        .into_response()
+}

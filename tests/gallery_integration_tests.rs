@@ -50,6 +50,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                                 can_download_medium: true,
                                 can_download_large: false,
                                 can_download_original: false,
+                                can_download_gallery: false,
                                 can_read_metadata: true, // Default to true for the gallery
                                 can_add_comments: false,
                                 can_edit_own_comments: false,
