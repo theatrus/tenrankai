@@ -69,9 +69,9 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
 export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
-  
+
   // Calculate initial dimensions immediately to prevent flicker
-  const [dimensions, setDimensions] = useState(() => 
+  const [dimensions, setDimensions] = useState(() =>
     calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight)
   );
   
@@ -145,8 +145,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     return { maxPanX, maxPanY };
   };
   
-  // Only show loading indicator after 500ms
-  const showLoading = useDelayedLoading(imageLoading);
+  // Only show loading indicator after 2 seconds (for slow connections)
+  const showLoading = useDelayedLoading(imageLoading, 2000);
 
   // Calculate dimensions based on viewport and image aspect ratio
   const calculateDimensions = () => {
@@ -1061,7 +1061,6 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
         style={{
           width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
-          height: imageLoading ? (dimensions.height > 0 ? `${dimensions.height}px` : undefined) : 'auto',
           position: 'relative',
           overflow: 'hidden',
           touchAction: canUseZoom && isMobile ? 'none' : 'pan-x pan-y'
@@ -1074,6 +1073,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         onTouchMove={handleTouchMove}
         onTouchEnd={(e) => { handleTouchEnd(e); handleDoubleTap(e); }}
       >
+        {/* Show loading spinner after delay if image is still loading */}
         {showLoading && (
           <div className="image-loading">
             <div className="loading-spinner">Loading...</div>
@@ -1107,15 +1107,15 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             role="img"
             aria-label={image.name}
           >
-            {/* Image display with retina support - using img element for HDR compatibility */}
+            {/* Medium image display with retina support - using img element for HDR compatibility */}
             <img
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
               alt={altText}
               style={{
+                display: 'block', // Remove inline baseline spacing
                 width: '100%',
-                height: 'auto',
-                display: imageLoading || imageError ? 'none' : 'block'
+                height: 'auto'
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
