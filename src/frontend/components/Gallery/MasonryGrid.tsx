@@ -118,14 +118,6 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
     return columns.map(col => col.images);
   }, [images, columnWidth, numColumns]);
 
-  // Generate clean ID from image name
-  const generateCleanId = (name: string): string => {
-    return name
-      .replace(/\./g, '')
-      .replace(/\s/g, '')
-      .replace(/-/g, '')
-      .replace(/_/g, '');
-  };
 
   // Scroll to anchor if present
   useEffect(() => {
@@ -227,13 +219,12 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
             const width = image.dimensions?.[0] || 800;
             const height = image.dimensions?.[1] || 600;
             const displayDimensions = calculateDisplayDimensions(width, height, columnWidth);
-            const cleanId = generateCleanId(image.name);
-            
+
             return (
-              <div 
-                key={image.path} 
+              <div
+                key={image.path}
                 className={`image-item ${image.is_new ? 'is-new' : ''}`}
-                id={cleanId}
+                id={image.path}
                 data-id={image.path}
                 style={{
                   width: `${displayDimensions.width}px`,

@@ -177,14 +177,23 @@ impl StorageMetadataBackend {
 
                 match toml_edit::de::from_str::<MdFrontmatter>(toml_content) {
                     Ok(frontmatter) => Some((frontmatter, markdown_body)),
-                    Err(_) => Some((MdFrontmatter::default(), content.trim_end_matches('\n').to_string())),
+                    Err(_) => Some((
+                        MdFrontmatter::default(),
+                        content.trim_end_matches('\n').to_string(),
+                    )),
                 }
             } else {
-                Some((MdFrontmatter::default(), content.trim_end_matches('\n').to_string()))
+                Some((
+                    MdFrontmatter::default(),
+                    content.trim_end_matches('\n').to_string(),
+                ))
             }
         } else {
             // No frontmatter, just markdown body
-            Some((MdFrontmatter::default(), content.trim_end_matches('\n').to_string()))
+            Some((
+                MdFrontmatter::default(),
+                content.trim_end_matches('\n').to_string(),
+            ))
         }
     }
 
@@ -352,7 +361,9 @@ impl StorageMetadataBackend {
     }
 
     /// Split ImageUserMetadata into .md and .toml components
-    fn split_metadata(metadata: &ImageUserMetadata) -> (MdFrontmatter, Option<String>, TomlMetadata) {
+    fn split_metadata(
+        metadata: &ImageUserMetadata,
+    ) -> (MdFrontmatter, Option<String>, TomlMetadata) {
         let frontmatter = MdFrontmatter {
             title: metadata.title.clone(),
             location: metadata.location.clone(),
@@ -660,11 +671,13 @@ This is a pre-existing description.
         let loaded = backend.load("existing.jpg").await.unwrap().unwrap();
         assert_eq!(loaded.title, Some("Existing Title".to_string()));
         assert_eq!(loaded.telescope, Some("RedCat 51".to_string()));
-        assert!(loaded
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("pre-existing"));
+        assert!(
+            loaded
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("pre-existing")
+        );
     }
 
     #[tokio::test]
@@ -797,11 +810,13 @@ created_at = "2024-01-01T00:00:00Z"
         // From .md file
         assert_eq!(loaded.title, Some("MD Title".to_string()));
         assert_eq!(loaded.telescope, Some("RedCat 51".to_string()));
-        assert!(loaded
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("Description from MD"));
+        assert!(
+            loaded
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Description from MD")
+        );
 
         // From .toml file
         assert!(loaded.highlighted);
@@ -851,16 +866,20 @@ Simple name content
         // Title should be None (not extracted from markdown H1)
         assert!(loaded.title.is_none());
         // Description should contain the full content
-        assert!(loaded
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("My Image Title"));
-        assert!(loaded
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("plain markdown"));
+        assert!(
+            loaded
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("My Image Title")
+        );
+        assert!(
+            loaded
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("plain markdown")
+        );
     }
 
     #[tokio::test]

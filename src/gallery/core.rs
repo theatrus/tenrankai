@@ -321,17 +321,17 @@ impl Gallery {
 
                     // Process markdown description to HTML, removing title if present
                     let description_html = user_metadata.description.as_ref().map(|description| {
-                        let content_without_title =
-                            if title.is_some() && description.contains("# ") {
-                                description
-                                    .lines()
-                                    .skip_while(|line| !line.trim().starts_with("# "))
-                                    .skip(1)
-                                    .collect::<Vec<_>>()
-                                    .join("\n")
-                            } else {
-                                description.clone()
-                            };
+                        let content_without_title = if title.is_some() && description.contains("# ")
+                        {
+                            description
+                                .lines()
+                                .skip_while(|line| !line.trim().starts_with("# "))
+                                .skip(1)
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        } else {
+                            description.clone()
+                        };
 
                         let parser = Parser::new(&content_without_title);
                         let mut html_output = String::new();
@@ -719,7 +719,12 @@ impl Gallery {
                     description: None,
                     path: p.url_id.clone(),
                     file_path: Some(p.path.clone()),
-                    parent_path: None,
+                    parent_path: Some(
+                        p.path
+                            .rfind('/')
+                            .map(|pos| p.path[..pos].to_string())
+                            .unwrap_or_default(),
+                    ),
                     is_directory: false,
                     thumbnail_url: Some(p.thumbnail_url.clone()),
                     gallery_url: Some(p.gallery_url.clone()),
@@ -732,13 +737,15 @@ impl Gallery {
                 })
                 .collect();
 
-            // Shuffle and truncate
-            if items.len() > max_items {
+            // Shuffle items for variety, then truncate to requested count
+            if !items.is_empty() {
                 let mut rng = rng();
                 for _ in 0..rng.random_range(1..4) {
                     items.shuffle(&mut rng);
                 }
-                items.truncate(max_items);
+                if items.len() > max_items {
+                    items.truncate(max_items);
+                }
             }
 
             return Ok(items);

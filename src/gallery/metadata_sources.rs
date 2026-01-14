@@ -639,8 +639,12 @@ This is just a regular markdown file without frontmatter."#;
             apple_maps_url: "old_url".to_string(),
         });
 
-        let (camera, location) =
-            merge_metadata_sources(exif_camera, exif_location, xmp.clone(), Some(&user_metadata));
+        let (camera, location) = merge_metadata_sources(
+            exif_camera,
+            exif_location,
+            xmp.clone(),
+            Some(&user_metadata),
+        );
 
         let camera = camera.unwrap();
 

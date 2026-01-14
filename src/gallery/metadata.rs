@@ -4,6 +4,8 @@ use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
 use crate::storage::header_sizes;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::stream::{self, StreamExt};
+use rand::rng;
+use rand::seq::SliceRandom;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tracing::{debug, info, trace};
@@ -806,6 +808,7 @@ impl Gallery {
                 return Vec::new();
             }
 
+            let mut rng = rng();
             let mut previews = Vec::new();
             let mut queue: std::collections::VecDeque<(String, usize)> =
                 std::collections::VecDeque::new();
@@ -821,10 +824,14 @@ impl Gallery {
                 }
 
                 if let Some((subdirs, images)) = folder_children.get(&current_path) {
+                    // Shuffle images for variety in preview selection
+                    let mut images_shuffled: Vec<_> = images.iter().collect();
+                    images_shuffled.shuffle(&mut rng);
+
                     // Add images from this folder using pre-built preview data
                     // Limited by both max_per_folder and max_preview
                     let mut folder_count = 0;
-                    for img_path in images {
+                    for img_path in images_shuffled {
                         if previews.len() >= max_preview || folder_count >= max_per_folder {
                             break;
                         }
@@ -834,9 +841,11 @@ impl Gallery {
                         }
                     }
 
-                    // Queue subdirectories for next depth level
+                    // Queue subdirectories in random order for variety
                     if depth < max_depth {
-                        for subdir_name in subdirs {
+                        let mut subdirs_shuffled: Vec<_> = subdirs.iter().collect();
+                        subdirs_shuffled.shuffle(&mut rng);
+                        for subdir_name in subdirs_shuffled {
                             let subdir_path = if current_path.is_empty() {
                                 subdir_name.clone()
                             } else {
