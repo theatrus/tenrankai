@@ -11,7 +11,7 @@ use tenrankai::{
     config::MultiSiteConfig,
     gallery::Gallery,
     login::{User, UserDatabase},
-    openai, posts, site::{SiteBuilder, SiteManager}, startup_checks, storage,
+    openai, posts, site::{ConfigReloader, SiteBuilder, SiteManager}, startup_checks, storage,
 };
 
 #[derive(Parser, Debug)]
@@ -266,10 +266,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             port,
             host,
             quit_after,
-        }) => run_server(config, multi_site_config, port, host, quit_after).await,
+        }) => run_server(config, multi_site_config, cli.config.clone(), port, host, quit_after).await,
         None => {
             // Default to serve command if no subcommand specified
-            run_server(config, multi_site_config, None, None, None).await
+            run_server(config, multi_site_config, cli.config.clone(), None, None, None).await
         }
     }
 }
@@ -441,6 +441,7 @@ async fn handle_cache_command(
 async fn run_server(
     config: Config,
     multi_site_config: Option<MultiSiteConfig>,
+    config_path: PathBuf,
     port: Option<u16>,
     host: Option<String>,
     quit_after: Option<u64>,
@@ -510,7 +511,7 @@ async fn run_server(
     let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
 
     // Build the app differently based on mode
-    let (app, _site_manager) = if is_multi_site {
+    let (app, site_manager) = if is_multi_site {
         // Multi-site mode: Build sites using SiteBuilder and create SiteManager
         let multi_config = multi_site_config.as_ref().unwrap();
         let site_manager = Arc::new(SiteManager::new());
@@ -805,6 +806,48 @@ async fn run_server(
         }
     }
 
+    // Set up SIGHUP handler for config reload (Unix only, multi-site mode only)
+    #[cfg(unix)]
+    let reload_token = tokio_util::sync::CancellationToken::new();
+    #[cfg(unix)]
+    if let Some(ref manager) = site_manager {
+        let config_reloader = Arc::new(ConfigReloader::new(&config_path));
+        let manager_clone = manager.clone();
+        let reload_token_clone = reload_token.clone();
+
+        tokio::spawn(async move {
+            use tokio::signal::unix::{signal, SignalKind};
+
+            let mut sighup = match signal(SignalKind::hangup()) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!("Failed to install SIGHUP handler: {}", e);
+                    return;
+                }
+            };
+
+            info!("SIGHUP handler installed - send SIGHUP to reload configuration");
+
+            loop {
+                tokio::select! {
+                    _ = sighup.recv() => {
+                        info!("Received SIGHUP - reloading configuration...");
+                        let result = config_reloader.reload(&manager_clone).await;
+                        if result.is_success() {
+                            info!("Configuration reloaded successfully: {}", result.summary());
+                        } else {
+                            tracing::warn!("Configuration reload had failures: {}", result.summary());
+                        }
+                    }
+                    _ = reload_token_clone.cancelled() => {
+                        info!("SIGHUP handler shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
     let addr = SocketAddr::from((host.parse::<std::net::IpAddr>()?, port));
     info!("Server listening on {}", addr);
 
@@ -827,6 +870,10 @@ async fn run_server(
 
     // Cancel background image analysis
     background_analysis_token.cancel();
+
+    // Cancel SIGHUP handler
+    #[cfg(unix)]
+    reload_token.cancel();
 
     for gallery in galleries_for_shutdown {
         // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
