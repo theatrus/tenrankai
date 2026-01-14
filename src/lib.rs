@@ -15,6 +15,7 @@ pub mod openai;
 pub mod permissions;
 pub mod posts;
 pub mod robots;
+pub mod site;
 pub mod startup_checks;
 pub mod static_files;
 pub mod storage;
@@ -57,6 +58,38 @@ pub struct AppState {
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub config: Config,
+}
+
+// Accessor methods for site-specific resources
+// These will delegate to Site once we refactor AppState to use Site
+impl AppState {
+    pub fn template_engine(&self) -> &Arc<templating::TemplateEngine> {
+        &self.template_engine
+    }
+
+    pub fn static_handler(&self) -> &static_files::StaticFileHandler {
+        &self.static_handler
+    }
+
+    pub fn galleries(&self) -> &Arc<HashMap<String, gallery::SharedGallery>> {
+        &self.galleries
+    }
+
+    pub fn favicon_renderer(&self) -> &favicon::FaviconRenderer {
+        &self.favicon_renderer
+    }
+
+    pub fn posts_managers(&self) -> &Arc<HashMap<String, Arc<posts::PostsManager>>> {
+        &self.posts_managers
+    }
+
+    pub fn login_state(&self) -> &Arc<tokio::sync::RwLock<login::LoginState>> {
+        &self.login_state
+    }
+
+    pub fn user_database_manager(&self) -> &Option<login::types::UserDatabaseManager> {
+        &self.user_database_manager
+    }
 }
 
 // FromRef is automatically implemented for AppState since it implements Clone
