@@ -5,6 +5,7 @@ import { useImageDetail } from '../hooks/useImageDetail.ts';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation.ts';
 import { useDelayedLoading } from '../hooks/useDelayedLoading.ts';
 import { useSwipeGestures } from '../hooks/useSwipeGestures.ts';
+import { useImagePreload } from '../hooks/useImagePreload.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
@@ -124,6 +125,9 @@ export function ImageDetailPage({
       }
     }
   });
+
+  // Preload previous and next images for faster navigation
+  useImagePreload(currentData?.prev_image, currentData?.next_image);
 
   // Add swipe gesture support (disabled when image is zoomed)
   useSwipeGestures(imageContainerRef, {
