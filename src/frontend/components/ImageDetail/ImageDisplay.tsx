@@ -1074,7 +1074,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         onTouchMove={handleTouchMove}
         onTouchEnd={(e) => { handleTouchEnd(e); handleDoubleTap(e); }}
       >
-        {showLoading && (
+        {/* Only show loading spinner if no thumbnail placeholder available */}
+        {showLoading && !image.thumbnail_url && (
           <div className="image-loading">
             <div className="loading-spinner">Loading...</div>
           </div>
@@ -1107,7 +1108,26 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             role="img"
             aria-label={image.name}
           >
-            {/* Image display with retina support - using img element for HDR compatibility */}
+            {/* Blurred thumbnail as placeholder while medium image loads */}
+            {imageLoading && image.thumbnail_url && (
+              <img
+                src={image.thumbnail_url}
+                srcSet={`${image.thumbnail_url} 1x, ${image.thumbnail_url.replace('/thumbnail', '/thumbnail@2x')} 2x`}
+                alt=""
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: 'auto',
+                  filter: 'blur(20px)',
+                  transform: 'scale(1.1)', // Hide blur edges
+                  zIndex: 0
+                }}
+              />
+            )}
+            {/* Medium image display with retina support - using img element for HDR compatibility */}
             <img
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
@@ -1115,7 +1135,10 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
               style={{
                 width: '100%',
                 height: 'auto',
-                display: imageLoading || imageError ? 'none' : 'block'
+                opacity: imageLoading ? 0 : 1,
+                transition: 'opacity 200ms ease-out',
+                position: 'relative',
+                zIndex: 1
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
