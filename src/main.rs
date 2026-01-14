@@ -7,11 +7,18 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
-    Config, LogLevel, commands, create_app,
+    Config, LogLevel, commands,
+    config::MultiSiteConfig,
+    create_app, create_app_with_site_manager,
     gallery::Gallery,
     login::{User, UserDatabase},
-    openai, posts, startup_checks, storage,
+    openai, posts,
+    site::{SiteBuilder, SiteManager},
+    startup_checks, storage,
 };
+
+#[cfg(unix)]
+use tenrankai::site::ConfigReloader;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -183,11 +190,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Load config to get default log level, but allow CLI to override
-    let mut config = if cli.config.exists() {
+    // Parse as MultiSiteConfig which supports both legacy and multi-site formats
+    let (mut config, multi_site_config) = if cli.config.exists() {
         let config_content = std::fs::read_to_string(&cli.config)?;
-        toml_edit::de::from_str::<Config>(&config_content)?
+
+        // Parse as MultiSiteConfig (supports both legacy and multi-site formats)
+        let multi_site_config: MultiSiteConfig = toml_edit::de::from_str(&config_content)?;
+
+        // Convert to legacy Config for global settings, routes, etc.
+        let config: Config = multi_site_config.clone().into();
+
+        (config, Some(multi_site_config))
     } else {
-        Config::default()
+        (Config::default(), None)
     };
 
     // Override config log level with CLI arg (CLI takes precedence)
@@ -256,10 +271,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             port,
             host,
             quit_after,
-        }) => run_server(config, port, host, quit_after).await,
+        }) => {
+            run_server(
+                config,
+                multi_site_config,
+                cli.config.clone(),
+                port,
+                host,
+                quit_after,
+            )
+            .await
+        }
         None => {
             // Default to serve command if no subcommand specified
-            run_server(config, None, None, None).await
+            run_server(
+                config,
+                multi_site_config,
+                cli.config.clone(),
+                None,
+                None,
+                None,
+            )
+            .await
         }
     }
 }
@@ -430,68 +463,202 @@ async fn handle_cache_command(
 
 async fn run_server(
     config: Config,
+    multi_site_config: Option<MultiSiteConfig>,
+    config_path: PathBuf,
     port: Option<u16>,
     host: Option<String>,
     quit_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // config_path is only used on Unix for SIGHUP reload
+    #[cfg(not(unix))]
+    let _ = &config_path;
+
     let host = host.unwrap_or(config.server.host.clone());
     let port = port.unwrap_or(config.server.port);
 
     info!("Starting {} server", config.app.name);
     info!("Log level: {}", config.app.log_level);
-    info!("Template directories: {:?}", config.templates.directories);
-    info!(
-        "Static files directories: {:?}",
-        config.static_files.directories
-    );
-    if let Some(galleries) = &config.galleries {
-        for gallery in galleries {
-            info!(
-                "Gallery '{}' source directory: {:?}",
-                gallery.name, gallery.source_directory
-            );
-            info!(
-                "Gallery '{}' cache directory: {:?}",
-                gallery.name, gallery.cache_directory
-            );
+
+    // Check if we're in multi-site mode
+    let is_multi_site = multi_site_config
+        .as_ref()
+        .is_some_and(|m| m.is_multi_site());
+
+    if is_multi_site {
+        info!("Running in multi-site mode");
+    } else {
+        info!("Template directories: {:?}", config.templates.directories);
+        info!(
+            "Static files directories: {:?}",
+            config.static_files.directories
+        );
+        if let Some(galleries) = &config.galleries {
+            for gallery in galleries {
+                info!(
+                    "Gallery '{}' source directory: {:?}",
+                    gallery.name, gallery.source_directory
+                );
+                info!(
+                    "Gallery '{}' cache directory: {:?}",
+                    gallery.name, gallery.cache_directory
+                );
+            }
         }
     }
 
-    // Perform startup checks
-    match startup_checks::perform_startup_checks(&config).await {
-        Ok(()) => info!("All startup checks passed"),
-        Err(errors) => {
-            for error in &errors {
-                tracing::error!("Startup check failed: {}", error);
+    // Perform startup checks (only for legacy mode, multi-site does checks per-site)
+    if !is_multi_site {
+        match startup_checks::perform_startup_checks(&config).await {
+            Ok(()) => info!("All startup checks passed"),
+            Err(errors) => {
+                for error in &errors {
+                    tracing::error!("Startup check failed: {}", error);
+                }
+                let critical_error = errors.iter().any(|e| {
+                    matches!(
+                        e,
+                        startup_checks::StartupCheckError::GallerySourceDirectoryMissing(_)
+                            | startup_checks::StartupCheckError::CacheDirectoryCreationFailed(_)
+                    )
+                });
+
+                if critical_error {
+                    tracing::error!("Critical startup check failed, exiting");
+                    return Err("Critical startup check failed".into());
+                } else {
+                    tracing::warn!("Non-critical startup checks failed, continuing");
+                }
             }
-            // Decide whether to continue or exit based on severity
-            // For now, we'll continue with warnings for non-critical errors
-            let critical_error = errors.iter().any(|e| {
-                matches!(
-                    e,
-                    startup_checks::StartupCheckError::GallerySourceDirectoryMissing(_)
-                        | startup_checks::StartupCheckError::CacheDirectoryCreationFailed(_)
+        }
+    }
+
+    // Track all galleries for shutdown across all sites
+    let mut galleries_for_shutdown: Vec<Arc<Gallery>> = Vec::new();
+    // Track all galleries for background analysis (combined from all sites)
+    let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
+
+    // Build the app differently based on mode
+    let (app, site_manager) = if is_multi_site {
+        // Multi-site mode: Build sites using SiteBuilder and create SiteManager
+        let multi_config = multi_site_config.as_ref().unwrap();
+        let site_manager = Arc::new(SiteManager::new());
+
+        for (site_name, site_section) in multi_config.get_site_configs() {
+            info!("Building site '{}'...", site_name);
+
+            // Convert site section to SiteConfig
+            let site_config = site_section.to_site_config(
+                &site_name,
+                &multi_config.app,
+                multi_config.email.as_ref(),
+            );
+
+            // Build the site
+            let site_builder = SiteBuilder::new(site_config);
+            let site = match site_builder.build().await {
+                Ok(s) => Arc::new(s),
+                Err(e) => {
+                    tracing::error!("Failed to build site '{}': {}", site_name, e);
+                    continue;
+                }
+            };
+
+            // Initialize galleries for this site (additional setup not done by SiteBuilder)
+            for (gallery_name, gallery) in site.galleries().iter() {
+                let gallery_config = gallery.get_config();
+
+                // Initialize gallery and check for version changes
+                if let Err(e) = gallery.initialize_and_check_version().await {
+                    tracing::warn!(
+                        "Failed to initialize gallery '{}' metadata cache: {}",
+                        gallery_name,
+                        e
+                    );
+                }
+
+                // Trigger refresh and/or pre-generation on startup
+                let metadata_empty = gallery.is_metadata_cache_empty().await;
+                let pregenerate = gallery_config.pregenerate.is_some();
+
+                if metadata_empty {
+                    info!(
+                        "Metadata cache for gallery '{}' (site '{}') is empty, triggering initial refresh",
+                        gallery_name, site_name
+                    );
+                }
+
+                if metadata_empty || pregenerate {
+                    if pregenerate {
+                        info!(
+                            "Cache pre-generation enabled for gallery '{}' (site '{}')",
+                            gallery_name, site_name
+                        );
+                    }
+                    if let Err(e) = gallery
+                        .clone()
+                        .refresh_metadata_and_pregenerate_cache(pregenerate)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to refresh metadata for gallery '{}' (site '{}'): {}",
+                            gallery_name,
+                            site_name,
+                            e
+                        );
+                    }
+                }
+
+                // Start background cache refresh if configured
+                if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
+                    && interval_minutes > 0
+                {
+                    info!(
+                        "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
+                        gallery_name, site_name, interval_minutes
+                    );
+                    Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+                }
+
+                // Start periodic cache save (every 5 minutes)
+                info!(
+                    "Starting periodic cache save for gallery '{}' (site '{}')",
+                    gallery_name, site_name
+                );
+                Gallery::start_periodic_cache_save(gallery.clone(), 5);
+
+                // Track gallery for shutdown
+                galleries_for_shutdown.push(gallery.clone());
+
+                // Add to combined galleries map (use site_name prefix for uniqueness)
+                all_galleries_map
+                    .insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
+            }
+
+            // Add site to manager with its hostnames
+            site_manager
+                .add_site(site, site_section.hostnames.clone())
+                .await;
+            info!(
+                "Site '{}' ready with hostnames: {:?}",
+                site_name, site_section.hostnames
+            );
+        }
+
+        // Create app with site manager
+        let app = create_app_with_site_manager(config.clone(), site_manager.clone()).await;
+        (app, Some(site_manager))
+    } else {
+        // Legacy single-site mode: Initialize galleries manually
+        let mut galleries_map = HashMap::new();
+
+        if let Some(gallery_configs) = &config.galleries {
+            for gallery_config in gallery_configs {
+                // Create source storage backend from source_directory URL
+                let source_storage = match storage::create_storage_from_url(
+                    &gallery_config.source_directory,
                 )
-            });
-
-            if critical_error {
-                tracing::error!("Critical startup check failed, exiting");
-                return Err("Critical startup check failed".into());
-            } else {
-                tracing::warn!("Non-critical startup checks failed, continuing");
-            }
-        }
-    }
-
-    // Initialize galleries first
-    let mut galleries_map = HashMap::new();
-    let mut galleries_for_shutdown = Vec::new();
-
-    if let Some(gallery_configs) = &config.galleries {
-        for gallery_config in gallery_configs {
-            // Create source storage backend from source_directory URL
-            let source_storage =
-                match storage::create_storage_from_url(&gallery_config.source_directory).await {
+                .await
+                {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::error!(
@@ -503,96 +670,106 @@ async fn run_server(
                     }
                 };
 
-            // Create cache storage backend from cache_directory URL
-            let cache_storage =
-                match storage::create_storage_from_url(&gallery_config.cache_directory).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to create cache storage for gallery '{}': {}",
-                            gallery_config.name,
-                            e
-                        );
-                        continue;
-                    }
-                };
+                // Create cache storage backend from cache_directory URL
+                let cache_storage =
+                    match storage::create_storage_from_url(&gallery_config.cache_directory).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to create cache storage for gallery '{}': {}",
+                                gallery_config.name,
+                                e
+                            );
+                            continue;
+                        }
+                    };
 
-            let gallery = std::sync::Arc::new(Gallery::new(
-                gallery_config.clone(),
-                source_storage,
-                cache_storage,
-            ));
+                let gallery = std::sync::Arc::new(Gallery::new(
+                    gallery_config.clone(),
+                    source_storage,
+                    cache_storage,
+                ));
 
-            // Initialize gallery and check for version changes
-            if let Err(e) = gallery.initialize_and_check_version().await {
-                tracing::warn!(
-                    "Failed to initialize gallery '{}' metadata cache: {}",
-                    gallery_config.name,
-                    e
-                );
-            }
-
-            // Trigger refresh and/or pre-generation on startup
-            let metadata_empty = gallery.is_metadata_cache_empty().await;
-            let pregenerate = gallery_config.pregenerate.is_some();
-
-            if metadata_empty {
-                info!(
-                    "Metadata cache for gallery '{}' is empty, triggering initial refresh",
-                    gallery_config.name
-                );
-            }
-
-            // Run refresh if metadata is empty, or pregenerate if configured
-            if metadata_empty || pregenerate {
-                if pregenerate {
-                    info!(
-                        "Cache pre-generation enabled for gallery '{}', will generate missing cache entries",
-                        gallery_config.name
-                    );
-                }
-                if let Err(e) = gallery
-                    .clone()
-                    .refresh_metadata_and_pregenerate_cache(pregenerate)
-                    .await
-                {
-                    tracing::error!(
-                        "Failed to refresh metadata and pre-generate cache for gallery '{}': {}",
+                // Initialize gallery and check for version changes
+                if let Err(e) = gallery.initialize_and_check_version().await {
+                    tracing::warn!(
+                        "Failed to initialize gallery '{}' metadata cache: {}",
                         gallery_config.name,
                         e
                     );
                 }
-            }
 
-            // Start background cache refresh if configured
-            if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
-                && interval_minutes > 0
-            {
+                // Trigger refresh and/or pre-generation on startup
+                let metadata_empty = gallery.is_metadata_cache_empty().await;
+                let pregenerate = gallery_config.pregenerate.is_some();
+
+                if metadata_empty {
+                    info!(
+                        "Metadata cache for gallery '{}' is empty, triggering initial refresh",
+                        gallery_config.name
+                    );
+                }
+
+                // Run refresh if metadata is empty, or pregenerate if configured
+                if metadata_empty || pregenerate {
+                    if pregenerate {
+                        info!(
+                            "Cache pre-generation enabled for gallery '{}', will generate missing cache entries",
+                            gallery_config.name
+                        );
+                    }
+                    if let Err(e) = gallery
+                        .clone()
+                        .refresh_metadata_and_pregenerate_cache(pregenerate)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to refresh metadata and pre-generate cache for gallery '{}': {}",
+                            gallery_config.name,
+                            e
+                        );
+                    }
+                }
+
+                // Start background cache refresh if configured
+                if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
+                    && interval_minutes > 0
+                {
+                    info!(
+                        "Starting background metadata cache refresh for gallery '{}' every {} minutes",
+                        gallery_config.name, interval_minutes
+                    );
+                    Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+                }
+
+                // Start periodic cache save (every 5 minutes)
                 info!(
-                    "Starting background metadata cache refresh for gallery '{}' every {} minutes",
-                    gallery_config.name, interval_minutes
+                    "Starting periodic metadata cache save for gallery '{}' every 5 minutes",
+                    gallery_config.name
                 );
-                Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+                Gallery::start_periodic_cache_save(gallery.clone(), 5);
+
+                // Store gallery in map and for shutdown handler
+                galleries_map.insert(gallery_config.name.clone(), gallery.clone());
+                galleries_for_shutdown.push(gallery.clone());
+                all_galleries_map.insert(gallery_config.name.clone(), gallery);
             }
-
-            // Start periodic cache save (every 5 minutes)
-            info!(
-                "Starting periodic metadata cache save for gallery '{}' every 5 minutes",
-                gallery_config.name
-            );
-            Gallery::start_periodic_cache_save(gallery.clone(), 5);
-
-            // Store gallery in map and for shutdown handler
-            galleries_map.insert(gallery_config.name.clone(), gallery.clone());
-            galleries_for_shutdown.push(gallery);
         }
-    }
 
-    // Create Arc for galleries - used by both app and background analysis
-    let galleries_arc = Arc::new(galleries_map);
+        // Create Arc for galleries - used by both app and background analysis
+        let galleries_arc = Arc::new(galleries_map);
 
-    // Create the app with the initialized galleries
-    let app = create_app(config.clone(), Some(galleries_arc.clone())).await;
+        // Create the app with the initialized galleries
+        let app = create_app(config.clone(), Some(galleries_arc)).await;
+        (app, None)
+    };
+
+    // site_manager is only used on Unix for SIGHUP reload
+    #[cfg(not(unix))]
+    let _ = &site_manager;
+
+    // Convert all_galleries_map to Arc for background analysis
+    let galleries_arc = Arc::new(all_galleries_map);
 
     // Initialize posts background refresh
     // We need to recreate posts managers here for background tasks
@@ -668,6 +845,48 @@ async fn run_server(
         }
     }
 
+    // Set up SIGHUP handler for config reload (Unix only, multi-site mode only)
+    #[cfg(unix)]
+    let reload_token = tokio_util::sync::CancellationToken::new();
+    #[cfg(unix)]
+    if let Some(ref manager) = site_manager {
+        let config_reloader = Arc::new(ConfigReloader::new(&config_path));
+        let manager_clone = manager.clone();
+        let reload_token_clone = reload_token.clone();
+
+        tokio::spawn(async move {
+            use tokio::signal::unix::{SignalKind, signal};
+
+            let mut sighup = match signal(SignalKind::hangup()) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!("Failed to install SIGHUP handler: {}", e);
+                    return;
+                }
+            };
+
+            info!("SIGHUP handler installed - send SIGHUP to reload configuration");
+
+            loop {
+                tokio::select! {
+                    _ = sighup.recv() => {
+                        info!("Received SIGHUP - reloading configuration...");
+                        let result = config_reloader.reload(&manager_clone).await;
+                        if result.is_success() {
+                            info!("Configuration reloaded successfully: {}", result.summary());
+                        } else {
+                            tracing::warn!("Configuration reload had failures: {}", result.summary());
+                        }
+                    }
+                    _ = reload_token_clone.cancelled() => {
+                        info!("SIGHUP handler shutting down");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
     let addr = SocketAddr::from((host.parse::<std::net::IpAddr>()?, port));
     info!("Server listening on {}", addr);
 
@@ -690,6 +909,10 @@ async fn run_server(
 
     // Cancel background image analysis
     background_analysis_token.cancel();
+
+    // Cancel SIGHUP handler
+    #[cfg(unix)]
+    reload_token.cancel();
 
     for gallery in galleries_for_shutdown {
         // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)

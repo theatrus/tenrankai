@@ -15,6 +15,7 @@ pub mod openai;
 pub mod permissions;
 pub mod posts;
 pub mod robots;
+pub mod site;
 pub mod startup_checks;
 pub mod static_files;
 pub mod storage;
@@ -46,17 +47,70 @@ use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub template_engine: Arc<templating::TemplateEngine>,
-    pub static_handler: static_files::StaticFileHandler,
-    pub galleries: Arc<HashMap<String, gallery::SharedGallery>>,
-    pub favicon_renderer: favicon::FaviconRenderer,
-    pub posts_managers: Arc<HashMap<String, Arc<posts::PostsManager>>>,
-    pub login_state: Arc<tokio::sync::RwLock<login::LoginState>>,
-    pub user_database_manager: Option<login::types::UserDatabaseManager>,
+    // Site-specific resources (resolved per-request in multi-site mode)
+    pub site: Arc<site::Site>,
+    // Site manager for multi-site routing (None in single-site mode for backward compat)
+    pub site_manager: Option<Arc<site::SiteManager>>,
+    // Global resources (shared across all sites)
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub config: Config,
+}
+
+impl AppState {
+    /// Create a new AppState with a different site (used by site resolution middleware)
+    pub fn with_site(&self, site: Arc<site::Site>) -> Self {
+        Self {
+            site,
+            site_manager: self.site_manager.clone(),
+            email_provider: self.email_provider.clone(),
+            webauthn: self.webauthn.clone(),
+            openai_client: self.openai_client.clone(),
+            config: self.config.clone(),
+        }
+    }
+
+    /// Check if this is multi-site mode
+    pub fn is_multi_site(&self) -> bool {
+        self.site_manager.is_some()
+    }
+}
+
+// Accessor methods for site-specific resources
+// These delegate to the Site for backward compatibility
+impl AppState {
+    pub fn template_engine(&self) -> &Arc<templating::TemplateEngine> {
+        self.site.template_engine()
+    }
+
+    pub fn static_handler(&self) -> &static_files::StaticFileHandler {
+        self.site.static_handler()
+    }
+
+    pub fn galleries(&self) -> &Arc<HashMap<String, gallery::SharedGallery>> {
+        self.site.galleries()
+    }
+
+    pub fn favicon_renderer(&self) -> &favicon::FaviconRenderer {
+        self.site.favicon_renderer()
+    }
+
+    pub fn posts_managers(&self) -> &Arc<HashMap<String, Arc<posts::PostsManager>>> {
+        self.site.posts_managers()
+    }
+
+    pub fn login_state(&self) -> &Arc<tokio::sync::RwLock<login::LoginState>> {
+        self.site.login_state()
+    }
+
+    pub fn user_database_manager(&self) -> &Option<login::types::UserDatabaseManager> {
+        self.site.user_database_manager()
+    }
+
+    pub fn email_config(&self) -> Option<&email::SiteEmailConfig> {
+        self.site.email_config()
+    }
 }
 
 // FromRef is automatically implemented for AppState since it implements Clone
@@ -68,7 +122,7 @@ async fn static_file_handler(
 ) -> impl IntoResponse {
     // Check if request has version parameter
     let has_version = params.contains_key("v");
-    app_state.static_handler.serve(&path, has_version).await
+    app_state.static_handler().serve(&path, has_version).await
 }
 
 async fn server_header_middleware(
@@ -91,185 +145,69 @@ pub async fn create_app(
     config: Config,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
-    // Create template storage backends from URLs (supports both filesystem and S3)
-    let template_storages =
-        match storage::create_storages_from_urls(&config.templates.directories).await {
-            Ok(storages) => storages,
-            Err(e) => {
-                tracing::error!("Failed to initialize template storage: {}", e);
-                vec![]
-            }
-        };
+    create_app_internal(config, galleries, None).await
+}
 
-    let mut template_engine = templating::TemplateEngine::new(template_storages);
+/// Create an app with multi-site support using SiteManager
+pub async fn create_app_with_site_manager(
+    config: Config,
+    site_manager: Arc<site::SiteManager>,
+) -> axum::Router {
+    create_app_internal(config, None, Some(site_manager)).await
+}
 
-    // Create static file handler from storage URLs (supports both filesystem and S3)
-    let static_handler =
-        match static_files::StaticFileHandler::from_urls(config.static_files.directories.clone())
-            .await
-        {
-            Ok(handler) => handler.with_redirects(config.static_files.use_redirects),
-            Err(e) => {
-                tracing::error!("Failed to initialize static file storage: {}", e);
-                // Fall back to empty handler
-                static_files::StaticFileHandler::from_paths(vec![])
-            }
-        };
-
-    // Ensure file versions are loaded before proceeding
-    static_handler.refresh_file_versions().await;
-
-    // Set the static handler on the template engine for cache busting
-    template_engine.set_static_handler(static_handler.clone());
-
-    // Set whether user auth is enabled
-    template_engine.set_has_user_auth(config.app.user_database.is_some());
-
-    // Update file versions for the template engine
-    template_engine.update_file_versions().await;
-
-    let template_engine = Arc::new(template_engine);
-
-    // Create favicon renderer using the same storage backends
-    let favicon_renderer = favicon::FaviconRenderer::new(static_handler.storages().to_vec());
-
-    // Use provided galleries or create new ones
-    let galleries_arc = if let Some(provided_galleries) = galleries {
-        provided_galleries
-    } else {
-        // Create galleries if not provided
-        let mut galleries = HashMap::new();
-        if let Some(gallery_configs) = &config.galleries {
-            for gallery_config in gallery_configs {
-                // Create source storage backend from source_directory URL
-                let source_storage = match storage::create_storage_from_url(
-                    &gallery_config.source_directory,
-                )
-                .await
-                {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!(
-                            "Failed to create source storage for gallery '{}': {}",
-                            gallery_config.name, e
-                        );
-                        continue;
+async fn create_app_internal(
+    config: Config,
+    galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
+    site_manager: Option<Arc<site::SiteManager>>,
+) -> axum::Router {
+    // Get or build the site
+    let built_site = if let Some(ref manager) = site_manager {
+        // In multi-site mode, get the default site from SiteManager
+        // The site_resolution_middleware will swap in the correct site per-request
+        match manager.get_default_site().await {
+            Some(site) => {
+                info!("Using default site '{}' from SiteManager", site.name);
+                // Start periodic login cleanup for all sites with user databases
+                for site in manager.sites().await {
+                    if site.user_database_manager().is_some() {
+                        login::start_periodic_cleanup(site.login_state().clone());
                     }
-                };
-
-                // Create cache storage backend from cache_directory URL
-                let cache_storage =
-                    match storage::create_storage_from_url(&gallery_config.cache_directory).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            error!(
-                                "Failed to create cache storage for gallery '{}': {}",
-                                gallery_config.name, e
-                            );
-                            continue;
-                        }
-                    };
-
-                info!(
-                    "Initializing gallery '{}' with source: {}, cache: {}",
-                    gallery_config.name,
-                    source_storage.storage_type(),
-                    cache_storage.storage_type()
-                );
-
-                let gallery = Arc::new(gallery::Gallery::new(
-                    gallery_config.clone(),
-                    source_storage,
-                    cache_storage,
-                ));
-
-                // Initialize folder cache (mandatory for gallery operations)
-                if let Err(e) = gallery.refresh_folder_cache().await {
-                    error!(
-                        "Failed to initialize folder cache for gallery '{}': {}",
-                        gallery_config.name, e
-                    );
                 }
-
-                galleries.insert(gallery_config.name.clone(), gallery);
+                // Return the Arc<Site> directly, we'll handle conversion below
+                site
+            }
+            None => {
+                panic!("SiteManager has no default site configured");
             }
         }
-        Arc::new(galleries)
+    } else {
+        // Single-site mode: build the site from config
+        let site_config = site::SiteConfig::from_legacy_config(&config, config.email.as_ref());
+        let mut site_builder = site::SiteBuilder::new(site_config);
+
+        // Inject provided galleries if any (for testing)
+        if let Some(provided_galleries) = galleries {
+            site_builder = site_builder.with_galleries(provided_galleries);
+        }
+
+        let site = match site_builder.build().await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to build site: {}", e);
+                panic!("Cannot start without a valid site configuration: {}", e);
+            }
+        };
+
+        // Start periodic cleanup for login if user database is configured
+        if config.app.user_database.is_some() {
+            login::start_periodic_cleanup(site.login_state().clone());
+        }
+
+        Arc::new(site)
     };
 
-    // Initialize posts managers
-    let mut posts_managers = HashMap::new();
-    if let Some(posts_configs) = &config.posts {
-        for posts_config in posts_configs {
-            // Create storage backend from source_directory URL
-            let posts_storage =
-                match storage::create_storage_from_url(&posts_config.source_directory).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!(
-                            "Failed to create posts storage for '{}': {}",
-                            posts_config.name, e
-                        );
-                        continue;
-                    }
-                };
-
-            info!(
-                "Initializing posts for '{}' from {} (storage: {})",
-                posts_config.name,
-                posts_config.source_directory,
-                posts_storage.storage_type()
-            );
-
-            let mut posts_manager =
-                posts::PostsManager::new(posts::PostsConfig::from(posts_config), posts_storage);
-
-            // Set galleries reference
-            posts_manager.set_galleries(galleries_arc.clone());
-
-            let posts_manager = Arc::new(posts_manager);
-
-            // Load posts on startup
-            if let Err(e) = posts_manager.refresh_posts().await {
-                error!(
-                    "Failed to initialize posts for '{}': {}",
-                    posts_config.name, e
-                );
-            }
-
-            posts_managers.insert(posts_config.name.clone(), posts_manager);
-        }
-    }
-
-    let posts_managers_arc = Arc::new(posts_managers);
-
-    // Initialize login state and user database only if user database is configured
-    let (login_state, user_database_manager) =
-        if let Some(db_path) = config.app.user_database.as_ref() {
-            let state = Arc::new(tokio::sync::RwLock::new(login::LoginState::new()));
-            // Start periodic cleanup for login tokens and rate limits
-            login::start_periodic_cleanup(state.clone());
-
-            // Initialize user database manager
-            let db_manager = match login::types::UserDatabaseManager::new(db_path.clone()).await {
-                Ok(manager) => {
-                    info!("User database initialized from {:?}", db_path);
-                    Some(manager)
-                }
-                Err(e) => {
-                    error!("Failed to initialize user database: {}", e);
-                    None
-                }
-            };
-
-            (state, db_manager)
-        } else {
-            // Create an empty login state for consistency
-            (
-                Arc::new(tokio::sync::RwLock::new(login::LoginState::new())),
-                None,
-            )
-        };
+    // Initialize global resources (shared across all sites)
 
     // Initialize email provider if configured
     let email_provider = if let Some(email_config) = &config.email {
@@ -320,13 +258,8 @@ pub async fn create_app(
     };
 
     let app_state = AppState {
-        template_engine,
-        static_handler,
-        galleries: galleries_arc,
-        favicon_renderer,
-        posts_managers: posts_managers_arc.clone(),
-        login_state,
-        user_database_manager,
+        site: built_site,
+        site_manager: site_manager.clone(),
         email_provider,
         webauthn,
         openai_client,
@@ -729,6 +662,16 @@ pub async fn create_app(
         "/{*path}",
         axum::routing::get(templating::template_with_gallery_handler),
     );
+
+    // Add site resolution middleware if in multi-site mode
+    let router = if site_manager.is_some() {
+        router.layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            site::site_resolution_middleware,
+        ))
+    } else {
+        router
+    };
 
     router
         .layer(middleware::from_fn(server_header_middleware))

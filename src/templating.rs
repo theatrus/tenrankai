@@ -500,7 +500,7 @@ pub async fn template_with_gallery_handler(
 
     // Check if template exists in any of the storage backends
     let template_exists = app_state
-        .template_engine
+        .template_engine()
         .template_exists(&template_path)
         .await;
 
@@ -519,24 +519,24 @@ pub async fn template_with_gallery_handler(
         };
 
         // Check if file exists in any storage backend
-        if app_state.static_handler.exists(check_path).await {
+        if app_state.static_handler().exists(check_path).await {
             debug!("Found static file for path: {}, serving it", path);
             // Pass the path without the "static/" prefix to the serve method
             // Templates don't have version parameters, so pass false
-            return app_state.static_handler.serve(check_path, false).await;
+            return app_state.static_handler().serve(check_path, false).await;
         }
 
         debug!(
             "No template or static file found for: {}, returning 404",
             path
         );
-        return match app_state.template_engine.render_404_page().await {
+        return match app_state.template_engine().render_404_page().await {
             Ok(html) => ApiResponse::NotFound.with_html(html.0),
             Err(_) => ApiResponse::NotFound.into_response(),
         };
     }
 
-    match app_state.template_engine.render_with_gallery(&path).await {
+    match app_state.template_engine().render_with_gallery(&path).await {
         Ok(html) => (no_cache_headers(), html).into_response(),
         Err(status) => status.into_response(),
     }

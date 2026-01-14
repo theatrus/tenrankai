@@ -20,7 +20,7 @@ pub async fn posts_index_handler(
 ) -> impl IntoResponse {
     let page = query.page.unwrap_or(0);
 
-    let posts_manager = match app_state.posts_managers.get(&posts_name) {
+    let posts_manager = match app_state.posts_managers().get(&posts_name) {
         Some(manager) => manager,
         None => {
             return ApiResponse::PostNotFound.into_response();
@@ -101,7 +101,7 @@ pub async fn posts_index_handler(
     });
 
     match app_state
-        .template_engine
+        .template_engine()
         .render_template(&config.index_template, globals)
         .await
     {
@@ -117,7 +117,7 @@ pub async fn post_detail_handler(
     State(app_state): State<AppState>,
     Path((posts_name, slug)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let posts_manager = match app_state.posts_managers.get(&posts_name) {
+    let posts_manager = match app_state.posts_managers().get(&posts_name) {
         Some(manager) => manager,
         None => {
             return ApiResponse::PostNotFound.into_response();
@@ -167,7 +167,7 @@ pub async fn post_detail_handler(
     });
 
     match app_state
-        .template_engine
+        .template_engine()
         .render_template(&config.post_template, globals)
         .await
     {
@@ -183,7 +183,7 @@ pub async fn refresh_posts_handler(
     State(app_state): State<AppState>,
     Path(posts_name): Path<String>,
 ) -> impl IntoResponse {
-    let posts_manager = match app_state.posts_managers.get(&posts_name) {
+    let posts_manager = match app_state.posts_managers().get(&posts_name) {
         Some(manager) => manager,
         None => {
             let mut response = ApiResponse::PostNotFound.into_response();

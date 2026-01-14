@@ -51,7 +51,7 @@ pub async fn login_page(
     });
 
     let html = match app_state
-        .template_engine
+        .template_engine()
         .render_template(crate::TemplateType::Login.path(), globals)
         .await
     {
@@ -91,7 +91,7 @@ pub async fn login_request(
 
     // Check rate limit
     {
-        let mut login_state = app_state.login_state.write().await;
+        let mut login_state = app_state.login_state().write().await;
         if let Err(msg) = login_state.check_rate_limit(&client_ip) {
             return Ok(Json(LoginResponse {
                 success: false,
@@ -102,7 +102,7 @@ pub async fn login_request(
 
     // Get user database manager
     let db_manager = app_state
-        .user_database_manager
+        .user_database_manager()
         .as_ref()
         .ok_or_else(|| LoginError::DatabaseError("User database not configured".to_string()))?;
 
@@ -118,7 +118,7 @@ pub async fn login_request(
     if let Some((username, user)) = user_with_username {
         // Create login token using the actual username
         let token = {
-            let mut login_state = app_state.login_state.write().await;
+            let mut login_state = app_state.login_state().write().await;
             login_state.create_token(username.clone())
         };
 
@@ -132,9 +132,10 @@ pub async fn login_request(
         let login_url = format!("{}/_login/verify?token={}", base_url, token);
 
         // Send email if provider is configured, otherwise log the URL
+        // Use site-specific email config for sender identity
         if let Some(email_provider) = &app_state.email_provider {
-            if let Some(email_config) = &app_state.config.email {
-                // Create the email message
+            if let Some(email_config) = app_state.email_config() {
+                // Create the email message using site-specific sender settings
                 let mut email_message = crate::email::EmailMessage::new(
                     &user.email,
                     email_config.format_from(),
@@ -194,7 +195,7 @@ pub async fn verify_login(
 ) -> Result<impl IntoResponse, LoginError> {
     // Verify token
     let username = {
-        let mut login_state = app_state.login_state.write().await;
+        let mut login_state = app_state.login_state().write().await;
         login_state
             .verify_token(&query.token)
             .ok_or(LoginError::TokenInvalid)?
@@ -224,7 +225,7 @@ pub async fn verify_login(
     // Check if WebAuthn is available and if user has passkeys
     let should_enroll = if app_state.webauthn.is_some() {
         // Check if user has passkeys
-        let db_manager = app_state.user_database_manager.as_ref();
+        let db_manager = app_state.user_database_manager().as_ref();
         if let Some(manager) = db_manager {
             // Begin a read transaction (automatically checks for reload)
             match manager.read_transaction().await {
@@ -289,7 +290,7 @@ pub async fn login_success(
     });
 
     match app_state
-        .template_engine
+        .template_engine()
         .render_template(crate::TemplateType::LoginSuccess.path(), globals)
         .await
     {
@@ -352,7 +353,7 @@ pub async fn passkey_enrollment_page(
     });
 
     match app_state
-        .template_engine
+        .template_engine()
         .render_template(crate::TemplateType::PasskeyEnrollment.path(), globals)
         .await
     {
@@ -373,7 +374,7 @@ pub async fn profile_page(
     let username = auth.username().to_string();
 
     // Get user information
-    let user_info = if let Some(manager) = &app_state.user_database_manager {
+    let user_info = if let Some(manager) = app_state.user_database_manager() {
         // Begin a read transaction (automatically checks for reload)
         match manager.read_transaction().await {
             Ok(transaction) => transaction
@@ -403,7 +404,7 @@ pub async fn profile_page(
     });
 
     match app_state
-        .template_engine
+        .template_engine()
         .render_template(crate::TemplateType::Profile.path(), globals)
         .await
     {

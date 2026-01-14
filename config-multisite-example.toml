@@ -1,0 +1,206 @@
+# Multi-Site Configuration Example
+#
+# This configuration demonstrates serving multiple sites from a single Tenrankai instance.
+# Each site is distinguished by hostname and can have its own templates, static files,
+# galleries, and posts.
+#
+# Hostname matching priority:
+# 1. Exact match (e.g., "photos.example.com")
+# 2. Glob pattern (e.g., "*.example.com")
+# 3. Default catch-all ("*")
+
+# Global server configuration (shared across all sites)
+[server]
+host = "0.0.0.0"
+port = 3000
+
+# Global application configuration (shared across all sites)
+[app]
+name = "Tenrankai Multi-Site"
+log_level = "info"
+cookie_secret = "change-me-in-production-use-a-long-random-string"
+base_url = "https://example.com"
+
+# Global email configuration (shared across all sites)
+# [email]
+# from_address = "noreply@example.com"
+# from_name = "Tenrankai"
+# provider = "ses"
+
+# =============================================================================
+# Site: Default (catch-all)
+# =============================================================================
+# This site handles any hostname not matched by other sites
+[sites.default]
+hostnames = ["*"]
+
+[sites.default.templates]
+directories = ["templates"]
+
+[sites.default.static_files]
+directories = ["static"]
+
+[[sites.default.galleries]]
+name = "main"
+url_prefix = "/gallery"
+source_directory = "photos"
+cache_directory = "cache/default/main"
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+images_per_page = 50
+jpeg_quality = 85
+webp_quality = 85.0
+
+[sites.default.galleries.thumbnail]
+width = 300
+height = 300
+
+[sites.default.galleries.gallery_size]
+width = 800
+height = 800
+
+[sites.default.galleries.medium]
+width = 1200
+height = 1200
+
+[sites.default.galleries.large]
+width = 1600
+height = 1600
+
+[sites.default.galleries.preview]
+max_images = 6
+max_depth = 3
+max_per_folder = 3
+
+[[sites.default.posts]]
+name = "blog"
+source_directory = "posts/blog"
+url_prefix = "/blog"
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+posts_per_page = 20
+
+# =============================================================================
+# Site: Photos (photos.example.com)
+# =============================================================================
+# A dedicated photography portfolio site
+[sites.photos]
+hostnames = ["photos.example.com", "photos.localhost"]
+user_database = "users-photos.toml"
+
+[sites.photos.templates]
+# Use custom photo templates, falling back to default
+directories = ["templates-photos", "templates"]
+
+[sites.photos.static_files]
+directories = ["static-photos", "static"]
+
+[[sites.photos.galleries]]
+name = "portfolio"
+url_prefix = "/"  # Gallery at root of this site
+source_directory = "photos/portfolio"
+cache_directory = "cache/photos/portfolio"
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+images_per_page = 24
+jpeg_quality = 90
+webp_quality = 90.0
+copyright_holder = "Photography Portfolio"
+image_indexing = "unique_id"
+
+[sites.photos.galleries.thumbnail]
+width = 400
+height = 400
+
+[sites.photos.galleries.gallery_size]
+width = 1000
+height = 1000
+
+[sites.photos.galleries.medium]
+width = 1600
+height = 1600
+
+[sites.photos.galleries.large]
+width = 2400
+height = 2400
+
+[sites.photos.galleries.preview]
+max_images = 8
+max_depth = 2
+max_per_folder = 4
+
+# =============================================================================
+# Site: Client galleries (*.clients.example.com)
+# =============================================================================
+# Wildcard subdomain for client-specific galleries
+[sites.clients]
+hostnames = ["*.clients.example.com", "*.clients.localhost"]
+user_database = "users-clients.toml"
+
+[sites.clients.templates]
+directories = ["templates-clients", "templates"]
+
+[sites.clients.static_files]
+directories = ["static"]
+
+[[sites.clients.galleries]]
+name = "delivery"
+url_prefix = "/"
+source_directory = "clients"  # Each client subdomain serves different folder
+cache_directory = "cache/clients"
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+images_per_page = 100
+jpeg_quality = 85
+webp_quality = 85.0
+
+# Restrict to authenticated users only
+[sites.clients.galleries.permissions]
+public_role = "none"
+default_authenticated_role = "viewer"
+
+[sites.clients.galleries.permissions.roles.viewer]
+name = "viewer"
+permissions = { can_view = true, can_download_medium = true, can_download_large = true }
+
+[sites.clients.galleries.thumbnail]
+width = 300
+height = 300
+
+[sites.clients.galleries.gallery_size]
+width = 800
+height = 800
+
+[sites.clients.galleries.medium]
+width = 1200
+height = 1200
+
+[sites.clients.galleries.large]
+width = 2400
+height = 2400
+
+[sites.clients.galleries.preview]
+max_images = 6
+max_depth = 2
+max_per_folder = 3
+
+# =============================================================================
+# Site: Blog (blog.example.com)
+# =============================================================================
+# A dedicated blog site with no galleries
+[sites.blog]
+hostnames = ["blog.example.com", "blog.localhost"]
+
+[sites.blog.templates]
+directories = ["templates-blog", "templates"]
+
+[sites.blog.static_files]
+directories = ["static"]
+
+[[sites.blog.posts]]
+name = "articles"
+source_directory = "posts/articles"
+url_prefix = "/"  # Posts at root of this site
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+posts_per_page = 15

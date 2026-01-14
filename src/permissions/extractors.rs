@@ -78,7 +78,7 @@ async fn resolve_permissions(
 
     // Get gallery
     let gallery = app_state
-        .galleries
+        .galleries()
         .get(&gallery_name)
         .ok_or((StatusCode::NOT_FOUND, "Gallery not found"))?;
 
@@ -337,7 +337,7 @@ pub async fn resolve_permissions_for_path(
     username: Option<&str>,
 ) -> Result<UserPermissions, crate::permissions::PermissionError> {
     // Get gallery
-    let gallery = app_state.galleries.get(gallery_name).ok_or(
+    let gallery = app_state.galleries().get(gallery_name).ok_or(
         crate::permissions::PermissionError::RoleNotFound("Gallery not found".to_string()),
     )?;
 
@@ -396,16 +396,25 @@ mod tests {
         let mut galleries = std::collections::HashMap::new();
         galleries.insert("test".to_string(), gallery);
 
-        let app_state = AppState {
+        // Create Site with test resources
+        let site_resources = crate::site::SiteResources {
             template_engine: std::sync::Arc::new(crate::templating::TemplateEngine::new(vec![])),
             static_handler: crate::static_files::StaticFileHandler::new(vec![]),
-            galleries: std::sync::Arc::new(galleries),
             favicon_renderer: crate::favicon::FaviconRenderer::new(vec![]),
+            galleries: std::sync::Arc::new(galleries),
             posts_managers: std::sync::Arc::new(std::collections::HashMap::new()),
             login_state: std::sync::Arc::new(tokio::sync::RwLock::new(
                 crate::login::LoginState::new(),
             )),
             user_database_manager: None,
+            email_config: None,
+        };
+
+        let site = crate::site::Site::new("test".to_string(), site_resources);
+
+        let app_state = AppState {
+            site: std::sync::Arc::new(site),
+            site_manager: None,
             email_provider: None,
             webauthn: None,
             openai_client: None,

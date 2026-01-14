@@ -32,9 +32,9 @@ pub async fn gallery_handler_for_named(
     Query(query): Query<GalleryQuery>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let template_engine = &app_state.template_engine;
+    let template_engine = app_state.template_engine();
 
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             error!("Gallery '{}' not found", gallery_name);
@@ -286,9 +286,9 @@ pub async fn image_detail_handler_for_named(
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let template_engine = &app_state.template_engine;
+    let template_engine = app_state.template_engine();
 
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             error!("Gallery '{}' not found", gallery_name);
@@ -561,7 +561,7 @@ pub async fn image_handler_for_named(
     headers: axum::http::HeaderMap,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             error!("Gallery '{}' not found", gallery_name);

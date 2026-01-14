@@ -120,7 +120,7 @@ pub async fn gallery_preview_handler_for_named(
     Path(gallery_name): Path<String>,
     Query(query): Query<GalleryPreviewQuery>,
 ) -> Result<Response, StatusCode> {
-    let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
+    let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
         tracing::error!("Gallery '{}' not found", gallery_name);
         StatusCode::NOT_FOUND
     })?;
@@ -143,7 +143,7 @@ pub async fn gallery_composite_preview_handler_for_named(
     State(app_state): State<crate::AppState>,
     Path((gallery_name, path)): Path<(String, String)>,
 ) -> Result<Response, StatusCode> {
-    let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
+    let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
         tracing::error!("Gallery '{}' not found", gallery_name);
         StatusCode::NOT_FOUND
     })?;
@@ -218,7 +218,7 @@ pub async fn refresh_static_versions(
     _auth: crate::login::RequireAuth,
 ) -> Result<Response, StatusCode> {
     // Refresh static file versions
-    app_state.static_handler.refresh_file_versions().await;
+    app_state.static_handler().refresh_file_versions().await;
 
     info!("Static file versions refreshed");
 
@@ -238,7 +238,7 @@ pub async fn gallery_api_handler_for_named(
     Query(query): Query<crate::gallery::GalleryQuery>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Json<GalleryApiResponse>, StatusCode> {
-    let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
+    let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
         error!("Gallery '{}' not found", gallery_name);
         StatusCode::NOT_FOUND
     })?;
@@ -334,7 +334,7 @@ pub async fn image_detail_api_handler_for_named(
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Json<ImageDetailApiResponse>, StatusCode> {
-    let gallery = app_state.galleries.get(&gallery_name).ok_or_else(|| {
+    let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
         error!("Gallery '{}' not found", gallery_name);
         StatusCode::NOT_FOUND
     })?;
@@ -632,7 +632,7 @@ pub async fn get_metadata_handler(
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -726,7 +726,7 @@ pub async fn update_metadata_handler(
     debug!("Update metadata request: {:?}", request);
 
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -857,7 +857,7 @@ pub async fn add_comment_handler(
     Json(request): Json<AddCommentRequest>,
 ) -> impl IntoResponse {
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -973,7 +973,7 @@ pub async fn edit_comment_handler(
     Json(request): Json<EditCommentRequest>,
 ) -> impl IntoResponse {
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -1105,7 +1105,7 @@ pub async fn delete_comment_handler(
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -1268,7 +1268,7 @@ pub async fn analyze_image_handler(
     };
 
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -1522,7 +1522,7 @@ pub async fn analyze_folder_handler(
     };
 
     // Get gallery
-    let gallery = match app_state.galleries.get(&gallery_name) {
+    let gallery = match app_state.galleries().get(&gallery_name) {
         Some(g) => g,
         None => {
             let mut response = ApiResponse::GalleryNotFound.into_response();
@@ -1897,16 +1897,25 @@ roles = ["viewer"]
             })
             .collect();
 
-        let app_state = AppState {
+        // Create Site with test resources
+        let site_resources = crate::site::SiteResources {
             template_engine: Arc::new(crate::templating::TemplateEngine::new(template_storages)),
             static_handler: static_handler.clone(),
-            galleries: Arc::new(galleries),
             favicon_renderer: crate::favicon::FaviconRenderer::new(
                 static_handler.storages().to_vec(),
             ),
+            galleries: Arc::new(galleries),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_database_manager: None,
+            email_config: None,
+        };
+
+        let site = crate::site::Site::new("test".to_string(), site_resources);
+
+        let app_state = AppState {
+            site: Arc::new(site),
+            site_manager: None,
             email_provider: None,
             webauthn: None,
             openai_client: None,
@@ -2025,7 +2034,7 @@ roles = ["viewer"]
 
         // Add metadata to the test image
         {
-            let gallery = app_state.galleries.get("test").unwrap();
+            let gallery = app_state.galleries().get("test").unwrap();
             gallery
                 .image_cache
                 .insert(
@@ -2100,7 +2109,7 @@ roles = ["viewer"]
 
         // Add metadata to the test image
         {
-            let gallery = app_state.galleries.get("test").unwrap();
+            let gallery = app_state.galleries().get("test").unwrap();
             gallery
                 .image_cache
                 .insert(
