@@ -1111,6 +1111,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             {/* Blurred thumbnail as placeholder - fades out as medium image fades in */}
             {image.thumbnail_url && (
               <img
+                key={`thumb-${image.path}`}
                 src={image.thumbnail_url}
                 srcSet={`${image.thumbnail_url} 1x, ${image.thumbnail_url.replace('/thumbnail', '/thumbnail@2x')} 2x`}
                 alt=""
@@ -1122,6 +1123,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                   width: '100%',
                   height: 'auto',
                   filter: 'blur(12px)',
+                  transform: 'scale(1.03)',
                   opacity: imageLoading ? 1 : 0,
                   transition: 'opacity 200ms ease-out',
                   zIndex: 0,
