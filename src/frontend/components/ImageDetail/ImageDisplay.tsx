@@ -1061,7 +1061,6 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         className={`image-container ${canUseZoom ? 'zoom-enabled' : ''}`}
         style={{
           width: dimensions.width > 0 ? `${dimensions.width}px` : undefined,
-          minHeight: dimensions.height > 0 ? `${dimensions.height}px` : undefined,
           position: 'relative',
           overflow: 'hidden',
           touchAction: canUseZoom && isMobile ? 'none' : 'pan-x pan-y'
