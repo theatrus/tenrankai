@@ -736,10 +736,10 @@ pub async fn image_handler_for_named_v2(
 }
 
 /// Download a gallery folder as a zip file
-/// URL format: /gallery/download/{path}
-#[axum::debug_handler]
+/// URL format: /gallery/_download/{path}
+#[axum::debug_handler(state = crate::AppState)]
 pub async fn download_folder_handler(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     auth: crate::login::OptionalAuth,
 ) -> Response {
@@ -804,43 +804,6 @@ pub async fn download_folder_handler(
         return (StatusCode::NOT_FOUND, "No images in this folder").into_response();
     }
 
-    // Create zip file in memory
-    let mut zip_buffer = std::io::Cursor::new(Vec::new());
-    {
-        let mut zip = zip::ZipWriter::new(&mut zip_buffer);
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-
-        for image in &images {
-            // Read the original image from storage
-            let image_path = if path.is_empty() {
-                image.name.clone()
-            } else {
-                format!("{}/{}", path, image.name)
-            };
-
-            match gallery.source_storage().read(&image_path).await {
-                Ok(data) => {
-                    if let Err(e) = zip.start_file(&image.name, options) {
-                        error!("Failed to start zip file entry '{}': {}", image.name, e);
-                        continue;
-                    }
-                    if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
-                        error!("Failed to write image '{}' to zip: {}", image.name, e);
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to read image '{}' for zip: {}", image_path, e);
-                }
-            }
-        }
-
-        if let Err(e) = zip.finish() {
-            error!("Failed to finish zip file: {}", e);
-            return ApiResponse::InternalServerError.into_response();
-        }
-    }
-
     // Generate filename for the zip
     let folder_name = if path.is_empty() {
         gallery_name.clone()
@@ -849,18 +812,71 @@ pub async fn download_folder_handler(
     };
     let zip_filename = format!("{}.zip", folder_name);
 
-    // Return the zip file
-    let body = zip_buffer.into_inner();
+    // Create a channel for streaming the zip
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(4);
+
+    // Spawn a task to build and stream the zip
+    let storage = gallery.source_storage().clone();
+    tokio::spawn(async move {
+        let mut zip_buffer = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_buffer);
+            // Use Stored (no compression) for faster streaming
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+
+            for image in &images {
+                let image_path = if path.is_empty() {
+                    image.name.clone()
+                } else {
+                    format!("{}/{}", path, image.name)
+                };
+
+                match storage.read(&image_path).await {
+                    Ok(data) => {
+                        if let Err(e) = zip.start_file(&image.name, options) {
+                            tracing::error!(
+                                "Failed to start zip file entry '{}': {}",
+                                image.name,
+                                e
+                            );
+                            continue;
+                        }
+                        if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
+                            tracing::error!("Failed to write image '{}' to zip: {}", image.name, e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to read image '{}' for zip: {}", image_path, e);
+                    }
+                }
+            }
+
+            if let Err(e) = zip.finish() {
+                tracing::error!("Failed to finish zip file: {}", e);
+            }
+        }
+
+        // Send the completed zip in chunks
+        let data = zip_buffer.into_inner();
+        for chunk in data.chunks(64 * 1024) {
+            if tx.send(Ok(chunk.to_vec())).await.is_err() {
+                break; // Client disconnected
+            }
+        }
+    });
+
+    // Convert channel receiver to a stream
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(stream);
+
     (
         StatusCode::OK,
         [
-            (
-                axum::http::header::CONTENT_TYPE,
-                "application/zip".to_string(),
-            ),
+            (axum::http::header::CONTENT_TYPE, "application/zip"),
             (
                 axum::http::header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"{}\"", zip_filename),
+                &format!("attachment; filename=\"{}\"", zip_filename),
             ),
         ],
         body,
