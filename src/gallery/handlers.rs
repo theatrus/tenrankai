@@ -222,9 +222,9 @@ pub async fn gallery_handler_for_named(
                 }
             }
         }).unwrap_or_else(|| "".to_string()),
-        "app_name": app_state.config.app.name,
+        "app_name": app_state.app_name(),
         "copyright_holder": gallery.config.copyright_holder,
-        "base_url": app_state.config.app.base_url,
+        "base_url": app_state.base_url(),
         "og_title": folder_title.clone().unwrap_or_else(|| {
             if is_root {
                 "Photo Gallery".to_string()
@@ -527,12 +527,12 @@ pub async fn image_detail_handler_for_named(
         "image_detail_json": image_detail_json,
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
-        "app_name": app_state.config.app.name,
+        "app_name": app_state.app_name(),
         "copyright_holder": gallery.config.copyright_holder,
-        "base_url": app_state.config.app.base_url,
+        "base_url": app_state.base_url(),
         "og_title": image_info.name,
         "og_description": format!("Photo: {}", image_info.name),
-        "og_image": format!("{}{}", app_state.config.app.base_url.as_ref().unwrap_or(&String::new()), image_info.medium_url),
+        "og_image": format!("{}{}", app_state.base_url().unwrap_or(""), image_info.medium_url),
         "og_image_width": image_info.dimensions.0,
         "og_image_height": image_info.dimensions.1,
         "twitter_card_type": "summary_large_image",

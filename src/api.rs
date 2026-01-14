@@ -1917,6 +1917,8 @@ roles = ["viewer"]
 
         // Create Site with test resources
         let site_resources = crate::site::SiteResources {
+            base_url: Some("http://test.com".to_string()),
+            cookie_secret: "test-secret".to_string(),
             template_engine: Arc::new(crate::templating::TemplateEngine::new(template_storages)),
             static_handler: static_handler.clone(),
             favicon_renderer: crate::favicon::FaviconRenderer::new(

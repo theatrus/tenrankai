@@ -171,6 +171,8 @@ impl SiteConfigSection {
 
         crate::site::SiteConfig {
             name: name.to_string(),
+            base_url: app.base_url.clone(),
+            cookie_secret: app.cookie_secret.clone(),
             templates: self.templates.clone(),
             static_files: self.static_files.clone(),
             galleries: self.galleries.clone(),

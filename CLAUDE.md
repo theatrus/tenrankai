@@ -678,6 +678,65 @@ The command shows:
 - Monitor AWS CloudWatch for delivery metrics
 - Check SES suppression list if emails aren't delivered
 
+## AppState and Multi-Site Architecture
+
+### Handler Pattern
+All HTTP handlers must use `ResolvedState` instead of `State<AppState>`:
+```rust
+// CORRECT - uses ResolvedState which handles multi-site resolution
+pub async fn my_handler(
+    ResolvedState(app_state): ResolvedState,
+) -> impl IntoResponse {
+    // ...
+}
+
+// WRONG - bypasses site resolution middleware
+pub async fn my_handler(
+    State(app_state): State<AppState>,
+) -> impl IntoResponse {
+    // ...
+}
+```
+
+### Accessing Site-Specific Values
+Always use accessor methods on `AppState` - never access `config` fields directly:
+
+```rust
+// CORRECT - use accessor methods (per-site values)
+let secret = app_state.cookie_secret();
+let url = app_state.base_url();
+let name = app_state.app_name();
+let has_auth = app_state.user_database_manager().is_some();
+
+// WRONG - accessing config directly bypasses per-site values
+let secret = app_state.config.app.cookie_secret;  // Don't do this
+let has_auth = app_state.config.app.user_database.is_some();  // Don't do this
+```
+
+### Why This Matters
+In multi-site mode, each site can have different:
+- `cookie_secret` - for signing authentication cookies
+- `base_url` - for generating absolute URLs
+- `app_name` - displayed name
+- `user_database` - authentication configuration
+- `galleries`, `posts`, `templates`, `static_files`
+
+The `ResolvedState` extractor and accessor methods ensure the correct per-site values are used.
+
+### Available Accessor Methods
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `cookie_secret()` | `&str` | Cookie signing secret (per-site) |
+| `base_url()` | `Option<&str>` | Base URL for links (per-site) |
+| `app_name()` | `&str` | Application name (per-site) |
+| `user_database_manager()` | `&Option<UserDatabaseManager>` | Auth config (per-site) |
+| `template_engine()` | `&Arc<TemplateEngine>` | Templates (per-site) |
+| `static_handler()` | `&StaticFileHandler` | Static files (per-site) |
+| `galleries()` | `&Arc<HashMap<...>>` | Galleries (per-site) |
+| `posts_managers()` | `&Arc<HashMap<...>>` | Posts (per-site) |
+| `login_state()` | `&Arc<RwLock<LoginState>>` | Login state (per-site) |
+| `email_config()` | `Option<&SiteEmailConfig>` | Email config (per-site) |
+
 ## Code Style Guidelines
 - No comments unless explicitly requested
 - Follow existing patterns and conventions
@@ -688,6 +747,7 @@ The command shows:
 - **Always use `thiserror` crate for error types** - Define errors with `#[derive(Error)]` and `#[error("...")]` attributes
 - **Always run `cargo fmt` before finalizing code** - Ensure consistent formatting across the codebase
 - **Always run `cargo clippy` and fix warnings** - Ensure code follows Rust best practices and catches common mistakes
+- **Always use `ResolvedState` in handlers** - Never use `State<AppState>` directly (see AppState section above)
 
 ## Key Design Decisions
 

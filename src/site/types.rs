@@ -16,6 +16,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct SiteConfig {
     pub name: String,
+    pub base_url: Option<String>,
+    pub cookie_secret: String,
     pub templates: TemplateConfig,
     pub static_files: StaticConfig,
     pub galleries: Option<Vec<GallerySystemConfig>>,
@@ -31,7 +33,9 @@ impl SiteConfig {
         email_config: Option<&crate::email::EmailConfig>,
     ) -> Self {
         Self {
-            name: "default".to_string(),
+            name: config.app.name.clone(),
+            base_url: config.app.base_url.clone(),
+            cookie_secret: config.app.cookie_secret.clone(),
             templates: config.templates.clone(),
             static_files: config.static_files.clone(),
             galleries: config.galleries.clone(),
@@ -44,6 +48,8 @@ impl SiteConfig {
 
 /// Resources for a single site - encapsulates all site-specific components
 pub struct SiteResources {
+    pub base_url: Option<String>,
+    pub cookie_secret: String,
     pub template_engine: Arc<TemplateEngine>,
     pub static_handler: StaticFileHandler,
     pub favicon_renderer: FaviconRenderer,
@@ -63,6 +69,21 @@ pub struct Site {
 impl Site {
     pub fn new(name: String, resources: SiteResources) -> Self {
         Self { name, resources }
+    }
+
+    /// Get the site/app name
+    pub fn app_name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the base URL for this site
+    pub fn base_url(&self) -> Option<&str> {
+        self.resources.base_url.as_deref()
+    }
+
+    /// Get the cookie secret for this site
+    pub fn cookie_secret(&self) -> &str {
+        &self.resources.cookie_secret
     }
 
     pub fn template_engine(&self) -> &Arc<TemplateEngine> {
@@ -95,5 +116,51 @@ impl Site {
 
     pub fn email_config(&self) -> Option<&SiteEmailConfig> {
         self.resources.email_config.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_site(name: &str, base_url: Option<&str>, cookie_secret: &str) -> Site {
+        let resources = SiteResources {
+            base_url: base_url.map(|s| s.to_string()),
+            cookie_secret: cookie_secret.to_string(),
+            template_engine: Arc::new(crate::templating::TemplateEngine::new(vec![])),
+            static_handler: crate::static_files::StaticFileHandler::new(vec![]),
+            favicon_renderer: FaviconRenderer::new(vec![]),
+            galleries: Arc::new(HashMap::new()),
+            posts_managers: Arc::new(HashMap::new()),
+            login_state: Arc::new(RwLock::new(LoginState::new())),
+            user_database_manager: None,
+            email_config: None,
+        };
+        Site::new(name.to_string(), resources)
+    }
+
+    #[test]
+    fn test_site_accessors_return_per_site_values() {
+        let site1 = create_test_site("site1", Some("https://site1.com"), "secret1");
+        let site2 = create_test_site("site2", Some("https://site2.com"), "secret2");
+
+        // Verify each site returns its own values
+        assert_eq!(site1.app_name(), "site1");
+        assert_eq!(site1.base_url(), Some("https://site1.com"));
+        assert_eq!(site1.cookie_secret(), "secret1");
+
+        assert_eq!(site2.app_name(), "site2");
+        assert_eq!(site2.base_url(), Some("https://site2.com"));
+        assert_eq!(site2.cookie_secret(), "secret2");
+    }
+
+    #[test]
+    fn test_site_with_no_base_url() {
+        let site = create_test_site("local", None, "local-secret");
+
+        assert_eq!(site.app_name(), "local");
+        assert_eq!(site.base_url(), None);
+        assert_eq!(site.cookie_secret(), "local-secret");
     }
 }

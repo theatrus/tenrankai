@@ -398,6 +398,8 @@ mod tests {
 
         // Create Site with test resources
         let site_resources = crate::site::SiteResources {
+            base_url: Some("http://test.com".to_string()),
+            cookie_secret: "test-secret".to_string(),
             template_engine: std::sync::Arc::new(crate::templating::TemplateEngine::new(vec![])),
             static_handler: crate::static_files::StaticFileHandler::new(vec![]),
             favicon_renderer: crate::favicon::FaviconRenderer::new(vec![]),

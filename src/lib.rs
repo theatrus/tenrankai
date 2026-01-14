@@ -56,7 +56,9 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
-    pub config: Config,
+    // Config is pub(crate) to discourage direct access - use accessor methods instead
+    // Direct access to config.app.user_database caused multi-site bugs (see PR #121)
+    pub(crate) config: Config,
 }
 
 impl AppState {
@@ -111,6 +113,25 @@ impl AppState {
 
     pub fn email_config(&self) -> Option<&email::SiteEmailConfig> {
         self.site.email_config()
+    }
+}
+
+// Accessor methods for site-specific config values
+// Use these instead of accessing config fields directly to prevent multi-site bugs
+impl AppState {
+    /// Get the cookie secret for signing authentication cookies (per-site)
+    pub fn cookie_secret(&self) -> &str {
+        self.site.cookie_secret()
+    }
+
+    /// Get the base URL for generating absolute URLs (per-site)
+    pub fn base_url(&self) -> Option<&str> {
+        self.site.base_url()
+    }
+
+    /// Get the application/site name (per-site)
+    pub fn app_name(&self) -> &str {
+        self.site.app_name()
     }
 }
 

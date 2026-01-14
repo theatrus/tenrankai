@@ -124,6 +124,8 @@ mod tests {
 
     fn create_test_site(name: &str) -> Arc<Site> {
         let resources = SiteResources {
+            base_url: None,
+            cookie_secret: "test-secret".to_string(),
             template_engine: Arc::new(crate::templating::TemplateEngine::new(vec![])),
             static_handler: crate::static_files::StaticFileHandler::new(vec![]),
             favicon_renderer: crate::favicon::FaviconRenderer::new(vec![]),
