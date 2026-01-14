@@ -195,8 +195,10 @@ impl Site {
 // src/site/manager.rs
 pub struct SiteManager {
     sites: Arc<RwLock<HashMap<String, Arc<Site>>>>,
-    hostname_index: Arc<RwLock<HashMap<String, String>>>,  // hostname -> site name
+    hostname_index: Arc<RwLock<HashMap<String, String>>>,  // hostname/pattern -> site name
+    glob_patterns: Arc<RwLock<Vec<(String, String)>>>,     // Ordered glob patterns for matching
     default_site: Arc<RwLock<Option<String>>>,
+    reload_lock: Arc<Mutex<()>>,  // Ensures sequential reload processing
 }
 
 impl SiteManager {
@@ -226,23 +228,30 @@ impl SiteManager {
         Ok(())
     }
 
-    /// Get site for a given hostname
+    /// Get site for a given hostname (supports glob patterns like *.example.com)
     pub async fn get_site(&self, hostname: &str) -> Option<Arc<Site>> {
         let hostname_index = self.hostname_index.read().await;
         let sites = self.sites.read().await;
 
-        // Try exact match first
-        if let Some(site_name) = hostname_index.get(hostname) {
-            return sites.get(site_name).cloned();
-        }
-
-        // Try without port
+        // Strip port if present
         let hostname_no_port = hostname.split(':').next().unwrap_or(hostname);
+
+        // 1. Try exact match first (highest priority)
         if let Some(site_name) = hostname_index.get(hostname_no_port) {
             return sites.get(site_name).cloned();
         }
 
-        // Fall back to default site
+        // 2. Try glob pattern matches (in registration order)
+        for (pattern, site_name) in hostname_index.iter() {
+            if pattern.starts_with("*.") {
+                let suffix = &pattern[1..];  // .example.com
+                if hostname_no_port.ends_with(suffix) && hostname_no_port.len() > suffix.len() {
+                    return sites.get(site_name).cloned();
+                }
+            }
+        }
+
+        // 3. Fall back to default site (*)
         if let Some(default_name) = self.default_site.read().await.as_ref() {
             return sites.get(default_name).cloned();
         }
@@ -330,35 +339,48 @@ pub async fn setup_config_reload(
             sighup.recv().await;
             info!("Received SIGHUP, reloading configuration...");
 
-            match reload_config(&site_manager, &config_path).await {
-                Ok(changes) => {
-                    info!("Configuration reloaded successfully: {:?}", changes);
+            match site_manager.reload_config(&config_path).await {
+                Ok(result) => {
+                    if result.failed_sites.is_empty() {
+                        info!("Configuration reloaded successfully: {} sites updated",
+                            result.successful_sites.len());
+                    } else {
+                        warn!("Configuration reload completed with errors: {} succeeded, {} failed",
+                            result.successful_sites.len(), result.failed_sites.len());
+                        for (site, error) in &result.failed_sites {
+                            error!("  Site '{}': {}", site, error);
+                        }
+                    }
                 }
                 Err(e) => {
-                    error!("Failed to reload configuration: {}", e);
+                    error!("Failed to parse configuration: {} (no changes applied)", e);
                 }
             }
         }
     });
 }
 
-async fn reload_config(
-    site_manager: &SiteManager,
-    config_path: &Path,
-) -> Result<ReloadChanges, ConfigError> {
-    // 1. Parse new config
-    let new_config = parse_config(config_path)?;
+impl SiteManager {
+    /// Reload configuration - sequential, resilient to per-site failures
+    pub async fn reload_config(&self, config_path: &Path) -> Result<ReloadResult, ConfigError> {
+        // Acquire reload lock - only one reload at a time
+        // If another reload is in progress, this will wait
+        let _guard = self.reload_lock.lock().await;
 
-    // 2. Validate new config
-    validate_config(&new_config)?;
+        // 1. Parse new config (fail fast on syntax errors)
+        let new_config = parse_config(config_path)?;
 
-    // 3. Diff against current config
-    let changes = diff_config(site_manager, &new_config).await;
+        // 2. Validate new config structure
+        validate_config(&new_config)?;
 
-    // 4. Apply changes (hot-swap)
-    apply_changes(site_manager, &new_config, &changes).await?;
+        // 3. Diff against current config
+        let changes = diff_config(self, &new_config).await;
 
-    Ok(changes)
+        // 4. Apply changes (continues through errors, preserves old state on failure)
+        let result = apply_changes(self, &new_config, &changes).await;
+
+        Ok(result)
+    }
 }
 ```
 
@@ -366,10 +388,24 @@ async fn reload_config(
 
 ```rust
 // src/api.rs
+
+#[derive(Serialize)]
+pub struct ReloadResponse {
+    pub success: bool,
+    pub successful_sites: Vec<String>,
+    pub failed_sites: Vec<FailedSite>,
+    pub removed_sites: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct FailedSite {
+    pub name: String,
+    pub error: String,
+}
+
 pub async fn reload_config_handler(
     Extension(site_manager): Extension<Arc<SiteManager>>,
     Extension(config_path): Extension<PathBuf>,
-    // Require authentication
     auth: AuthenticatedUser,
 ) -> Result<Json<ReloadResponse>, AppError> {
     // Check admin permission
@@ -377,11 +413,15 @@ pub async fn reload_config_handler(
         return Err(AppError::Forbidden);
     }
 
-    let changes = reload_config(&site_manager, &config_path).await?;
+    let result = site_manager.reload_config(&config_path).await?;
 
     Ok(Json(ReloadResponse {
-        success: true,
-        changes,
+        success: result.failed_sites.is_empty(),
+        successful_sites: result.successful_sites,
+        failed_sites: result.failed_sites.into_iter()
+            .map(|(name, error)| FailedSite { name, error })
+            .collect(),
+        removed_sites: result.removed_sites,
     }))
 }
 ```
@@ -390,43 +430,32 @@ pub async fn reload_config_handler(
 
 The hot-swap approach uses Arc reference counting for zero-downtime updates:
 
+1. **Build new Site**: Create new Site instance with updated configuration
+2. **Atomic swap**: Replace Arc pointer in SiteManager
+3. **Graceful drain**: Old Site continues serving in-flight requests until Arc refcount reaches 0
+4. **Resilient processing**: Continue through errors, preserve old state on failure (see [Design Decisions](#4-resilient-reload-with-partial-success))
+
 ```rust
-pub async fn apply_changes(
+async fn build_and_swap_site(
     site_manager: &SiteManager,
     new_config: &MultiSiteConfig,
-    changes: &ReloadChanges,
+    site_name: &str,
 ) -> Result<(), ConfigError> {
-    for site_name in &changes.modified_sites {
-        let site_config = new_config.sites.get(site_name)
-            .ok_or_else(|| ConfigError::SiteNotFound(site_name.clone()))?;
+    let site_config = new_config.sites.get(site_name)
+        .ok_or_else(|| ConfigError::SiteNotFound(site_name.to_string()))?;
 
-        // Build new site (this may take time for gallery initialization)
-        let new_site = Arc::new(Site::new(site_config.clone())?);
+    // Build new site (this may take time for gallery initialization)
+    // If this fails, the old site remains active
+    let new_site = Arc::new(Site::new(site_config.clone())?);
 
-        // Atomic swap - old site continues serving until last request completes
-        site_manager.replace_site(site_name, new_site).await;
-
-        info!("Hot-swapped site '{}'", site_name);
-    }
-
-    for site_name in &changes.added_sites {
-        let site_config = new_config.sites.get(site_name)
-            .ok_or_else(|| ConfigError::SiteNotFound(site_name.clone()))?;
-
-        let new_site = Arc::new(Site::new(site_config.clone())?);
-        site_manager.add_site(site_name, new_site).await;
-
-        info!("Added new site '{}'", site_name);
-    }
-
-    for site_name in &changes.removed_sites {
-        site_manager.remove_site(site_name).await;
-        info!("Removed site '{}'", site_name);
-    }
+    // Atomic swap - old site continues serving until last request completes
+    site_manager.replace_site(site_name, new_site).await;
 
     Ok(())
 }
 ```
+
+See [Design Decisions: Resilient Reload with Partial Success](#4-resilient-reload-with-partial-success) for the full `apply_changes` implementation that handles errors gracefully.
 
 ## Change Detection
 
@@ -575,19 +604,161 @@ curl -X POST http://localhost:3000/_reload -H "Authorization: Bearer $TOKEN"
 3. **Memory**: Each site has its own template engine, increasing memory usage
 4. **Connection Draining**: Old sites continue serving until Arc refcount reaches 0
 
-## Open Questions
+## Design Decisions
 
-1. Should sites be able to share galleries? (e.g., same photos on multiple domains)
-2. Should we support glob patterns for hostnames? (e.g., `*.example.com`)
-3. Should reload be synchronous (wait for completion) or async (return immediately)?
-4. How to handle reload failures mid-way (partial updates)?
-5. Should we support config reload from URL (fetch from S3, etc.)?
+These decisions were made during design review:
+
+### 1. No Gallery Sharing Between Sites
+Each site has its own isolated set of galleries. Galleries cannot be shared across sites.
+
+**Rationale**: Simplifies the architecture and avoids complex reference counting issues. If the same content needs to be served on multiple domains, configure multiple sites pointing to the same source directory (they will have separate caches).
+
+### 2. Glob Patterns for Hostnames
+Support glob patterns in addition to explicit hostname lists:
+
+```toml
+[sites.wildcard]
+hostnames = ["*.example.com", "example.com"]  # Glob pattern + explicit
+```
+
+**Matching order**:
+1. Exact match (highest priority)
+2. Glob pattern match (in config order)
+3. Default site (`*`)
+
+**Implementation**:
+```rust
+/// Check if hostname matches a pattern (supports * wildcards)
+fn hostname_matches(pattern: &str, hostname: &str) -> bool {
+    if pattern == "*" {
+        return true;  // Catch-all
+    }
+    if pattern.starts_with("*.") {
+        // Wildcard subdomain: *.example.com matches foo.example.com
+        let suffix = &pattern[1..];  // .example.com
+        return hostname.ends_with(suffix) && hostname.len() > suffix.len();
+    }
+    pattern == hostname
+}
+```
+
+### 3. Sequential Reload Processing
+Reloads are processed sequentially - only one reload can be in progress at a time. Subsequent SIGHUP signals or API calls while a reload is in progress are queued or ignored.
+
+**Implementation**:
+```rust
+pub struct SiteManager {
+    // ... existing fields
+    reload_lock: Arc<Mutex<()>>,  // Ensures sequential reload processing
+}
+
+pub async fn reload_config(&self, config_path: &Path) -> Result<ReloadResult, ConfigError> {
+    // Acquire reload lock - only one reload at a time
+    let _guard = self.reload_lock.lock().await;
+
+    // Process reload...
+}
+```
+
+### 4. Resilient Reload with Partial Success
+Reloads continue through errors, preserving the old state for sites that fail to load. This ensures a single misconfigured site doesn't bring down the entire server.
+
+**Behavior**:
+- Parse entire config first (fail fast on syntax errors)
+- Attempt to build each changed site
+- On site build failure: log error, keep old site, continue to next
+- Return summary of successes and failures
+
+**Implementation**:
+```rust
+pub struct ReloadResult {
+    pub successful_sites: Vec<String>,
+    pub failed_sites: Vec<(String, String)>,  // (site_name, error_message)
+    pub removed_sites: Vec<String>,
+}
+
+pub async fn apply_changes(
+    site_manager: &SiteManager,
+    new_config: &MultiSiteConfig,
+    changes: &ReloadChanges,
+) -> ReloadResult {
+    let mut result = ReloadResult::default();
+
+    // Process modified sites - continue on error
+    for site_name in &changes.modified_sites {
+        match build_and_swap_site(site_manager, new_config, site_name).await {
+            Ok(()) => {
+                info!("Hot-swapped site '{}'", site_name);
+                result.successful_sites.push(site_name.clone());
+            }
+            Err(e) => {
+                error!("Failed to reload site '{}': {} (keeping old version)", site_name, e);
+                result.failed_sites.push((site_name.clone(), e.to_string()));
+                // Continue to next site - don't abort
+            }
+        }
+    }
+
+    // Process added sites - continue on error
+    for site_name in &changes.added_sites {
+        match build_and_add_site(site_manager, new_config, site_name).await {
+            Ok(()) => {
+                info!("Added new site '{}'", site_name);
+                result.successful_sites.push(site_name.clone());
+            }
+            Err(e) => {
+                error!("Failed to add site '{}': {}", site_name, e);
+                result.failed_sites.push((site_name.clone(), e.to_string()));
+            }
+        }
+    }
+
+    // Remove sites (these shouldn't fail)
+    for site_name in &changes.removed_sites {
+        site_manager.remove_site(site_name).await;
+        info!("Removed site '{}'", site_name);
+        result.removed_sites.push(site_name.clone());
+    }
+
+    result
+}
+```
+
+### 5. Config Source Abstraction (Future)
+The config loading system should be designed with future remote config sources in mind (S3, DynamoDB). This doesn't need to be implemented immediately but the architecture should support it.
+
+**Planned abstraction**:
+```rust
+#[async_trait]
+pub trait ConfigSource: Send + Sync {
+    /// Load configuration from this source
+    async fn load(&self) -> Result<MultiSiteConfig, ConfigError>;
+
+    /// Watch for changes (optional - not all sources support this)
+    async fn watch(&self) -> Option<tokio::sync::watch::Receiver<()>> {
+        None
+    }
+}
+
+// Implementations
+pub struct FileConfigSource { path: PathBuf }
+pub struct S3ConfigSource { bucket: String, key: String, client: S3Client }
+pub struct DynamoConfigSource { table: String, key: String, client: DynamoClient }
+```
 
 ## Future Enhancements
 
-1. **Config from URL**: Load config from S3 or other remote storage
-2. **Webhook Notifications**: Notify external services on config change
-3. **Health Checks per Site**: Individual health endpoints for each site
-4. **Metrics per Site**: Prometheus metrics labeled by site
-5. **Rate Limiting per Site**: Different rate limits for different sites
-6. **Site-Specific Logging**: Separate log files per site
+### Near-Term (Config Source Abstraction)
+1. **Config from S3**: Load config from S3 bucket with optional polling for changes
+2. **Config from DynamoDB**: Load config from DynamoDB with change streams
+3. **Config Caching**: Cache remote config locally for faster startup
+
+### Medium-Term
+4. **Webhook Notifications**: Notify external services on config change
+5. **Health Checks per Site**: Individual health endpoints for each site
+6. **Metrics per Site**: Prometheus metrics labeled by site
+
+### Long-Term
+7. **Rate Limiting per Site**: Different rate limits for different sites
+8. **Site-Specific Logging**: Separate log files per site
+9. **Dynamic Site Discovery**: Auto-discover sites from directory structure or database
