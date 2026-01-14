@@ -1095,7 +1095,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         onTouchMove={handleTouchMove}
         onTouchEnd={(e) => { handleTouchEnd(e); handleDoubleTap(e); }}
       >
-        {showLoading && (
+        {/* Only show loading spinner if not transitioning (crossfade handles the visual) */}
+        {showLoading && !isTransitioning && (
           <div className="image-loading">
             <div className="loading-spinner">Loading...</div>
           </div>
@@ -1128,7 +1129,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             role="img"
             aria-label={image.name}
           >
-            {/* Previous image for crossfade transition */}
+            {/* Previous image for crossfade transition - blurs while new image loads */}
             {previousImage && (
               <img
                 src={previousImage.url}
@@ -1142,7 +1143,9 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                   width: '100%',
                   height: 'auto',
                   opacity: imageLoading ? 1 : 0,
-                  transition: 'opacity 300ms ease-out',
+                  filter: imageLoading ? 'blur(8px)' : 'blur(0px)',
+                  transform: imageLoading ? 'scale(1.02)' : 'scale(1)', // Slight scale to hide blur edges
+                  transition: 'opacity 300ms ease-out, filter 200ms ease-out, transform 200ms ease-out',
                   zIndex: 0
                 }}
               />
