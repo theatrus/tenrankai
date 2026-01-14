@@ -1,6 +1,6 @@
-use crate::{ApiResponse, AppState, api_response::no_cache_headers};
+use crate::{ApiResponse, api_response::no_cache_headers, site::ResolvedState};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     response::{Html, IntoResponse},
 };
 use chrono::Datelike;
@@ -14,7 +14,7 @@ pub struct PostsQuery {
 }
 
 pub async fn posts_index_handler(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path(posts_name): Path<String>,
     Query(query): Query<PostsQuery>,
 ) -> impl IntoResponse {
@@ -114,7 +114,7 @@ pub async fn posts_index_handler(
 }
 
 pub async fn post_detail_handler(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path((posts_name, slug)): Path<(String, String)>,
 ) -> impl IntoResponse {
     let posts_manager = match app_state.posts_managers().get(&posts_name) {
@@ -180,7 +180,7 @@ pub async fn post_detail_handler(
 }
 
 pub async fn refresh_posts_handler(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path(posts_name): Path<String>,
 ) -> impl IntoResponse {
     let posts_manager = match app_state.posts_managers().get(&posts_name) {

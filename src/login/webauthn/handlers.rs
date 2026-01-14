@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::Path,
     http::{HeaderMap, StatusCode},
     response::Json,
 };
@@ -11,7 +11,7 @@ use super::{
     PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest,
     StartAuthenticationRequest, UserPasskey,
 };
-use crate::{AppState, login::AuthScope};
+use crate::{login::AuthScope, site::ResolvedState};
 
 #[derive(Debug, serde::Serialize)]
 pub struct HasPasskeysResponse {
@@ -20,7 +20,7 @@ pub struct HasPasskeysResponse {
 }
 
 pub async fn start_passkey_registration(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
     Json(_request): Json<RegisterPasskeyRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -121,7 +121,7 @@ pub async fn start_passkey_registration(
 }
 
 pub async fn finish_passkey_registration(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
     Path(reg_id): Path<String>,
     body: String,
@@ -221,7 +221,7 @@ pub async fn finish_passkey_registration(
 }
 
 pub async fn start_passkey_authentication(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Json(request): Json<StartAuthenticationRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Get WebAuthn instance
@@ -295,7 +295,7 @@ pub async fn start_passkey_authentication(
 }
 
 pub async fn finish_passkey_authentication(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Path(auth_id): Path<String>,
     Json(auth_data): Json<PublicKeyCredential>,
 ) -> Result<(HeaderMap, StatusCode), StatusCode> {
@@ -382,7 +382,7 @@ pub async fn finish_passkey_authentication(
 }
 
 pub async fn list_passkeys(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
 ) -> Result<Json<Vec<PasskeyInfo>>, StatusCode> {
     // Get authenticated username
@@ -421,7 +421,7 @@ pub async fn list_passkeys(
 }
 
 pub async fn delete_passkey(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
     Path(passkey_id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
@@ -462,7 +462,7 @@ pub async fn delete_passkey(
 }
 
 pub async fn check_user_has_passkeys(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Json(request): Json<StartAuthenticationRequest>,
 ) -> Result<Json<HasPasskeysResponse>, StatusCode> {
     // Get user database manager
@@ -493,7 +493,7 @@ pub async fn check_user_has_passkeys(
 }
 
 pub async fn update_passkey_name(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
     Path(passkey_id): Path<Uuid>,
     Json(name): Json<String>,

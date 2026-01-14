@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, Query},
     http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::{Html, IntoResponse, Redirect},
 };
@@ -10,9 +10,10 @@ use tracing::{error, info};
 
 use super::AuthScope;
 use crate::{
-    ApiResponse, AppState,
+    ApiResponse,
     api::{create_signed_cookie, get_scoped_cookie_value},
     api_response::no_cache_headers,
+    site::ResolvedState,
 };
 
 use super::{LoginError, LoginRequest, LoginResponse};
@@ -43,7 +44,7 @@ pub struct LoginQuery {
 }
 
 pub async fn login_page(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Query(query): Query<LoginQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
@@ -82,7 +83,7 @@ pub async fn login_page(
 }
 
 pub async fn login_request(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, LoginError> {
@@ -189,7 +190,7 @@ pub async fn login_request(
 }
 
 pub async fn verify_login(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     Query(query): Query<VerifyQuery>,
     req_headers: HeaderMap,
 ) -> Result<impl IntoResponse, LoginError> {
@@ -283,7 +284,7 @@ pub async fn logout() -> impl IntoResponse {
 }
 
 pub async fn login_success(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
         "base_url": app_state.config.app.base_url.as_deref().unwrap_or(""),
@@ -313,10 +314,10 @@ pub struct AuthStatusResponse {
 }
 
 pub async fn check_auth_status(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let response = if app_state.config.app.user_database.is_none() {
+    let response = if app_state.user_database_manager().is_none() {
         // If no user database is configured, return not authorized
         AuthStatusResponse {
             authorized: false,
@@ -333,7 +334,7 @@ pub async fn check_auth_status(
 }
 
 pub async fn passkey_enrollment_page(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
     Query(query): Query<LoginQuery>,
 ) -> Result<Html<String>, StatusCode> {
@@ -367,7 +368,7 @@ pub async fn passkey_enrollment_page(
 
 /// Profile page handler - shows user information and passkey management
 pub async fn profile_page(
-    State(app_state): State<AppState>,
+    ResolvedState(app_state): ResolvedState,
     auth: crate::login::RequireAuth,
 ) -> Result<Html<String>, StatusCode> {
     // Get authenticated username

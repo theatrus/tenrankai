@@ -26,7 +26,7 @@ pub fn get_authenticated_user_for_app(
 ) -> Option<String> {
     // If no user database is configured, return None (no authentication)
     #[allow(clippy::question_mark)]
-    if app_state.config.app.user_database.is_none() {
+    if app_state.user_database_manager().is_none() {
         return None;
     }
 
@@ -37,7 +37,7 @@ pub fn get_authenticated_user_for_app(
 /// Check if user has download permission
 pub fn has_download_permission(app_state: &crate::AppState, headers: &HeaderMap) -> bool {
     // If no user database is configured, allow all downloads
-    if app_state.config.app.user_database.is_none() {
+    if app_state.user_database_manager().is_none() {
         return true;
     }
 

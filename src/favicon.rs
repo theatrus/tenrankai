@@ -1,6 +1,5 @@
 use axum::{
     body::Body,
-    extract::State,
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -10,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::error;
 
-use crate::storage::DynStorage;
+use crate::{site::ResolvedState, storage::DynStorage};
 
 #[derive(Clone)]
 pub struct FaviconRenderer {
@@ -266,18 +265,18 @@ impl FaviconRenderer {
     }
 }
 
-pub async fn favicon_ico_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
+pub async fn favicon_ico_handler(ResolvedState(app_state): ResolvedState) -> impl IntoResponse {
     app_state.favicon_renderer().render_favicon_ico().await
 }
 
-pub async fn favicon_png_16_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
+pub async fn favicon_png_16_handler(ResolvedState(app_state): ResolvedState) -> impl IntoResponse {
     app_state.favicon_renderer().render_favicon_png(16).await
 }
 
-pub async fn favicon_png_32_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
+pub async fn favicon_png_32_handler(ResolvedState(app_state): ResolvedState) -> impl IntoResponse {
     app_state.favicon_renderer().render_favicon_png(32).await
 }
 
-pub async fn favicon_png_48_handler(State(app_state): State<crate::AppState>) -> impl IntoResponse {
+pub async fn favicon_png_48_handler(ResolvedState(app_state): ResolvedState) -> impl IntoResponse {
     app_state.favicon_renderer().render_favicon_png(48).await
 }

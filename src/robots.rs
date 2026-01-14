@@ -1,13 +1,12 @@
-use crate::AppState;
+use crate::site::ResolvedState;
 use axum::{
-    extract::State,
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 
 /// Handler for /robots.txt
 /// Returns a permissive robots.txt that allows all crawlers
-pub async fn robots_txt_handler(State(app_state): State<AppState>) -> Response {
+pub async fn robots_txt_handler(ResolvedState(app_state): ResolvedState) -> Response {
     // Check if a custom robots.txt exists in any static directory (in order)
     // Note: Only checks filesystem paths, not S3 URLs
     for (index, static_url) in app_state.config.static_files.directories.iter().enumerate() {
