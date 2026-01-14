@@ -11,6 +11,7 @@ import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
+import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 
 interface ImageDetailPageProps {
   initialData: ImageDetailData;
@@ -253,7 +254,9 @@ export function ImageDetailPage({
           )}
 
           <AIMetadata image={currentData.image} permissions={currentData.permissions} />
-          
+
+          <ImageControls image={currentData.image} permissions={currentData.permissions} />
+
           {currentData.permissions.can_read_metadata && (
             <UserMetadata
               metadata={currentData.image.user_metadata}

@@ -782,25 +782,40 @@ pub async fn download_folder_handler(
             .into_response();
     }
 
-    // Get all images in the directory (not paginated)
-    let items = match gallery
-        .scan_directory_with_user(&path, auth.username())
-        .await
-    {
-        Ok(items) => items,
-        Err(e) => {
-            error!("Failed to scan directory for download: {}", e);
-            return ApiResponse::DirectoryNotFound.into_response();
+    // Recursively collect all images in the directory and subdirectories
+    let mut all_images: Vec<(String, String)> = Vec::new(); // (file_path, display_name)
+
+    // Helper to recursively collect images
+    async fn collect_images_recursive(
+        gallery: &super::SharedGallery,
+        folder_path: &str,
+        images: &mut Vec<(String, String)>,
+    ) {
+        if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
+            // Add images from this folder
+            for image_path in &cached.images {
+                let display_name = {
+                    let indexer = gallery.image_indexer.read().await;
+                    indexer.get_display_name(image_path)
+                };
+                images.push((image_path.clone(), display_name));
+            }
+
+            // Recursively process subdirectories
+            for subdir in &cached.subdirectories {
+                let subdir_path = if folder_path.is_empty() {
+                    subdir.clone()
+                } else {
+                    format!("{}/{}", folder_path, subdir)
+                };
+                Box::pin(collect_images_recursive(gallery, &subdir_path, images)).await;
+            }
         }
-    };
+    }
 
-    // Filter to only images
-    let images: Vec<_> = items
-        .into_iter()
-        .filter(|item| !item.is_directory)
-        .collect();
+    collect_images_recursive(gallery, &path, &mut all_images).await;
 
-    if images.is_empty() {
+    if all_images.is_empty() {
         return (StatusCode::NOT_FOUND, "No images in this folder").into_response();
     }
 
@@ -817,6 +832,7 @@ pub async fn download_folder_handler(
 
     // Spawn a task to build and stream the zip
     let storage = gallery.source_storage().clone();
+    let download_root = path.clone();
     tokio::spawn(async move {
         let mut zip_buffer = std::io::Cursor::new(Vec::new());
         {
@@ -825,25 +841,38 @@ pub async fn download_folder_handler(
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored);
 
-            for image in &images {
-                let image_path = if path.is_empty() {
-                    image.name.clone()
+            for (image_path, display_name) in &all_images {
+                // Calculate relative path from download root for folder structure in zip
+                let relative_path = if download_root.is_empty() {
+                    image_path.clone()
+                } else if let Some(stripped) = image_path.strip_prefix(&download_root) {
+                    stripped.trim_start_matches('/').to_string()
                 } else {
-                    format!("{}/{}", path, image.name)
+                    image_path.clone()
                 };
 
-                match storage.read(&image_path).await {
+                // Get folder prefix (if image is in a subfolder)
+                let folder_prefix = relative_path
+                    .rfind('/')
+                    .map(|pos| &relative_path[..pos + 1])
+                    .unwrap_or("");
+
+                // Use display name but preserve the original file extension
+                let original_filename = image_path.rsplit('/').next().unwrap_or(image_path);
+                let extension = original_filename
+                    .rfind('.')
+                    .map(|pos| &original_filename[pos..])
+                    .unwrap_or("");
+                let filename = format!("{}{}{}", folder_prefix, display_name, extension);
+
+                match storage.read(image_path).await {
                     Ok(data) => {
-                        if let Err(e) = zip.start_file(&image.name, options) {
-                            tracing::error!(
-                                "Failed to start zip file entry '{}': {}",
-                                image.name,
-                                e
-                            );
+                        if let Err(e) = zip.start_file(&filename, options) {
+                            tracing::error!("Failed to start zip file entry '{}': {}", filename, e);
                             continue;
                         }
                         if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
-                            tracing::error!("Failed to write image '{}' to zip: {}", image.name, e);
+                            tracing::error!("Failed to write image '{}' to zip: {}", filename, e);
                         }
                     }
                     Err(e) => {

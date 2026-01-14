@@ -10,24 +10,17 @@ export function ImageControls({ image, permissions }: ImageControlsProps) {
   // medium_url is like /gallery/_image/path/medium - replace size suffix for different sizes
   const baseUrl = image.medium_url.replace(/\/medium$/, '');
   const largeUrl = `${baseUrl}/large`;
-  const originalUrl = baseUrl; // No size suffix = original
 
-  const canDownloadOriginal = permissions.can_download_original;
-  const canDownloadLarge = permissions.can_download_large || canDownloadOriginal;
+  const canDownloadLarge = permissions.can_download_large;
   const canDownloadMedium = permissions.can_download_medium || canDownloadLarge;
 
   // Determine best available download option
-  const downloadUrl = canDownloadOriginal ? originalUrl : canDownloadLarge ? largeUrl : `${baseUrl}/medium`;
-  const downloadLabel = canDownloadOriginal ? 'Download Original' : canDownloadLarge ? 'Download Large' : 'Download';
+  const downloadUrl = canDownloadLarge ? largeUrl : `${baseUrl}/medium`;
+  const downloadLabel = canDownloadLarge ? 'Download Large' : 'Download';
 
   if (canDownloadMedium) {
     return (
       <div className="control-buttons">
-        {canDownloadLarge && (
-          <a href={largeUrl} target="_blank" rel="noopener noreferrer" className="btn">
-            View Full Size
-          </a>
-        )}
         <a href={downloadUrl} download={image.name} className="btn btn-primary">
           {downloadLabel}
         </a>
