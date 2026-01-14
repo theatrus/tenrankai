@@ -177,6 +177,29 @@ impl From<super::types::Config> for MultiSiteConfig {
     }
 }
 
+/// Convert MultiSiteConfig to legacy Config
+/// In multi-site mode, uses defaults for site-specific fields (they're handled by SiteManager)
+impl From<MultiSiteConfig> for super::types::Config {
+    fn from(config: MultiSiteConfig) -> Self {
+        Self {
+            server: config.server,
+            app: config.app,
+            email: config.email,
+            openai: config.openai,
+            // Use legacy fields if present, otherwise use defaults
+            templates: config.templates.unwrap_or_else(|| TemplateConfig {
+                directories: vec!["templates".to_string()],
+            }),
+            static_files: config.static_files.unwrap_or_else(|| StaticConfig {
+                directories: vec!["static".to_string()],
+                use_redirects: false,
+            }),
+            galleries: config.galleries,
+            posts: config.posts,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

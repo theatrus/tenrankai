@@ -184,16 +184,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Load config to get default log level, but allow CLI to override
-    // Try parsing as MultiSiteConfig first to support both legacy and multi-site formats
+    // Parse as MultiSiteConfig which supports both legacy and multi-site formats
     let (mut config, multi_site_config) = if cli.config.exists() {
         let config_content = std::fs::read_to_string(&cli.config)?;
 
-        // Try parsing as MultiSiteConfig first (supports both formats)
+        // Parse as MultiSiteConfig (supports both legacy and multi-site formats)
         let multi_site_config: MultiSiteConfig = toml_edit::de::from_str(&config_content)?;
 
-        // For backward compatibility, also create a legacy Config
-        // This is used for routes, global settings, etc.
-        let config: Config = toml_edit::de::from_str(&config_content)?;
+        // Convert to legacy Config for global settings, routes, etc.
+        let config: Config = multi_site_config.clone().into();
 
         (config, Some(multi_site_config))
     } else {
