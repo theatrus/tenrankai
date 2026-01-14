@@ -69,9 +69,13 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
 export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
-  
+
+  // Crossfade transition state
+  const [previousImage, setPreviousImage] = useState<{ url: string; path: string } | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
   // Calculate initial dimensions immediately to prevent flicker
-  const [dimensions, setDimensions] = useState(() => 
+  const [dimensions, setDimensions] = useState(() =>
     calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight)
   );
   
@@ -176,33 +180,42 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       setImageLoading(false);
       return;
     }
-    
+
     // Only reset loading state if this is a different image
     if (loadedImageRef.current !== image.medium_url) {
+      // Store previous image for crossfade (only after initial mount)
+      if (!isInitialMount.current && loadedImageRef.current) {
+        setPreviousImage({
+          url: loadedImageRef.current,
+          path: image.path // This is the old path, but we just need it as a key
+        });
+        setIsTransitioning(true);
+      }
+
       // Don't show loading on initial mount (image might already be cached)
       if (!isInitialMount.current) {
         setImageLoading(true);
       }
       setImageError(false);
       loadedImageRef.current = null; // Clear the loaded image reference
-      
+
       // Clear any existing timeout
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      
+
       // Set a timeout to detect stuck loading
       timeoutRef.current = setTimeout(() => {
         setImageLoading(false);
         setImageError(true);
       }, 10000); // 10 second timeout
     }
-    
+
     // After first mount, treat as navigation
     if (isInitialMount.current) {
       isInitialMount.current = false;
     }
-    
+
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -214,6 +227,14 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     loadedImageRef.current = image.medium_url; // Mark this image as loaded
     setImageLoading(false);
+
+    // Clear previous image after transition completes
+    if (isTransitioning) {
+      setTimeout(() => {
+        setPreviousImage(null);
+        setIsTransitioning(false);
+      }, 300); // Match CSS transition duration
+    }
   };
 
   const handleImageError = () => {
@@ -1107,7 +1128,26 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             role="img"
             aria-label={image.name}
           >
-            {/* Image display with retina support - using img element for HDR compatibility */}
+            {/* Previous image for crossfade transition */}
+            {previousImage && (
+              <img
+                src={previousImage.url}
+                srcSet={`${previousImage.url} 1x, ${previousImage.url.replace('/medium', '/medium@2x')} 2x`}
+                alt=""
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: 'auto',
+                  opacity: imageLoading ? 1 : 0,
+                  transition: 'opacity 300ms ease-out',
+                  zIndex: 0
+                }}
+              />
+            )}
+            {/* Current image display with retina support - using img element for HDR compatibility */}
             <img
               src={image.medium_url}
               srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
@@ -1115,7 +1155,10 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
               style={{
                 width: '100%',
                 height: 'auto',
-                display: imageLoading || imageError ? 'none' : 'block'
+                opacity: imageLoading ? 0 : 1,
+                transition: 'opacity 300ms ease-out',
+                position: previousImage ? 'relative' : undefined,
+                zIndex: previousImage ? 1 : undefined
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
