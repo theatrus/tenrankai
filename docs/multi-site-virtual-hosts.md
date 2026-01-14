@@ -507,20 +507,153 @@ pub async fn diff_config(
 }
 ```
 
-## Migration Path
+## Implementation Plan
 
-### Phase 1: Internal Refactoring
-1. Create `Site` struct that encapsulates current single-site functionality
-2. Move galleries, posts, templates, static_files into Site
-3. No config changes yet - maintain backward compatibility
+### Phase Overview
+
+| Phase | Description | Breaking Changes |
+|-------|-------------|------------------|
+| Phase 1 | Create Site struct (internal refactoring) | No |
+| Phase 2 | Add SiteManager and host-based routing | No (new config optional) |
+| Phase 3 | Add hot reloading via SIGHUP | No |
+
+### Current vs Target Architecture
+
+**Current Architecture (AppState):**
+```
+AppState
+├── template_engine: Arc<TemplateEngine>
+├── static_handler: StaticFileHandler
+├── galleries: Arc<HashMap<String, SharedGallery>>
+├── posts_managers: Arc<HashMap<String, Arc<PostsManager>>>
+├── login_state: Arc<RwLock<LoginState>>
+├── user_database_manager: Option<UserDatabaseManager>
+├── favicon_renderer: FaviconRenderer
+├── email_provider: Option<DynEmailProvider>     // Global
+├── webauthn: Option<Arc<Webauthn>>              // Global
+├── openai_client: Option<Arc<OpenAIClient>>     // Global
+└── config: Config
+```
+
+**Target Architecture (with Site):**
+```
+AppState
+├── site: Arc<Site>                              // Site-specific resources
+│   ├── name: String
+│   └── resources: SiteResources
+│       ├── template_engine: Arc<TemplateEngine>
+│       ├── static_handler: StaticFileHandler
+│       ├── galleries: Arc<HashMap<String, SharedGallery>>
+│       ├── posts_managers: Arc<HashMap<String, Arc<PostsManager>>>
+│       ├── login_state: Arc<RwLock<LoginState>>
+│       ├── user_database_manager: Option<UserDatabaseManager>
+│       └── favicon_renderer: FaviconRenderer
+├── email_provider: Option<DynEmailProvider>     // Global (shared)
+├── webauthn: Option<Arc<Webauthn>>              // Global (shared)
+├── openai_client: Option<Arc<OpenAIClient>>     // Global (shared)
+└── config: Config
+```
+
+---
+
+### Phase 1: Site Struct Refactoring (Detailed)
+
+#### Files to Create
+
+| File | Purpose |
+|------|---------|
+| `src/site/mod.rs` | Module exports |
+| `src/site/types.rs` | Site, SiteConfig, SiteResources types |
+| `src/site/builder.rs` | SiteBuilder for constructing sites |
+| `src/site/error.rs` | SiteBuilderError type |
+
+#### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/lib.rs` | Add `pub mod site;`, refactor AppState to use Site, add accessor methods |
+| `src/main.rs` | Update run_server() to use SiteBuilder |
+
+#### Implementation Steps
+
+**Step 1: Create site module (additive)**
+1. Create `src/site/mod.rs` with module exports
+2. Create `src/site/types.rs` with Site, SiteConfig, SiteResources
+3. Create `src/site/builder.rs` with SiteBuilder skeleton
+4. Create `src/site/error.rs` with SiteBuilderError
+5. Add `pub mod site;` to `src/lib.rs`
+6. **Test**: `cargo build --no-default-features`
+
+**Step 2: Add SiteConfig conversion (additive)**
+1. Add `SiteConfig::from_legacy_config(&Config)` method
+2. **Test**: `cargo test --no-default-features`
+
+**Step 3: Add AppState accessor methods (backward compatible)**
+1. Add accessor methods to AppState that return references to existing fields:
+   - `fn template_engine(&self) -> &Arc<TemplateEngine>`
+   - `fn static_handler(&self) -> &StaticFileHandler`
+   - `fn galleries(&self) -> &Arc<HashMap<String, SharedGallery>>`
+   - `fn posts_managers(&self) -> &Arc<HashMap<String, Arc<PostsManager>>>`
+   - `fn login_state(&self) -> &Arc<RwLock<LoginState>>`
+   - `fn user_database_manager(&self) -> &Option<UserDatabaseManager>`
+   - `fn favicon_renderer(&self) -> &FaviconRenderer`
+2. **Test**: `cargo test --no-default-features`
+
+**Step 4: Implement SiteBuilder**
+1. Extract resource initialization from `create_app()` into SiteBuilder methods:
+   - `build_template_engine()` - from lib.rs:94-131
+   - `build_static_handler()` - from lib.rs:107-123
+   - `build_favicon_renderer()` - from lib.rs:133-134
+   - `build_galleries()` - from lib.rs:142-198
+   - `build_posts_managers()` - from lib.rs:200-244
+   - `build_login_state()` - from lib.rs:246-272
+2. Add `with_galleries()` method for test injection
+3. **Test**: `cargo test --no-default-features`
+
+**Step 5: Refactor AppState to use Site**
+1. Change AppState struct to use `site: Arc<Site>`
+2. Update accessor methods to delegate to `self.site.resources.*`
+3. Update `create_app()` to use SiteBuilder
+4. **Test**: `cargo test --no-default-features` (all existing tests must pass)
+
+**Step 6: Update main.rs**
+1. Update `run_server()` to optionally use SiteBuilder directly
+2. Extract galleries from Site for background task management
+3. Verify shutdown logic works with Site pattern
+4. **Test**: Full test suite + manual server test
+
+#### Key Code Patterns
+
+**Accessor method delegation** (maintains API compatibility):
+```rust
+impl AppState {
+    pub fn galleries(&self) -> &Arc<HashMap<String, SharedGallery>> {
+        &self.site.resources.galleries
+    }
+}
+```
+
+**Builder with injectable dependencies** (for testing):
+```rust
+impl SiteBuilder {
+    pub fn with_galleries(mut self, galleries: Arc<HashMap<String, SharedGallery>>) -> Self {
+        self.provided_galleries = Some(galleries);
+        self
+    }
+}
+```
+
+---
 
 ### Phase 2: Multi-Site Support
+
 1. Add `SiteManager` for managing multiple sites
 2. Implement host-based routing dispatch
 3. Support new multi-site config format
 4. Maintain backward compatibility with old config format
 
 ### Phase 3: Hot Reloading
+
 1. Add SIGHUP handler for config reload
 2. Implement config diffing
 3. Add hot-swap logic for sites
