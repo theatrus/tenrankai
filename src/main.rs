@@ -13,9 +13,12 @@ use tenrankai::{
     gallery::Gallery,
     login::{User, UserDatabase},
     openai, posts,
-    site::{ConfigReloader, SiteBuilder, SiteManager},
+    site::{SiteBuilder, SiteManager},
     startup_checks, storage,
 };
+
+#[cfg(unix)]
+use tenrankai::site::ConfigReloader;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -466,6 +469,10 @@ async fn run_server(
     host: Option<String>,
     quit_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // config_path is only used on Unix for SIGHUP reload
+    #[cfg(not(unix))]
+    let _ = &config_path;
+
     let host = host.unwrap_or(config.server.host.clone());
     let port = port.unwrap_or(config.server.port);
 
@@ -756,6 +763,10 @@ async fn run_server(
         let app = create_app(config.clone(), Some(galleries_arc)).await;
         (app, None)
     };
+
+    // site_manager is only used on Unix for SIGHUP reload
+    #[cfg(not(unix))]
+    let _ = &site_manager;
 
     // Convert all_galleries_map to Arc for background analysis
     let galleries_arc = Arc::new(all_galleries_map);
