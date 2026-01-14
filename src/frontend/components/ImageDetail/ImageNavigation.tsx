@@ -57,7 +57,7 @@ export function ImageNavigation({
     isImmediate: boolean
   ) => {
     const thumbnailUrl = image.thumbnail_url;
-    const thumbnail2xUrl = thumbnailUrl.replace('?size=thumbnail', '?size=thumbnail@2x');
+    const thumbnail2xUrl = thumbnailUrl.replace(/\/thumbnail$/, '/thumbnail@2x');
 
     return (
       <button
