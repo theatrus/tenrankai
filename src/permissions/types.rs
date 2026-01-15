@@ -22,6 +22,8 @@ pub struct RolePermissions {
     pub can_download_large: bool,
     #[serde(default)]
     pub can_download_original: bool,
+    #[serde(default)]
+    pub can_download_gallery: bool, // Download entire gallery/folder as zip
 
     // Metadata permissions
     #[serde(default)]
@@ -87,6 +89,7 @@ impl RolePermissions {
         self.can_download_medium |= other.can_download_medium;
         self.can_download_large |= other.can_download_large;
         self.can_download_original |= other.can_download_original;
+        self.can_download_gallery |= other.can_download_gallery;
 
         self.can_read_metadata |= other.can_read_metadata;
         self.can_add_comments |= other.can_add_comments;
@@ -124,6 +127,7 @@ impl RolePermissions {
             self.can_download_medium = true;
             self.can_download_large = true;
             self.can_download_original = true;
+            self.can_download_gallery = true;
 
             self.can_read_metadata = true;
             self.can_add_comments = true;
@@ -242,6 +246,7 @@ impl PermissionConfig {
                     can_see_location: true,
                     can_download_medium: true,
                     can_download_large: true,
+                    can_download_gallery: true,
                     can_read_metadata: true,
                     can_add_comments: true,
                     can_edit_own_comments: true,

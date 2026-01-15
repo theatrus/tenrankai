@@ -734,3 +734,181 @@ pub async fn image_handler_for_named_v2(
     .await
     .into_response()
 }
+
+/// Download a gallery folder as a zip file
+/// URL format: /gallery/_download/{path}
+#[axum::debug_handler(state = crate::AppState)]
+pub async fn download_folder_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path((gallery_name, path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+) -> Response {
+    let gallery = match app_state.galleries().get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            error!("Gallery '{}' not found", gallery_name);
+            return ApiResponse::GalleryNotFound.into_response();
+        }
+    };
+
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view and download gallery
+    if !user_permissions.permissions.can_view {
+        if !auth.is_authenticated() {
+            let return_url = format!("/{}/_download/{}", gallery_name, path);
+            let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
+            return axum::response::Redirect::temporary(&login_url).into_response();
+        }
+        return ApiResponse::AccessDenied.into_response();
+    }
+
+    if !user_permissions.permissions.can_download_gallery {
+        return (
+            StatusCode::FORBIDDEN,
+            "Gallery download permission required",
+        )
+            .into_response();
+    }
+
+    // Recursively collect all images in the directory and subdirectories
+    let mut all_images: Vec<(String, String)> = Vec::new(); // (file_path, display_name)
+
+    // Helper to recursively collect images
+    async fn collect_images_recursive(
+        gallery: &super::SharedGallery,
+        folder_path: &str,
+        images: &mut Vec<(String, String)>,
+    ) {
+        if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
+            // Add images from this folder
+            for image_path in &cached.images {
+                let display_name = {
+                    let indexer = gallery.image_indexer.read().await;
+                    indexer.get_display_name(image_path)
+                };
+                images.push((image_path.clone(), display_name));
+            }
+
+            // Recursively process subdirectories
+            for subdir in &cached.subdirectories {
+                let subdir_path = if folder_path.is_empty() {
+                    subdir.clone()
+                } else {
+                    format!("{}/{}", folder_path, subdir)
+                };
+                Box::pin(collect_images_recursive(gallery, &subdir_path, images)).await;
+            }
+        }
+    }
+
+    collect_images_recursive(gallery, &path, &mut all_images).await;
+
+    if all_images.is_empty() {
+        return (StatusCode::NOT_FOUND, "No images in this folder").into_response();
+    }
+
+    // Generate filename for the zip
+    let folder_name = if path.is_empty() {
+        gallery_name.clone()
+    } else {
+        path.rsplit('/').next().unwrap_or(&gallery_name).to_string()
+    };
+    let zip_filename = format!("{}.zip", folder_name);
+
+    // Create a channel for streaming the zip
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(4);
+
+    // Spawn a task to build and stream the zip
+    let storage = gallery.source_storage().clone();
+    let download_root = path.clone();
+    tokio::spawn(async move {
+        let mut zip_buffer = std::io::Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut zip_buffer);
+            // Use Stored (no compression) for faster streaming
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+
+            for (image_path, display_name) in &all_images {
+                // Calculate relative path from download root for folder structure in zip
+                let relative_path = if download_root.is_empty() {
+                    image_path.clone()
+                } else if let Some(stripped) = image_path.strip_prefix(&download_root) {
+                    stripped.trim_start_matches('/').to_string()
+                } else {
+                    image_path.clone()
+                };
+
+                // Get folder prefix (if image is in a subfolder)
+                let folder_prefix = relative_path
+                    .rfind('/')
+                    .map(|pos| &relative_path[..pos + 1])
+                    .unwrap_or("");
+
+                // Use display name but preserve the original file extension
+                let original_filename = image_path.rsplit('/').next().unwrap_or(image_path);
+                let extension = original_filename
+                    .rfind('.')
+                    .map(|pos| &original_filename[pos..])
+                    .unwrap_or("");
+                let filename = format!("{}{}{}", folder_prefix, display_name, extension);
+
+                match storage.read(image_path).await {
+                    Ok(data) => {
+                        if let Err(e) = zip.start_file(&filename, options) {
+                            tracing::error!("Failed to start zip file entry '{}': {}", filename, e);
+                            continue;
+                        }
+                        if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
+                            tracing::error!("Failed to write image '{}' to zip: {}", filename, e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to read image '{}' for zip: {}", image_path, e);
+                    }
+                }
+            }
+
+            if let Err(e) = zip.finish() {
+                tracing::error!("Failed to finish zip file: {}", e);
+            }
+        }
+
+        // Send the completed zip in chunks
+        let data = zip_buffer.into_inner();
+        for chunk in data.chunks(64 * 1024) {
+            if tx.send(Ok(chunk.to_vec())).await.is_err() {
+                break; // Client disconnected
+            }
+        }
+    });
+
+    // Convert channel receiver to a stream
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(stream);
+
+    (
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "application/zip"),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{}\"", zip_filename),
+            ),
+        ],
+        body,
+    )
+        .into_response()
+}

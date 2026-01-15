@@ -46,6 +46,7 @@ serde_json = "1.0"
 sha2 = "0.10"
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["io"] }
 toml_edit = { version = "0.23", features = ["serde"] }
 tower = "0.5"
@@ -64,6 +65,7 @@ fnv = "1.0"
 lru = "0.12"
 quick-xml = "0.37"
 futures = "0.3"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 num_cpus = "1.16"
 
 [profile.dev]

@@ -15,8 +15,8 @@ mod types;
 pub use core::BreadcrumbItem;
 pub use error::GalleryError;
 pub use handlers::{
-    gallery_handler_for_named, gallery_root_handler_for_named, image_detail_handler_for_named,
-    image_handler_for_named, image_handler_for_named_v2,
+    download_folder_handler, gallery_handler_for_named, gallery_root_handler_for_named,
+    image_detail_handler_for_named, image_handler_for_named, image_handler_for_named_v2,
 };
 pub use types::*;
 

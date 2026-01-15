@@ -50,6 +50,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                                 can_download_medium: true,
                                 can_download_large: false,
                                 can_download_original: false,
+                                can_download_gallery: false,
                                 can_read_metadata: true, // Default to true for the gallery
                                 can_add_comments: false,
                                 can_edit_own_comments: false,
@@ -773,4 +774,236 @@ Gallery showing full technical details.
 
     // Also verify that technical details are controlled by can_see_technical_details
     // In the visible folder, this should be based on the permissions configuration
+}
+
+#[tokio::test]
+async fn test_gallery_download_requires_permission() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+
+    // Create test images in main gallery
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 3);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Default viewer role does NOT have can_download_gallery
+    // Attempt to download should return 403
+    let response = server.get("/gallery/_download").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::FORBIDDEN,
+        "Download should be forbidden without can_download_gallery permission"
+    );
+}
+
+#[tokio::test]
+async fn test_gallery_download_with_permission() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+
+    // Update the viewer role to include can_download_gallery
+    if let Some(ref mut galleries) = config.galleries {
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_download_gallery = true;
+        }
+    }
+
+    // Create test images in main gallery
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 3);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // With can_download_gallery permission, download should work
+    let response = server.get("/gallery/_download").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Download should succeed with can_download_gallery permission"
+    );
+
+    // Verify content type is application/zip
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(
+        content_type, "application/zip",
+        "Response should be a zip file"
+    );
+
+    // Verify content-disposition header
+    let content_disposition = response
+        .headers()
+        .get("content-disposition")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_disposition.contains("attachment"),
+        "Should have attachment disposition"
+    );
+    assert!(
+        content_disposition.contains(".zip"),
+        "Should have zip filename"
+    );
+
+    // Verify the zip contains our test images
+    let bytes = response.as_bytes();
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let mut archive = zip::ZipArchive::new(cursor).expect("Should be a valid zip file");
+
+    let file_names: Vec<String> = (0..archive.len())
+        .map(|i| archive.by_index(i).unwrap().name().to_string())
+        .collect();
+
+    assert!(
+        file_names
+            .iter()
+            .any(|n: &String| n.contains("test_000.jpg")),
+        "Zip should contain test_000.jpg"
+    );
+    assert!(
+        file_names
+            .iter()
+            .any(|n: &String| n.contains("test_001.jpg")),
+        "Zip should contain test_001.jpg"
+    );
+    assert!(
+        file_names
+            .iter()
+            .any(|n: &String| n.contains("test_002.jpg")),
+        "Zip should contain test_002.jpg"
+    );
+}
+
+#[tokio::test]
+async fn test_gallery_download_subfolder() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+
+    // Update the viewer role to include can_download_gallery
+    if let Some(ref mut galleries) = config.galleries {
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_download_gallery = true;
+        }
+    }
+
+    // Create a subfolder with images
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let vacation_dir = photos_dir.join("vacation");
+    std::fs::create_dir_all(&vacation_dir).unwrap();
+    create_test_images(&vacation_dir, 2);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Download the subfolder
+    let response = server.get("/gallery/_download/vacation").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Subfolder download should succeed"
+    );
+
+    // Verify the zip filename uses the folder name
+    let content_disposition = response
+        .headers()
+        .get("content-disposition")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_disposition.contains("vacation.zip"),
+        "Zip filename should be based on folder name"
+    );
+
+    // Verify the zip contains the subfolder images
+    let bytes = response.as_bytes();
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let archive = zip::ZipArchive::new(cursor).expect("Should be a valid zip file");
+
+    assert_eq!(
+        archive.len(),
+        2,
+        "Zip should contain exactly 2 images from vacation folder"
+    );
+}
+
+#[tokio::test]
+async fn test_gallery_download_empty_folder() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+
+    // Update the viewer role to include can_download_gallery
+    if let Some(ref mut galleries) = config.galleries {
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_download_gallery = true;
+        }
+    }
+
+    // Create an empty subfolder
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let empty_dir = photos_dir.join("empty");
+    std::fs::create_dir_all(&empty_dir).unwrap();
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Download empty folder should return 404
+    let response = server.get("/gallery/_download/empty").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::NOT_FOUND,
+        "Empty folder download should return 404"
+    );
+}
+
+#[tokio::test]
+async fn test_gallery_download_recursive() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+
+    // Update the viewer role to include can_download_gallery
+    if let Some(ref mut galleries) = config.galleries {
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_download_gallery = true;
+        }
+    }
+
+    // Create a folder structure with images in subfolders only (not at root)
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+
+    let folder_a = photos_dir.join("folder_a");
+    let folder_b = photos_dir.join("folder_b");
+    std::fs::create_dir_all(&folder_a).unwrap();
+    std::fs::create_dir_all(&folder_b).unwrap();
+
+    // Create images in subfolders
+    create_test_images(&folder_a, 2);
+    create_test_images(&folder_b, 3);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Download from root should recursively include all images from subfolders
+    let response = server.get("/gallery/_download").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Recursive download should succeed even when root has no direct images"
+    );
+
+    // Verify the zip contains images from both subfolders
+    let bytes = response.as_bytes();
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let archive = zip::ZipArchive::new(cursor).expect("Should be a valid zip file");
+
+    assert_eq!(
+        archive.len(),
+        5,
+        "Zip should contain 5 images total (2 from folder_a + 3 from folder_b)"
+    );
 }

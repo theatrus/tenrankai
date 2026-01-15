@@ -6,19 +6,23 @@ interface ImageControlsProps {
 }
 
 export function ImageControls({ image, permissions }: ImageControlsProps) {
-  const fullSizeUrl = image.medium_url.replace('?size=medium', '');
-  
-  // Check if user can download large images
-  const canDownloadLarge = permissions.can_download_large || permissions.can_download_original;
+  // Build image URLs from medium_url base
+  // medium_url is like /gallery/_image/path/medium - replace size suffix for different sizes
+  const baseUrl = image.medium_url.replace(/\/medium$/, '');
+  const largeUrl = `${baseUrl}/large`;
 
-  if (canDownloadLarge) {
+  const canDownloadLarge = permissions.can_download_large;
+  const canDownloadMedium = permissions.can_download_medium || canDownloadLarge;
+
+  // Determine best available download option
+  const downloadUrl = canDownloadLarge ? largeUrl : `${baseUrl}/medium`;
+  const downloadLabel = canDownloadLarge ? 'Download Large' : 'Download';
+
+  if (canDownloadMedium) {
     return (
       <div className="control-buttons">
-        <a href={fullSizeUrl} target="_blank" rel="noopener noreferrer" className="btn">
-          View Full Size
-        </a>
-        <a href={fullSizeUrl} download={image.name} className="btn">
-          Download
+        <a href={downloadUrl} download={image.name} className="btn btn-primary">
+          {downloadLabel}
         </a>
       </div>
     );
@@ -26,8 +30,8 @@ export function ImageControls({ image, permissions }: ImageControlsProps) {
 
   return (
     <div className="control-buttons">
-      <button 
-        className="btn" 
+      <button
+        className="btn"
         onClick={() => window.location.href = '/_login'}
       >
         Request Download Access
