@@ -19,11 +19,15 @@
 //! ```
 
 mod error;
+#[cfg(feature = "user-storage-sql")]
+mod sql;
 mod toml_backend;
 mod types;
 mod url;
 
 pub use error::UserStorageError;
+#[cfg(feature = "user-storage-sql")]
+pub use sql::SqlUserStorage;
 pub use toml_backend::TomlUserStorage;
 pub use types::{User, UserPasskey, UserWithUsername, UserWithUsernameMut};
 pub use url::UserStorageUrl;

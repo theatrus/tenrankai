@@ -10,6 +10,8 @@
 
 use super::DynUserStorage;
 use super::error::UserStorageError;
+#[cfg(feature = "user-storage-sql")]
+use super::sql::SqlUserStorage;
 use super::toml_backend::TomlUserStorage;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -129,32 +131,32 @@ impl UserStorageUrl {
                 Ok(Arc::new(storage))
             }
 
-            Self::Sqlite { .. } => {
+            Self::Sqlite { path } => {
                 #[cfg(feature = "user-storage-sql")]
                 {
-                    // TODO: Implement SqlUserStorage
-                    Err(UserStorageError::UnsupportedBackend(
-                        "SQLite support not yet implemented".to_string(),
-                    ))
+                    // Build SQLite connection string
+                    let connection_string = format!("sqlite:{}", path.display());
+                    let storage = SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
+                    Ok(Arc::new(storage))
                 }
                 #[cfg(not(feature = "user-storage-sql"))]
                 {
+                    let _ = path; // Suppress unused warning
                     Err(UserStorageError::UnsupportedBackend(
                         "SQLite support requires the 'user-storage-sql' feature".to_string(),
                     ))
                 }
             }
 
-            Self::PostgreSql { .. } => {
+            Self::PostgreSql { connection_string } => {
                 #[cfg(feature = "user-storage-sql")]
                 {
-                    // TODO: Implement SqlUserStorage
-                    Err(UserStorageError::UnsupportedBackend(
-                        "PostgreSQL support not yet implemented".to_string(),
-                    ))
+                    let storage = SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
+                    Ok(Arc::new(storage))
                 }
                 #[cfg(not(feature = "user-storage-sql"))]
                 {
+                    let _ = connection_string; // Suppress unused warning
                     Err(UserStorageError::UnsupportedBackend(
                         "PostgreSQL support requires the 'user-storage-sql' feature".to_string(),
                     ))
