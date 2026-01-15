@@ -255,10 +255,8 @@ pub async fn invalidate_folder(
         for size in ImageSize::ALL {
             for format in &["jpg", "webp", "png", "avif"] {
                 // Non-watermarked variant
-                let hash = gallery.generate_cache_key(
-                    &entry.path,
-                    &format!("{}_{}", size.as_str(), format),
-                );
+                let hash = gallery
+                    .generate_cache_key(&entry.path, &format!("{}_{}", size.as_str(), format));
                 hashes_to_delete.insert(hash);
 
                 // Watermarked variant (only for sizes that support it)
@@ -306,15 +304,16 @@ pub async fn invalidate_folder(
             .join(".");
 
         // The hash is the first part before any underscore suffix
-        let base_filename = if let Some(stripped) = filename_without_ext.strip_suffix("_watermarked")
-        {
-            stripped
-        } else {
-            &filename_without_ext
-        };
+        let base_filename =
+            if let Some(stripped) = filename_without_ext.strip_suffix("_watermarked") {
+                stripped
+            } else {
+                &filename_without_ext
+            };
 
         // Check if this hash matches any of our target hashes
-        if hashes_to_delete.contains(base_filename) || hashes_to_delete.contains(&filename_without_ext)
+        if hashes_to_delete.contains(base_filename)
+            || hashes_to_delete.contains(&filename_without_ext)
         {
             found_count += 1;
             if dry_run {
