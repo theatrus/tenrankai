@@ -12,14 +12,15 @@ default = ["avif"]
 avif = ["dep:libavif", "dep:libavif-sys"]
 # User storage backend features (Phase 2/3 of pluggable user database)
 user-storage-sql = ["dep:sqlx"]  # SQLite/PostgreSQL support
-user-storage-dynamodb = []       # DynamoDB support (not yet implemented)
+user-storage-dynamodb = ["dep:aws-sdk-dynamodb"]  # DynamoDB support
 
 [dependencies]
 async-trait = "0.1"
 aws-config = "1"
-bytes = "1.10"
+aws-sdk-dynamodb = { version = "1", optional = true }
 aws-sdk-s3 = "1"
 aws-sdk-sesv2 = "1"
+bytes = "1.10"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 hmac = "0.12"

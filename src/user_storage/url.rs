@@ -163,16 +163,22 @@ impl UserStorageUrl {
                 }
             }
 
-            Self::DynamoDb { .. } => {
+            Self::DynamoDb {
+                table_name,
+                region,
+                endpoint,
+            } => {
                 #[cfg(feature = "user-storage-dynamodb")]
                 {
-                    // TODO: Implement DynamoUserStorage
-                    Err(UserStorageError::UnsupportedBackend(
-                        "DynamoDB support not yet implemented".to_string(),
-                    ))
+                    use super::dynamodb::DynamoUserStorage;
+                    let storage =
+                        DynamoUserStorage::new(table_name, site_id.to_string(), region, endpoint)
+                            .await?;
+                    Ok(Arc::new(storage))
                 }
                 #[cfg(not(feature = "user-storage-dynamodb"))]
                 {
+                    let _ = (table_name, region, endpoint); // Suppress unused warnings
                     Err(UserStorageError::UnsupportedBackend(
                         "DynamoDB support requires the 'user-storage-dynamodb' feature".to_string(),
                     ))
