@@ -143,6 +143,7 @@ pub async fn gallery_preview_handler_for_named(
 pub async fn gallery_composite_preview_handler_for_named(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Response, StatusCode> {
     let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
         tracing::error!("Gallery '{}' not found", gallery_name);
@@ -156,8 +157,8 @@ pub async fn gallery_composite_preview_handler_for_named(
     let composite_cache_key = gallery.generate_composite_cache_key_with_context(&gallery_path);
     let cache_filename = gallery.generate_composite_cache_filename(&gallery_path);
 
-    // Try to serve from cache first
-    if let Ok(cached_response) = gallery.serve_cached_image(&cache_filename).await {
+    // Try to serve from cache first (with conditional request support)
+    if let Ok(cached_response) = gallery.serve_cached_image(&cache_filename, &headers).await {
         // Only return if it's not a 404 (i.e., cache exists)
         if cached_response.status() != StatusCode::NOT_FOUND {
             return Ok(cached_response);

@@ -1,7 +1,7 @@
 use crate::{
     ApiResponse,
     gallery::{Gallery, GalleryError},
-    storage::StorageError,
+    storage::{ObjectMetadata, StorageError},
 };
 use axum::{
     body::Body,
@@ -11,6 +11,88 @@ use axum::{
 use futures::TryStreamExt;
 use tracing::{debug, error};
 
+/// Short cache duration for images (5 minutes)
+/// This allows quick updates while still benefiting from caching
+const IMAGE_CACHE_MAX_AGE: u32 = 300;
+
+/// Check if the request has matching conditional headers that would result in 304
+fn check_conditional_request(
+    req_headers: &HeaderMap,
+    etag: Option<&str>,
+    last_modified: Option<std::time::SystemTime>,
+) -> bool {
+    // Check If-None-Match (ETag comparison)
+    if let Some(if_none_match) = req_headers.get(header::IF_NONE_MATCH)
+        && let (Ok(inm_str), Some(current_etag)) = (if_none_match.to_str(), etag)
+    {
+        // Handle both quoted and unquoted ETags
+        let inm_clean = inm_str.trim().trim_matches('"');
+        let etag_clean = current_etag.trim().trim_matches('"');
+        if inm_clean == etag_clean || inm_str == "*" {
+            return true;
+        }
+    }
+
+    // Check If-Modified-Since (date comparison)
+    if let Some(if_modified_since) = req_headers.get(header::IF_MODIFIED_SINCE)
+        && let (Ok(ims_str), Some(current_mtime)) = (if_modified_since.to_str(), last_modified)
+        && let Ok(ims_time) = httpdate::parse_http_date(ims_str)
+    {
+        // If the file hasn't been modified since the client's cached version
+        if current_mtime <= ims_time {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Generate an ETag from file metadata
+fn generate_etag(size: u64, last_modified: Option<std::time::SystemTime>) -> String {
+    let mtime_secs = last_modified
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("\"{:x}-{:x}\"", size, mtime_secs)
+}
+
+/// Add caching headers to a response
+fn add_cache_headers(headers: &mut HeaderMap, metadata: &ObjectMetadata) {
+    // Cache-Control: short duration with revalidation
+    headers.insert(
+        header::CACHE_CONTROL,
+        format!("public, max-age={}, must-revalidate", IMAGE_CACHE_MAX_AGE)
+            .parse()
+            .unwrap(),
+    );
+
+    // ETag for cache validation
+    let etag = metadata
+        .etag
+        .clone()
+        .unwrap_or_else(|| generate_etag(metadata.size, metadata.last_modified));
+    headers.insert(header::ETAG, etag.parse().unwrap());
+
+    // Last-Modified header
+    if let Some(mtime) = metadata.last_modified
+        && let Ok(formatted) = httpdate::fmt_http_date(mtime).parse()
+    {
+        headers.insert(header::LAST_MODIFIED, formatted);
+    }
+}
+
+/// Create a 304 Not Modified response
+fn not_modified_response() -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CACHE_CONTROL,
+        format!("public, max-age={}, must-revalidate", IMAGE_CACHE_MAX_AGE)
+            .parse()
+            .unwrap(),
+    );
+    (StatusCode::NOT_MODIFIED, headers, Body::empty()).into_response()
+}
+
 impl Gallery {
     /// Main entry point for serving images
     pub async fn serve_image(
@@ -18,6 +100,7 @@ impl Gallery {
         relative_path: &str,
         size: Option<String>,
         accept_header: &str,
+        request_headers: &HeaderMap,
     ) -> Response {
         // Security check - prevent path traversal
         if relative_path.contains("..") || relative_path.starts_with('/') {
@@ -62,8 +145,7 @@ impl Gallery {
                         output_format.extension(),
                     );
 
-                    // Fast path: if tile cache exists, serve directly without validation
-                    // This avoids expensive S3 metadata calls on every request
+                    // Check if tile cache exists
                     if self
                         .cache_storage
                         .exists(&cache_filename)
@@ -72,7 +154,7 @@ impl Gallery {
                     {
                         let mime_type = output_format.mime_type();
                         return self
-                            .serve_from_cache_storage(&cache_filename, mime_type)
+                            .serve_from_cache_storage(&cache_filename, mime_type, request_headers)
                             .await;
                     }
 
@@ -85,7 +167,11 @@ impl Gallery {
                             // Tile was generated and written to storage, serve it
                             let mime_type = output_format.mime_type();
                             return self
-                                .serve_from_cache_storage(&cache_filename, mime_type)
+                                .serve_from_cache_storage(
+                                    &cache_filename,
+                                    mime_type,
+                                    request_headers,
+                                )
                                 .await;
                         }
                         Err(e) => {
@@ -111,8 +197,7 @@ impl Gallery {
                         apply_watermark,
                     );
 
-                    // Fast path: if cache exists, serve directly without validation
-                    // This avoids expensive S3 metadata calls on every request
+                    // Check if cache exists
                     if self
                         .cache_storage
                         .exists(&cache_filename)
@@ -122,7 +207,7 @@ impl Gallery {
                         debug!("Serving cached image: {}", cache_filename);
                         let mime_type = output_format.mime_type();
                         return self
-                            .serve_from_cache_storage(&cache_filename, mime_type)
+                            .serve_from_cache_storage(&cache_filename, mime_type, request_headers)
                             .await;
                     }
 
@@ -135,7 +220,11 @@ impl Gallery {
                             // Image was generated and written to storage, serve it
                             let mime_type = output_format.mime_type();
                             return self
-                                .serve_from_cache_storage(&cache_filename, mime_type)
+                                .serve_from_cache_storage(
+                                    &cache_filename,
+                                    mime_type,
+                                    request_headers,
+                                )
                                 .await;
                         }
                         Err(e) => {
@@ -150,21 +239,39 @@ impl Gallery {
         }
 
         // Serve original file from source storage
-        self.serve_from_source_storage(relative_path).await
+        self.serve_from_source_storage(relative_path, request_headers)
+            .await
     }
 
     /// Serve file from source storage with streaming
-    pub(crate) async fn serve_from_source_storage(&self, path: &str) -> Response {
+    pub(crate) async fn serve_from_source_storage(
+        &self,
+        path: &str,
+        request_headers: &HeaderMap,
+    ) -> Response {
         // Determine MIME type from path
         let mime_type = mime_guess::from_path(path)
             .first_or_octet_stream()
             .to_string();
 
-        // Get metadata for content-length
-        let size = match self.source_storage.metadata(path).await {
-            Ok(meta) => Some(meta.size),
-            Err(_) => None,
+        // Get metadata for content-length and cache validation
+        let metadata = match self.source_storage.metadata(path).await {
+            Ok(meta) => meta,
+            Err(StorageError::NotFound(_)) => return ApiResponse::ImageNotFound.into_response(),
+            Err(e) => {
+                error!("Failed to get metadata from source storage: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
+            }
         };
+
+        // Check for conditional request (304 Not Modified)
+        let etag = metadata
+            .etag
+            .clone()
+            .unwrap_or_else(|| generate_etag(metadata.size, metadata.last_modified));
+        if check_conditional_request(request_headers, Some(&etag), metadata.last_modified) {
+            return not_modified_response();
+        }
 
         // Get stream from storage
         match self.source_storage.read_stream(path).await {
@@ -175,15 +282,13 @@ impl Gallery {
 
                 let mut headers = HeaderMap::new();
                 headers.insert(header::CONTENT_TYPE, mime_type.parse().unwrap());
-                if let Some(len) = size {
-                    headers.insert(header::CONTENT_LENGTH, len.to_string().parse().unwrap());
-                }
-
-                // Add cache headers - max 1 day for all images
                 headers.insert(
-                    header::CACHE_CONTROL,
-                    "public, max-age=86400".parse().unwrap(),
+                    header::CONTENT_LENGTH,
+                    metadata.size.to_string().parse().unwrap(),
                 );
+
+                // Add cache headers with ETag and Last-Modified
+                add_cache_headers(&mut headers, &metadata);
 
                 (StatusCode::OK, headers, body).into_response()
             }
@@ -196,14 +301,20 @@ impl Gallery {
     }
 
     /// Serve cached image by key using storage abstraction
-    pub async fn serve_cached_image(&self, cache_key: &str) -> Result<Response, GalleryError> {
+    pub async fn serve_cached_image(
+        &self,
+        cache_key: &str,
+        request_headers: &HeaderMap,
+    ) -> Result<Response, GalleryError> {
         // Determine MIME type from extension using OutputFormat
         let mime_type = super::types::OutputFormat::from_file_extension(cache_key)
             .map(|format| format.mime_type())
             .unwrap_or("image/jpeg");
 
         // Serve from cache storage (handles NotFound internally)
-        Ok(self.serve_from_cache_storage(cache_key, mime_type).await)
+        Ok(self
+            .serve_from_cache_storage(cache_key, mime_type, request_headers)
+            .await)
     }
 
     /// Serve file from cache storage with streaming
@@ -211,12 +322,28 @@ impl Gallery {
         &self,
         path: &str,
         content_type: &str,
+        request_headers: &HeaderMap,
     ) -> Response {
-        // Get metadata for content-length
-        let size = match self.cache_storage.metadata(path).await {
-            Ok(meta) => Some(meta.size),
-            Err(_) => None,
+        // Get metadata for content-length and cache validation
+        let metadata = match self.cache_storage.metadata(path).await {
+            Ok(meta) => meta,
+            Err(StorageError::NotFound(_)) => {
+                return ApiResponse::CacheEntryNotFound.into_response();
+            }
+            Err(e) => {
+                error!("Failed to get metadata from cache storage: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
+            }
         };
+
+        // Check for conditional request (304 Not Modified)
+        let etag = metadata
+            .etag
+            .clone()
+            .unwrap_or_else(|| generate_etag(metadata.size, metadata.last_modified));
+        if check_conditional_request(request_headers, Some(&etag), metadata.last_modified) {
+            return not_modified_response();
+        }
 
         // Get stream from storage
         match self.cache_storage.read_stream(path).await {
@@ -227,15 +354,13 @@ impl Gallery {
 
                 let mut headers = HeaderMap::new();
                 headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-                if let Some(len) = size {
-                    headers.insert(header::CONTENT_LENGTH, len.to_string().parse().unwrap());
-                }
-
-                // Add cache headers - max 1 day for all images
                 headers.insert(
-                    header::CACHE_CONTROL,
-                    "public, max-age=86400".parse().unwrap(),
+                    header::CONTENT_LENGTH,
+                    metadata.size.to_string().parse().unwrap(),
                 );
+
+                // Add cache headers with ETag and Last-Modified
+                add_cache_headers(&mut headers, &metadata);
 
                 (StatusCode::OK, headers, body).into_response()
             }
@@ -299,7 +424,7 @@ impl Gallery {
             .await?;
         tracing::debug!("Stored composite image: {}", cache_filename);
 
-        // Create response
+        // Create response with cache headers
         let mut headers = HeaderMap::new();
         headers.insert(
             header::CONTENT_TYPE,
@@ -309,10 +434,16 @@ impl Gallery {
             header::CONTENT_LENGTH,
             image_data.len().to_string().parse().unwrap(),
         );
-        headers.insert(
-            header::CACHE_CONTROL,
-            "public, max-age=86400".parse().unwrap(),
-        );
+
+        // Create metadata for cache headers (newly created file)
+        let now = std::time::SystemTime::now();
+        let metadata = ObjectMetadata {
+            size: image_data.len() as u64,
+            last_modified: Some(now),
+            content_type: Some(output_format.mime_type().to_string()),
+            etag: None,
+        };
+        add_cache_headers(&mut headers, &metadata);
 
         Ok((StatusCode::OK, headers, Body::from(image_data)).into_response())
     }

@@ -494,11 +494,12 @@ async fn create_app_internal(
             &format!("/api/gallery/{}/composite/{{*path}}", name),
             axum::routing::get({
                 let name = name.clone();
-                move |state, path: Path<String>| {
+                move |state, path: Path<String>, headers: axum::http::HeaderMap| {
                     let composite_path = path.0;
                     api::gallery_composite_preview_handler_for_named(
                         state,
                         Path((name, composite_path)),
+                        headers,
                     )
                 }
             }),

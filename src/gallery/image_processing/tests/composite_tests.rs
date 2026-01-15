@@ -1,6 +1,7 @@
 use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
 use crate::storage::FilesystemStorage;
+use axum::http::HeaderMap;
 use image::{ImageBuffer, Rgba};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -55,7 +56,9 @@ async fn test_store_and_serve_composite() {
     assert!(cache_path.exists(), "Composite file should exist on disk");
 
     // Test serving from cache using the generated filename
-    let cached_result = gallery.serve_cached_image(&cache_filename).await;
+    let cached_result = gallery
+        .serve_cached_image(&cache_filename, &HeaderMap::new())
+        .await;
     assert!(
         cached_result.is_ok(),
         "Failed to serve from cache: {:?}",
@@ -186,7 +189,9 @@ async fn test_serve_cached_composite_with_proper_filename() {
     println!("Cache file exists at {:?}: {}", cache_path, exists);
 
     // Now try to serve it using the full filename (as the API handler does)
-    let serve_result = gallery.serve_cached_image(&cache_filename).await;
+    let serve_result = gallery
+        .serve_cached_image(&cache_filename, &HeaderMap::new())
+        .await;
     assert!(
         serve_result.is_ok(),
         "Failed to serve cached composite with proper filename"
@@ -252,14 +257,18 @@ async fn test_composite_cache_headers() {
         .await
         .unwrap();
 
-    // Check cache headers
+    // Check cache headers - now using shorter cache with revalidation
     let cache_control = response.headers().get("cache-control");
     assert!(cache_control.is_some(), "Cache-Control header missing");
     assert_eq!(
         cache_control.unwrap().to_str().unwrap(),
-        "public, max-age=86400",
+        "public, max-age=300, must-revalidate",
         "Wrong Cache-Control header for composite"
     );
+
+    // Check ETag is set for cache validation
+    let etag = response.headers().get("etag");
+    assert!(etag.is_some(), "ETag header missing for cache validation");
 
     // Check content type
     let content_type = response.headers().get("content-type");
@@ -295,7 +304,9 @@ async fn test_composite_mime_type_for_cached_composite() {
     let cache_filename = format!("{}.jpg", hash);
 
     // Serve the composite from cache
-    let cached_response = gallery.serve_cached_image(&cache_filename).await;
+    let cached_response = gallery
+        .serve_cached_image(&cache_filename, &HeaderMap::new())
+        .await;
     assert!(cached_response.is_ok());
 
     // Check that the response has the correct MIME type for a composite (JPEG)
