@@ -48,7 +48,7 @@ thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["io"] }
-toml_edit = { version = "0.23", features = ["serde"] }
+toml_edit = { version = "0.24", features = ["serde"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 tracing = "0.1"
