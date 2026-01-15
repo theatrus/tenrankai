@@ -165,11 +165,11 @@ enum CacheCommands {
         #[arg(short, long)]
         gallery: String,
 
-        /// Type of cache to invalidate: "composite" or "image"
+        /// Type of cache to invalidate: "composite", "image", or "folder"
         #[arg(short = 't', long, default_value = "composite")]
         cache_type: String,
 
-        /// Path within the gallery (e.g., "2026-01-lake-natoma" for composite, or image filename)
+        /// Path within the gallery (folder path for composite/folder, image filename for image)
         #[arg(short, long)]
         path: String,
 
@@ -437,9 +437,12 @@ async fn handle_cache_command(
                 "image" => {
                     commands::cache::invalidate_image(gallery_config, &path, dry_run).await?;
                 }
+                "folder" => {
+                    commands::cache::invalidate_folder(gallery_config, &path, dry_run).await?;
+                }
                 _ => {
                     eprintln!(
-                        "Unknown cache type '{}'. Valid types: composite, image",
+                        "Unknown cache type '{}'. Valid types: composite, image, folder",
                         cache_type
                     );
                     std::process::exit(1);
