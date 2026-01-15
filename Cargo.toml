@@ -63,7 +63,7 @@ webauthn-rs-proto = "0.5"
 env_logger = "0.11"
 fnv = "1.0"
 lru = "0.12"
-quick-xml = "0.37"
+quick-xml = "0.39"
 futures = "0.3"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 num_cpus = "1.16"
