@@ -11,10 +11,10 @@ use tenrankai::{
     config::MultiSiteConfig,
     create_app, create_app_with_site_manager,
     gallery::Gallery,
-    login::{User, UserDatabase},
     openai, posts,
     site::{SiteBuilder, SiteManager},
     startup_checks, storage,
+    user_storage::{create_user_storage, User},
 };
 
 #[cfg(unix)]
@@ -111,9 +111,12 @@ enum Commands {
 enum UserCommands {
     /// List all users
     List {
-        /// Path to users database file
+        /// User database URL (e.g., users.toml, postgresql://..., dynamodb://...)
         #[arg(short, long, default_value = "users.toml")]
         database: String,
+        /// Site ID for multi-tenant databases
+        #[arg(short, long, default_value = "default")]
+        site: String,
     },
     /// Add a new user
     Add {
@@ -121,17 +124,23 @@ enum UserCommands {
         username: String,
         /// Email address
         email: String,
-        /// Path to users database file
+        /// User database URL (e.g., users.toml, postgresql://..., dynamodb://...)
         #[arg(short, long, default_value = "users.toml")]
         database: String,
+        /// Site ID for multi-tenant databases
+        #[arg(short, long, default_value = "default")]
+        site: String,
     },
     /// Remove a user
     Remove {
         /// Username to remove
         username: String,
-        /// Path to users database file
+        /// User database URL (e.g., users.toml, postgresql://..., dynamodb://...)
         #[arg(short, long, default_value = "users.toml")]
         database: String,
+        /// Site ID for multi-tenant databases
+        #[arg(short, long, default_value = "default")]
+        site: String,
     },
     /// Update a user's email
     Update {
@@ -139,9 +148,39 @@ enum UserCommands {
         username: String,
         /// New email address
         email: String,
-        /// Path to users database file
+        /// User database URL (e.g., users.toml, postgresql://..., dynamodb://...)
         #[arg(short, long, default_value = "users.toml")]
         database: String,
+        /// Site ID for multi-tenant databases
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// Export all users to JSON (for migration)
+    Export {
+        /// Source database URL
+        #[arg(short, long, default_value = "users.toml")]
+        database: String,
+        /// Site ID
+        #[arg(short, long, default_value = "default")]
+        site: String,
+        /// Output file (defaults to stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Import users from JSON (for migration)
+    Import {
+        /// Target database URL
+        #[arg(short, long)]
+        database: String,
+        /// Site ID
+        #[arg(short, long, default_value = "default")]
+        site: String,
+        /// Input file (defaults to stdin)
+        #[arg(short, long)]
+        input: Option<PathBuf>,
+        /// Skip existing users instead of erroring
+        #[arg(long)]
+        skip_existing: bool,
     },
 }
 
@@ -314,21 +353,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
-        UserCommands::List { database } => {
-            let db_path = std::path::Path::new(&database);
-            let db = if db_path.exists() {
-                UserDatabase::load_from_file(db_path).await?
-            } else {
-                println!("No user database found at: {}", database);
-                return Ok(());
-            };
+        UserCommands::List { database, site } => {
+            let storage = create_user_storage(&database, &site).await?;
+            let users = storage.list_users().await?;
 
-            if db.users.is_empty() {
-                println!("No users in database");
+            if users.is_empty() {
+                println!("No users in database (backend: {})", storage.backend_name());
             } else {
-                println!("Users in database:");
-                for (username, user) in &db.users {
-                    println!("  {} <{}>", username, user.email);
+                println!(
+                    "Users in database ({} users, backend: {}):",
+                    users.len(),
+                    storage.backend_name()
+                );
+                for (username, user) in &users {
+                    let passkey_count = user.passkeys.len();
+                    if passkey_count > 0 {
+                        println!(
+                            "  {} <{}> ({} passkey{})",
+                            username,
+                            user.email,
+                            passkey_count,
+                            if passkey_count == 1 { "" } else { "s" }
+                        );
+                    } else {
+                        println!("  {} <{}>", username, user.email);
+                    }
                 }
             }
         }
@@ -336,43 +385,46 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
             username,
             email,
             database,
+            site,
         } => {
-            let db_path = std::path::Path::new(&database);
-            let mut db = if db_path.exists() {
-                UserDatabase::load_from_file(db_path).await?
-            } else {
-                println!("Creating new user database at: {}", database);
-                UserDatabase::new()
-            };
+            let storage = create_user_storage(&database, &site).await?;
 
             let username = username.trim().to_lowercase();
-            if db.get_user(&username).is_some() {
-                eprintln!("Error: User '{}' already exists", username);
-                std::process::exit(1);
-            }
-
             let user = User {
                 email: email.trim().to_string(),
                 passkeys: Vec::new(),
             };
 
-            db.add_user(username.clone(), user);
-            db.save_to_file(db_path).await?;
-            println!("Added user '{}' with email '{}'", username, email);
+            match storage.add_user(&username, &user).await {
+                Ok(()) => {
+                    println!(
+                        "Added user '{}' with email '{}' (backend: {})",
+                        username,
+                        email,
+                        storage.backend_name()
+                    );
+                }
+                Err(tenrankai::user_storage::UserStorageError::UserAlreadyExists(_)) => {
+                    eprintln!("Error: User '{}' already exists", username);
+                    std::process::exit(1);
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
-        UserCommands::Remove { username, database } => {
-            let db_path = std::path::Path::new(&database);
-            let mut db = if db_path.exists() {
-                UserDatabase::load_from_file(db_path).await?
-            } else {
-                eprintln!("Error: No user database found at: {}", database);
-                std::process::exit(1);
-            };
+        UserCommands::Remove {
+            username,
+            database,
+            site,
+        } => {
+            let storage = create_user_storage(&database, &site).await?;
 
             let username = username.trim().to_lowercase();
-            if db.remove_user(&username).is_some() {
-                db.save_to_file(db_path).await?;
-                println!("Removed user '{}'", username);
+            if storage.remove_user(&username).await? {
+                println!(
+                    "Removed user '{}' (backend: {})",
+                    username,
+                    storage.backend_name()
+                );
             } else {
                 eprintln!("Error: User '{}' not found", username);
                 std::process::exit(1);
@@ -382,28 +434,181 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
             username,
             email,
             database,
+            site,
         } => {
-            let db_path = std::path::Path::new(&database);
-            let mut db = if db_path.exists() {
-                UserDatabase::load_from_file(db_path).await?
-            } else {
-                eprintln!("Error: No user database found at: {}", database);
-                std::process::exit(1);
-            };
+            let storage = create_user_storage(&database, &site).await?;
 
             let username = username.trim().to_lowercase();
-            if let Some(user) = db.users.get_mut(&username) {
+
+            // Get the existing user to preserve passkeys
+            let existing = storage.get_user(&username).await?;
+            if let Some(mut user) = existing {
                 user.email = email.trim().to_string();
-                db.save_to_file(db_path).await?;
-                println!("Updated email for user '{}' to '{}'", username, email);
+                storage.update_user(&username, &user).await?;
+                println!(
+                    "Updated email for user '{}' to '{}' (backend: {})",
+                    username,
+                    email,
+                    storage.backend_name()
+                );
             } else {
                 eprintln!("Error: User '{}' not found", username);
                 std::process::exit(1);
             }
         }
+        UserCommands::Export {
+            database,
+            site,
+            output,
+        } => {
+            let storage = create_user_storage(&database, &site).await?;
+            let users = storage.list_users().await?;
+
+            let export_data = UserExportData {
+                version: 1,
+                site_id: site.clone(),
+                exported_at: chrono::Utc::now(),
+                users: users
+                    .into_iter()
+                    .map(|(username, user)| ExportedUser {
+                        username,
+                        email: user.email,
+                        passkeys: user
+                            .passkeys
+                            .into_iter()
+                            .map(|p| ExportedPasskey {
+                                id: p.id,
+                                name: p.name,
+                                credential_json: serde_json::to_string(&p.credential)
+                                    .unwrap_or_default(),
+                                created_at: p.created_at,
+                                last_used_at: p.last_used_at,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            };
+
+            let json = serde_json::to_string_pretty(&export_data)?;
+
+            if let Some(output_path) = output {
+                std::fs::write(&output_path, &json)?;
+                eprintln!(
+                    "Exported {} users to {} (backend: {})",
+                    export_data.users.len(),
+                    output_path.display(),
+                    storage.backend_name()
+                );
+            } else {
+                println!("{}", json);
+                eprintln!(
+                    "Exported {} users (backend: {})",
+                    export_data.users.len(),
+                    storage.backend_name()
+                );
+            }
+        }
+        UserCommands::Import {
+            database,
+            site,
+            input,
+            skip_existing,
+        } => {
+            let storage = create_user_storage(&database, &site).await?;
+
+            let json = if let Some(input_path) = input {
+                std::fs::read_to_string(&input_path)?
+            } else {
+                use std::io::Read;
+                let mut buffer = String::new();
+                std::io::stdin().read_to_string(&mut buffer)?;
+                buffer
+            };
+
+            let export_data: UserExportData = serde_json::from_str(&json)?;
+
+            let mut imported = 0;
+            let mut skipped = 0;
+
+            for exported_user in export_data.users {
+                let passkeys: Vec<tenrankai::user_storage::UserPasskey> = exported_user
+                    .passkeys
+                    .into_iter()
+                    .filter_map(|p| {
+                        let credential: webauthn_rs::prelude::Passkey =
+                            serde_json::from_str(&p.credential_json).ok()?;
+                        Some(tenrankai::user_storage::UserPasskey {
+                            id: p.id,
+                            name: p.name,
+                            credential,
+                            created_at: p.created_at,
+                            last_used_at: p.last_used_at,
+                        })
+                    })
+                    .collect();
+
+                let user = User {
+                    email: exported_user.email,
+                    passkeys,
+                };
+
+                match storage.add_user(&exported_user.username, &user).await {
+                    Ok(()) => {
+                        imported += 1;
+                    }
+                    Err(tenrankai::user_storage::UserStorageError::UserAlreadyExists(_)) => {
+                        if skip_existing {
+                            skipped += 1;
+                        } else {
+                            eprintln!(
+                                "Error: User '{}' already exists (use --skip-existing to skip)",
+                                exported_user.username
+                            );
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            eprintln!(
+                "Imported {} users, skipped {} (backend: {})",
+                imported,
+                skipped,
+                storage.backend_name()
+            );
+        }
     }
 
     Ok(())
+}
+
+/// Export data format for user migration.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct UserExportData {
+    version: u32,
+    site_id: String,
+    exported_at: chrono::DateTime<chrono::Utc>,
+    users: Vec<ExportedUser>,
+}
+
+/// Exported user data.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportedUser {
+    username: String,
+    email: String,
+    passkeys: Vec<ExportedPasskey>,
+}
+
+/// Exported passkey data.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportedPasskey {
+    id: uuid::Uuid,
+    name: String,
+    credential_json: String,
+    created_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_used_at: Option<i64>,
 }
 
 async fn handle_cache_command(
