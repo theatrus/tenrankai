@@ -18,18 +18,18 @@
 //! }
 //! ```
 
-mod error;
 #[cfg(feature = "user-storage-dynamodb")]
 mod dynamodb;
+mod error;
 #[cfg(feature = "user-storage-sql")]
 mod sql;
 mod toml_backend;
 mod types;
 mod url;
 
-pub use error::UserStorageError;
 #[cfg(feature = "user-storage-dynamodb")]
 pub use dynamodb::DynamoUserStorage;
+pub use error::UserStorageError;
 #[cfg(feature = "user-storage-sql")]
 pub use sql::SqlUserStorage;
 pub use toml_backend::TomlUserStorage;

@@ -3,9 +3,9 @@
 //! This backend stores users in a SQL database with normalized
 //! schema for users and passkeys.
 
+use super::UserStorage;
 use super::error::UserStorageError;
 use super::types::{User, UserPasskey};
-use super::UserStorage;
 use async_trait::async_trait;
 use sqlx::{AnyPool, Row};
 use tracing::{debug, info};
@@ -34,10 +34,7 @@ impl SqlUserStorage {
     /// - `postgresql://user:pass@host/db` - PostgreSQL database
     ///
     /// Tables are automatically created if they don't exist.
-    pub async fn new(
-        connection_string: &str,
-        site_id: String,
-    ) -> Result<Self, UserStorageError> {
+    pub async fn new(connection_string: &str, site_id: String) -> Result<Self, UserStorageError> {
         // Install the Any driver for the connection string's scheme
         Self::install_driver(connection_string)?;
 
@@ -91,11 +88,9 @@ impl SqlUserStorage {
 
     /// Run database migrations to create tables.
     async fn run_migrations(&self) -> Result<(), UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         // Create users table
         sqlx::query(
@@ -171,11 +166,9 @@ impl SqlUserStorage {
 
     /// Load passkeys for a user.
     async fn load_passkeys(&self, username: &str) -> Result<Vec<UserPasskey>, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let rows: Vec<AnyRow> = sqlx::query(
             r#"
@@ -202,15 +195,16 @@ impl SqlUserStorage {
             let created_at: String = row.get("created_at");
             let last_used_at: Option<String> = row.get("last_used_at");
 
-            let credential: webauthn_rs::prelude::Passkey =
-                serde_json::from_str(&credential_json).map_err(|e| {
+            let credential: webauthn_rs::prelude::Passkey = serde_json::from_str(&credential_json)
+                .map_err(|e| {
                     UserStorageError::Database(format!("Failed to deserialize passkey: {}", e))
                 })?;
 
             // Parse timestamps
-            let created_at_ts = chrono::NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S")
-                .map(|dt| dt.and_utc().timestamp())
-                .unwrap_or(0);
+            let created_at_ts =
+                chrono::NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S")
+                    .map(|dt| dt.and_utc().timestamp())
+                    .unwrap_or(0);
 
             let last_used_at_ts = last_used_at.and_then(|s: String| {
                 chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
@@ -234,11 +228,9 @@ impl SqlUserStorage {
 #[async_trait]
 impl UserStorage for SqlUserStorage {
     async fn get_user(&self, username: &str) -> Result<Option<User>, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let row: Option<AnyRow> = sqlx::query(
             r#"
@@ -267,11 +259,9 @@ impl UserStorage for SqlUserStorage {
         &self,
         email: &str,
     ) -> Result<Option<(String, User)>, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let row: Option<AnyRow> = sqlx::query(
             r#"
@@ -298,11 +288,9 @@ impl UserStorage for SqlUserStorage {
     }
 
     async fn list_users(&self) -> Result<Vec<(String, User)>, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let rows: Vec<AnyRow> = sqlx::query(
             r#"
@@ -329,11 +317,9 @@ impl UserStorage for SqlUserStorage {
     }
 
     async fn add_user(&self, username: &str, user: &User) -> Result<(), UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         // Check if user already exists
         let existing: Option<AnyRow> =
@@ -371,11 +357,9 @@ impl UserStorage for SqlUserStorage {
     }
 
     async fn update_user(&self, username: &str, user: &User) -> Result<(), UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let result = sqlx::query(
             r#"
@@ -399,11 +383,9 @@ impl UserStorage for SqlUserStorage {
     }
 
     async fn remove_user(&self, username: &str) -> Result<bool, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         // Passkeys will be deleted by CASCADE
         let result = sqlx::query("DELETE FROM users WHERE site_id = ? AND username = ?")
@@ -430,11 +412,9 @@ impl UserStorage for SqlUserStorage {
         username: &str,
         passkey: UserPasskey,
     ) -> Result<(), UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let credential_json = serde_json::to_string(&passkey.credential)
             .map_err(|e| UserStorageError::Serialization(e.to_string()))?;
@@ -466,11 +446,9 @@ impl UserStorage for SqlUserStorage {
         username: &str,
         passkey_id: &Uuid,
     ) -> Result<bool, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let result =
             sqlx::query("DELETE FROM passkeys WHERE site_id = ? AND username = ? AND id = ?")
@@ -479,7 +457,9 @@ impl UserStorage for SqlUserStorage {
                 .bind(passkey_id.to_string())
                 .execute(&mut *conn)
                 .await
-                .map_err(|e| UserStorageError::Database(format!("Failed to remove passkey: {}", e)))?;
+                .map_err(|e| {
+                    UserStorageError::Database(format!("Failed to remove passkey: {}", e))
+                })?;
 
         let removed = result.rows_affected() > 0;
         if removed {
@@ -495,11 +475,9 @@ impl UserStorage for SqlUserStorage {
         passkey_id: &Uuid,
         auth_result: &webauthn_rs::prelude::AuthenticationResult,
     ) -> Result<(), UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         // First, get the current passkey credential
         let row: Option<AnyRow> = sqlx::query(
@@ -516,9 +494,8 @@ impl UserStorage for SqlUserStorage {
         let credential_json: String = row.get("credential_json");
 
         // Deserialize, update, and serialize
-        let mut credential: webauthn_rs::prelude::Passkey =
-            serde_json::from_str(&credential_json)
-                .map_err(|e| UserStorageError::Serialization(e.to_string()))?;
+        let mut credential: webauthn_rs::prelude::Passkey = serde_json::from_str(&credential_json)
+            .map_err(|e| UserStorageError::Serialization(e.to_string()))?;
 
         credential.update_credential(auth_result);
 
@@ -552,11 +529,9 @@ impl UserStorage for SqlUserStorage {
         &self,
         credential_id: &[u8],
     ) -> Result<Option<(String, UserPasskey)>, UserStorageError> {
-        let mut conn: AnyConnection = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|e| UserStorageError::Database(format!("Failed to acquire connection: {}", e)))?;
+        let mut conn: AnyConnection = self.pool.acquire().await.map_err(|e| {
+            UserStorageError::Database(format!("Failed to acquire connection: {}", e))
+        })?;
 
         let row: Option<AnyRow> = sqlx::query(
             r#"
@@ -667,10 +642,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_sql_storage_duplicate_user() {
-        let storage =
-            SqlUserStorage::new("sqlite:file::memory:?cache=shared", test_site_id("duplicate"))
-                .await
-                .unwrap();
+        let storage = SqlUserStorage::new(
+            "sqlite:file::memory:?cache=shared",
+            test_site_id("duplicate"),
+        )
+        .await
+        .unwrap();
 
         let user = User {
             email: "alice@example.com".to_string(),

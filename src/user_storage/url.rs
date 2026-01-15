@@ -136,7 +136,8 @@ impl UserStorageUrl {
                 {
                     // Build SQLite connection string
                     let connection_string = format!("sqlite:{}", path.display());
-                    let storage = SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
+                    let storage =
+                        SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
                     Ok(Arc::new(storage))
                 }
                 #[cfg(not(feature = "user-storage-sql"))]
@@ -151,7 +152,8 @@ impl UserStorageUrl {
             Self::PostgreSql { connection_string } => {
                 #[cfg(feature = "user-storage-sql")]
                 {
-                    let storage = SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
+                    let storage =
+                        SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
                     Ok(Arc::new(storage))
                 }
                 #[cfg(not(feature = "user-storage-sql"))]

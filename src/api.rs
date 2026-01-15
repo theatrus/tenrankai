@@ -1700,6 +1700,7 @@ pub async fn analyze_folder_handler(
 mod tests {
     use super::*;
     use crate::storage::FilesystemStorage;
+    use crate::user_storage::UserStorage;
     use crate::{AppState, Config, GallerySystemConfig, api_response::short_cache_headers};
     use axum::http::{HeaderMap, HeaderValue};
     use std::{collections::HashMap, sync::Arc};
@@ -1902,22 +1903,19 @@ roles = ["viewer"]
             })
             .collect();
 
-        // Create a user database file with test users
+        // Create user storage with test users
         let users_path = temp_dir.path().join("users.toml");
-        let mut user_db = crate::login::UserDatabase::new();
-        user_db.add_user(
-            "testuser".to_string(),
-            crate::login::User {
-                email: "testuser@example.com".to_string(),
-                passkeys: vec![],
-            },
-        );
-        user_db.save_to_file(&users_path).await.unwrap();
-
-        // Create UserDatabaseManager
-        let user_database_manager = crate::login::UserDatabaseManager::new(users_path)
-            .await
-            .ok();
+        let user_storage =
+            crate::user_storage::TomlUserStorage::new(users_path, "test".to_string())
+                .await
+                .unwrap();
+        let user = crate::user_storage::User {
+            email: "testuser@example.com".to_string(),
+            passkeys: vec![],
+        };
+        user_storage.add_user("testuser", &user).await.unwrap();
+        let user_storage: Option<crate::user_storage::DynUserStorage> =
+            Some(Arc::new(user_storage));
 
         // Create Site with test resources
         let site_resources = crate::site::SiteResources {
@@ -1931,7 +1929,7 @@ roles = ["viewer"]
             galleries: Arc::new(galleries),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
-            user_database_manager,
+            user_storage,
             email_config: None,
         };
 

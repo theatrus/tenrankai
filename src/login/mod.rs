@@ -12,6 +12,3 @@ pub use error::*;
 pub use extractors::*;
 pub use handlers::*;
 pub use types::*;
-
-#[cfg(test)]
-mod tests;

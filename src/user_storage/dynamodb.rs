@@ -11,12 +11,12 @@
 //! - `email-index`: For looking up users by email (PK: site_id, SK: email_lower)
 //! - `credential-index`: For looking up passkeys by credential_id (PK: credential_id_b64)
 
+use super::UserStorage;
 use super::error::UserStorageError;
 use super::types::{User, UserPasskey};
-use super::UserStorage;
 use async_trait::async_trait;
-use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_dynamodb::Client;
+use aws_sdk_dynamodb::types::AttributeValue;
 use std::collections::HashMap;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -47,8 +47,7 @@ impl DynamoUserStorage {
         region: Option<String>,
         endpoint: Option<String>,
     ) -> Result<Self, UserStorageError> {
-        let mut config_loader =
-            aws_config::defaults(aws_config::BehaviorVersion::latest());
+        let mut config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
 
         if let Some(region) = &region {
             config_loader = config_loader.region(aws_config::Region::new(region.clone()));
@@ -149,8 +148,8 @@ impl DynamoUserStorage {
         let created_at = get_number(item, "created_at").unwrap_or(0);
         let last_used_at = get_optional_number(item, "last_used_at");
 
-        let credential: webauthn_rs::prelude::Passkey =
-            serde_json::from_str(&credential_json).map_err(|e| {
+        let credential: webauthn_rs::prelude::Passkey = serde_json::from_str(&credential_json)
+            .map_err(|e| {
                 UserStorageError::Database(format!("Failed to deserialize passkey: {}", e))
             })?;
 
@@ -258,22 +257,24 @@ impl UserStorage for DynamoUserStorage {
                 .client
                 .scan()
                 .table_name(&self.table_name)
-                .filter_expression(
-                    "begins_with(pk, :site_prefix) AND sk = :profile_sk",
-                )
+                .filter_expression("begins_with(pk, :site_prefix) AND sk = :profile_sk")
                 .expression_attribute_values(
                     ":site_prefix",
                     AttributeValue::S(format!("{}#USER#", self.site_id)),
                 )
-                .expression_attribute_values(":profile_sk", AttributeValue::S("PROFILE".to_string()));
+                .expression_attribute_values(
+                    ":profile_sk",
+                    AttributeValue::S("PROFILE".to_string()),
+                );
 
             if let Some(key) = exclusive_start_key {
                 query = query.set_exclusive_start_key(Some(key));
             }
 
-            let result = query.send().await.map_err(|e| {
-                UserStorageError::Database(format!("Failed to list users: {}", e))
-            })?;
+            let result = query
+                .send()
+                .await
+                .map_err(|e| UserStorageError::Database(format!("Failed to list users: {}", e)))?;
 
             if let Some(items) = result.items {
                 for item in items {
@@ -353,7 +354,9 @@ impl UserStorage for DynamoUserStorage {
             .table_name(&self.table_name)
             .key("pk", AttributeValue::S(pk))
             .key("sk", AttributeValue::S(Self::profile_sk()))
-            .update_expression("SET email = :email, email_lower = :email_lower, updated_at = :updated_at")
+            .update_expression(
+                "SET email = :email, email_lower = :email_lower, updated_at = :updated_at",
+            )
             .expression_attribute_values(":email", AttributeValue::S(user.email.clone()))
             .expression_attribute_values(":email_lower", AttributeValue::S(email_lower))
             .expression_attribute_values(":updated_at", AttributeValue::N(now.to_string()))
@@ -462,12 +465,14 @@ impl UserStorage for DynamoUserStorage {
             );
 
         if let Some(last_used) = passkey.last_used_at {
-            item_builder = item_builder.item("last_used_at", AttributeValue::N(last_used.to_string()));
+            item_builder =
+                item_builder.item("last_used_at", AttributeValue::N(last_used.to_string()));
         }
 
-        item_builder.send().await.map_err(|e| {
-            UserStorageError::Database(format!("Failed to add passkey: {}", e))
-        })?;
+        item_builder
+            .send()
+            .await
+            .map_err(|e| UserStorageError::Database(format!("Failed to add passkey: {}", e)))?;
 
         debug!("Added passkey {} for user {}", passkey.id, username);
         Ok(())
@@ -540,9 +545,8 @@ impl UserStorage for DynamoUserStorage {
             .ok_or_else(|| UserStorageError::PasskeyNotFound(passkey_id.to_string()))?;
 
         let credential_json = get_string(&item, "credential_json")?;
-        let mut credential: webauthn_rs::prelude::Passkey =
-            serde_json::from_str(&credential_json)
-                .map_err(|e| UserStorageError::Serialization(e.to_string()))?;
+        let mut credential: webauthn_rs::prelude::Passkey = serde_json::from_str(&credential_json)
+            .map_err(|e| UserStorageError::Serialization(e.to_string()))?;
 
         credential.update_credential(auth_result);
 
@@ -562,9 +566,7 @@ impl UserStorage for DynamoUserStorage {
             .expression_attribute_values(":last_used", AttributeValue::N(now.to_string()))
             .send()
             .await
-            .map_err(|e| {
-                UserStorageError::Database(format!("Failed to update passkey: {}", e))
-            })?;
+            .map_err(|e| UserStorageError::Database(format!("Failed to update passkey: {}", e)))?;
 
         debug!(
             "Updated passkey {} after auth for user {}",

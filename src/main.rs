@@ -14,7 +14,7 @@ use tenrankai::{
     openai, posts,
     site::{SiteBuilder, SiteManager},
     startup_checks, storage,
-    user_storage::{create_user_storage, User},
+    user_storage::{User, create_user_storage},
 };
 
 #[cfg(unix)]
