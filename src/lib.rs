@@ -21,6 +21,7 @@ pub mod static_files;
 pub mod storage;
 pub mod template_system;
 pub mod templating;
+pub mod user_storage;
 pub mod webp_encoder;
 
 // Re-export core types

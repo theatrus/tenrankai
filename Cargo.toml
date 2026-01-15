@@ -10,6 +10,9 @@ default = ["avif"]
 # AVIF support - can be disabled on platforms where it's hard to build
 # To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
 avif = ["dep:libavif", "dep:libavif-sys"]
+# User storage backend features (Phase 2/3 of pluggable user database)
+user-storage-sql = []      # SQLite/PostgreSQL support (requires sqlx, not yet implemented)
+user-storage-dynamodb = [] # DynamoDB support (not yet implemented)
 
 [dependencies]
 async-trait = "0.1"
