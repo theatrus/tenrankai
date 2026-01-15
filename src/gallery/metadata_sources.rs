@@ -112,10 +112,10 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
             }
             Ok(Event::Text(e)) => {
                 if in_title {
-                    metadata.title = Some(e.unescape().unwrap_or_default().to_string());
+                    metadata.title = Some(e.decode().unwrap_or_default().to_string());
                     in_title = false;
                 } else if in_description {
-                    metadata.description = Some(e.unescape().unwrap_or_default().to_string());
+                    metadata.description = Some(e.decode().unwrap_or_default().to_string());
                     in_description = false;
                 }
             }
