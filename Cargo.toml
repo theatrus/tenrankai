@@ -27,7 +27,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["io"] }
-toml_edit = { version = "0.23", features = ["serde"] }
+toml_edit = { version = "0.24", features = ["serde"] }
 tracing = "0.1"
 url = "2.5"
 urlencoding = "2"
@@ -92,8 +92,8 @@ reqwest = { version = "0.13", features = ["json"] }
 mime_guess = "2.0"
 rand = "0.9"
 fnv = "1.0"
-lru = "0.12"
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+lru = "0.16"
+zip = { version = "7", default-features = false, features = ["deflate"] }
 num_cpus = "1.16"
 
 # Logging
