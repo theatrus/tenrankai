@@ -18,13 +18,14 @@ path = "src/lib.rs"
 default = ["avif"]
 # AVIF support - can be disabled on platforms where it's hard to build
 # To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
-avif = ["dep:libavif", "dep:libavif-sys"]
+avif = ["dep:libavif", "dep:libavif-sys", "tenrankai-image/avif"]
 # User storage backend features (forwarded to tenrankai-users)
 users-sql = ["tenrankai-users/sql"]
 users-dynamodb = ["tenrankai-users/dynamodb"]
 
 [dependencies]
 # Internal crates
+tenrankai-image.workspace = true
 tenrankai-storage.workspace = true
 tenrankai-users.workspace = true
 

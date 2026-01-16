@@ -4938,6 +4938,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "tempfile",
+ "tenrankai-image",
  "tenrankai-storage",
  "tenrankai-users",
  "thiserror 2.0.17",
@@ -4958,6 +4959,24 @@ dependencies = [
  "webauthn-rs-proto",
  "webp",
  "zip",
+]
+
+[[package]]
+name = "tenrankai-image"
+version = "0.2.0"
+dependencies = [
+ "ab_glyph",
+ "flate2",
+ "image",
+ "imageproc",
+ "libavif",
+ "libavif-sys",
+ "libwebp-sys 0.14.1",
+ "rgb",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tracing",
+ "webp",
 ]
 
 [[package]]

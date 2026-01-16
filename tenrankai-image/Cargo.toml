@@ -1,0 +1,36 @@
+[package]
+name = "tenrankai-image"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Image processing library with format handling, ICC profiles, and HDR support"
+
+[features]
+default = []
+avif = ["dep:libavif", "dep:libavif-sys"]
+
+[dependencies]
+# Image processing
+image.workspace = true
+imageproc.workspace = true
+flate2.workspace = true
+rgb.workspace = true
+
+# Font rendering
+ab_glyph.workspace = true
+
+# WebP encoding
+webp.workspace = true
+libwebp-sys.workspace = true
+
+# AVIF support (optional)
+libavif = { workspace = true, optional = true }
+libavif-sys = { workspace = true, optional = true }
+
+# Error handling and utilities
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
