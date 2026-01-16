@@ -151,27 +151,6 @@ body {
     }
 }
 
-/* Loading state */
-.image-container::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 40px;
-    height: 40px;
-    border: 3px solid #666;
-    border-top-color: var(--text-primary);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.image-container.loading::before {
-    opacity: 1;
-}
-
 .image-container.loading img {
     opacity: 0;
 }
