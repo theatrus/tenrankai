@@ -46,6 +46,63 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite", "postgre
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 webauthn-rs-proto = "0.5"
 
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+httpdate = "1.0"
+
+# Templating
+liquid = "0.26"
+liquid-core = "0.26"
+
+# Image processing
+image = "0.25"
+imageproc = "0.26"
+ab_glyph = "0.2"
+resvg = "0.46"
+usvg = "0.46"
+ico = "0.5"
+webp = { version = "0.3", features = ["img"] }
+libwebp-sys = "0.14"
+libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"] }
+libavif-sys = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"] }
+rgb = "0.8"
+
+# EXIF and metadata
+rexif = "0.7"
+quick-xml = "0.39"
+
+# Markdown
+pulldown-cmark = "0.13"
+
+# Crypto and encoding
+hmac = "0.12"
+sha2 = "0.10"
+flate2 = "1.1"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# HTTP client
+reqwest = { version = "0.13", features = ["json"] }
+
+# Utilities
+mime_guess = "2.0"
+rand = "0.9"
+fnv = "1.0"
+lru = "0.12"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+num_cpus = "1.16"
+
+# Logging
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+env_logger = "0.11"
+
+# Testing
+axum-test = "18.6"
+regex = "1"
+
 # Internal crates
 tenrankai-storage = { path = "tenrankai-storage" }
 tenrankai-users = { path = "tenrankai-users" }
