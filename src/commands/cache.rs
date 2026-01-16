@@ -377,19 +377,27 @@ pub async fn invalidate_folder(
     let tile_config = gallery_config.tiles.as_ref();
 
     for entry in &image_files {
+        // Construct full path (folder_path + filename)
+        // Storage.list() returns just filenames, not full paths
+        let full_path = if folder_path.is_empty() {
+            entry.path.clone()
+        } else {
+            format!("{}/{}", folder_path, entry.path)
+        };
+
         // Generate hashes for all size/format/watermark combinations
         // Use the same method as the serving code (generate_image_cache_key)
         for size in ImageSize::ALL {
             for format in &["jpg", "webp", "png", "avif"] {
                 // Non-watermarked variant
                 let hash =
-                    gallery.generate_image_cache_key(&entry.path, &size.as_str(), format, false);
+                    gallery.generate_image_cache_key(&full_path, &size.as_str(), format, false);
                 hashes_to_delete.insert(hash);
 
                 // Watermarked variant (only for sizes that support it)
                 if size.supports_watermark() {
                     let hash_wm =
-                        gallery.generate_image_cache_key(&entry.path, &size.as_str(), format, true);
+                        gallery.generate_image_cache_key(&full_path, &size.as_str(), format, true);
                     hashes_to_delete.insert(hash_wm);
                 }
             }
@@ -400,7 +408,7 @@ pub async fn invalidate_folder(
             let tile_size = tc.tile_size;
 
             // Try to get image dimensions from source to calculate tile coordinates
-            match source_storage.read(&entry.path).await {
+            match source_storage.read(&full_path).await {
                 Ok(data) => {
                     if let Ok(reader) =
                         image::ImageReader::new(std::io::Cursor::new(&data)).with_guessed_format()
@@ -414,23 +422,13 @@ pub async fn invalidate_folder(
                                 for format in &["jpg", "webp", "png", "avif"] {
                                     // Standard tile
                                     let tile_filename = generate_tile_cache_filename(
-                                        &entry.path,
-                                        tile_x,
-                                        tile_y,
-                                        tile_size,
-                                        false,
-                                        format,
+                                        &full_path, tile_x, tile_y, tile_size, false, format,
                                     );
                                     tile_filenames_to_delete.insert(tile_filename);
 
                                     // Retina tile
                                     let tile_filename_retina = generate_tile_cache_filename(
-                                        &entry.path,
-                                        tile_x,
-                                        tile_y,
-                                        tile_size,
-                                        true,
-                                        format,
+                                        &full_path, tile_x, tile_y, tile_size, true, format,
                                     );
                                     tile_filenames_to_delete.insert(tile_filename_retina);
                                 }
@@ -438,8 +436,11 @@ pub async fn invalidate_folder(
                         }
                     }
                 }
-                Err(_) => {
-                    // Silently skip tile generation for this image if we can't read it
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Could not read '{}' for tile calculation: {}",
+                        full_path, e
+                    );
                 }
             }
         }
