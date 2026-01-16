@@ -92,12 +92,12 @@ jobs:
 
     - name: Build (Linux/macOS)
       if: matrix.os != 'windows-latest'
-      run: cargo build --release --target ${{ matrix.target }}
+      run: cargo build --release -p tenrankai --target ${{ matrix.target }}
 
     - name: Build (Windows - no AVIF)
       if: matrix.os == 'windows-latest'
       run: |
-        cargo build --release --target ${{ matrix.target }} --no-default-features
+        cargo build --release -p tenrankai --target ${{ matrix.target }} --no-default-features
 
     - name: Create archive (Linux/macOS)
       if: matrix.os != 'windows-latest'

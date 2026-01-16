@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use tenrankai::user_storage::{create_user_storage, UserStorage};
+//! use tenrankai_users::{create_user_storage, UserStorage};
 //!
 //! // Create storage from URL
 //! let storage = create_user_storage("users.toml", "default").await?;
@@ -18,19 +18,19 @@
 //! }
 //! ```
 
-#[cfg(feature = "user-storage-dynamodb")]
+#[cfg(feature = "dynamodb")]
 mod dynamodb;
 mod error;
-#[cfg(feature = "user-storage-sql")]
+#[cfg(feature = "sql")]
 mod sql;
 mod toml_backend;
 mod types;
 mod url;
 
-#[cfg(feature = "user-storage-dynamodb")]
+#[cfg(feature = "dynamodb")]
 pub use dynamodb::DynamoUserStorage;
 pub use error::UserStorageError;
-#[cfg(feature = "user-storage-sql")]
+#[cfg(feature = "sql")]
 pub use sql::SqlUserStorage;
 pub use toml_backend::TomlUserStorage;
 pub use types::{User, UserPasskey, UserWithUsername, UserWithUsernameMut};

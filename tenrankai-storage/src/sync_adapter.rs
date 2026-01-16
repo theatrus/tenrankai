@@ -566,7 +566,7 @@ pub fn storage_open_sync(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::FilesystemStorage;
+    use crate::FilesystemStorage;
     use std::sync::Arc;
     use tempfile::TempDir;
 

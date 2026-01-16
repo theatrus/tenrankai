@@ -4900,7 +4900,6 @@ dependencies = [
  "ab_glyph",
  "async-trait",
  "aws-config",
- "aws-sdk-dynamodb",
  "aws-sdk-s3",
  "aws-sdk-sesv2",
  "axum",
@@ -4939,6 +4938,8 @@ dependencies = [
  "sha2",
  "sqlx",
  "tempfile",
+ "tenrankai-storage",
+ "tenrankai-users",
  "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
@@ -4957,6 +4958,48 @@ dependencies = [
  "webauthn-rs-proto",
  "webp",
  "zip",
+]
+
+[[package]]
+name = "tenrankai-storage"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "bytes",
+ "futures",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "url",
+ "urlencoding",
+ "walkdir",
+]
+
+[[package]]
+name = "tenrankai-users"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-sdk-dynamodb",
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml_edit",
+ "tracing",
+ "uuid",
+ "webauthn-rs",
 ]
 
 [[package]]

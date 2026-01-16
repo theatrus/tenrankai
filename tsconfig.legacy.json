@@ -5,7 +5,7 @@
     "module": "ES2020",
     "moduleResolution": "node",
     "outDir": "./static/js",
-    "rootDir": "./src/js",
+    "rootDir": "./frontend/legacy",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -17,11 +17,11 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/js/*"]
+      "@/*": ["frontend/legacy/*"]
     }
   },
   "include": [
-    "src/js/**/*"
+    "frontend/legacy/**/*"
   ],
   "exclude": [
     "node_modules",

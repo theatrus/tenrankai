@@ -9,33 +9,33 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    
+
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    
+
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    
+
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/frontend/*"],
-      "@components/*": ["src/frontend/components/*"],
-      "@hooks/*": ["src/frontend/hooks/*"],
-      "@api/*": ["src/frontend/api/*"],
-      "@types/*": ["src/frontend/types/*"]
+      "@/*": ["frontend/react/*"],
+      "@components/*": ["frontend/react/components/*"],
+      "@hooks/*": ["frontend/react/hooks/*"],
+      "@api/*": ["frontend/react/api/*"],
+      "@types/*": ["frontend/react/types/*"]
     }
   },
   "include": [
-    "src/frontend/**/*",
-    "src/js/**/*"
+    "frontend/react/**/*",
+    "frontend/legacy/**/*"
   ],
   "exclude": [
-    "static/**/*", 
-    "node_modules", 
+    "static/**/*",
+    "node_modules",
     "target",
     "dist"
   ]

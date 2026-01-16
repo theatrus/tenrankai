@@ -21,15 +21,28 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 # Set working directory
 WORKDIR /app
 
-# Copy all source files and assets
+# Copy workspace manifests and all crate Cargo.toml files first (for caching)
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+COPY tenrankai/Cargo.toml ./tenrankai/
+COPY tenrankai-storage/Cargo.toml ./tenrankai-storage/
+COPY tenrankai-users/Cargo.toml ./tenrankai-users/
+
+# Copy all Rust source files
+COPY tenrankai/src ./tenrankai/src
+COPY tenrankai/build.rs ./tenrankai/
+COPY tenrankai-storage/src ./tenrankai-storage/src
+COPY tenrankai-users/src ./tenrankai-users/src
+
+# Copy frontend source and config
+COPY frontend ./frontend
+COPY package.json package-lock.json tsconfig.json tsconfig.legacy.json vite.config.js ./
+
+# Copy templates and static assets
 COPY templates ./templates
 COPY static ./static
-COPY package.json package-lock.json tsconfig.json tsconfig.legacy.json vite.config.js build.rs ./
 
 # Build the application with all features in release mode (will trigger frontend build)
-RUN cargo build --release
+RUN cargo build --release -p tenrankai
 
 # Runtime stage
 FROM debian:bookworm-slim

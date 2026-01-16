@@ -1225,6 +1225,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires specific test image that isn't in repository"]
     async fn test_location_extraction_a7c5795() {
         // Create a test gallery instance
         let gallery_config = crate::GallerySystemConfig {

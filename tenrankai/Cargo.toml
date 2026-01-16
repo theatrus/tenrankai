@@ -1,0 +1,118 @@
+[package]
+name = "tenrankai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "tenrankai"
+path = "src/main.rs"
+
+[lib]
+name = "tenrankai"
+path = "src/lib.rs"
+
+[features]
+default = ["avif"]
+# AVIF support - can be disabled on platforms where it's hard to build
+# To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
+avif = ["dep:libavif", "dep:libavif-sys"]
+# User storage backend features (forwarded to tenrankai-users)
+users-sql = ["tenrankai-users/sql"]
+users-dynamodb = ["tenrankai-users/dynamodb"]
+
+[dependencies]
+# Internal crates
+tenrankai-storage.workspace = true
+tenrankai-users.workspace = true
+
+# Shared workspace dependencies
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+urlencoding.workspace = true
+uuid.workspace = true
+
+# AWS SDKs
+aws-config.workspace = true
+aws-sdk-s3.workspace = true
+aws-sdk-sesv2.workspace = true
+
+# WebAuthn
+webauthn-rs.workspace = true
+webauthn-rs-proto.workspace = true
+
+# Database (only directly needed for main crate operations)
+sqlx.workspace = true
+
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+httpdate = "1.0"
+
+# Templating
+liquid = "0.26"
+liquid-core = "0.26"
+
+# Image processing
+image = { version = "0.25" }
+imageproc = "0.26"
+ab_glyph = "0.2"
+resvg = "0.46"
+usvg = "0.46"
+ico = "0.5"
+webp = { version = "0.3", features = ["img"] }
+libwebp-sys = "0.14"
+libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"], optional = true }
+libavif-sys = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"], optional = true }
+rgb = "0.8"
+
+# EXIF and metadata
+rexif = "0.7"
+quick-xml = "0.39"
+
+# Markdown
+pulldown-cmark = "0.13"
+
+# Crypto and encoding
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
+flate2 = "1.1"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# HTTP client
+reqwest = { version = "0.13", features = ["json"] }
+
+# Utilities
+mime_guess = "2.0"
+rand = "0.9"
+url = "2.5"
+walkdir = "2.5"
+fnv = "1.0"
+lru = "0.12"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+num_cpus = "1.16"
+tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
+
+# Logging
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = "3.24"
+axum-test = "18.6"
+regex = "1"

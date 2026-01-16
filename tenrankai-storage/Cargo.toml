@@ -1,0 +1,29 @@
+[package]
+name = "tenrankai-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pluggable async storage abstraction for filesystem and S3"
+
+[dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+futures.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "rt"] }
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true
+urlencoding.workspace = true
+walkdir.workspace = true
+
+# S3 support
+aws-config.workspace = true
+aws-sdk-s3.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["full", "test-util"] }

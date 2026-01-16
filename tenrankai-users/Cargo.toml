@@ -1,0 +1,48 @@
+[package]
+name = "tenrankai-users"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pluggable user storage backends for authentication"
+
+[features]
+default = []
+sql = ["dep:sqlx"]
+dynamodb = ["dep:aws-sdk-dynamodb", "dep:aws-config", "dep:base64"]
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+# WebAuthn support (required for UserPasskey type)
+webauthn-rs.workspace = true
+
+# SQL backend (optional)
+[dependencies.sqlx]
+workspace = true
+optional = true
+
+# DynamoDB backend (optional)
+[dependencies.aws-sdk-dynamodb]
+workspace = true
+optional = true
+
+[dependencies.aws-config]
+workspace = true
+optional = true
+
+[dependencies.base64]
+workspace = true
+optional = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["full", "test-util"] }
