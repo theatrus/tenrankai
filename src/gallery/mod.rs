@@ -12,6 +12,7 @@ mod task_deduplicator;
 mod types;
 
 // Re-export public items
+pub use cache::generate_tile_cache_filename;
 pub use core::BreadcrumbItem;
 pub use error::GalleryError;
 pub use handlers::{

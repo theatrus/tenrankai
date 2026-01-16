@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, error, info, warn};
 
 /// Generate a tile cache filename that includes readable tile coordinates
-pub(crate) fn generate_tile_cache_filename(
+pub fn generate_tile_cache_filename(
     path: &str,
     tile_x: u32,
     tile_y: u32,
@@ -251,7 +251,8 @@ impl Gallery {
     }
 
     /// Generate a cache key for regular images with size, format, and watermark status
-    pub(crate) fn generate_image_cache_key(
+    /// This is the primary method for generating cache keys that match the serving code.
+    pub fn generate_image_cache_key(
         &self,
         path: &str,
         size: &str,

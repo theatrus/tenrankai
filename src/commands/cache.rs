@@ -133,21 +133,93 @@ pub async fn invalidate_image(
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::gallery::ImageSize;
+    use crate::gallery::generate_tile_cache_filename;
+    use std::collections::HashSet;
+
     let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
         gallery_config.clone(),
-        source_storage,
+        source_storage.clone(),
         cache_storage.clone(),
     ));
 
-    // Generate the hash prefix for this image path
-    let hash = gallery.generate_cache_key(path, "");
+    println!("Looking for image cache files for '{}'...", path);
+
+    // Generate all possible cache hashes for this image
+    // Use the same method as the serving code (generate_image_cache_key)
+    let mut hashes_to_delete: HashSet<String> = HashSet::new();
+    let mut tile_filenames_to_delete: HashSet<String> = HashSet::new();
+
+    // Standard sizes (thumbnail, gallery, medium, large + retina variants)
+    for size in ImageSize::ALL {
+        for format in &["jpg", "webp", "png", "avif"] {
+            // Non-watermarked variant
+            let hash = gallery.generate_image_cache_key(path, &size.as_str(), format, false);
+            hashes_to_delete.insert(hash);
+
+            // Watermarked variant (only for sizes that support it)
+            if size.supports_watermark() {
+                let hash_wm = gallery.generate_image_cache_key(path, &size.as_str(), format, true);
+                hashes_to_delete.insert(hash_wm);
+            }
+        }
+    }
+
+    // Handle tiles if configured
+    if let Some(ref tile_config) = gallery_config.tiles {
+        let tile_size = tile_config.tile_size;
+
+        // Try to get image dimensions from source to calculate tile coordinates
+        // Read the image to get dimensions (needed to know how many tiles exist)
+        match source_storage.read(path).await {
+            Ok(data) => {
+                if let Ok(reader) =
+                    image::ImageReader::new(std::io::Cursor::new(&data)).with_guessed_format()
+                    && let Ok((width, height)) = reader.into_dimensions()
+                {
+                    let max_tile_x = width.div_ceil(tile_size);
+                    let max_tile_y = height.div_ceil(tile_size);
+
+                    println!(
+                        "Image {}x{}, tile size {}, generating tile patterns for {}x{} grid",
+                        width, height, tile_size, max_tile_x, max_tile_y
+                    );
+
+                    for tile_y in 0..max_tile_y {
+                        for tile_x in 0..max_tile_x {
+                            for format in &["jpg", "webp", "png", "avif"] {
+                                // Standard tile
+                                let tile_filename = generate_tile_cache_filename(
+                                    path, tile_x, tile_y, tile_size, false, format,
+                                );
+                                tile_filenames_to_delete.insert(tile_filename);
+
+                                // Retina tile
+                                let tile_filename_retina = generate_tile_cache_filename(
+                                    path, tile_x, tile_y, tile_size, true, format,
+                                );
+                                tile_filenames_to_delete.insert(tile_filename_retina);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not read source image to determine tile count: {}",
+                    e
+                );
+                eprintln!("Tile cache files will not be invalidated for this image.");
+            }
+        }
+    }
 
     println!(
-        "Looking for image cache files for '{}' (hash prefix: {})...",
-        path,
-        &hash[..8.min(hash.len())]
+        "Generated {} standard cache keys and {} tile filenames to search for",
+        hashes_to_delete.len(),
+        tile_filenames_to_delete.len()
     );
 
     let mut deleted_count = 0;
@@ -156,8 +228,57 @@ pub async fn invalidate_image(
     // List files from storage
     let entries = cache_storage.list("").await?;
     for entry in entries {
-        // Check if file starts with the hash (handles all formats and watermarked variants)
-        if entry.path.starts_with(&hash) {
+        // Skip metadata files and composites
+        if entry.path.starts_with("composite_")
+            || entry.path == "metadata_cache.json"
+            || entry.path == "cache_metadata.json"
+        {
+            continue;
+        }
+
+        // Check for tile files (exact filename match)
+        if entry.path.starts_with("tile_") && tile_filenames_to_delete.contains(&entry.path) {
+            found_count += 1;
+            if dry_run {
+                println!("  Would delete tile: {}", entry.path);
+            } else {
+                match cache_storage.delete(&entry.path).await {
+                    Ok(_) => {
+                        println!("  Deleted tile: {}", entry.path);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  Failed to delete {}: {}", entry.path, e);
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Check if the cache filename (without extension) matches any of our hashes
+        // Cache files are named: {hash}.{extension} or {hash}_watermarked.{extension}
+        let filename_without_ext = entry
+            .path
+            .rsplit('.')
+            .skip(1)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join(".");
+
+        // The hash is the first part before any underscore suffix
+        let base_filename =
+            if let Some(stripped) = filename_without_ext.strip_suffix("_watermarked") {
+                stripped
+            } else {
+                &filename_without_ext
+            };
+
+        // Check if this hash matches any of our target hashes
+        if hashes_to_delete.contains(base_filename)
+            || hashes_to_delete.contains(&filename_without_ext)
+        {
             found_count += 1;
             if dry_run {
                 println!("  Would delete: {}", entry.path);
@@ -200,6 +321,7 @@ pub async fn invalidate_folder(
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use crate::gallery::ImageSize;
+    use crate::gallery::generate_tile_cache_filename;
     use std::collections::HashSet;
 
     let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
@@ -249,31 +371,85 @@ pub async fn invalidate_folder(
 
     // Generate all possible cache hashes for each image
     let mut hashes_to_delete: HashSet<String> = HashSet::new();
+    let mut tile_filenames_to_delete: HashSet<String> = HashSet::new();
+
+    // Get tile config if present
+    let tile_config = gallery_config.tiles.as_ref();
 
     for entry in &image_files {
+        // Construct full path (folder_path + filename)
+        // Storage.list() returns just filenames, not full paths
+        let full_path = if folder_path.is_empty() {
+            entry.path.clone()
+        } else {
+            format!("{}/{}", folder_path, entry.path)
+        };
+
         // Generate hashes for all size/format/watermark combinations
+        // Use the same method as the serving code (generate_image_cache_key)
         for size in ImageSize::ALL {
             for format in &["jpg", "webp", "png", "avif"] {
                 // Non-watermarked variant
-                let hash = gallery
-                    .generate_cache_key(&entry.path, &format!("{}_{}", size.as_str(), format));
+                let hash =
+                    gallery.generate_image_cache_key(&full_path, &size.as_str(), format, false);
                 hashes_to_delete.insert(hash);
 
                 // Watermarked variant (only for sizes that support it)
                 if size.supports_watermark() {
-                    let hash_wm = gallery.generate_cache_key(
-                        &entry.path,
-                        &format!("{}_{}_watermarked", size.as_str(), format),
-                    );
+                    let hash_wm =
+                        gallery.generate_image_cache_key(&full_path, &size.as_str(), format, true);
                     hashes_to_delete.insert(hash_wm);
+                }
+            }
+        }
+
+        // Handle tiles if configured
+        if let Some(tc) = tile_config {
+            let tile_size = tc.tile_size;
+
+            // Try to get image dimensions from source to calculate tile coordinates
+            match source_storage.read(&full_path).await {
+                Ok(data) => {
+                    if let Ok(reader) =
+                        image::ImageReader::new(std::io::Cursor::new(&data)).with_guessed_format()
+                        && let Ok((width, height)) = reader.into_dimensions()
+                    {
+                        let max_tile_x = width.div_ceil(tile_size);
+                        let max_tile_y = height.div_ceil(tile_size);
+
+                        for tile_y in 0..max_tile_y {
+                            for tile_x in 0..max_tile_x {
+                                for format in &["jpg", "webp", "png", "avif"] {
+                                    // Standard tile
+                                    let tile_filename = generate_tile_cache_filename(
+                                        &full_path, tile_x, tile_y, tile_size, false, format,
+                                    );
+                                    tile_filenames_to_delete.insert(tile_filename);
+
+                                    // Retina tile
+                                    let tile_filename_retina = generate_tile_cache_filename(
+                                        &full_path, tile_x, tile_y, tile_size, true, format,
+                                    );
+                                    tile_filenames_to_delete.insert(tile_filename_retina);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Could not read '{}' for tile calculation: {}",
+                        full_path, e
+                    );
                 }
             }
         }
     }
 
     println!(
-        "Generated {} cache key patterns to search for",
-        hashes_to_delete.len()
+        "Generated {} standard cache keys and {} tile filenames to search for",
+        hashes_to_delete.len(),
+        tile_filenames_to_delete.len()
     );
 
     // List all cache files and delete matching ones
@@ -288,6 +464,27 @@ pub async fn invalidate_folder(
             || cache_entry.path == "metadata_cache.json"
             || cache_entry.path == "cache_metadata.json"
         {
+            continue;
+        }
+
+        // Check for tile files (exact filename match)
+        if cache_entry.path.starts_with("tile_")
+            && tile_filenames_to_delete.contains(&cache_entry.path)
+        {
+            found_count += 1;
+            if dry_run {
+                println!("  Would delete tile: {}", cache_entry.path);
+            } else {
+                match cache_storage.delete(&cache_entry.path).await {
+                    Ok(_) => {
+                        println!("  Deleted tile: {}", cache_entry.path);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  Failed to delete {}: {}", cache_entry.path, e);
+                    }
+                }
+            }
             continue;
         }
 
