@@ -42,7 +42,7 @@ impl StorageUrl {
     /// # Examples
     ///
     /// ```
-    /// use tenrankai::storage::StorageUrl;
+    /// use tenrankai_storage::StorageUrl;
     ///
     /// // Local filesystem
     /// let url = StorageUrl::parse("photos").unwrap();

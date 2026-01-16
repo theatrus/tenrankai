@@ -8,19 +8,20 @@ fn main() {
     // Tell Cargo when to re-run build.rs
     // Note: For directories, Cargo only checks if the directory itself changed,
     // not the files within. We handle file-level checking in needs_rebuild().
+    // Paths are relative to workspace root (one level up from this crate)
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=package.json");
-    println!("cargo:rerun-if-changed=package-lock.json");
-    println!("cargo:rerun-if-changed=tsconfig.json");
-    println!("cargo:rerun-if-changed=tsconfig.legacy.json");
-    println!("cargo:rerun-if-changed=vite.config.ts");
-    println!("cargo:rerun-if-changed=vite.config.js");
-    println!("cargo:rerun-if-changed=src/js");
-    println!("cargo:rerun-if-changed=src/frontend");
-    println!("cargo:rerun-if-changed=src/css");
-    println!("cargo:rerun-if-changed=src/assets");
-    println!("cargo:rerun-if-changed=static");
-    println!("cargo:rerun-if-changed=scripts");
+    println!("cargo:rerun-if-changed=../package.json");
+    println!("cargo:rerun-if-changed=../package-lock.json");
+    println!("cargo:rerun-if-changed=../tsconfig.json");
+    println!("cargo:rerun-if-changed=../tsconfig.legacy.json");
+    println!("cargo:rerun-if-changed=../vite.config.ts");
+    println!("cargo:rerun-if-changed=../vite.config.js");
+    println!("cargo:rerun-if-changed=../frontend/legacy");
+    println!("cargo:rerun-if-changed=../frontend/react");
+    println!("cargo:rerun-if-changed=../src/css");
+    println!("cargo:rerun-if-changed=../src/assets");
+    println!("cargo:rerun-if-changed=../static");
+    println!("cargo:rerun-if-changed=../scripts");
 
     // Control frontend builds based on environment
     let skip_frontend_build = env::var("TENRANKAI_SKIP_FRONTEND").is_ok();
@@ -42,14 +43,20 @@ fn main() {
 
 /// Check if frontend rebuild is needed by comparing source and output timestamps
 fn needs_rebuild() -> bool {
-    let output_dirs = ["static/dist", "static/js"];
-    let source_dirs = ["src/js", "src/frontend", "src/css", "src/assets"];
+    // Paths relative to workspace root (parent of this crate)
+    let output_dirs = ["../static/dist", "../static/js"];
+    let source_dirs = [
+        "../frontend/legacy",
+        "../frontend/react",
+        "../src/css",
+        "../src/assets",
+    ];
     let config_files = [
-        "package.json",
-        "tsconfig.json",
-        "tsconfig.legacy.json",
-        "vite.config.ts",
-        "vite.config.js",
+        "../package.json",
+        "../tsconfig.json",
+        "../tsconfig.legacy.json",
+        "../vite.config.ts",
+        "../vite.config.js",
     ];
 
     // Get the newest source file timestamp
@@ -194,7 +201,8 @@ fn node_command() -> &'static str {
 }
 
 fn build_frontend() {
-    let frontend_dir = Path::new(".");
+    // Frontend directory is at workspace root (parent of this crate)
+    let frontend_dir = Path::new("..");
 
     // Check if Node.js and npm are available
     if !check_node_available() {
@@ -241,9 +249,11 @@ fn build_frontend() {
 }
 
 fn build_legacy_typescript(frontend_dir: &Path) {
-    // Check if legacy TypeScript source exists
-    if !frontend_dir.join("src/js").exists() {
-        println!("cargo:warning=No legacy TypeScript found (src/js). Skipping legacy build.");
+    // Check if legacy TypeScript source exists (now at frontend/legacy)
+    if !frontend_dir.join("frontend/legacy").exists() {
+        println!(
+            "cargo:warning=No legacy TypeScript found (frontend/legacy). Skipping legacy build."
+        );
         return;
     }
 

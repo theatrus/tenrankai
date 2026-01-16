@@ -1,0 +1,119 @@
+[package]
+name = "tenrankai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "tenrankai"
+path = "src/main.rs"
+
+[lib]
+name = "tenrankai"
+path = "src/lib.rs"
+
+[features]
+default = ["avif"]
+# AVIF support - can be disabled on platforms where it's hard to build
+# To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
+avif = ["dep:libavif", "dep:libavif-sys", "tenrankai-image/avif"]
+# User storage backend features (forwarded to tenrankai-users)
+users-sql = ["tenrankai-users/sql"]
+users-dynamodb = ["tenrankai-users/dynamodb"]
+
+[dependencies]
+# Internal crates
+tenrankai-image.workspace = true
+tenrankai-storage.workspace = true
+tenrankai-users.workspace = true
+
+# Shared workspace dependencies
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+urlencoding.workspace = true
+uuid.workspace = true
+
+# AWS SDKs
+aws-config.workspace = true
+aws-sdk-s3.workspace = true
+aws-sdk-sesv2.workspace = true
+
+# WebAuthn
+webauthn-rs.workspace = true
+webauthn-rs-proto.workspace = true
+
+# Database (only directly needed for main crate operations)
+sqlx.workspace = true
+
+# Web framework
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+httpdate.workspace = true
+
+# Templating
+liquid.workspace = true
+liquid-core.workspace = true
+
+# Image processing
+image.workspace = true
+imageproc.workspace = true
+ab_glyph.workspace = true
+resvg.workspace = true
+usvg.workspace = true
+ico.workspace = true
+webp.workspace = true
+libwebp-sys.workspace = true
+libavif = { workspace = true, optional = true }
+libavif-sys = { workspace = true, optional = true }
+rgb.workspace = true
+
+# EXIF and metadata
+rexif.workspace = true
+quick-xml.workspace = true
+
+# Markdown
+pulldown-cmark.workspace = true
+
+# Crypto and encoding
+base64.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+flate2.workspace = true
+
+# CLI
+clap.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Utilities
+mime_guess.workspace = true
+rand.workspace = true
+url.workspace = true
+walkdir.workspace = true
+fnv.workspace = true
+lru.workspace = true
+zip.workspace = true
+num_cpus.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+
+# Logging
+tracing-subscriber.workspace = true
+env_logger.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+axum-test.workspace = true
+regex.workspace = true

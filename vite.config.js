@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
-  root: 'src/frontend',
+  root: 'frontend/react',
   plugins: [react()],
-  
+
   build: {
     outDir: '../../static/dist',
     emptyOutDir: true,
     rollupOptions: {
-      input: resolve(__dirname, 'src/frontend/app.ts'),
+      input: resolve(__dirname, 'frontend/react/app.ts'),
       output: {
         entryFileNames: 'tenrankai.js',
         format: 'iife',
@@ -30,7 +30,7 @@ export default defineConfig({
     // Minify the output (using esbuild by default)
     minify: true
   },
-  
+
   // Development server configuration
   server: {
     port: 5173,
@@ -46,9 +46,9 @@ export default defineConfig({
         bypass(req, res, options) {
           const url = req.url || '';
           // Only bypass for Vite's own development files
-          if (url.startsWith('/@vite') || 
+          if (url.startsWith('/@vite') ||
               url.startsWith('/@fs') ||
-              url.startsWith('/src/') ||
+              url.startsWith('/frontend/') ||
               url.startsWith('/node_modules/')) {
             return url; // Let Vite handle these
           }
@@ -58,23 +58,23 @@ export default defineConfig({
       }
     }
   },
-  
+
   // Define environment variables for React components
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
   },
-  
+
   // Resolve configuration
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src/frontend'),
-      '@components': resolve(__dirname, 'src/frontend/components'),
-      '@hooks': resolve(__dirname, 'src/frontend/hooks'),
-      '@api': resolve(__dirname, 'src/frontend/api'),
-      '@types': resolve(__dirname, 'src/frontend/types')
+      '@': resolve(__dirname, 'frontend/react'),
+      '@components': resolve(__dirname, 'frontend/react/components'),
+      '@hooks': resolve(__dirname, 'frontend/react/hooks'),
+      '@api': resolve(__dirname, 'frontend/react/api'),
+      '@types': resolve(__dirname, 'frontend/react/types')
     }
   },
-  
+
   // CSS configuration
   css: {
     modules: {

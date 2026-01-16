@@ -10,7 +10,7 @@
 
 use super::DynUserStorage;
 use super::error::UserStorageError;
-#[cfg(feature = "user-storage-sql")]
+#[cfg(feature = "sql")]
 use super::sql::SqlUserStorage;
 use super::toml_backend::TomlUserStorage;
 use std::path::PathBuf;
@@ -132,7 +132,7 @@ impl UserStorageUrl {
             }
 
             Self::Sqlite { path } => {
-                #[cfg(feature = "user-storage-sql")]
+                #[cfg(feature = "sql")]
                 {
                     // Build SQLite connection string
                     let connection_string = format!("sqlite:{}", path.display());
@@ -140,27 +140,27 @@ impl UserStorageUrl {
                         SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
                     Ok(Arc::new(storage))
                 }
-                #[cfg(not(feature = "user-storage-sql"))]
+                #[cfg(not(feature = "sql"))]
                 {
                     let _ = path; // Suppress unused warning
                     Err(UserStorageError::UnsupportedBackend(
-                        "SQLite support requires the 'user-storage-sql' feature".to_string(),
+                        "SQLite support requires the 'sql' feature".to_string(),
                     ))
                 }
             }
 
             Self::PostgreSql { connection_string } => {
-                #[cfg(feature = "user-storage-sql")]
+                #[cfg(feature = "sql")]
                 {
                     let storage =
                         SqlUserStorage::new(&connection_string, site_id.to_string()).await?;
                     Ok(Arc::new(storage))
                 }
-                #[cfg(not(feature = "user-storage-sql"))]
+                #[cfg(not(feature = "sql"))]
                 {
                     let _ = connection_string; // Suppress unused warning
                     Err(UserStorageError::UnsupportedBackend(
-                        "PostgreSQL support requires the 'user-storage-sql' feature".to_string(),
+                        "PostgreSQL support requires the 'sql' feature".to_string(),
                     ))
                 }
             }
@@ -170,7 +170,7 @@ impl UserStorageUrl {
                 region,
                 endpoint,
             } => {
-                #[cfg(feature = "user-storage-dynamodb")]
+                #[cfg(feature = "dynamodb")]
                 {
                     use super::dynamodb::DynamoUserStorage;
                     let storage =
@@ -178,11 +178,11 @@ impl UserStorageUrl {
                             .await?;
                     Ok(Arc::new(storage))
                 }
-                #[cfg(not(feature = "user-storage-dynamodb"))]
+                #[cfg(not(feature = "dynamodb"))]
                 {
                     let _ = (table_name, region, endpoint); // Suppress unused warnings
                     Err(UserStorageError::UnsupportedBackend(
-                        "DynamoDB support requires the 'user-storage-dynamodb' feature".to_string(),
+                        "DynamoDB support requires the 'dynamodb' feature".to_string(),
                     ))
                 }
             }

@@ -18,11 +18,13 @@ pub mod robots;
 pub mod site;
 pub mod startup_checks;
 pub mod static_files;
-pub mod storage;
 pub mod template_system;
 pub mod templating;
-pub mod user_storage;
 pub mod webp_encoder;
+
+// Re-export extracted crates for backward compatibility
+pub use tenrankai_storage as storage;
+pub use tenrankai_users as user_storage;
 
 // Re-export core types
 pub use api_response::ApiResponse;

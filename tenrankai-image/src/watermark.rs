@@ -1,8 +1,8 @@
 use ab_glyph::{FontVec, PxScale};
-use chrono::Datelike;
 use image::{DynamicImage, Rgba, RgbaImage};
 use imageproc::drawing::{draw_text_mut, text_size};
 use std::error::Error;
+use std::path::Path;
 
 /// Configuration for copyright notice
 pub struct CopyrightConfig {
@@ -30,30 +30,28 @@ impl Default for CopyrightConfig {
 /// Add a copyright notice to an image
 pub fn add_copyright_notice(
     image: &DynamicImage,
-    config: &CopyrightConfig,
-    font_path: &std::path::Path,
+    copyright_text: &str,
+    font_size: f32,
+    padding: u32,
+    font_path: &Path,
 ) -> Result<DynamicImage, Box<dyn Error>> {
     // Convert to RGBA if not already
     let mut rgba_image = image.to_rgba8();
-
-    // Get current year
-    let current_year = chrono::Local::now().year();
-    let copyright_text = format!("© {} {}", current_year, config.copyright_holder);
 
     // Load the font from file
     let font_data = std::fs::read(font_path)?;
     let font = FontVec::try_from_vec(font_data).map_err(|_| "Failed to parse font")?;
 
-    let scale = PxScale::from(config.font_size);
+    let scale = PxScale::from(font_size);
 
     // Calculate text dimensions
-    let (text_width, text_height) = text_size(scale, &font, &copyright_text);
+    let (text_width, text_height) = text_size(scale, &font, copyright_text);
 
     // Calculate position (bottom-left with padding)
     let _image_width = rgba_image.width();
     let image_height = rgba_image.height();
-    let x = config.padding as i32;
-    let y = (image_height - config.padding - text_height) as i32;
+    let x = padding as i32;
+    let y = (image_height - padding - text_height) as i32;
 
     // Sample the area where text will be drawn to determine if we need black or white text
     let text_color = determine_text_color(&rgba_image, x as u32, y as u32, text_width, text_height);
@@ -66,7 +64,7 @@ pub fn add_copyright_notice(
         y,
         scale,
         &font,
-        &copyright_text,
+        copyright_text,
     );
 
     // Convert to RGB for JPEG compatibility
@@ -171,13 +169,7 @@ mod tests {
         let img =
             DynamicImage::ImageRgba8(RgbaImage::from_pixel(200, 200, Rgba([128, 128, 128, 255])));
 
-        let config = CopyrightConfig {
-            copyright_holder: "Test Photographer".to_string(),
-            font_size: 16.0,
-            padding: 5,
-        };
-
-        let result = add_copyright_notice(&img, &config, font_path);
+        let result = add_copyright_notice(&img, "© 2024 Test Photographer", 16.0, 5, font_path);
         assert!(result.is_ok());
 
         let output_img = result.unwrap();

@@ -3,9 +3,35 @@
 //! This module defines the core user types used by all storage backends.
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use webauthn_rs::prelude::Passkey;
 
-// Re-export UserPasskey from webauthn module (it has webauthn dependencies)
-pub use crate::login::webauthn::types::UserPasskey;
+/// A WebAuthn passkey credential for a user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserPasskey {
+    pub id: Uuid,
+    pub name: String,
+    pub credential: Passkey,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+impl UserPasskey {
+    pub fn new(name: String, credential: Passkey) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            credential,
+            created_at: chrono::Utc::now().timestamp(),
+            last_used_at: None,
+        }
+    }
+
+    pub fn update_last_used(&mut self) {
+        self.last_used_at = Some(chrono::Utc::now().timestamp());
+    }
+}
 
 /// A user account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
