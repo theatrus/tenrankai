@@ -1,4 +1,4 @@
-use crate::email::{EmailBody, EmailError, EmailMessage, EmailProvider};
+use crate::{EmailBody, EmailError, EmailMessage, EmailProvider};
 use async_trait::async_trait;
 use tracing::info;
 
