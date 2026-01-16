@@ -25,7 +25,9 @@ users-dynamodb = ["tenrankai-users/dynamodb"]
 
 [dependencies]
 # Internal crates
+tenrankai-email.workspace = true
 tenrankai-image.workspace = true
+tenrankai-metadata.workspace = true
 tenrankai-storage.workspace = true
 tenrankai-users.workspace = true
 

@@ -7,7 +7,7 @@ use aws_sdk_sesv2::{
 };
 use tracing::{debug, error};
 
-use crate::email::{EmailBody, EmailError, EmailMessage, EmailProvider, SesConfig};
+use crate::{EmailBody, EmailError, EmailMessage, EmailProvider, SesConfig};
 
 pub struct SesProvider {
     client: Client,

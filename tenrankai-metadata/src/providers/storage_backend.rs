@@ -1,11 +1,11 @@
-use crate::metadata_storage::{ImageUserMetadata, MetadataStorage, MetadataStorageError};
-use crate::storage::DynStorage;
+use crate::{ImageUserMetadata, MetadataStorage, MetadataStorageError};
 use async_trait::async_trait;
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use tenrankai_storage::DynStorage;
 
 /// Default LRU cache size if not configured
 const DEFAULT_CACHE_SIZE: usize = 1000;
@@ -79,11 +79,11 @@ struct MdFrontmatter {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct TomlMetadata {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub comments: Vec<crate::metadata_storage::Comment>,
+    pub comments: Vec<crate::Comment>,
     #[serde(default)]
     pub highlighted: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pick_status: Option<crate::metadata_storage::PickStatus>,
+    pub pick_status: Option<crate::PickStatus>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -554,9 +554,9 @@ impl MetadataStorage for StorageMetadataBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metadata_storage::PickStatus;
-    use crate::storage::FilesystemStorage;
+    use crate::PickStatus;
     use std::sync::Arc;
+    use tenrankai_storage::FilesystemStorage;
 
     fn create_test_storage(dir: &std::path::Path) -> DynStorage {
         std::fs::create_dir_all(dir).ok();
