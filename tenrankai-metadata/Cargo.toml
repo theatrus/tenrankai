@@ -1,0 +1,33 @@
+[package]
+name = "tenrankai-metadata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pluggable image metadata storage abstraction with sidecar file support"
+
+[dependencies]
+# Internal crates
+tenrankai-storage.workspace = true
+
+# Async
+async-trait.workspace = true
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+chrono.workspace = true
+toml_edit.workspace = true
+bytes.workspace = true
+
+# Caching
+lru.workspace = true
+
+# Utilities
+uuid.workspace = true
+
+# Error handling and logging
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

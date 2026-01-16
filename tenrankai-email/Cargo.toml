@@ -1,0 +1,23 @@
+[package]
+name = "tenrankai-email"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pluggable email provider abstraction with SES support"
+
+[dependencies]
+# Async
+async-trait.workspace = true
+tokio.workspace = true
+
+# AWS SES
+aws-config.workspace = true
+aws-sdk-sesv2.workspace = true
+
+# Serialization
+serde.workspace = true
+
+# Error handling and logging
+thiserror.workspace = true
+tracing.workspace = true

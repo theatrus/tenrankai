@@ -4942,7 +4942,9 @@ dependencies = [
  "sha2",
  "sqlx",
  "tempfile",
+ "tenrankai-email",
  "tenrankai-image",
+ "tenrankai-metadata",
  "tenrankai-storage",
  "tenrankai-users",
  "thiserror 2.0.17",
@@ -4966,6 +4968,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tenrankai-email"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "aws-config",
+ "aws-sdk-sesv2",
+ "serde",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tenrankai-image"
 version = "0.2.0"
 dependencies = [
@@ -4981,6 +4996,23 @@ dependencies = [
  "thiserror 2.0.17",
  "tracing",
  "webp",
+]
+
+[[package]]
+name = "tenrankai-metadata"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "chrono",
+ "lru",
+ "serde",
+ "tempfile",
+ "tenrankai-storage",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml_edit",
+ "uuid",
 ]
 
 [[package]]

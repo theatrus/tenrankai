@@ -1,4 +1,4 @@
-use crate::metadata_storage::{ImageUserMetadata, MetadataStorage, MetadataStorageError};
+use crate::{ImageUserMetadata, MetadataStorage, MetadataStorageError};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use tokio::fs;
@@ -108,7 +108,7 @@ impl MetadataStorage for SidecarMetadataStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metadata_storage::PickStatus;
+    use crate::PickStatus;
 
     #[test]
     fn test_sidecar_path_generation() {
