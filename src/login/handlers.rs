@@ -11,7 +11,7 @@ use tracing::{error, info};
 use super::AuthScope;
 use crate::{
     ApiResponse,
-    api::{create_signed_cookie, get_scoped_cookie_value},
+    api::{create_signed_cookie, get_scoped_cookie_value, is_https_request},
     api_response::no_cache_headers,
     site::ResolvedState,
 };
@@ -46,6 +46,7 @@ pub struct LoginQuery {
 pub async fn login_page(
     ResolvedState(app_state): ResolvedState,
     Query(query): Query<LoginQuery>,
+    request_headers: HeaderMap,
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
         "base_url": app_state.base_url().unwrap_or(""),
@@ -64,14 +65,13 @@ pub async fn login_page(
     };
 
     // Set return URL cookie if provided
+    let is_https = is_https_request(&request_headers);
     let mut headers = HeaderMap::new();
     if let Some(return_url) = query.return_url {
         // Validate the return URL to prevent open redirects
         if is_safe_return_url(&return_url) {
-            let cookie = AuthScope::RedirectState.format_cookie(
-                &urlencoding::encode(&return_url),
-                false, // TODO: Use HTTPS detection
-            );
+            let cookie =
+                AuthScope::RedirectState.format_cookie(&urlencoding::encode(&return_url), is_https);
             headers.insert(SET_COOKIE, cookie.parse().unwrap());
         }
     }
@@ -217,19 +217,17 @@ pub async fn verify_login(
     let return_url = get_return_url_from_cookies(&req_headers);
 
     // Create secure session cookie
+    let is_https = is_https_request(&req_headers);
     let signed_value = create_signed_cookie(app_state.cookie_secret(), &username)
         .map_err(LoginError::InternalError)?;
 
-    let auth_cookie = AuthScope::Session.format_cookie(
-        &signed_value,
-        false, // TODO: Use HTTPS detection
-    );
+    let auth_cookie = AuthScope::Session.format_cookie(&signed_value, is_https);
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, auth_cookie.parse().unwrap());
 
     // Clear the return URL cookie
-    let clear_cookie = AuthScope::RedirectState.clear_cookie(false); // TODO: Use HTTPS detection
+    let clear_cookie = AuthScope::RedirectState.clear_cookie(is_https);
     headers.append(SET_COOKIE, clear_cookie.parse().unwrap());
 
     info!("User {} logged in successfully", username);
@@ -275,8 +273,9 @@ pub async fn verify_login(
     Ok((headers, Redirect::to(&redirect_url)))
 }
 
-pub async fn logout() -> impl IntoResponse {
-    let cookie = AuthScope::Session.clear_cookie(false); // TODO: Use HTTPS detection
+pub async fn logout(request_headers: HeaderMap) -> impl IntoResponse {
+    let is_https = is_https_request(&request_headers);
+    let cookie = AuthScope::Session.clear_cookie(is_https);
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, cookie.parse().unwrap());

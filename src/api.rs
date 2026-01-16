@@ -63,6 +63,53 @@ pub fn get_scoped_cookie_value(headers: &HeaderMap, scope: AuthScope) -> Option<
     get_cookie_value(headers, scope.cookie_name())
 }
 
+/// Detect if the request is over HTTPS based on proxy headers.
+///
+/// Checks common reverse proxy headers:
+/// - `X-Forwarded-Proto: https`
+/// - `X-Forwarded-Ssl: on`
+/// - `Forwarded: proto=https`
+///
+/// Defaults to HTTPS (true) if no proxy headers are present, as most
+/// production deployments use HTTPS behind a reverse proxy.
+pub fn is_https_request(headers: &HeaderMap) -> bool {
+    // Check X-Forwarded-Proto header (most common)
+    if let Some(proto) = headers.get("x-forwarded-proto")
+        && let Ok(proto_str) = proto.to_str()
+    {
+        return proto_str.eq_ignore_ascii_case("https");
+    }
+
+    // Check X-Forwarded-Ssl header
+    if let Some(ssl) = headers.get("x-forwarded-ssl")
+        && let Ok(ssl_str) = ssl.to_str()
+    {
+        return ssl_str.eq_ignore_ascii_case("on");
+    }
+
+    // Check Forwarded header (RFC 7239)
+    if let Some(forwarded) = headers.get("forwarded")
+        && let Ok(forwarded_str) = forwarded.to_str()
+    {
+        // Parse "proto=https" from the Forwarded header
+        for part in forwarded_str.split(';') {
+            let part = part.trim();
+            if let Some((key, value)) = part.split_once('=')
+                && key.trim().eq_ignore_ascii_case("proto")
+                && value.trim().eq_ignore_ascii_case("https")
+            {
+                return true;
+            }
+        }
+        // If Forwarded header exists but doesn't say https, assume http
+        return false;
+    }
+
+    // Default to HTTPS when no proxy headers present
+    // Most production deployments use HTTPS behind a reverse proxy
+    true
+}
+
 #[derive(Deserialize)]
 pub struct GalleryPreviewQuery {
     count: Option<usize>,

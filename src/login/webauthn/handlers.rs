@@ -11,7 +11,7 @@ use super::{
     PasskeyAuthenticationState, PasskeyInfo, PasskeyRegistrationState, RegisterPasskeyRequest,
     StartAuthenticationRequest, UserPasskey,
 };
-use crate::{login::AuthScope, site::ResolvedState};
+use crate::{api::is_https_request, login::AuthScope, site::ResolvedState};
 
 #[derive(Debug, serde::Serialize)]
 pub struct HasPasskeysResponse {
@@ -293,6 +293,7 @@ pub async fn start_passkey_authentication(
 pub async fn finish_passkey_authentication(
     ResolvedState(app_state): ResolvedState,
     Path(auth_id): Path<String>,
+    request_headers: HeaderMap,
     Json(auth_data): Json<PublicKeyCredential>,
 ) -> Result<(HeaderMap, StatusCode), StatusCode> {
     // Get WebAuthn instance
@@ -344,13 +345,11 @@ pub async fn finish_passkey_authentication(
         })?;
 
     // Create session cookie
+    let is_https = is_https_request(&request_headers);
     let signed_value = crate::api::create_signed_cookie(app_state.cookie_secret(), &username)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let cookie = AuthScope::Session.format_cookie(
-        &signed_value,
-        false, // TODO: Use HTTPS detection
-    );
+    let cookie = AuthScope::Session.format_cookie(&signed_value, is_https);
 
     let mut headers = HeaderMap::new();
     headers.insert("Set-Cookie", cookie.parse().unwrap());

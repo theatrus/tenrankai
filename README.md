@@ -35,6 +35,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **Email Provider Support**: Pluggable email provider system with Amazon SES and null providers
 - **Cascading Static Files**: Support for multiple static directories with file overlay precedence
 - **WebAuthn/Passkey Support**: Modern passwordless authentication with biometric login
+- **Pluggable User Storage**: Store users in TOML files, SQLite, PostgreSQL, or DynamoDB
 - **S3 Storage Support**: Store galleries, caches, templates, posts, and static files on Amazon S3
 
 ## Installation
@@ -750,17 +751,28 @@ Tenrankai supports both email-based and WebAuthn/Passkey authentication for secu
 
 3. **User Administration**:
    ```bash
-   # List all users
+   # List all users (default: users.toml)
    cargo run -- user list
-   
+
    # Add a new user
-   cargo run -- user add --username alice --email alice@example.com
-   
+   cargo run -- user add alice alice@example.com
+
    # Remove a user
-   cargo run -- user remove --username alice
-   
+   cargo run -- user remove alice
+
    # Update user email
-   cargo run -- user update --username alice --email newemail@example.com
+   cargo run -- user update alice newemail@example.com
+
+   # Use a different database backend
+   cargo run -- user list --database sqlite://users.db
+   cargo run -- user list --database "postgresql://localhost/tenrankai"
+   cargo run -- user list --database "dynamodb://users-table?region=us-west-2"
+
+   # Export users to JSON (for migration)
+   cargo run -- user export --database users.toml --output users.json
+
+   # Import users from JSON
+   cargo run -- user import --database sqlite://users.db --input users.json
    ```
 
 ### WebAuthn/Passkey Authentication
@@ -795,6 +807,70 @@ Tenrankai supports modern WebAuthn/Passkey authentication for passwordless login
 - **Production**: Use `provider = "ses"` with Amazon SES for reliable email delivery
 - **Development/Testing**: Use `provider = "null"` to log emails to console instead of sending them
 - **No Configuration**: Without email configuration, login URLs will be logged to the server console
+
+### User Storage Backends
+
+Tenrankai supports multiple storage backends for user data, enabling flexible deployment options from simple file-based storage to enterprise databases.
+
+**Available Backends:**
+
+| Backend | URL Format | Use Case |
+|---------|------------|----------|
+| TOML File | `users.toml` or `file:///path/to/users.toml` | Simple deployments, single server |
+| SQLite | `sqlite:///path/to/users.db` | Local database, easy backup |
+| PostgreSQL | `postgresql://user:pass@host/db` | Production, multi-server |
+| DynamoDB | `dynamodb://table-name?region=us-west-2` | Serverless, AWS-native |
+
+**Configuration:**
+
+```toml
+[app]
+# TOML file (default, backward compatible)
+user_database = "users.toml"
+
+# SQLite database
+user_database = "sqlite://data/users.db"
+
+# PostgreSQL (shared across multiple servers)
+user_database = "postgresql://user:pass@localhost/tenrankai"
+
+# DynamoDB (serverless)
+user_database = "dynamodb://tenrankai-users?region=us-west-2"
+```
+
+**Multi-Site Support:**
+
+All database backends support multi-tenant isolation. Each site gets its own namespace:
+- TOML: Separate file per site
+- SQL: Site ID column for row-level isolation
+- DynamoDB: Site ID in partition key
+
+**Migration Between Backends:**
+
+```bash
+# Export from TOML to JSON
+cargo run -- user export --database users.toml --output users.json
+
+# Import to PostgreSQL
+cargo run -- user import --database "postgresql://localhost/tenrankai" --input users.json
+
+# Skip existing users during import
+cargo run -- user import --database sqlite://users.db --input users.json --skip-existing
+```
+
+**Feature Flags:**
+
+SQL and DynamoDB backends require feature flags:
+```bash
+# Build with SQL support (SQLite + PostgreSQL)
+cargo build --features user-storage-sql
+
+# Build with DynamoDB support
+cargo build --features user-storage-dynamodb
+
+# Build with all backends
+cargo build --features user-storage-all
+```
 
 ### Running Without Authentication
 
@@ -938,6 +1014,8 @@ Tenrankai is under active development with a comprehensive codebase and document
 
 ### Recent Major Features
 
+- ✅ **Pluggable User Storage**: TOML, SQLite, PostgreSQL, and DynamoDB backends for user data
+- ✅ **User Migration Tools**: Export/import commands for migrating between storage backends
 - ✅ **Pluggable Storage Abstraction**: S3 and filesystem backends for all components
 - ✅ **S3 Storage Support**: Galleries, caches, templates, posts, and static files on S3
 - ✅ **Signed URL Redirects**: Direct S3 downloads for reduced server bandwidth
@@ -948,7 +1026,6 @@ Tenrankai is under active development with a comprehensive codebase and document
 - ✅ **Null Email Provider**: Development-friendly email logging
 - ✅ **Enhanced Asset Management**: Cache busting with automatic versioning
 - ✅ **Improved Authentication Flow**: Return URL support and passkey enrollment
-- ✅ **Simplified TOML Database**: Clean user database format using serde
 
 ### Planned Features
 
