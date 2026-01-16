@@ -1,7 +1,7 @@
 use crate::config::{GallerySystemConfig, ImageIndexingMode};
 use crate::gallery::Gallery;
 use crate::storage::FilesystemStorage;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -31,7 +31,9 @@ async fn test_serve_cached_image_not_found() {
     let (gallery, _temp_dir) = create_test_gallery().await;
 
     // Try to serve non-existent cached file
-    let result = gallery.serve_cached_image("non_existent.jpg").await;
+    let result = gallery
+        .serve_cached_image("non_existent.jpg", &HeaderMap::new())
+        .await;
 
     match result {
         Ok(response) => {
@@ -59,7 +61,10 @@ async fn test_serve_cached_image_mime_types() {
     let jpeg_path = gallery.cache_path.join("test.jpg");
     tokio::fs::write(&jpeg_path, test_data).await.unwrap();
 
-    let jpeg_response = gallery.serve_cached_image("test.jpg").await.unwrap();
+    let jpeg_response = gallery
+        .serve_cached_image("test.jpg", &HeaderMap::new())
+        .await
+        .unwrap();
     assert_eq!(
         jpeg_response
             .headers()
@@ -74,7 +79,10 @@ async fn test_serve_cached_image_mime_types() {
     let webp_path = gallery.cache_path.join("test.webp");
     tokio::fs::write(&webp_path, test_data).await.unwrap();
 
-    let webp_response = gallery.serve_cached_image("test.webp").await.unwrap();
+    let webp_response = gallery
+        .serve_cached_image("test.webp", &HeaderMap::new())
+        .await
+        .unwrap();
     assert_eq!(
         webp_response
             .headers()
@@ -89,7 +97,10 @@ async fn test_serve_cached_image_mime_types() {
     let png_path = gallery.cache_path.join("test.png");
     tokio::fs::write(&png_path, test_data).await.unwrap();
 
-    let png_response = gallery.serve_cached_image("test.png").await.unwrap();
+    let png_response = gallery
+        .serve_cached_image("test.png", &HeaderMap::new())
+        .await
+        .unwrap();
     assert_eq!(
         png_response
             .headers()
@@ -115,7 +126,10 @@ async fn test_cache_headers_for_cached_images() {
     tokio::fs::write(&cache_file, test_data).await.unwrap();
 
     // Serve the cached file
-    let response = gallery.serve_cached_image("cached.jpg").await.unwrap();
+    let response = gallery
+        .serve_cached_image("cached.jpg", &HeaderMap::new())
+        .await
+        .unwrap();
 
     // Check that cache headers are present
     let cache_control = response.headers().get("cache-control");

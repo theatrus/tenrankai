@@ -675,7 +675,7 @@ pub async fn image_handler_for_named(
         resolved_path, query.size
     );
     gallery
-        .serve_image(&resolved_path, query.size, accept_header)
+        .serve_image(&resolved_path, query.size, accept_header, &headers)
         .await
 }
 
