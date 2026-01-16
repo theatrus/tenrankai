@@ -7,7 +7,7 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
-    Config, LogLevel, commands,
+    Config, GallerySystemConfig, LogLevel, commands,
     config::MultiSiteConfig,
     create_app, create_app_with_site_manager,
     gallery::Gallery,
@@ -152,18 +152,28 @@ enum CacheCommands {
         /// Gallery name to analyze
         #[arg(short, long)]
         gallery: String,
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
     },
     /// Validate and clean up outdated cache entries
     Cleanup {
         /// Gallery name to clean up
         #[arg(short, long)]
         gallery: String,
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
     },
     /// Invalidate cached files (removes from cache to force regeneration)
     Invalidate {
         /// Gallery name
         #[arg(short, long)]
         gallery: String,
+
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
 
         /// Type of cache to invalidate: "composite", "image", or "folder"
         #[arg(short = 't', long, default_value = "composite")]
@@ -182,6 +192,9 @@ enum CacheCommands {
         /// Gallery name
         #[arg(short, long)]
         gallery: String,
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
     },
 }
 
@@ -239,7 +252,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
-        Some(Commands::Cache(cache_cmd)) => handle_cache_command(cache_cmd, config).await,
+        Some(Commands::Cache(cache_cmd)) => {
+            handle_cache_command(cache_cmd, config, multi_site_config).await
+        }
         #[cfg(feature = "avif")]
         Some(Commands::AvifDebug {
             image_path,
@@ -394,51 +409,94 @@ async fn handle_user_command(cmd: UserCommands) -> Result<(), Box<dyn std::error
 async fn handle_cache_command(
     cmd: CacheCommands,
     config: Config,
+    multi_site_config: Option<MultiSiteConfig>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Find the gallery configuration
-    let gallery_configs = config.galleries.as_ref().ok_or("No galleries configured")?;
+    // Helper to find gallery config from either multi-site or legacy config
+    let find_gallery = |site_name: &str, gallery_name: &str| -> Result<GallerySystemConfig, String> {
+        // First, try multi-site config
+        if let Some(ref multi_config) = multi_site_config
+            && multi_config.is_multi_site()
+        {
+            // Look up the site
+            let site_configs = multi_config.get_site_configs();
+            if let Some((_, site_section)) = site_configs.iter().find(|(name, _)| *name == site_name)
+            {
+                // Look up the gallery within the site's galleries list
+                if let Some(ref galleries) = site_section.galleries {
+                    if let Some(gallery) = galleries.iter().find(|g| g.name == gallery_name) {
+                        return Ok(gallery.clone());
+                    }
+                    let available = galleries
+                        .iter()
+                        .map(|g| g.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(format!(
+                        "Gallery '{}' not found in site '{}'. Available galleries: {}",
+                        gallery_name, site_name, available
+                    ));
+                }
+                return Err(format!(
+                    "Site '{}' has no galleries configured.",
+                    site_name
+                ));
+            }
+            return Err(format!(
+                "Site '{}' not found. Available sites: {}",
+                site_name,
+                site_configs
+                    .keys()
+                    .map(|n| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        // Fall back to legacy config.galleries
+        if let Some(ref gallery_configs) = config.galleries {
+            gallery_configs
+                .iter()
+                .find(|g| g.name == gallery_name)
+                .cloned()
+                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))
+        } else {
+            Err("No galleries configured".to_string())
+        }
+    };
 
     match cmd {
         CacheCommands::Report {
             gallery: gallery_name,
+            site: site_name,
         } => {
-            let gallery_config = gallery_configs
-                .iter()
-                .find(|g| g.name == gallery_name)
-                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
-
-            commands::cache::report(gallery_config).await?;
+            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            commands::cache::report(&gallery_config).await?;
         }
         CacheCommands::Cleanup {
             gallery: gallery_name,
+            site: site_name,
         } => {
-            let gallery_config = gallery_configs
-                .iter()
-                .find(|g| g.name == gallery_name)
-                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
-
-            commands::cache::cleanup(gallery_config).await?;
+            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            commands::cache::cleanup(&gallery_config).await?;
         }
         CacheCommands::Invalidate {
             gallery: gallery_name,
+            site: site_name,
             cache_type,
             path,
             dry_run,
         } => {
-            let gallery_config = gallery_configs
-                .iter()
-                .find(|g| g.name == gallery_name)
-                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
+            let gallery_config = find_gallery(&site_name, &gallery_name)?;
 
             match cache_type.as_str() {
                 "composite" => {
-                    commands::cache::invalidate_composite(gallery_config, &path, dry_run).await?;
+                    commands::cache::invalidate_composite(&gallery_config, &path, dry_run).await?;
                 }
                 "image" => {
-                    commands::cache::invalidate_image(gallery_config, &path, dry_run).await?;
+                    commands::cache::invalidate_image(&gallery_config, &path, dry_run).await?;
                 }
                 "folder" => {
-                    commands::cache::invalidate_folder(gallery_config, &path, dry_run).await?;
+                    commands::cache::invalidate_folder(&gallery_config, &path, dry_run).await?;
                 }
                 _ => {
                     eprintln!(
@@ -451,13 +509,10 @@ async fn handle_cache_command(
         }
         CacheCommands::ListComposites {
             gallery: gallery_name,
+            site: site_name,
         } => {
-            let gallery_config = gallery_configs
-                .iter()
-                .find(|g| g.name == gallery_name)
-                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))?;
-
-            commands::cache::list_composites(gallery_config).await?;
+            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            commands::cache::list_composites(&gallery_config).await?;
         }
     }
 

@@ -133,6 +133,9 @@ pub async fn invalidate_image(
     path: &str,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::gallery::ImageSize;
+    use std::collections::HashSet;
+
     let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
     let gallery = Arc::new(Gallery::new(
@@ -141,13 +144,42 @@ pub async fn invalidate_image(
         cache_storage.clone(),
     ));
 
-    // Generate the hash prefix for this image path
-    let hash = gallery.generate_cache_key(path, "");
+    println!(
+        "Looking for image cache files for '{}'...",
+        path
+    );
+
+    // Generate all possible cache hashes for this image
+    // Use the same method as the serving code (generate_image_cache_key)
+    let mut hashes_to_delete: HashSet<String> = HashSet::new();
+
+    for size in ImageSize::ALL {
+        for format in &["jpg", "webp", "png", "avif"] {
+            // Non-watermarked variant
+            let hash = gallery.generate_image_cache_key(
+                path,
+                &size.as_str(),
+                format,
+                false,
+            );
+            hashes_to_delete.insert(hash);
+
+            // Watermarked variant (only for sizes that support it)
+            if size.supports_watermark() {
+                let hash_wm = gallery.generate_image_cache_key(
+                    path,
+                    &size.as_str(),
+                    format,
+                    true,
+                );
+                hashes_to_delete.insert(hash_wm);
+            }
+        }
+    }
 
     println!(
-        "Looking for image cache files for '{}' (hash prefix: {})...",
-        path,
-        &hash[..8.min(hash.len())]
+        "Generated {} cache key patterns to search for",
+        hashes_to_delete.len()
     );
 
     let mut deleted_count = 0;
@@ -156,8 +188,38 @@ pub async fn invalidate_image(
     // List files from storage
     let entries = cache_storage.list("").await?;
     for entry in entries {
-        // Check if file starts with the hash (handles all formats and watermarked variants)
-        if entry.path.starts_with(&hash) {
+        // Skip metadata files and composites
+        if entry.path.starts_with("composite_")
+            || entry.path == "metadata_cache.json"
+            || entry.path == "cache_metadata.json"
+        {
+            continue;
+        }
+
+        // Check if the cache filename (without extension) matches any of our hashes
+        // Cache files are named: {hash}.{extension} or {hash}_watermarked.{extension}
+        let filename_without_ext = entry
+            .path
+            .rsplit('.')
+            .skip(1)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join(".");
+
+        // The hash is the first part before any underscore suffix
+        let base_filename =
+            if let Some(stripped) = filename_without_ext.strip_suffix("_watermarked") {
+                stripped
+            } else {
+                &filename_without_ext
+            };
+
+        // Check if this hash matches any of our target hashes
+        if hashes_to_delete.contains(base_filename)
+            || hashes_to_delete.contains(&filename_without_ext)
+        {
             found_count += 1;
             if dry_run {
                 println!("  Would delete: {}", entry.path);
@@ -252,18 +314,25 @@ pub async fn invalidate_folder(
 
     for entry in &image_files {
         // Generate hashes for all size/format/watermark combinations
+        // Use the same method as the serving code (generate_image_cache_key)
         for size in ImageSize::ALL {
             for format in &["jpg", "webp", "png", "avif"] {
                 // Non-watermarked variant
-                let hash = gallery
-                    .generate_cache_key(&entry.path, &format!("{}_{}", size.as_str(), format));
+                let hash = gallery.generate_image_cache_key(
+                    &entry.path,
+                    &size.as_str(),
+                    format,
+                    false,
+                );
                 hashes_to_delete.insert(hash);
 
                 // Watermarked variant (only for sizes that support it)
                 if size.supports_watermark() {
-                    let hash_wm = gallery.generate_cache_key(
+                    let hash_wm = gallery.generate_image_cache_key(
                         &entry.path,
-                        &format!("{}_{}_watermarked", size.as_str(), format),
+                        &size.as_str(),
+                        format,
+                        true,
                     );
                     hashes_to_delete.insert(hash_wm);
                 }
