@@ -1,0 +1,19 @@
+# Cargo audit configuration
+# Ignore specific advisories that have no available fixes
+
+[advisories]
+ignore = [
+    # rsa crate vulnerability - no fixed upgrade available
+    # Dependency chain: sqlx-mysql -> rsa
+    # https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+
+    # paste crate unmaintained - no replacement available
+    # Dependency chain: imageproc, rav1e -> paste
+    # https://rustsec.org/advisories/RUSTSEC-2024-0436
+    "RUSTSEC-2024-0436",
+
+    # lru crate unsound - waiting for upstream fix
+    # https://rustsec.org/advisories/RUSTSEC-2026-0002
+    "RUSTSEC-2026-0002",
+]
