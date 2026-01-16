@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Pluggable user storage backends for authentication"
 
 [features]
-default = []
+default = ["sql", "dynamodb"]
 sql = ["dep:sqlx"]
 dynamodb = ["dep:aws-sdk-dynamodb", "dep:aws-config", "dep:base64"]
 
