@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, error, info, warn};
 
 /// Generate a tile cache filename that includes readable tile coordinates
-pub(crate) fn generate_tile_cache_filename(
+pub fn generate_tile_cache_filename(
     path: &str,
     tile_x: u32,
     tile_y: u32,

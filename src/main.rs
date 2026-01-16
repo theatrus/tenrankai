@@ -412,57 +412,56 @@ async fn handle_cache_command(
     multi_site_config: Option<MultiSiteConfig>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Helper to find gallery config from either multi-site or legacy config
-    let find_gallery = |site_name: &str, gallery_name: &str| -> Result<GallerySystemConfig, String> {
-        // First, try multi-site config
-        if let Some(ref multi_config) = multi_site_config
-            && multi_config.is_multi_site()
-        {
-            // Look up the site
-            let site_configs = multi_config.get_site_configs();
-            if let Some((_, site_section)) = site_configs.iter().find(|(name, _)| *name == site_name)
+    let find_gallery =
+        |site_name: &str, gallery_name: &str| -> Result<GallerySystemConfig, String> {
+            // First, try multi-site config
+            if let Some(ref multi_config) = multi_site_config
+                && multi_config.is_multi_site()
             {
-                // Look up the gallery within the site's galleries list
-                if let Some(ref galleries) = site_section.galleries {
-                    if let Some(gallery) = galleries.iter().find(|g| g.name == gallery_name) {
-                        return Ok(gallery.clone());
+                // Look up the site
+                let site_configs = multi_config.get_site_configs();
+                if let Some((_, site_section)) =
+                    site_configs.iter().find(|(name, _)| *name == site_name)
+                {
+                    // Look up the gallery within the site's galleries list
+                    if let Some(ref galleries) = site_section.galleries {
+                        if let Some(gallery) = galleries.iter().find(|g| g.name == gallery_name) {
+                            return Ok(gallery.clone());
+                        }
+                        let available = galleries
+                            .iter()
+                            .map(|g| g.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(format!(
+                            "Gallery '{}' not found in site '{}'. Available galleries: {}",
+                            gallery_name, site_name, available
+                        ));
                     }
-                    let available = galleries
-                        .iter()
-                        .map(|g| g.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    return Err(format!(
-                        "Gallery '{}' not found in site '{}'. Available galleries: {}",
-                        gallery_name, site_name, available
-                    ));
+                    return Err(format!("Site '{}' has no galleries configured.", site_name));
                 }
                 return Err(format!(
-                    "Site '{}' has no galleries configured.",
-                    site_name
+                    "Site '{}' not found. Available sites: {}",
+                    site_name,
+                    site_configs
+                        .keys()
+                        .map(|n| n.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ));
             }
-            return Err(format!(
-                "Site '{}' not found. Available sites: {}",
-                site_name,
-                site_configs
-                    .keys()
-                    .map(|n| n.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
 
-        // Fall back to legacy config.galleries
-        if let Some(ref gallery_configs) = config.galleries {
-            gallery_configs
-                .iter()
-                .find(|g| g.name == gallery_name)
-                .cloned()
-                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))
-        } else {
-            Err("No galleries configured".to_string())
-        }
-    };
+            // Fall back to legacy config.galleries
+            if let Some(ref gallery_configs) = config.galleries {
+                gallery_configs
+                    .iter()
+                    .find(|g| g.name == gallery_name)
+                    .cloned()
+                    .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))
+            } else {
+                Err("No galleries configured".to_string())
+            }
+        };
 
     match cmd {
         CacheCommands::Report {
