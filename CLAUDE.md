@@ -240,11 +240,21 @@ A flexible markdown-based posts/blog system supporting multiple independent coll
 ### Login Module (`src/login/`)
 Email-based authentication system:
 - `mod.rs` - Module exports
-- `types.rs` - User database, login tokens, rate limiting structures
+- `types.rs` - Login tokens, rate limiting structures
 - `auth.rs` - Authentication logic and cookie handling
 - `handlers.rs` - HTTP handlers for login flow
 - `error.rs` - Authentication error types
 - `tests.rs` - Authentication tests
+
+### User Storage Module (`src/user_storage/`)
+Pluggable user storage with multiple backend support:
+- `mod.rs` - `UserStorage` trait definition, `DynUserStorage` type alias
+- `error.rs` - `UserStorageError` type with thiserror
+- `types.rs` - `User`, `UserPasskey`, `UserWithUsername` types
+- `url.rs` - URL parsing for storage backends (`UserStorageUrl`)
+- `toml_backend.rs` - TOML file storage with auto-reload
+- `sql.rs` - SQLite/PostgreSQL backend using sqlx (feature: `user-storage-sql`)
+- `dynamodb.rs` - AWS DynamoDB backend (feature: `user-storage-dynamodb`)
 
 ### Email Module (`src/email/`)
 Pluggable email provider system:
@@ -840,6 +850,35 @@ The `ResolvedState` extractor and accessor methods ensure the correct per-site v
    - LRU cache with configurable size and TTL
    - Supports `.md` (markdown with TOML frontmatter) and `.toml` formats
    - Automatic cache invalidation based on file modification time
+
+### Pluggable User Storage (January 2026)
+1. **UserStorage Trait Architecture** (`src/user_storage/`):
+   - Unified `UserStorage` trait with async operations for user CRUD
+   - `DynUserStorage` type alias for `Arc<dyn UserStorage>`
+   - Site ID scoping for multi-tenant isolation
+   - Passkey management methods integrated into trait
+
+2. **User Storage Backends**:
+   - **TOML** (`toml_backend.rs`): File-based storage with auto-reload
+   - **SQLite/PostgreSQL** (`sql.rs`): SQL database with normalized schema
+   - **DynamoDB** (`dynamodb.rs`): AWS serverless with single-table design
+   - URL-based configuration: `sqlite://users.db`, `postgresql://...`, `dynamodb://table`
+
+3. **CLI Commands**:
+   ```bash
+   # User management with any backend
+   cargo run -- user list --database sqlite://users.db
+   cargo run -- user add alice alice@example.com --database postgresql://...
+
+   # Migration between backends
+   cargo run -- user export --database users.toml --output users.json
+   cargo run -- user import --database sqlite://users.db --input users.json
+   ```
+
+4. **Feature Flags**:
+   - `user-storage-sql`: SQLite and PostgreSQL support (requires sqlx)
+   - `user-storage-dynamodb`: AWS DynamoDB support
+   - `user-storage-all`: All backends enabled
 
 ### Pluggable Email Provider System
 1. **Email Module Architecture**:

@@ -408,7 +408,7 @@ mod tests {
             login_state: std::sync::Arc::new(tokio::sync::RwLock::new(
                 crate::login::LoginState::new(),
             )),
-            user_database_manager: None,
+            user_storage: None,
             email_config: None,
         };
 

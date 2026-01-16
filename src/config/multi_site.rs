@@ -180,7 +180,8 @@ impl SiteConfigSection {
             user_database: self
                 .user_database
                 .clone()
-                .or_else(|| app.user_database.clone()),
+                .or_else(|| app.user_database.clone())
+                .map(|p| p.to_string_lossy().to_string()),
             email,
         }
     }

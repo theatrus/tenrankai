@@ -21,6 +21,7 @@ pub mod static_files;
 pub mod storage;
 pub mod template_system;
 pub mod templating;
+pub mod user_storage;
 pub mod webp_encoder;
 
 // Re-export core types
@@ -107,8 +108,8 @@ impl AppState {
         self.site.login_state()
     }
 
-    pub fn user_database_manager(&self) -> &Option<login::types::UserDatabaseManager> {
-        self.site.user_database_manager()
+    pub fn user_storage(&self) -> &Option<user_storage::DynUserStorage> {
+        self.site.user_storage()
     }
 
     pub fn email_config(&self) -> Option<&email::SiteEmailConfig> {
@@ -192,7 +193,7 @@ async fn create_app_internal(
                 info!("Using default site '{}' from SiteManager", site.name);
                 // Start periodic login cleanup for all sites with user databases
                 for site in manager.sites().await {
-                    if site.user_database_manager().is_some() {
+                    if site.user_storage().is_some() {
                         login::start_periodic_cleanup(site.login_state().clone());
                     }
                 }
@@ -222,7 +223,7 @@ async fn create_app_internal(
         };
 
         // Start periodic cleanup for login if user database is configured
-        if site.user_database_manager().is_some() {
+        if site.user_storage().is_some() {
             login::start_periodic_cleanup(site.login_state().clone());
         }
 
@@ -316,8 +317,8 @@ async fn create_app_internal(
         .route("/static/{*path}", axum::routing::get(static_file_handler));
 
     // Add login routes only if user database is configured
-    // In multi-site mode, check the site's user_database_manager; in legacy mode, check config
-    if built_site.user_database_manager().is_some() {
+    // In multi-site mode, check the site's user_storage; in legacy mode, check config
+    if built_site.user_storage().is_some() {
         router = router
             .route("/_login", axum::routing::get(login::login_page))
             .route("/_login/request", axum::routing::post(login::login_request))

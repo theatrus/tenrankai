@@ -11,7 +11,7 @@ use tracing::{error, info};
 use super::AuthScope;
 use crate::{
     ApiResponse,
-    api::{create_signed_cookie, get_scoped_cookie_value},
+    api::{create_signed_cookie, get_scoped_cookie_value, is_https_request},
     api_response::no_cache_headers,
     site::ResolvedState,
 };
@@ -46,6 +46,7 @@ pub struct LoginQuery {
 pub async fn login_page(
     ResolvedState(app_state): ResolvedState,
     Query(query): Query<LoginQuery>,
+    request_headers: HeaderMap,
 ) -> Result<impl IntoResponse, StatusCode> {
     let globals = liquid::object!({
         "base_url": app_state.base_url().unwrap_or(""),
@@ -64,14 +65,13 @@ pub async fn login_page(
     };
 
     // Set return URL cookie if provided
+    let is_https = is_https_request(&request_headers);
     let mut headers = HeaderMap::new();
     if let Some(return_url) = query.return_url {
         // Validate the return URL to prevent open redirects
         if is_safe_return_url(&return_url) {
-            let cookie = AuthScope::RedirectState.format_cookie(
-                &urlencoding::encode(&return_url),
-                false, // TODO: Use HTTPS detection
-            );
+            let cookie =
+                AuthScope::RedirectState.format_cookie(&urlencoding::encode(&return_url), is_https);
             headers.insert(SET_COOKIE, cookie.parse().unwrap());
         }
     }
@@ -101,20 +101,31 @@ pub async fn login_request(
         }
     }
 
-    // Get user database manager
-    let db_manager = app_state
-        .user_database_manager()
+    // Get user storage
+    let user_storage = app_state
+        .user_storage()
         .as_ref()
         .ok_or_else(|| LoginError::DatabaseError("User database not configured".to_string()))?;
 
-    // Begin a read transaction (automatically checks for reload)
-    let transaction = db_manager.read_transaction().await.map_err(|e| {
-        error!("Failed to begin read transaction: {}", e);
-        LoginError::DatabaseError(format!("Failed to access user database: {}", e))
-    })?;
-
     // Check if user exists by username or email
-    let user_with_username = transaction.get_user_by_username_or_email_with_username(&identifier);
+    let user_with_username = match user_storage.get_user(&identifier).await {
+        Ok(Some(user)) => Some((identifier.clone(), user)),
+        Ok(None) => {
+            // Try by email
+            match user_storage.get_user_by_email(&identifier).await {
+                Ok(Some((username, user))) => Some((username, user)),
+                Ok(None) => None,
+                Err(e) => {
+                    error!("Failed to lookup user by email: {}", e);
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to lookup user: {}", e);
+            None
+        }
+    };
 
     if let Some((username, user)) = user_with_username {
         // Create login token using the actual username
@@ -206,19 +217,17 @@ pub async fn verify_login(
     let return_url = get_return_url_from_cookies(&req_headers);
 
     // Create secure session cookie
+    let is_https = is_https_request(&req_headers);
     let signed_value = create_signed_cookie(app_state.cookie_secret(), &username)
         .map_err(LoginError::InternalError)?;
 
-    let auth_cookie = AuthScope::Session.format_cookie(
-        &signed_value,
-        false, // TODO: Use HTTPS detection
-    );
+    let auth_cookie = AuthScope::Session.format_cookie(&signed_value, is_https);
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, auth_cookie.parse().unwrap());
 
     // Clear the return URL cookie
-    let clear_cookie = AuthScope::RedirectState.clear_cookie(false); // TODO: Use HTTPS detection
+    let clear_cookie = AuthScope::RedirectState.clear_cookie(is_https);
     headers.append(SET_COOKIE, clear_cookie.parse().unwrap());
 
     info!("User {} logged in successfully", username);
@@ -226,19 +235,12 @@ pub async fn verify_login(
     // Check if WebAuthn is available and if user has passkeys
     let should_enroll = if app_state.webauthn.is_some() {
         // Check if user has passkeys
-        let db_manager = app_state.user_database_manager().as_ref();
-        if let Some(manager) = db_manager {
-            // Begin a read transaction (automatically checks for reload)
-            match manager.read_transaction().await {
-                Ok(transaction) => {
-                    if let Some(user) = transaction.get_user(&username) {
-                        !user.has_passkeys()
-                    } else {
-                        false
-                    }
-                }
+        if let Some(user_storage) = app_state.user_storage().as_ref() {
+            match user_storage.get_user(&username).await {
+                Ok(Some(user)) => !user.has_passkeys(),
+                Ok(None) => false,
                 Err(e) => {
-                    error!("Failed to begin read transaction: {}", e);
+                    error!("Failed to get user for passkey check: {}", e);
                     false
                 }
             }
@@ -271,8 +273,9 @@ pub async fn verify_login(
     Ok((headers, Redirect::to(&redirect_url)))
 }
 
-pub async fn logout() -> impl IntoResponse {
-    let cookie = AuthScope::Session.clear_cookie(false); // TODO: Use HTTPS detection
+pub async fn logout(request_headers: HeaderMap) -> impl IntoResponse {
+    let is_https = is_https_request(&request_headers);
+    let cookie = AuthScope::Session.clear_cookie(is_https);
 
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, cookie.parse().unwrap());
@@ -317,7 +320,7 @@ pub async fn check_auth_status(
     ResolvedState(app_state): ResolvedState,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
-    let response = if app_state.user_database_manager().is_none() {
+    let response = if app_state.user_storage().is_none() {
         // If no user database is configured, return not authorized
         AuthStatusResponse {
             authorized: false,
@@ -375,14 +378,12 @@ pub async fn profile_page(
     let username = auth.username().to_string();
 
     // Get user information
-    let user_info = if let Some(manager) = app_state.user_database_manager() {
-        // Begin a read transaction (automatically checks for reload)
-        match manager.read_transaction().await {
-            Ok(transaction) => transaction
-                .get_user(&username)
-                .map(|u| (u.email.clone(), u.passkeys.len())),
+    let user_info = if let Some(user_storage) = app_state.user_storage().as_ref() {
+        match user_storage.get_user(&username).await {
+            Ok(Some(user)) => Some((user.email.clone(), user.passkeys.len())),
+            Ok(None) => None,
             Err(e) => {
-                error!("Failed to begin read transaction: {}", e);
+                error!("Failed to get user info: {}", e);
                 None
             }
         }

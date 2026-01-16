@@ -1,15 +1,11 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 use crate::{
     Config, GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig,
-    email::SiteEmailConfig,
-    favicon::FaviconRenderer,
-    gallery::SharedGallery,
-    login::{LoginState, types::UserDatabaseManager},
-    posts::PostsManager,
-    static_files::StaticFileHandler,
-    templating::TemplateEngine,
+    email::SiteEmailConfig, favicon::FaviconRenderer, gallery::SharedGallery, login::LoginState,
+    posts::PostsManager, static_files::StaticFileHandler, templating::TemplateEngine,
+    user_storage::DynUserStorage,
 };
 
 /// Configuration for a single site (extracted from legacy Config or multi-site config)
@@ -22,7 +18,7 @@ pub struct SiteConfig {
     pub static_files: StaticConfig,
     pub galleries: Option<Vec<GallerySystemConfig>>,
     pub posts: Option<Vec<PostsSystemConfig>>,
-    pub user_database: Option<PathBuf>,
+    pub user_database: Option<String>,
     pub email: Option<SiteEmailConfig>,
 }
 
@@ -40,7 +36,11 @@ impl SiteConfig {
             static_files: config.static_files.clone(),
             galleries: config.galleries.clone(),
             posts: config.posts.clone(),
-            user_database: config.app.user_database.clone(),
+            user_database: config
+                .app
+                .user_database
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
             email: email_config.map(SiteEmailConfig::from),
         }
     }
@@ -56,7 +56,7 @@ pub struct SiteResources {
     pub galleries: Arc<HashMap<String, SharedGallery>>,
     pub posts_managers: Arc<HashMap<String, Arc<PostsManager>>>,
     pub login_state: Arc<RwLock<LoginState>>,
-    pub user_database_manager: Option<UserDatabaseManager>,
+    pub user_storage: Option<DynUserStorage>,
     pub email_config: Option<SiteEmailConfig>,
 }
 
@@ -110,8 +110,8 @@ impl Site {
         &self.resources.login_state
     }
 
-    pub fn user_database_manager(&self) -> &Option<UserDatabaseManager> {
-        &self.resources.user_database_manager
+    pub fn user_storage(&self) -> &Option<DynUserStorage> {
+        &self.resources.user_storage
     }
 
     pub fn email_config(&self) -> Option<&SiteEmailConfig> {
@@ -134,7 +134,7 @@ mod tests {
             galleries: Arc::new(HashMap::new()),
             posts_managers: Arc::new(HashMap::new()),
             login_state: Arc::new(RwLock::new(LoginState::new())),
-            user_database_manager: None,
+            user_storage: None,
             email_config: None,
         };
         Site::new(name.to_string(), resources)

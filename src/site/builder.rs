@@ -6,11 +6,12 @@ use super::{Site, SiteBuilderError, SiteConfig, SiteResources};
 use crate::{
     favicon::FaviconRenderer,
     gallery::{Gallery, SharedGallery},
-    login::{LoginState, types::UserDatabaseManager},
+    login::LoginState,
     posts::{PostsConfig, PostsManager},
     static_files::StaticFileHandler,
     storage,
     templating::TemplateEngine,
+    user_storage::{DynUserStorage, create_user_storage},
 };
 
 /// Builder for constructing Site instances
@@ -54,8 +55,8 @@ impl SiteBuilder {
         // Build posts managers
         let posts_managers = Arc::new(self.build_posts_managers(galleries.clone()).await?);
 
-        // Build login state
-        let (login_state, user_database_manager) = self.build_login_state().await?;
+        // Build login state and user storage
+        let (login_state, user_storage) = self.build_login_state().await?;
 
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),
@@ -66,7 +67,7 @@ impl SiteBuilder {
             galleries,
             posts_managers,
             login_state,
-            user_database_manager,
+            user_storage,
             email_config: self.config.email.clone(),
         };
 
@@ -238,19 +239,26 @@ impl SiteBuilder {
 
     async fn build_login_state(
         &self,
-    ) -> Result<(Arc<RwLock<LoginState>>, Option<UserDatabaseManager>), SiteBuilderError> {
+    ) -> Result<(Arc<RwLock<LoginState>>, Option<DynUserStorage>), SiteBuilderError> {
         let login_state = Arc::new(RwLock::new(LoginState::new()));
 
-        let user_database_manager = if let Some(user_db_path) = &self.config.user_database {
-            match UserDatabaseManager::new(user_db_path.clone()).await {
-                Ok(manager) => {
-                    info!("Loaded user database from {:?}", user_db_path);
-                    Some(manager)
+        let user_storage = if let Some(user_db_url) = &self.config.user_database {
+            // Use site name as the site_id for multi-tenant isolation
+            let site_id = &self.config.name;
+            match create_user_storage(user_db_url, site_id).await {
+                Ok(storage) => {
+                    info!(
+                        "Loaded user storage from '{}' (backend: {}, site: {})",
+                        user_db_url,
+                        storage.backend_name(),
+                        site_id
+                    );
+                    Some(storage)
                 }
                 Err(e) => {
-                    error!("Failed to load user database: {}", e);
+                    error!("Failed to load user storage: {}", e);
                     return Err(SiteBuilderError::Login(format!(
-                        "Failed to load user database: {}",
+                        "Failed to load user storage: {}",
                         e
                     )));
                 }
@@ -259,6 +267,6 @@ impl SiteBuilder {
             None
         };
 
-        Ok((login_state, user_database_manager))
+        Ok((login_state, user_storage))
     }
 }

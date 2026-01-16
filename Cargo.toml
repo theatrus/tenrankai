@@ -10,13 +10,17 @@ default = ["avif"]
 # AVIF support - can be disabled on platforms where it's hard to build
 # To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
 avif = ["dep:libavif", "dep:libavif-sys"]
+# User storage backend features (Phase 2/3 of pluggable user database)
+user-storage-sql = ["dep:sqlx"]  # SQLite/PostgreSQL support
+user-storage-dynamodb = ["dep:aws-sdk-dynamodb"]  # DynamoDB support
 
 [dependencies]
 async-trait = "0.1"
 aws-config = "1"
-bytes = "1.10"
+aws-sdk-dynamodb = { version = "1", optional = true }
 aws-sdk-s3 = "1"
 aws-sdk-sesv2 = "1"
+bytes = "1.10"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 hmac = "0.12"
@@ -44,6 +48,7 @@ reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite", "postgres", "uuid", "chrono"], optional = true }
 thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"

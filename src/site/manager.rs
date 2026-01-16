@@ -275,7 +275,7 @@ mod tests {
             galleries: Arc::new(std::collections::HashMap::new()),
             posts_managers: Arc::new(std::collections::HashMap::new()),
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
-            user_database_manager: None,
+            user_storage: None,
             email_config: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
