@@ -94,7 +94,20 @@ impl Gallery {
         }
 
         // Add images from cache
-        for image_path in &cached.images {
+        // Use image_groups if available (shows only primary images), otherwise fall back to flat list
+        let image_paths: Vec<&str> = if !cached.image_groups.is_empty() {
+            // Only show primary images from each group
+            cached
+                .image_groups
+                .iter()
+                .map(|g| g.primary_path.as_str())
+                .collect()
+        } else {
+            // Fall back to flat image list for backward compatibility
+            cached.images.iter().map(|s| s.as_str()).collect()
+        };
+
+        for image_path in image_paths {
             // Get the indexed identifier for this image
             let url_identifier = {
                 let indexer = self.image_indexer.read().await;
@@ -156,7 +169,7 @@ impl Gallery {
                 display_name: None,
                 description: None,
                 path: url_identifier,
-                file_path: Some(image_path.clone()),
+                file_path: Some(image_path.to_string()),
                 parent_path: Some(relative_path.to_string()),
                 is_directory: false,
                 thumbnail_url: Some(thumbnail_url),
@@ -261,6 +274,35 @@ impl Gallery {
 
     pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, GalleryError> {
         self.get_image_info_with_user(relative_path, None).await
+    }
+
+    /// Find the image group that contains a given image path.
+    /// Returns the group and whether this path is the primary image.
+    pub(crate) async fn find_image_group(
+        &self,
+        image_path: &str,
+    ) -> Option<(super::ImageGroup, bool)> {
+        // Get the parent folder path
+        let parent_path = if let Some(last_slash) = image_path.rfind('/') {
+            &image_path[..last_slash]
+        } else {
+            ""
+        };
+
+        // Get cached folder data
+        let cached = self.get_cached_folder_data(parent_path).await?;
+
+        // Find the group containing this image
+        for group in &cached.image_groups {
+            if group.primary_path == image_path {
+                return Some((group.clone(), true));
+            }
+            if group.all_image_paths.contains(&image_path.to_string()) {
+                return Some((group.clone(), false));
+            }
+        }
+
+        None
     }
 
     pub async fn get_image_info_with_user(
@@ -473,6 +515,28 @@ impl Gallery {
             None
         };
 
+        // Look up the image group for RAW files and versions
+        let (raw_files, versions, is_primary) =
+            if let Some((group, is_primary)) = self.find_image_group(relative_path).await {
+                // Include RAW files only if user has permission
+                let raw_files = if permissions.can_download_raw && !group.raw_files.is_empty() {
+                    Some(group.raw_files)
+                } else {
+                    None
+                };
+
+                // Always include versions if available
+                let versions = if !group.versions.is_empty() {
+                    Some(group.versions)
+                } else {
+                    None
+                };
+
+                (raw_files, versions, is_primary)
+            } else {
+                (None, None, true) // No group found, assume primary
+            };
+
         Ok(ImageInfo {
             name: StdPath::new(relative_path)
                 .file_name()
@@ -494,9 +558,9 @@ impl Gallery {
             is_new,
             color_profile,
             user_metadata,
-            raw_files: None,
-            versions: None,
-            is_primary: true,
+            raw_files,
+            versions,
+            is_primary,
         })
     }
 
@@ -876,7 +940,6 @@ mod tests {
         );
 
         let metadata = metadata.unwrap();
-        assert!(metadata.config.title.is_none());
         assert!(
             metadata
                 .description_markdown

@@ -19,6 +19,7 @@ pub use error::GalleryError;
 pub use handlers::{
     download_folder_handler, gallery_handler_for_named, gallery_root_handler_for_named,
     image_detail_handler_for_named, image_handler_for_named, image_handler_for_named_v2,
+    raw_download_handler,
 };
 pub use types::*;
 

@@ -80,7 +80,10 @@ pub fn compute_path_hash(path: &str) -> String {
     path.hash(&mut hasher);
     let hash = hasher.finish();
     // Convert to base36 for a shorter string (6 chars = ~2 billion combinations)
-    format!("{:0>6}", radix_fmt(hash, 36))
+    let full_hash = radix_fmt(hash, 36);
+    // Take last 6 chars (most variable bits) and pad with zeros if needed
+    let start = full_hash.len().saturating_sub(6);
+    format!("{:0>6}", &full_hash[start..])
 }
 
 /// Format a number in a given radix (base)
@@ -210,7 +213,7 @@ where
 
         // Determine primary image (highest version, or newest by mod time)
         let mut images = images;
-        images.sort_by_key(|e| PrimaryKey::from_entry(e));
+        images.sort_by_key(PrimaryKey::from_entry);
         let primary = images.remove(0);
 
         // Build version list from remaining images (sorted oldest-first)

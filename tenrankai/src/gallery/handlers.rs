@@ -913,3 +913,71 @@ pub async fn download_folder_handler(
     )
         .into_response()
 }
+
+/// Handler for downloading RAW files associated with images.
+/// URL format: /gallery/_raw/{path}
+/// The path is the actual path to the RAW file (e.g., "photos/IMG_0001.dng")
+#[axum::debug_handler(state = crate::AppState)]
+pub async fn raw_download_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path((gallery_name, path)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
+    auth: crate::login::OptionalAuth,
+) -> Response {
+    let gallery = match app_state.galleries().get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            error!("Gallery '{}' not found", gallery_name);
+            return ApiResponse::GalleryNotFound.into_response();
+        }
+    };
+
+    // Security check - prevent path traversal
+    if path.contains("..") || path.starts_with('/') {
+        return ApiResponse::Forbidden.into_response();
+    }
+
+    // Verify this is a RAW file extension
+    let ext = super::grouping::get_extension(&path).map(|e| e.to_lowercase());
+    if !ext.as_ref().map(|e| super::grouping::is_raw_extension(e)).unwrap_or(false) {
+        return (StatusCode::BAD_REQUEST, "Not a RAW file format").into_response();
+    }
+
+    // Extract the parent folder path from the file path
+    let parent_path = if let Some(last_slash) = path.rfind('/') {
+        path[..last_slash].to_string()
+    } else {
+        String::new() // File is in root folder
+    };
+
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => return ApiResponse::InternalServerError.into_response(),
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        if !auth.is_authenticated() {
+            let return_url = format!("/{}/_raw/{}", gallery_name, path);
+            let login_url = format!("/_login?return={}", urlencoding::encode(&return_url));
+            return axum::response::Redirect::temporary(&login_url).into_response();
+        }
+        return ApiResponse::AccessDenied.into_response();
+    }
+
+    // Check if user can download RAW files
+    if !user_permissions.permissions.can_download_raw {
+        return (StatusCode::FORBIDDEN, "RAW download permission required").into_response();
+    }
+
+    // Serve the RAW file from source storage
+    gallery.serve_from_source_storage(&path, &headers).await
+}
