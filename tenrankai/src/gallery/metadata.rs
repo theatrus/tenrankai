@@ -899,6 +899,7 @@ impl Gallery {
                     images,
                     recursive_image_count: recursive_count,
                     preview_items,
+                    image_groups: Vec::new(),
                 },
             );
         }

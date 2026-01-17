@@ -102,6 +102,7 @@ reqwest.workspace = true
 # Utilities
 mime_guess.workspace = true
 rand.workspace = true
+regex.workspace = true
 url.workspace = true
 walkdir.workspace = true
 fnv.workspace = true

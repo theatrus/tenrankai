@@ -190,6 +190,33 @@ pub struct GalleryItem {
     pub user_metadata: Option<crate::metadata_storage::ImageUserMetadata>,
 }
 
+/// Information about an associated RAW file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawFileInfo {
+    /// Relative path to the RAW file
+    pub path: String,
+    /// RAW format extension (e.g., "dng", "arw", "nef")
+    pub format: String,
+    /// File size in bytes
+    pub file_size: u64,
+}
+
+/// Information about a version variant of an image
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageVersion {
+    /// Relative path to this version
+    pub path: String,
+    /// Version number (extracted from _vN suffix, if present)
+    pub version_number: Option<u32>,
+    /// Modification date of this version
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modification_date: Option<SystemTime>,
+    /// Pre-built URL identifier for this version
+    pub url_id: String,
+    /// Thumbnail URL for version switcher UI
+    pub thumbnail_url: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ImageInfo {
     pub name: String,
@@ -210,6 +237,15 @@ pub struct ImageInfo {
     /// User-editable metadata (comments, pick status, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_metadata: Option<crate::metadata_storage::ImageUserMetadata>,
+    /// Associated RAW files available for download
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_files: Option<Vec<RawFileInfo>>,
+    /// Previous versions of this image (sorted oldest-first)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub versions: Option<Vec<ImageVersion>>,
+    /// Whether this is the primary/current version
+    #[serde(default)]
+    pub is_primary: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -310,6 +346,10 @@ pub(crate) struct CachedFolderMetadata {
     pub recursive_image_count: usize,
     /// Pre-computed preview items for fast gallery preview API
     pub preview_items: Vec<CachedPreviewItem>,
+    /// Image groups (primary + versions + RAW files)
+    /// When populated, use this instead of `images` for grouped display
+    #[serde(default)]
+    pub image_groups: Vec<ImageGroup>,
 }
 
 /// Minimal preview item with pre-computed URLs and dimensions
@@ -326,6 +366,25 @@ pub(crate) struct CachedPreviewItem {
     pub gallery_url: String,
     /// Image dimensions (for layout)
     pub dimensions: Option<(u32, u32)>,
+}
+
+/// A group of related files: primary image + versions + associated RAW files
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ImageGroup {
+    /// The primary image path (newest version, shown in gallery)
+    pub primary_path: String,
+    /// All image paths in this group (for filtering during listing)
+    pub all_image_paths: Vec<String>,
+    /// Associated RAW files
+    pub raw_files: Vec<RawFileInfo>,
+    /// Previous versions (sorted oldest-first, excludes primary)
+    pub versions: Vec<ImageVersion>,
+    /// Base filename without version suffix (for grouping)
+    pub base_name: String,
+    /// Hash of primary_path for cache key generation
+    pub primary_hash: String,
+    /// Latest modification time across all files in group
+    pub group_modified: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

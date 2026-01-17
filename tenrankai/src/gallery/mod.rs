@@ -2,6 +2,7 @@
 mod cache;
 mod core;
 mod error;
+pub mod grouping;
 mod handlers;
 pub mod image_processing;
 mod indexing;

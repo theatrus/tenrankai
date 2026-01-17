@@ -493,6 +493,9 @@ impl Gallery {
             is_new,
             color_profile,
             user_metadata,
+            raw_files: None,
+            versions: None,
+            is_primary: true,
         })
     }
 
