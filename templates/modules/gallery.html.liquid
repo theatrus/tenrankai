@@ -4,7 +4,7 @@
     {% assign page_title = "Gallery" %}
 {% endif %}
 {% assign meta_description = folder_description | default: "Browse the photo gallery on theatr.us" | strip_html | truncate: 160 %}
-{% assign page_css = "gallery-filters.css" | split: "," %}
+{% assign page_css = "gallery-filters.css,editor.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container gallery-container">
@@ -23,11 +23,16 @@
     </nav>
 
     <div class="gallery-header">
-        <div class="gallery-title-section">
+        <!-- Folder title and description - React will enhance this if user has edit permission -->
+        <div id="folder-description-mount"
+             class="gallery-title-section"
+             data-can-edit="{{ permissions.can_edit_content }}"
+             data-gallery-name="{{ gallery_name }}"
+             data-gallery-path="{{ gallery_path }}"
+             data-folder-title="{{ folder_title }}">
             {% if folder_title %}
-                <h2>{{ folder_title }}</h2>
+                <h2 class="folder-title">{{ folder_title }}</h2>
             {% endif %}
-
             {% if folder_description %}
                 <div class="folder-description">
                     {{ folder_description }}
@@ -85,6 +90,11 @@
             </div>
         {% endif %}
         
+        <!-- Embedded gallery data for React component (always present) -->
+        <script type="application/json" id="gallery-data">
+{{ gallery_data_json }}
+        </script>
+
         <!-- Image Gallery -->
         {% if images.size > 0 %}
             <div class="gallery-images">
@@ -92,17 +102,12 @@
                     <div class="masonry-column" data-column="0"></div>
                     <div class="masonry-column" data-column="1"></div>
                 </div>
-                
+
                 <!-- Hidden template for images (legacy) -->
                 <script type="application/json" id="gallery-images">
 {{ images_json }}
                 </script>
-                
-                <!-- Embedded gallery data for React component -->
-                <script type="application/json" id="gallery-data">
-{{ gallery_data_json }}
-                </script>
-                
+
                 <!-- Pagination -->
                 {% if total_pages > 1 %}
                     <div class="gallery-pagination">

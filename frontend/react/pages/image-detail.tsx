@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ImageDetailData } from '../types/index.ts';
 import { useImageDetail } from '../hooks/useImageDetail.ts';
@@ -12,6 +12,8 @@ import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
+import { EditModal } from '../components/Editor/index.ts';
+import { contentEditorApi } from '../api/content-editor.ts';
 
 interface ImageDetailPageProps {
   initialData: ImageDetailData;
@@ -81,6 +83,21 @@ export function ImageDetailPage({
 
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
+
+  // Modal state for editing image info
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Handler for saving image title and description
+  const handleSaveImageInfo = useCallback(async (title: string, markdown: string) => {
+    await contentEditorApi.updateImageDescription(
+      currentData.gallery_name,
+      currentData.image.path,
+      markdown,
+      title || undefined
+    );
+    // Reload image data to get updated info
+    await loadImage(currentData.image.path);
+  }, [currentData?.gallery_name, currentData?.image.path, loadImage]);
 
   // Navigate to a specific image by its navigation data
   const handleNavigateToImage = async (image: { path: string; name: string }) => {
@@ -214,6 +231,8 @@ export function ImageDetailPage({
             onNavigateToImage={handleNavigateToImage}
             title={currentData.image.title}
             description={currentData.image.description}
+            canEditContent={currentData.permissions.can_edit_content}
+            onEditClick={() => setIsEditModalOpen(true)}
           />
           
           
@@ -232,18 +251,50 @@ export function ImageDetailPage({
         
         {/* Info section - below the image viewer */}
         <div className="image-info-section">
-          {/* Image title and description - mobile only */}
+          {/* Image title and description */}
           <div className="image-header-mobile">
-            {currentData.image.title && (
-              <h1 className="image-title">{currentData.image.title}</h1>
+            {/* Title with edit icon */}
+            {(currentData.image.title || currentData.permissions.can_edit_content) && (
+              <div className="image-title-row">
+                {currentData.image.title ? (
+                  <h1 className="image-title">{currentData.image.title}</h1>
+                ) : currentData.permissions.can_edit_content ? (
+                  <span className="image-title-placeholder">Untitled image</span>
+                ) : null}
+                {currentData.permissions.can_edit_content && (
+                  <button
+                    type="button"
+                    className="image-edit-icon"
+                    onClick={() => setIsEditModalOpen(true)}
+                    title="Edit image info"
+                    aria-label="Edit image info"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+                    </svg>
+                  </button>
+                )}
+              </div>
             )}
+            {/* Description content */}
             {currentData.image.description && (
-              <div 
+              <div
                 className="image-description"
                 dangerouslySetInnerHTML={{ __html: currentData.image.description }}
               />
             )}
           </div>
+
+          {/* Edit modal */}
+          <EditModal
+            isOpen={isEditModalOpen}
+            modalTitle="Edit Image"
+            title={currentData.image.title || ''}
+            markdownContent={currentData.image.user_metadata?.description || ''}
+            descriptionPlaceholder="Add image description..."
+            onSave={handleSaveImageInfo}
+            onClose={() => setIsEditModalOpen(false)}
+          />
           
           {!hideMetadata && (
             <div className="metadata-grid">
@@ -255,7 +306,7 @@ export function ImageDetailPage({
 
           <AIMetadata image={currentData.image} permissions={currentData.permissions} />
 
-          <ImageControls image={currentData.image} permissions={currentData.permissions} />
+          <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} />
 
           {currentData.permissions.can_read_metadata && (
             <UserMetadata

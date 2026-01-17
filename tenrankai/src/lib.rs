@@ -645,6 +645,58 @@ async fn create_app_internal(
                 }
             }),
         );
+
+        // API route for updating folder description (subfolder)
+        // Note: catch-all path must be at end of route, so we use /folder-description/{*path}
+        router = router.route(
+            &format!("/api/gallery/{}/folder-description/{{*path}}", name),
+            axum::routing::put({
+                let name = name.clone();
+                move |state, path: Path<String>, auth, request| {
+                    let folder_path = path.0;
+                    api::update_folder_description_handler(
+                        state,
+                        Path((name, folder_path)),
+                        auth,
+                        request,
+                    )
+                }
+            }),
+        );
+
+        // API route for updating folder description (root folder)
+        router = router.route(
+            &format!("/api/gallery/{}/folder-description", name),
+            axum::routing::put({
+                let name = name.clone();
+                move |state, auth, request| {
+                    api::update_folder_description_handler(
+                        state,
+                        Path((name, String::new())),
+                        auth,
+                        request,
+                    )
+                }
+            }),
+        );
+
+        // API route for updating image description
+        // Note: catch-all path must be at end of route, so we use /image-description/{*path}
+        router = router.route(
+            &format!("/api/gallery/{}/image-description/{{*path}}", name),
+            axum::routing::put({
+                let name = name.clone();
+                move |state, path: Path<String>, auth, request| {
+                    let image_path = path.0;
+                    api::update_image_description_handler(
+                        state,
+                        Path((name, image_path)),
+                        auth,
+                        request,
+                    )
+                }
+            }),
+        );
     }
 
     // Add posts routes dynamically based on site's posts managers

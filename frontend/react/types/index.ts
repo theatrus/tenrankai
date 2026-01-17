@@ -47,6 +47,12 @@ export interface ImageArea {
 export type PickStatus = 'pick' | 'no_pick';
 
 export interface ImageUserMetadata {
+  // From .md sidecar file (human-editable)
+  title?: string;
+  description?: string; // Raw markdown
+  location?: string;
+
+  // Interactive metadata
   comments: Comment[];
   highlighted: boolean;
   pick_status?: PickStatus;
@@ -101,6 +107,7 @@ export interface RolePermissions {
   can_download_original: boolean;
   can_download_gallery: boolean;
   can_read_metadata: boolean;
+  can_edit_content: boolean;
   can_add_comments: boolean;
   can_edit_own_comments: boolean;
   can_delete_own_comments: boolean;
@@ -164,6 +171,9 @@ export interface GalleryData {
   total_pages: number;
   folder_title?: string;
   folder_description?: string;
+  /** Raw markdown for folder description (for editing) */
+  folder_description_markdown?: string;
+  permissions: RolePermissions;
 }
 
 export interface ApiError {
