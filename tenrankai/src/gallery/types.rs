@@ -277,9 +277,7 @@ pub(crate) struct ImageMetadata {
 pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
-    pub title: Option<String>,
 
-    // Permission configuration for this folder
     /// Folder-specific permission overrides
     #[serde(default)]
     pub permissions: crate::permissions::types::PermissionConfig,

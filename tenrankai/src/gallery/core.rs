@@ -52,11 +52,12 @@ impl Gallery {
             // Get cached data for this subdirectory
             let subdir_cached = self.get_cached_folder_data(&subdir_path).await;
 
-            let (display_name, description) = if let Some(ref sc) = subdir_cached {
-                Self::extract_folder_display_info(sc.metadata.clone())
-            } else {
-                (None, None)
-            };
+            let (display_name, description, _description_markdown) =
+                if let Some(ref sc) = subdir_cached {
+                    Self::extract_folder_display_info(sc.metadata.clone())
+                } else {
+                    (None, None, None)
+                };
 
             let item_count = subdir_cached
                 .as_ref()
@@ -407,6 +408,7 @@ impl Gallery {
                     can_download_original: false,
                     can_download_gallery: false,
                     can_read_metadata: false,
+                    can_edit_content: false,
                     can_add_comments: false,
                     can_edit_own_comments: false,
                     can_delete_own_comments: false,
@@ -499,31 +501,34 @@ impl Gallery {
         folder_path: &str,
     ) -> (Option<String>, Option<String>) {
         let metadata = self.read_folder_metadata_full(folder_path).await;
-        Self::extract_folder_display_info(metadata)
+        let (title, description, _markdown) = Self::extract_folder_display_info(metadata);
+        (title, description)
     }
 
-    /// Extract display name and description from pre-fetched FolderMetadata.
+    /// Extract display name, description HTML, and description markdown from pre-fetched FolderMetadata.
     /// Use this when you already have the FolderMetadata to avoid duplicate S3 calls.
-    fn extract_folder_display_info(
+    /// Returns (title, description_html, description_markdown):
+    /// - title: extracted from # Title in markdown (for display in <h2>)
+    /// - description_html: HTML with title stripped (to avoid showing title twice)
+    /// - description_markdown: full markdown including # Title (for editing)
+    pub(crate) fn extract_folder_display_info(
         metadata: Option<super::FolderMetadata>,
-    ) -> (Option<String>, Option<String>) {
+    ) -> (Option<String>, Option<String>, Option<String>) {
         match metadata {
             Some(meta) => {
-                let has_config_title = meta.config.title.is_some();
-                let title = meta.config.title.or_else(|| {
-                    // Try to extract title from markdown if not in config
-                    meta.description_markdown
-                        .lines()
-                        .find(|line| line.trim().starts_with("# "))
-                        .map(|line| line.trim_start_matches("# ").trim().to_string())
-                });
+                // Title is always extracted from markdown (# Title), never from config
+                let title = meta
+                    .description_markdown
+                    .lines()
+                    .find(|line| line.trim().starts_with("# "))
+                    .map(|line| line.trim_start_matches("# ").trim().to_string());
 
-                // Convert description markdown to HTML
+                // For display HTML, strip the title heading to avoid showing it twice
                 let description = if meta.description_markdown.trim().is_empty() {
                     None
                 } else {
-                    // If we found a title in the markdown, remove it from the description
-                    let desc_content = if title.is_some() && !has_config_title {
+                    // Remove title line from HTML rendering
+                    let desc_for_html = if title.is_some() {
                         meta.description_markdown
                             .lines()
                             .skip_while(|line| !line.trim().starts_with("# "))
@@ -533,22 +538,29 @@ impl Gallery {
                             .trim()
                             .to_string()
                     } else {
-                        meta.description_markdown
+                        meta.description_markdown.clone()
                     };
 
-                    if desc_content.is_empty() {
+                    if desc_for_html.is_empty() {
                         None
                     } else {
-                        let parser = Parser::new(&desc_content);
+                        let parser = Parser::new(&desc_for_html);
                         let mut html_output = String::new();
                         html::push_html(&mut html_output, parser);
                         Some(html_output)
                     }
                 };
 
-                (title, description)
+                // Return full markdown for editing (includes # Title)
+                let description_markdown = if meta.description_markdown.trim().is_empty() {
+                    None
+                } else {
+                    Some(meta.description_markdown)
+                };
+
+                (title, description, description_markdown)
             }
-            None => (None, None),
+            None => (None, None, None),
         }
     }
 
@@ -622,7 +634,6 @@ impl Gallery {
                 Some(super::FolderMetadata {
                     config: super::FolderConfig {
                         hidden: false,
-                        title: None,
                         permissions: Default::default(),
                     },
                     description_markdown: content,

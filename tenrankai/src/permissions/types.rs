@@ -29,6 +29,8 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_read_metadata: bool,
     #[serde(default)]
+    pub can_edit_content: bool, // Edit folder/image descriptions
+    #[serde(default)]
     pub can_add_comments: bool,
     #[serde(default)]
     pub can_edit_own_comments: bool,
@@ -92,6 +94,7 @@ impl RolePermissions {
         self.can_download_gallery |= other.can_download_gallery;
 
         self.can_read_metadata |= other.can_read_metadata;
+        self.can_edit_content |= other.can_edit_content;
         self.can_add_comments |= other.can_add_comments;
         self.can_edit_own_comments |= other.can_edit_own_comments;
         self.can_delete_own_comments |= other.can_delete_own_comments;
@@ -130,6 +133,7 @@ impl RolePermissions {
             self.can_download_gallery = true;
 
             self.can_read_metadata = true;
+            self.can_edit_content = true;
             self.can_add_comments = true;
             self.can_edit_own_comments = true;
             self.can_delete_own_comments = true;

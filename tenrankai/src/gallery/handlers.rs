@@ -92,7 +92,8 @@ pub async fn gallery_handler_for_named(
         }
     };
 
-    // Get the JSON data from the API endpoint to ensure consistency
+    // Get the JSON data from the API endpoint - this is the single source of truth
+    // The API endpoint already fetches breadcrumbs, folder metadata, and permissions
     let gallery_api_response = crate::api::gallery_api_handler_for_named(
         ResolvedState(app_state.clone()),
         axum::extract::Path((gallery_name.clone(), path.clone())),
@@ -101,39 +102,38 @@ pub async fn gallery_handler_for_named(
     )
     .await;
 
-    let gallery_data_json = match gallery_api_response {
-        Ok(axum::Json(data)) => serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string()),
-        Err(_) => {
-            // If API call fails, provide empty object
-            "{}".to_string()
+    let (gallery_data_json, api_data) = match gallery_api_response {
+        Ok(axum::Json(data)) => {
+            let json = serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string());
+            (json, Some(data))
         }
+        Err(_) => ("{}".to_string(), None),
     };
+
+    // Extract data from API response (avoiding duplicate fetches)
+    let breadcrumbs = api_data
+        .as_ref()
+        .map(|d| d.breadcrumbs.clone())
+        .unwrap_or_default();
+    let folder_title = api_data.as_ref().and_then(|d| d.folder_title.clone());
+    let folder_description = api_data.as_ref().and_then(|d| d.folder_description.clone());
+    let folder_description_markdown = api_data
+        .as_ref()
+        .and_then(|d| d.folder_description_markdown.clone());
+    let user_permissions = api_data
+        .as_ref()
+        .map(|d| {
+            crate::permissions::UserPermissions::new(auth.username().map(String::from), d.permissions.clone())
+        })
+        .unwrap_or_else(|| {
+            crate::permissions::UserPermissions::new(None::<String>, Default::default())
+        });
 
     // Check if this is the root path
     let is_root = path.is_empty() || path == "/";
 
     // Convert images to JSON for client-side rendering (legacy)
     let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
-
-    // Get breadcrumbs and folder metadata
-    let breadcrumbs = gallery.build_breadcrumbs(&path).await;
-    let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
-
-    // Resolve permissions for this path
-    let user_permissions = match crate::permissions::resolve_permissions_for_path(
-        &app_state,
-        &gallery_name,
-        &path,
-        auth.username(),
-    )
-    .await
-    {
-        Ok(perms) => perms,
-        Err(_) => {
-            // Fall back to default permissions on error
-            crate::permissions::UserPermissions::new(None::<String>, Default::default())
-        }
-    };
 
     // Combine directories and images for the template's items array
     let mut items = directories.clone();
@@ -194,6 +194,7 @@ pub async fn gallery_handler_for_named(
         "total_pages": total_pages,
         "folder_title": folder_title,
         "folder_description": folder_description,
+        "folder_description_markdown": folder_description_markdown,
         "page_title": if is_root { "Gallery".to_string() } else {
             folder_title.clone().unwrap_or_else(|| breadcrumbs.last().map(|b| b.name.clone()).unwrap_or_else(|| "Gallery".to_string()))
         },

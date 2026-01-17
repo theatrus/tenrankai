@@ -14,7 +14,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sha2::Sha256;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -132,6 +132,8 @@ pub struct GalleryApiResponse {
     pub total_pages: usize,
     pub folder_title: Option<String>,
     pub folder_description: Option<String>,
+    /// Raw markdown for folder description (for editing)
+    pub folder_description_markdown: Option<String>,
     pub permissions: crate::permissions::RolePermissions,
 }
 
@@ -324,7 +326,9 @@ pub async fn gallery_api_handler_for_named(
 
     // Get breadcrumbs and folder metadata
     let breadcrumbs = gallery.build_breadcrumbs(&path).await;
-    let (folder_title, folder_description) = gallery.read_folder_metadata(&path).await;
+    let folder_metadata = gallery.read_folder_metadata_full(&path).await;
+    let (folder_title, folder_description, folder_description_markdown) =
+        crate::gallery::Gallery::extract_folder_display_info(folder_metadata);
 
     // Resolve permissions for this path
     let user_permissions = match crate::permissions::resolve_permissions_for_path(
@@ -353,6 +357,7 @@ pub async fn gallery_api_handler_for_named(
         total_pages,
         folder_title,
         folder_description,
+        folder_description_markdown,
         permissions: user_permissions.permissions,
     }))
 }
@@ -552,8 +557,18 @@ pub async fn image_detail_api_handler_for_named(
     )
     .await
     {
-        Ok(perms) => perms,
-        Err(_) => {
+        Ok(perms) => {
+            debug!(
+                "Image detail API: resolved permissions for user {:?} on path {:?}: can_edit_content={}, owner_access={}",
+                auth.username(),
+                parent_path,
+                perms.permissions.can_edit_content,
+                perms.permissions.owner_access
+            );
+            perms
+        }
+        Err(e) => {
+            warn!("Image detail API: permission resolution failed: {:?}", e);
             // Fall back to default permissions on error
             crate::permissions::UserPermissions::new(None::<String>, Default::default())
         }
@@ -1737,6 +1752,342 @@ pub async fn analyze_folder_handler(
         analyzed,
         skipped,
         errors,
+    })
+    .into_response();
+    response.headers_mut().extend(no_cache_headers());
+    response
+}
+
+// ============================================================================
+// Content Description Update Endpoints
+// ============================================================================
+
+/// Request to update folder or image description
+#[derive(Debug, Deserialize)]
+pub struct UpdateDescriptionRequest {
+    /// The markdown description content
+    pub description: String,
+    /// Optional title (stored in TOML frontmatter)
+    pub title: Option<String>,
+}
+
+/// Response for description update
+#[derive(Debug, Serialize)]
+pub struct UpdateDescriptionResponse {
+    pub success: bool,
+    /// Rendered HTML of the description
+    pub description_html: String,
+    /// The raw markdown that was saved
+    pub description_markdown: String,
+    /// The title that was saved
+    pub title: Option<String>,
+}
+
+/// Render markdown to HTML
+fn render_markdown_to_html(markdown: &str) -> String {
+    use pulldown_cmark::{Parser, html};
+    let parser = Parser::new(markdown);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    html_output
+}
+
+/// Update folder description (_folder.md)
+pub async fn update_folder_description_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path((gallery_name, folder_path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+    Json(request): Json<UpdateDescriptionRequest>,
+) -> impl IntoResponse {
+    debug!(
+        "Update folder description: gallery={}, path={}, title={:?}",
+        gallery_name, folder_path, request.title
+    );
+
+    // Get gallery
+    let gallery = match app_state.galleries().get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Resolve permissions for this folder path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &folder_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Check if user can edit content
+    if !user_permissions.permissions.can_edit_content {
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to edit content");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Build the path to _folder.md
+    let folder_md_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    // Read existing _folder.md content to preserve TOML frontmatter
+    let existing_content = gallery
+        .source_storage
+        .read_to_string(&folder_md_path)
+        .await
+        .ok();
+
+    // Parse existing TOML frontmatter if present
+    let mut existing_config: Option<toml_edit::DocumentMut> = None;
+    if let Some(ref content) = existing_content
+        && content.trim_start().starts_with("+++")
+    {
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
+        if parts.len() >= 3
+            && let Ok(doc) = parts[1].parse::<toml_edit::DocumentMut>()
+        {
+            existing_config = Some(doc);
+        }
+    }
+
+    // Build new content - title is stored as # Title in markdown, not in TOML
+    let toml_doc = existing_config.unwrap_or_default();
+
+    // Build markdown content with title as # heading if provided
+    let markdown_content = if let Some(ref title) = request.title {
+        if title.trim().is_empty() {
+            request.description.clone()
+        } else {
+            format!("# {}\n\n{}", title.trim(), request.description)
+        }
+    } else {
+        request.description.clone()
+    };
+
+    // Build the final file content (preserve existing TOML for hidden/permissions, but not title)
+    let new_content = if toml_doc.is_empty() {
+        // No frontmatter needed, just markdown
+        markdown_content.clone()
+    } else {
+        format!("+++\n{}+++\n\n{}", toml_doc, markdown_content)
+    };
+
+    // Write to storage
+    if let Err(e) = gallery
+        .source_storage
+        .write(&folder_md_path, new_content.as_bytes().to_vec().into())
+        .await
+    {
+        error!("Failed to write folder description: {}", e);
+        let mut response = ApiResponse::InternalServerError.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Update the folder metadata in cache (don't remove - that breaks the gallery!)
+    // Get current cached entry, update only the metadata, and re-insert
+    if let Some(mut cached_entry) = gallery.folder_cache.get(&folder_path).await {
+        // Build new FolderMetadata with updated description
+        // Note: title is NOT stored in config, only in markdown as # Title
+        let new_metadata = crate::gallery::FolderMetadata {
+            config: crate::gallery::FolderConfig {
+                hidden: cached_entry
+                    .metadata
+                    .as_ref()
+                    .map(|m| m.config.hidden)
+                    .unwrap_or(false),
+                permissions: cached_entry
+                    .metadata
+                    .as_ref()
+                    .map(|m| m.config.permissions.clone())
+                    .unwrap_or_default(),
+            },
+            description_markdown: markdown_content.clone(),
+        };
+        cached_entry.metadata = Some(new_metadata);
+        cached_entry.metadata_last_modified = Some(std::time::SystemTime::now());
+        gallery
+            .folder_cache
+            .insert(folder_path.clone(), cached_entry)
+            .await;
+    }
+
+    // Render markdown to HTML (full content including title heading)
+    let description_html = render_markdown_to_html(&markdown_content);
+
+    let mut response = Json(UpdateDescriptionResponse {
+        success: true,
+        description_html,
+        description_markdown: markdown_content,
+        title: request.title,
+    })
+    .into_response();
+    response.headers_mut().extend(no_cache_headers());
+    response
+}
+
+/// Update image description (.md sidecar file)
+pub async fn update_image_description_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path((gallery_name, image_path)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+    Json(request): Json<UpdateDescriptionRequest>,
+) -> impl IntoResponse {
+    debug!(
+        "Update image description: gallery={}, path={}, title={:?}",
+        gallery_name, image_path, request.title
+    );
+
+    // Get gallery
+    let gallery = match app_state.galleries().get(&gallery_name) {
+        Some(g) => g,
+        None => {
+            let mut response = ApiResponse::GalleryNotFound.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Resolve the actual path from the indexer
+    let resolved_path = {
+        let indexer = gallery.image_indexer.read().await;
+        if let Some(actual_path) = indexer.get_path(&image_path) {
+            actual_path.to_string()
+        } else {
+            image_path.clone()
+        }
+    };
+
+    // Extract parent path for permission checking
+    let parent_path = if let Some(last_slash) = resolved_path.rfind('/') {
+        resolved_path[..last_slash].to_string()
+    } else {
+        String::new()
+    };
+
+    // Resolve permissions for this path
+    let user_permissions = match crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &parent_path,
+        auth.username(),
+    )
+    .await
+    {
+        Ok(perms) => perms,
+        Err(_) => {
+            let mut response = ApiResponse::InternalServerError.into_response();
+            response.headers_mut().extend(no_cache_headers());
+            return response;
+        }
+    };
+
+    // Check if user can view this path
+    if !user_permissions.permissions.can_view {
+        let mut response = ApiResponse::NotFound.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Check if user can edit content
+    if !user_permissions.permissions.can_edit_content {
+        let mut response =
+            ApiResponse::Forbidden.with_message("You do not have permission to edit content");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Build the path to the .md sidecar file (image.jpg -> image.jpg.md)
+    let md_sidecar_path = format!("{}.md", resolved_path);
+
+    // Read existing .md sidecar content to preserve TOML frontmatter
+    let existing_content = gallery
+        .source_storage
+        .read_to_string(&md_sidecar_path)
+        .await
+        .ok();
+
+    // Parse existing TOML frontmatter if present
+    let mut existing_config: Option<toml_edit::DocumentMut> = None;
+    if let Some(ref content) = existing_content
+        && content.trim_start().starts_with("+++")
+    {
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
+        if parts.len() >= 3
+            && let Ok(doc) = parts[1].parse::<toml_edit::DocumentMut>()
+        {
+            existing_config = Some(doc);
+        }
+    }
+
+    // Build new content - title is stored as # Title in markdown, not in TOML
+    let toml_doc = existing_config.unwrap_or_default();
+
+    // Build markdown content with title as # heading if provided
+    let markdown_content = if let Some(ref title) = request.title {
+        if title.trim().is_empty() {
+            request.description.clone()
+        } else {
+            format!("# {}\n\n{}", title.trim(), request.description)
+        }
+    } else {
+        request.description.clone()
+    };
+
+    // Build the final file content (preserve existing TOML for other metadata, but not title)
+    let new_content = if toml_doc.is_empty() {
+        // No frontmatter needed, just markdown
+        markdown_content.clone()
+    } else {
+        format!("+++\n{}+++\n\n{}", toml_doc, markdown_content)
+    };
+
+    // Write to storage
+    if let Err(e) = gallery
+        .source_storage
+        .write(&md_sidecar_path, new_content.as_bytes().to_vec().into())
+        .await
+    {
+        error!("Failed to write image description: {}", e);
+        let mut response = ApiResponse::InternalServerError.into_response();
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
+    // Note: The metadata cache uses TTL-based expiration, so it will naturally
+    // refresh on next access. No explicit invalidation needed.
+
+    // Render markdown to HTML (full content including title heading)
+    let description_html = render_markdown_to_html(&markdown_content);
+
+    let mut response = Json(UpdateDescriptionResponse {
+        success: true,
+        description_html,
+        description_markdown: markdown_content,
+        title: request.title,
     })
     .into_response();
     response.headers_mut().extend(no_cache_headers());
