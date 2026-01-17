@@ -109,16 +109,31 @@ pub fn group_files(
 - `IMG_0001_v1.jpg` - version 1
 - `IMG_0001_V2.jpg` - version 2 (uppercase V)
 
-**Primary selection logic**:
-1. Versioned files (`_vN`) always take precedence over base file
-2. Among versioned files, highest N is primary
-3. Base file (no suffix) is treated as the original/oldest version
-4. `__versions/` subfolder versions included in grouping
+**Files in `__versions/` folder**:
+- All files in `__versions/` are automatically treated as versions
+- No `_vN` suffix required - the folder location implies versioning
+- Files are matched to parent folder images by base name
 
-**Example**: `IMG_0001.jpg` + `IMG_0001_v1.jpg` + `IMG_0001_v2.jpg`
-- `_v2` is primary (shown in gallery)
+**Primary selection logic**:
+1. Explicit version numbers (`_vN`) are compared first - highest N wins
+2. Files without version numbers use modification time - newest wins
+3. `__versions/` files compete equally with parent folder files
+4. The newest file overall (by version number or mod time) becomes primary
+
+**Example 1**: `IMG_0001.jpg` + `IMG_0001_v1.jpg` + `IMG_0001_v2.jpg`
+- `_v2` is primary (highest explicit version)
 - `_v1` is an older version
 - `IMG_0001.jpg` (base) is the original/oldest version
+
+**Example 2**: `IMG_0001.jpg` + `__versions/IMG_0001.jpg` (no suffix)
+- Compare modification times of both files
+- Newer file becomes primary
+- If `__versions/IMG_0001.jpg` is newer, it's the primary
+
+**Example 3**: `IMG_0001.jpg` + `IMG_0001.crw` + `__versions/IMG_0001.jpg`
+- `IMG_0001.crw` is associated as RAW (regardless of which jpg is primary)
+- Compare mod times of the two .jpg files
+- Newer .jpg becomes primary, older becomes a version
 
 ---
 
@@ -393,6 +408,9 @@ async fn test_raw_download_denied();
 
 #[tokio::test]
 async fn test_cache_invalidation_on_version_change();
+
+#[tokio::test]
+async fn test_versions_folder_no_suffix_uses_mod_time();
 ```
 
 ### Test Fixtures
@@ -403,14 +421,23 @@ test_photos/
 ├── IMG_0001.dng           # Associated RAW
 ├── IMG_0002.jpg           # Original/oldest version
 ├── IMG_0002_v1.jpg        # Version 1 (primary if no _v2)
-├── IMG_0002_v2.jpg        # Version 2 (primary - highest version)
-├── IMG_0003.jpg           # Original, versions in subfolder
+├── IMG_0002_v2.jpg        # Version 2 (primary - highest explicit version)
+├── IMG_0003.jpg           # Original, versions in subfolder with _vN suffix
+├── IMG_0004.jpg           # Base image (older mod time)
+├── IMG_0004.crw           # Associated RAW
 ├── __versions/
-│   ├── IMG_0003_v1.jpg    # Version 1
-│   └── IMG_0003_v2.jpg    # Primary (highest version)
+│   ├── IMG_0003_v1.jpg    # Version 1 (explicit suffix)
+│   ├── IMG_0003_v2.jpg    # Primary (highest explicit version)
+│   └── IMG_0004.jpg       # No suffix - primary if newer than parent IMG_0004.jpg
 └── __hidden/
     └── secret.jpg         # Should not appear in gallery
 ```
+
+**Test case for mod-time based versioning**:
+- Set `IMG_0004.jpg` mod time to `2024-01-01`
+- Set `__versions/IMG_0004.jpg` mod time to `2024-06-01`
+- Expected: `__versions/IMG_0004.jpg` is primary (newer)
+- `IMG_0004.crw` associated with whichever jpg is primary
 
 ---
 
