@@ -407,6 +407,7 @@ impl Gallery {
                     can_download_large: false,
                     can_download_original: false,
                     can_download_gallery: false,
+                    can_download_raw: false,
                     can_read_metadata: false,
                     can_edit_content: false,
                     can_add_comments: false,
