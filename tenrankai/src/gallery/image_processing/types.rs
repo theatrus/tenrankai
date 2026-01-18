@@ -16,6 +16,9 @@ pub struct LoadedImage {
     /// AVIF-specific metadata including gain maps and HDR info
     #[cfg(feature = "avif")]
     pub avif_info: Option<crate::gallery::image_processing::formats::avif::AvifImageInfo>,
+    /// HEIF/HEIC-specific metadata including gain maps and HDR info
+    #[cfg(feature = "heif")]
+    pub heif_info: Option<tenrankai_image::HeifImageInfo>,
     /// The original format of the loaded image
     pub format: Option<ImageFormat>,
     /// The original path of the image (for error messages)
@@ -30,6 +33,8 @@ impl LoadedImage {
             icc_profile: None,
             #[cfg(feature = "avif")]
             avif_info: None,
+            #[cfg(feature = "heif")]
+            heif_info: None,
             format: None,
             source_path,
         }
@@ -86,6 +91,8 @@ impl LoadedImage {
             icc_profile,
             #[cfg(feature = "avif")]
             avif_info,
+            #[cfg(feature = "heif")]
+            heif_info: None,
             format: detected_format,
             source_path: path.to_path_buf(),
         })
@@ -117,6 +124,12 @@ impl LoadedImage {
     ///
     /// This is useful when the image data is already in memory (e.g., from storage).
     pub fn load_from_bytes(data: &[u8], source_path_hint: &str) -> Result<Self, GalleryError> {
+        // Check for HEIF/HEIC first since the image crate doesn't recognize it
+        #[cfg(feature = "heif")]
+        if tenrankai_image::is_heif_format(data) {
+            return Self::load_heif_from_bytes(data, source_path_hint);
+        }
+
         // Detect the format from the data
         let cursor = Cursor::new(data);
         let buf_reader = BufReader::new(cursor);
@@ -172,9 +185,44 @@ impl LoadedImage {
             icc_profile,
             #[cfg(feature = "avif")]
             avif_info,
+            #[cfg(feature = "heif")]
+            heif_info: None,
             format: detected_format,
             source_path: std::path::PathBuf::from(source_path_hint),
         })
+    }
+
+    /// Load HEIF/HEIC image from bytes
+    #[cfg(feature = "heif")]
+    fn load_heif_from_bytes(data: &[u8], source_path_hint: &str) -> Result<Self, GalleryError> {
+        match tenrankai_image::read_heif_info_from_bytes(data) {
+            Ok((image, heif_info)) => {
+                let icc_profile = heif_info.icc_profile.clone();
+                tracing::debug!(
+                    "Loaded HEIF image: {}x{}, HDR={}, has_gain_map={}",
+                    image.width(),
+                    image.height(),
+                    heif_info.is_hdr,
+                    heif_info.has_gain_map
+                );
+                Ok(Self {
+                    image,
+                    icc_profile,
+                    #[cfg(feature = "avif")]
+                    avif_info: None,
+                    heif_info: Some(heif_info),
+                    format: None, // image crate doesn't have HEIF variant
+                    source_path: std::path::PathBuf::from(source_path_hint),
+                })
+            }
+            Err(e) => {
+                tracing::error!("Failed to load HEIF image {}: {}", source_path_hint, e);
+                Err(GalleryError::ProcessingError(format!(
+                    "Failed to load HEIF: {}",
+                    e
+                )))
+            }
+        }
     }
 
     /// Get image dimensions
@@ -241,6 +289,38 @@ impl LoadedImage {
                     gm_info_mut.gain_map_image = Some(resized_gain_map);
                 }
             }
+
+            // Resize gain map if present (HEIF source with gain map)
+            #[cfg(all(feature = "heif", feature = "avif"))]
+            if let Some(ref mut heif_info) = self.heif_info
+                && let Some(ref gm_info) = heif_info.gain_map_info
+                && let Some(ref gm_image) = gm_info.gain_map_image
+            {
+                // Calculate scale factors
+                let scale_x = self.image.width() as f32 / orig_width as f32;
+                let scale_y = self.image.height() as f32 / orig_height as f32;
+
+                // Apply same scale to gain map
+                let (gm_width, gm_height) = (gm_image.width(), gm_image.height());
+                let new_gm_width = ((gm_width as f32 * scale_x).round() as u32).max(1);
+                let new_gm_height = ((gm_height as f32 * scale_y).round() as u32).max(1);
+
+                tracing::debug!(
+                    "Resizing HEIF gain map from {}x{} to {}x{}",
+                    gm_width,
+                    gm_height,
+                    new_gm_width,
+                    new_gm_height
+                );
+
+                let resized_gain_map =
+                    gm_image.resize_exact(new_gm_width, new_gm_height, FilterType::Lanczos3);
+
+                // Update the gain map info with resized image
+                if let Some(ref mut gm_info_mut) = heif_info.gain_map_info {
+                    gm_info_mut.gain_map_image = Some(resized_gain_map);
+                }
+            }
         }
 
         Ok(())
@@ -300,24 +380,60 @@ impl LoadedImage {
             OutputFormat::Png => formats::png::encode(&self.image),
             #[cfg(feature = "avif")]
             OutputFormat::Avif => {
+                // Use AVIF info if available
                 if let Some(ref info) = self.avif_info {
-                    formats::avif::encode_with_info(&self.image, 85, 6, Some(info))
-                } else {
-                    let preserve_hdr = matches!(
-                        self.image,
-                        DynamicImage::ImageLuma16(_)
-                            | DynamicImage::ImageLumaA16(_)
-                            | DynamicImage::ImageRgb16(_)
-                            | DynamicImage::ImageRgba16(_)
-                    );
-                    formats::avif::encode_with_profile(
-                        &self.image,
-                        85,
-                        6,
-                        self.icc_profile.as_deref(),
-                        preserve_hdr,
-                    )
+                    return formats::avif::encode_with_info(&self.image, 85, 6, Some(info));
                 }
+
+                // Use HEIF info (converted to local AVIF info) if available
+                #[cfg(feature = "heif")]
+                if let Some(ref heif_info) = self.heif_info {
+                    // Convert HeifImageInfo to local AvifImageInfo for encoding
+                    let avif_info = formats::avif::AvifImageInfo {
+                        bit_depth: heif_info.bit_depth,
+                        has_alpha: heif_info.has_alpha,
+                        is_hdr: heif_info.is_hdr,
+                        icc_profile: heif_info.icc_profile.clone(),
+                        color_primaries: heif_info.color_primaries,
+                        transfer_characteristics: heif_info.transfer_characteristics,
+                        matrix_coefficients: heif_info.matrix_coefficients,
+                        max_cll: heif_info.max_cll,
+                        max_pall: heif_info.max_pall,
+                        has_gain_map: heif_info.has_gain_map,
+                        gain_map_info: heif_info.gain_map_info.as_ref().map(|gm| {
+                            formats::avif::GainMapInfo {
+                                has_image: gm.has_image,
+                                gamma: gm.gamma,
+                                min: gm.min,
+                                max: gm.max,
+                                base_offset: gm.base_offset,
+                                alternate_offset: gm.alternate_offset,
+                                base_hdr_headroom: gm.base_hdr_headroom,
+                                alternate_hdr_headroom: gm.alternate_hdr_headroom,
+                                use_base_color_space: gm.use_base_color_space,
+                                gain_map_image: gm.gain_map_image.clone(),
+                            }
+                        }),
+                        exif_data: heif_info.exif_data.clone(),
+                    };
+                    return formats::avif::encode_with_info(&self.image, 85, 6, Some(&avif_info));
+                }
+
+                // Fall back to basic encoding
+                let preserve_hdr = matches!(
+                    self.image,
+                    DynamicImage::ImageLuma16(_)
+                        | DynamicImage::ImageLumaA16(_)
+                        | DynamicImage::ImageRgb16(_)
+                        | DynamicImage::ImageRgba16(_)
+                );
+                formats::avif::encode_with_profile(
+                    &self.image,
+                    85,
+                    6,
+                    self.icc_profile.as_deref(),
+                    preserve_hdr,
+                )
             }
         }
     }

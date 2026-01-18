@@ -9,6 +9,7 @@ description = "Image processing library with format handling, ICC profiles, and 
 [features]
 default = []
 avif = ["dep:libavif", "dep:libavif-sys"]
+heif = ["dep:libheif-rs", "dep:four-cc"]
 
 [dependencies]
 # Image processing
@@ -27,6 +28,10 @@ libwebp-sys.workspace = true
 # AVIF support (optional)
 libavif = { workspace = true, optional = true }
 libavif-sys = { workspace = true, optional = true }
+
+# HEIF/HEIC support (optional)
+libheif-rs = { workspace = true, optional = true }
+four-cc = { version = "0.4", optional = true }
 
 # Error handling and utilities
 thiserror.workspace = true

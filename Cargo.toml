@@ -70,6 +70,7 @@ webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.14"
 libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"] }
 libavif-sys = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif", features = ["codec-aom"] }
+libheif-rs = "2.6"
 rgb = "0.8"
 
 # EXIF and metadata

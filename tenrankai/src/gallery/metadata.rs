@@ -53,6 +53,35 @@ impl Gallery {
                     }
                 }
             }
+            #[cfg(feature = "heif")]
+            Some("heic") | Some("heif") => {
+                // For HEIF/HEIC files, extract EXIF data using libheif
+                match tenrankai_image::formats::heif::extract_exif_data_from_bytes(image_data) {
+                    Some(exif_bytes) => {
+                        let (result, _warnings) = rexif::parse_buffer_quiet(&exif_bytes);
+                        match result {
+                            Ok(exif_data) => {
+                                let capture_date = self.extract_capture_date(&exif_data);
+                                let camera_info = self.extract_camera_info(&exif_data);
+                                let location_info = self.extract_location_info(&exif_data);
+                                debug!("Successfully extracted EXIF from HEIC: {}", relative_path);
+                                (capture_date, camera_info, location_info)
+                            }
+                            Err(e) => {
+                                trace!(
+                                    "Failed to parse EXIF data from HEIC {}: {}",
+                                    relative_path, e
+                                );
+                                (None, None, None)
+                            }
+                        }
+                    }
+                    None => {
+                        trace!("No EXIF data found in HEIC: {}", relative_path);
+                        (None, None, None)
+                    }
+                }
+            }
             _ => {
                 // For other formats (JPEG, etc), use rexif's buffer parser
                 // Use quiet version to avoid stderr spam from malformed EXIF tags
