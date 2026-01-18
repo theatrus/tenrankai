@@ -1191,23 +1191,9 @@ impl Gallery {
                 .read_header(relative_path, header_sizes::JPEG_EXIF)
                 .await?)
         } else if is_avif {
-            // AVIF: try header read, fall back if dimensions not found
-            let header_data = self
-                .source_storage
-                .read_header(relative_path, header_sizes::AVIF_METADATA)
-                .await?;
-
-            // Check if we got dimensions from the header
-            let dimensions = self.extract_dimensions_from_bytes(&header_data, Some("avif"));
-            if dimensions == (0, 0) {
-                debug!(
-                    "AVIF header read didn't contain dimensions, falling back to full read: {}",
-                    relative_path
-                );
-                Ok(self.source_storage.read(relative_path).await?)
-            } else {
-                Ok(header_data)
-            }
+            // AVIF: always do full read because libavif needs the complete file
+            // to decode and extract EXIF metadata. Header-only reads break EXIF extraction.
+            Ok(self.source_storage.read(relative_path).await?)
         } else {
             // Other formats: full read
             Ok(self.source_storage.read(relative_path).await?)
