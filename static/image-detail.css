@@ -151,6 +151,20 @@ body {
     }
 }
 
+/* Disable transitions for HDR-capable displays to prevent Mobile Safari from
+   disabling HDR rendering. Opacity transitions and animations cause Safari
+   to fall back to SDR tone mapping. */
+@media (dynamic-range: high) {
+    .image-container img {
+        transition: none;
+    }
+
+    .image-bg {
+        opacity: 1;
+        animation: none;
+    }
+}
+
 .image-container.loading img {
     opacity: 0;
 }
