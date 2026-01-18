@@ -655,7 +655,10 @@ impl Gallery {
         let mut folder_children: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
         // Also collect all groupable files (images + RAW) with metadata for grouping
         // Key is folder path, value is Vec<(path, modification_date, file_size)>
-        let mut folder_groupable_files: HashMap<String, Vec<(String, Option<std::time::SystemTime>, u64)>> = HashMap::new();
+        let mut folder_groupable_files: HashMap<
+            String,
+            Vec<(String, Option<std::time::SystemTime>, u64)>,
+        > = HashMap::new();
 
         for entry in &all_entries {
             // Get parent folder path
@@ -676,7 +679,10 @@ impl Gallery {
             // Get extension for checking file type
             let ext = super::grouping::get_extension(name).map(|e| e.to_lowercase());
             let is_displayable_image = self.is_image(name);
-            let is_raw = ext.as_ref().map(|e| super::grouping::is_raw_extension(e)).unwrap_or(false);
+            let is_raw = ext
+                .as_ref()
+                .map(|e| super::grouping::is_raw_extension(e))
+                .unwrap_or(false);
 
             let children = folder_children.entry(parent.clone()).or_default();
             if entry.is_dir {
@@ -689,10 +695,11 @@ impl Gallery {
             if is_displayable_image || is_raw {
                 let mod_time = entry.metadata.as_ref().and_then(|m| m.last_modified);
                 let file_size = entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
-                folder_groupable_files
-                    .entry(parent)
-                    .or_default()
-                    .push((entry.path.clone(), mod_time, file_size));
+                folder_groupable_files.entry(parent).or_default().push((
+                    entry.path.clone(),
+                    mod_time,
+                    file_size,
+                ));
             }
         }
 

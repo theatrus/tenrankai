@@ -70,6 +70,8 @@ export interface RawFileInfo {
   path: string;
   format: string;  // e.g., "dng", "arw", "cr2"
   file_size: number;
+  /** Pre-built download URL for this RAW file (/_raw/{path}) */
+  download_url?: string;
 }
 
 export interface ImageVersion {

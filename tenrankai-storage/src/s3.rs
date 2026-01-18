@@ -511,6 +511,14 @@ impl Storage for S3Storage {
         "s3"
     }
 
+    fn root_path(&self) -> String {
+        if self.prefix.is_empty() {
+            format!("s3://{}", self.bucket)
+        } else {
+            format!("s3://{}/{}", self.bucket, self.prefix)
+        }
+    }
+
     async fn signed_url(&self, path: &str, expiry: Duration) -> Option<String> {
         let key = self.build_key(path);
         debug!(

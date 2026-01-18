@@ -52,7 +52,13 @@ pub async fn gallery_handler_for_named(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return ApiResponse::InternalServerError.into_response(),
+        Err(e) => {
+            error!(
+                "Failed to resolve permissions for gallery '{}' path '{}': {:?}",
+                gallery_name, path, e
+            );
+            return ApiResponse::InternalServerError.into_response();
+        }
     };
 
     // Check if user can view this path
@@ -123,7 +129,10 @@ pub async fn gallery_handler_for_named(
     let user_permissions = api_data
         .as_ref()
         .map(|d| {
-            crate::permissions::UserPermissions::new(auth.username().map(String::from), d.permissions.clone())
+            crate::permissions::UserPermissions::new(
+                auth.username().map(String::from),
+                d.permissions.clone(),
+            )
         })
         .unwrap_or_else(|| {
             crate::permissions::UserPermissions::new(None::<String>, Default::default())
@@ -939,7 +948,11 @@ pub async fn raw_download_handler(
 
     // Verify this is a RAW file extension
     let ext = super::grouping::get_extension(&path).map(|e| e.to_lowercase());
-    if !ext.as_ref().map(|e| super::grouping::is_raw_extension(e)).unwrap_or(false) {
+    if !ext
+        .as_ref()
+        .map(|e| super::grouping::is_raw_extension(e))
+        .unwrap_or(false)
+    {
         return (StatusCode::BAD_REQUEST, "Not a RAW file format").into_response();
     }
 
@@ -978,6 +991,34 @@ pub async fn raw_download_handler(
         return (StatusCode::FORBIDDEN, "RAW download permission required").into_response();
     }
 
-    // Serve the RAW file from source storage
-    gallery.serve_from_source_storage(&path, &headers).await
+    // Verify the file exists before serving
+    if !gallery
+        .source_storage()
+        .exists(&path)
+        .await
+        .unwrap_or(false)
+    {
+        return ApiResponse::NotFound.into_response();
+    }
+
+    // Get the filename for Content-Disposition header
+    let filename = path.rsplit('/').next().unwrap_or(&path);
+
+    // Serve the RAW file from source storage with download disposition
+    let response = gallery.serve_from_source_storage(&path, &headers).await;
+
+    // Add Content-Disposition header to prompt download
+    if response.status().is_success() {
+        let (parts, body) = response.into_parts();
+        let mut response = Response::from_parts(parts, body);
+        response.headers_mut().insert(
+            axum::http::header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename)
+                .parse()
+                .unwrap(),
+        );
+        response
+    } else {
+        response
+    }
 }

@@ -278,21 +278,21 @@ impl Gallery {
 
     /// Find the image group that contains a given image path.
     /// Returns the group and whether this path is the primary image.
+    ///
+    /// TODO: For folders with many images, consider adding a HashMap<path, group_index>
+    /// to CachedFolderMetadata for O(1) lookups instead of O(n) iteration.
     pub(crate) async fn find_image_group(
         &self,
         image_path: &str,
     ) -> Option<(super::ImageGroup, bool)> {
-        // Get the parent folder path
         let parent_path = if let Some(last_slash) = image_path.rfind('/') {
             &image_path[..last_slash]
         } else {
             ""
         };
 
-        // Get cached folder data
         let cached = self.get_cached_folder_data(parent_path).await?;
 
-        // Find the group containing this image
         for group in &cached.image_groups {
             if group.primary_path == image_path {
                 return Some((group.clone(), true));
@@ -520,7 +520,17 @@ impl Gallery {
             if let Some((group, is_primary)) = self.find_image_group(relative_path).await {
                 // Include RAW files only if user has permission
                 let raw_files = if permissions.can_download_raw && !group.raw_files.is_empty() {
-                    Some(group.raw_files)
+                    Some(
+                        group
+                            .raw_files
+                            .into_iter()
+                            .map(|mut raw| {
+                                raw.download_url =
+                                    Some(format!("{}/_raw/{}", self.config.url_prefix, raw.path));
+                                raw
+                            })
+                            .collect(),
+                    )
                 } else {
                     None
                 };

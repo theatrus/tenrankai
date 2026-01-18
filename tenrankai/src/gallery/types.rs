@@ -199,6 +199,9 @@ pub struct RawFileInfo {
     pub format: String,
     /// File size in bytes
     pub file_size: u64,
+    /// Pre-built download URL (populated at API response time, not stored)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
 }
 
 /// Information about a version variant of an image
@@ -381,10 +384,6 @@ pub(crate) struct ImageGroup {
     pub versions: Vec<ImageVersion>,
     /// Base filename without version suffix (for grouping)
     pub base_name: String,
-    /// Hash of primary_path for cache key generation
-    pub primary_hash: String,
-    /// Latest modification time across all files in group
-    pub group_modified: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

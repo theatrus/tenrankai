@@ -138,14 +138,7 @@ impl Gallery {
     }
 
     pub(crate) fn is_image(&self, file_name: &str) -> bool {
-        let lower = file_name.to_lowercase();
-        lower.ends_with(".jpg")
-            || lower.ends_with(".jpeg")
-            || lower.ends_with(".png")
-            || lower.ends_with(".gif")
-            || lower.ends_with(".webp")
-            || lower.ends_with(".bmp")
-            || lower.ends_with(".avif")
+        grouping::get_extension(file_name).is_some_and(grouping::is_image_extension)
     }
 
     /// Returns the source directory path for filesystem-based sources.

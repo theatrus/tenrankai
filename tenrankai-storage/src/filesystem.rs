@@ -314,6 +314,10 @@ impl Storage for FilesystemStorage {
         "filesystem"
     }
 
+    fn root_path(&self) -> String {
+        self.base_path.display().to_string()
+    }
+
     async fn write_if_match(
         &self,
         path: &str,

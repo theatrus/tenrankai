@@ -11,7 +11,9 @@ pub const RAW_EXTENSIONS: &[&str] = &[
 ];
 
 /// Displayable image extensions (lowercase)
-pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif"];
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic", "heif",
+];
 
 /// Regex for version suffix pattern: _v followed by digits, case insensitive
 static VERSION_REGEX: LazyLock<Regex> =
@@ -39,7 +41,10 @@ pub fn path_contains_hidden_folder(path: &str) -> bool {
 
 /// Extract the file extension from a filename (lowercase)
 pub fn get_extension(filename: &str) -> Option<&str> {
-    filename.rsplit('.').next().filter(|ext| ext.len() < filename.len())
+    filename
+        .rsplit('.')
+        .next()
+        .filter(|ext| ext.len() < filename.len())
 }
 
 /// Extract the base name without extension
@@ -71,35 +76,6 @@ pub fn extract_version_number(filename: &str) -> Option<u32> {
         })
 }
 
-/// Compute a short hash of a path for cache key generation
-pub fn compute_path_hash(path: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    path.hash(&mut hasher);
-    let hash = hasher.finish();
-    // Convert to base36 for a shorter string (6 chars = ~2 billion combinations)
-    let full_hash = radix_fmt(hash, 36);
-    // Take last 6 chars (most variable bits) and pad with zeros if needed
-    let start = full_hash.len().saturating_sub(6);
-    format!("{:0>6}", &full_hash[start..])
-}
-
-/// Format a number in a given radix (base)
-fn radix_fmt(mut n: u64, radix: u64) -> String {
-    const CHARS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
-    let mut result = Vec::new();
-    if n == 0 {
-        return "0".to_string();
-    }
-    while n > 0 {
-        result.push(CHARS[(n % radix) as usize] as char);
-        n /= radix;
-    }
-    result.into_iter().rev().collect()
-}
-
 /// Information about a file for grouping
 #[derive(Debug, Clone)]
 pub struct FileEntry {
@@ -116,7 +92,11 @@ pub struct FileEntry {
 }
 
 impl FileEntry {
-    pub fn from_path(path: &str, modification_date: Option<SystemTime>, file_size: u64) -> Option<Self> {
+    pub fn from_path(
+        path: &str,
+        modification_date: Option<SystemTime>,
+        file_size: u64,
+    ) -> Option<Self> {
         let filename = path.rsplit('/').next().unwrap_or(path);
         let extension = get_extension(filename)?.to_lowercase();
         let is_raw = is_raw_extension(&extension);
@@ -187,24 +167,20 @@ where
         .collect();
 
     // Group by base name (within the same parent folder context)
+    // Files in __versions folders are grouped with their parent folder files by base name
     let mut groups: HashMap<String, Vec<FileEntry>> = HashMap::new();
     for entry in file_entries {
-        // For files in __versions folder, extract parent folder's base context
-        let group_key = if entry.in_versions_folder {
-            // Group with parent folder files
-            entry.base_name.clone()
-        } else {
-            entry.base_name.clone()
-        };
-        groups.entry(group_key).or_default().push(entry);
+        groups
+            .entry(entry.base_name.clone())
+            .or_default()
+            .push(entry);
     }
 
     // Build ImageGroup for each base name
     let mut result = Vec::new();
     for (base_name, entries) in groups {
         // Separate images and RAW files
-        let (images, raws): (Vec<_>, Vec<_>) =
-            entries.iter().cloned().partition(|e| e.is_image);
+        let (images, raws): (Vec<_>, Vec<_>) = entries.iter().cloned().partition(|e| e.is_image);
 
         if images.is_empty() {
             // No displayable images, skip this group
@@ -232,13 +208,14 @@ where
             })
             .collect();
 
-        // Build RAW file list
+        // Build RAW file list (download_url is populated at API response time)
         let raw_files: Vec<RawFileInfo> = raws
             .iter()
             .map(|raw| RawFileInfo {
                 path: raw.path.clone(),
                 format: raw.extension.clone(),
                 file_size: raw.file_size,
+                download_url: None,
             })
             .collect();
 
@@ -246,20 +223,12 @@ where
         let mut all_image_paths: Vec<String> = vec![primary.path.clone()];
         all_image_paths.extend(images.iter().map(|i| i.path.clone()));
 
-        // Find the latest modification time across all files
-        let group_modified = entries
-            .iter()
-            .filter_map(|e| e.modification_date)
-            .max();
-
         result.push(ImageGroup {
             primary_path: primary.path.clone(),
             all_image_paths,
             raw_files,
             versions,
             base_name,
-            primary_hash: compute_path_hash(&primary.path),
-            group_modified,
         });
     }
 
@@ -318,14 +287,6 @@ mod tests {
         assert!(path_contains_hidden_folder("__hidden/secret.jpg"));
         assert!(!path_contains_hidden_folder("photos/vacation/img.jpg"));
         assert!(!path_contains_hidden_folder("_folder.md"));
-    }
-
-    #[test]
-    fn test_compute_path_hash() {
-        let hash1 = compute_path_hash("photos/IMG_0001.jpg");
-        let hash2 = compute_path_hash("photos/IMG_0002.jpg");
-        assert_ne!(hash1, hash2);
-        assert_eq!(hash1.len(), 6);
     }
 
     #[test]
