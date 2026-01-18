@@ -678,8 +678,8 @@ fn test_avif_exif_extraction() {
     let exif_bytes = exif_data.unwrap();
     assert!(!exif_bytes.is_empty(), "EXIF data should not be empty");
 
-    // Try to parse the EXIF data
-    let parsed_exif = rexif::parse_buffer(&exif_bytes);
+    // Try to parse the EXIF data (use quiet version to avoid stderr spam)
+    let (parsed_exif, _warnings) = rexif::parse_buffer_quiet(&exif_bytes);
     assert!(
         parsed_exif.is_ok(),
         "Should be able to parse extracted EXIF data"
