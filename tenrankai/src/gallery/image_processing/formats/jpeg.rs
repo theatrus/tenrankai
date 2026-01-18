@@ -1,7 +1,7 @@
 use image::{DynamicImage, ImageEncoder, codecs::jpeg::JpegEncoder};
 use std::io::Read;
 use std::path::Path;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::gallery::GalleryError;
 
@@ -17,11 +17,16 @@ pub fn extract_icc_profile(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
 
-    extract_icc_profile_from_bytes(&buffer)
+    extract_icc_profile_from_bytes_with_path(&buffer, Some(path))
 }
 
 /// Extract ICC profile from JPEG data in memory
 pub fn extract_icc_profile_from_bytes(buffer: &[u8]) -> Option<Vec<u8>> {
+    extract_icc_profile_from_bytes_with_path(buffer, None)
+}
+
+/// Extract ICC profile from JPEG data with optional path for error logging
+fn extract_icc_profile_from_bytes_with_path(buffer: &[u8], path: Option<&Path>) -> Option<Vec<u8>> {
     // Look for ICC profile in JPEG APP2 segments
     // ICC profiles in JPEG are stored in APP2 markers with ICC_PROFILE identifier
     let mut pos = 0;
@@ -33,6 +38,19 @@ pub fn extract_icc_profile_from_bytes(buffer: &[u8]) -> Option<Vec<u8>> {
                 if pos + 4 < buffer.len() {
                     let segment_length =
                         u16::from_be_bytes([buffer[pos + 2], buffer[pos + 3]]) as usize;
+                    // segment_length includes the 2 length bytes, so must be >= 2 for valid data
+                    if segment_length < 2 {
+                        if let Some(p) = path {
+                            warn!(
+                                "Malformed JPEG APP2 segment in {}: segment_length={} at position {}",
+                                p.display(),
+                                segment_length,
+                                pos
+                            );
+                        }
+                        pos += 2;
+                        continue;
+                    }
                     if pos + 2 + segment_length <= buffer.len() {
                         let segment_start = pos + 4;
                         let segment_end = pos + 2 + segment_length;
