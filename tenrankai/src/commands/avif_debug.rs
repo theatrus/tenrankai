@@ -182,7 +182,11 @@ pub async fn handle_avif_debug_command(
                 println!("  EXIF data: {} bytes", exif.len());
                 if verbose {
                     // Try to parse and show basic EXIF info
-                    match rexif::parse_buffer(exif) {
+                    let (result, warnings) = rexif::parse_buffer_quiet(exif);
+                    if !warnings.is_empty() {
+                        println!("    EXIF warnings: {:?}", warnings);
+                    }
+                    match result {
                         Ok(parsed) => {
                             println!("    EXIF entries: {}", parsed.entries.len());
                             for entry in &parsed.entries {

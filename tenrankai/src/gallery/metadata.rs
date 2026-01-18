@@ -28,8 +28,9 @@ impl Gallery {
                     image_data,
                 ) {
                     Some(exif_bytes) => {
-                        // Parse the EXIF data from bytes
-                        match rexif::parse_buffer(&exif_bytes) {
+                        // Parse the EXIF data from bytes (use quiet version to avoid stderr spam)
+                        let (result, _warnings) = rexif::parse_buffer_quiet(&exif_bytes);
+                        match result {
                             Ok(exif_data) => {
                                 let capture_date = self.extract_capture_date(&exif_data);
                                 let camera_info = self.extract_camera_info(&exif_data);
@@ -54,7 +55,9 @@ impl Gallery {
             }
             _ => {
                 // For other formats (JPEG, etc), use rexif's buffer parser
-                match rexif::parse_buffer(image_data) {
+                // Use quiet version to avoid stderr spam from malformed EXIF tags
+                let (result, _warnings) = rexif::parse_buffer_quiet(image_data);
+                match result {
                     Ok(exif_data) => {
                         let capture_date = self.extract_capture_date(&exif_data);
                         let camera_info = self.extract_camera_info(&exif_data);
@@ -1330,7 +1333,11 @@ mod tests {
         let image_data = std::fs::read(&image_path).expect("Failed to read image file");
 
         // Try parsing with rexif directly to debug
-        match rexif::parse_buffer(&image_data) {
+        let (result, warnings) = rexif::parse_buffer_quiet(&image_data);
+        if !warnings.is_empty() {
+            println!("EXIF warnings: {:?}", warnings);
+        }
+        match result {
             Ok(exif_data) => {
                 println!("Successfully parsed EXIF data");
                 println!("Number of EXIF entries: {}", exif_data.entries.len());
