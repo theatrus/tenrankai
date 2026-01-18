@@ -219,6 +219,12 @@ pub trait Storage: Send + Sync + 'static {
     /// Get the storage type name (for logging/debugging).
     fn storage_type(&self) -> &'static str;
 
+    /// Get a display string for the storage root location.
+    ///
+    /// For filesystem: the base path (e.g., "/var/data/photos")
+    /// For S3: the bucket and prefix (e.g., "s3://bucket/prefix")
+    fn root_path(&self) -> String;
+
     /// Generate a signed URL for direct client access (optional).
     ///
     /// Returns `None` if the storage doesn't support signed URLs (e.g., filesystem).

@@ -292,6 +292,9 @@ impl TemplateEngine {
             }
         }
 
+        // Collect storage locations for error message
+        let storage_locations: Vec<String> = self.storages.iter().map(|s| s.root_path()).collect();
+
         // Try to find the template in each storage backend, returning the first match
         for (idx, storage) in self.storages.iter().enumerate() {
             // Check if file exists in this storage
@@ -352,10 +355,13 @@ impl TemplateEngine {
             }
         }
 
-        Err(format!(
-            "Template {} not found in any of the configured storage backends",
-            path
-        ))
+        // Provide detailed error with searched locations
+        let locations_msg = if storage_locations.is_empty() {
+            "no template directories configured".to_string()
+        } else {
+            format!("searched: {}", storage_locations.join(", "))
+        };
+        Err(format!("Template '{}' not found ({})", path, locations_msg))
     }
 
     pub async fn render_with_gallery(&self, path: &str) -> Result<Html<String>, StatusCode> {

@@ -484,6 +484,18 @@ async fn create_app_internal(
             }),
         );
 
+        // RAW file download
+        router = router.route(
+            &format!("{}/_raw/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, headers, auth| {
+                    let raw_path = path.0;
+                    gallery::raw_download_handler(state, Path((name, raw_path)), headers, auth)
+                }
+            }),
+        );
+
         // API routes for gallery
         router = router.route(
             &format!("/api/gallery/{}/preview", name),

@@ -102,6 +102,7 @@ reqwest.workspace = true
 # Utilities
 mime_guess.workspace = true
 rand.workspace = true
+regex.workspace = true
 url.workspace = true
 walkdir.workspace = true
 fnv.workspace = true
@@ -119,3 +120,46 @@ env_logger.workspace = true
 tempfile.workspace = true
 axum-test.workspace = true
 regex.workspace = true
+zip.workspace = true
+image.workspace = true
+
+[[test]]
+name = "gallery_integration_tests"
+path = "../tests/gallery_integration_tests.rs"
+
+[[test]]
+name = "posts_integration"
+path = "../tests/posts_integration.rs"
+
+[[test]]
+name = "template_integration"
+path = "../tests/template_integration.rs"
+
+[[test]]
+name = "template_example"
+path = "../tests/template_example.rs"
+
+[[test]]
+name = "asset_url_integration"
+path = "../tests/asset_url_integration.rs"
+
+[[test]]
+name = "cascading_static_directories"
+path = "../tests/cascading_static_directories.rs"
+
+[[test]]
+name = "css_validation"
+path = "../tests/css_validation.rs"
+
+[[test]]
+name = "null_email_provider"
+path = "../tests/null_email_provider.rs"
+
+[[test]]
+name = "s3_storage_integration"
+path = "../tests/s3_storage_integration.rs"
+
+[[test]]
+name = "avif_gain_map"
+path = "../tests/avif_gain_map.rs"
+required-features = ["avif"]

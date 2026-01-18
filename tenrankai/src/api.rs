@@ -304,7 +304,9 @@ pub async fn gallery_api_handler_for_named(
     .await
     {
         Ok(perms) => perms,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(_) => {
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
     };
 
     // Check if user can view this path

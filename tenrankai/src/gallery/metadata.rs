@@ -653,6 +653,12 @@ impl Gallery {
         // 3. Build parent -> direct children mapping
         // For each folder: (subdirectory names, image paths)
         let mut folder_children: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
+        // Also collect all groupable files (images + RAW) with metadata for grouping
+        // Key is folder path, value is Vec<(path, modification_date, file_size)>
+        let mut folder_groupable_files: HashMap<
+            String,
+            Vec<(String, Option<std::time::SystemTime>, u64)>,
+        > = HashMap::new();
 
         for entry in &all_entries {
             // Get parent folder path
@@ -670,11 +676,30 @@ impl Gallery {
                 continue;
             }
 
-            let children = folder_children.entry(parent).or_default();
+            // Get extension for checking file type
+            let ext = super::grouping::get_extension(name).map(|e| e.to_lowercase());
+            let is_displayable_image = self.is_image(name);
+            let is_raw = ext
+                .as_ref()
+                .map(|e| super::grouping::is_raw_extension(e))
+                .unwrap_or(false);
+
+            let children = folder_children.entry(parent.clone()).or_default();
             if entry.is_dir {
                 children.0.push(name.to_string()); // subdirectory name
-            } else if self.is_image(name) {
+            } else if is_displayable_image {
                 children.1.push(entry.path.clone()); // full image path
+            }
+
+            // Collect groupable files (images + RAW) for the grouping algorithm
+            if is_displayable_image || is_raw {
+                let mod_time = entry.metadata.as_ref().and_then(|m| m.last_modified);
+                let file_size = entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
+                folder_groupable_files.entry(parent).or_default().push((
+                    entry.path.clone(),
+                    mod_time,
+                    file_size,
+                ));
             }
         }
 
@@ -709,8 +734,12 @@ impl Gallery {
             folder_metadata.insert(folder_path.clone(), (metadata, last_modified));
         }
 
-        // 5. Check if a folder is effectively hidden (it or any ancestor is hidden)
+        // 5. Check if a folder is effectively hidden (it or any ancestor is hidden, or has __ prefix)
         let is_effectively_hidden = |path: &str| -> bool {
+            // Check for __ prefix in any path component
+            if super::grouping::path_contains_hidden_folder(path) {
+                return true;
+            }
             if hidden_folders.contains(path) {
                 return true;
             }
@@ -863,7 +892,17 @@ impl Gallery {
         // 8. Build final cache entries
         let mut new_cache: HashMap<String, super::CachedFolderMetadata> = HashMap::new();
 
+        // Get the indexer for URL building
+        let indexer = self.image_indexer.read().await;
+
         for folder_path in &folder_paths {
+            // Skip __ prefixed folders (they contain version files, not browsable content)
+            // Note: folders marked hidden via _folder.md should still have cache entries
+            // so they can be accessed directly - they just don't appear in listings
+            if super::grouping::path_contains_hidden_folder(folder_path) {
+                continue;
+            }
+
             let (metadata, metadata_last_modified) = folder_metadata
                 .get(folder_path)
                 .cloned()
@@ -890,6 +929,37 @@ impl Gallery {
             let recursive_count = recursive_counts.get(folder_path).copied().unwrap_or(0);
             let preview_items = select_preview_items(folder_path);
 
+            // Build image groups for this folder
+            // Collect files from this folder and any __versions subfolder
+            let mut groupable_files: Vec<(String, Option<std::time::SystemTime>, u64)> = Vec::new();
+
+            // Files directly in this folder
+            if let Some(files) = folder_groupable_files.get(folder_path) {
+                groupable_files.extend(files.iter().cloned());
+            }
+
+            // Files in __versions subfolder (if it exists)
+            let versions_path = if folder_path.is_empty() {
+                "__versions".to_string()
+            } else {
+                format!("{}/__versions", folder_path)
+            };
+            if let Some(version_files) = folder_groupable_files.get(&versions_path) {
+                groupable_files.extend(version_files.iter().cloned());
+            }
+
+            // Build image groups using the grouping algorithm
+            let image_groups = super::grouping::group_files(
+                groupable_files.iter().map(|(p, m, s)| (p.as_str(), *m, *s)),
+                |path| {
+                    indexer
+                        .get_index(path)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| urlencoding::encode(path).to_string())
+                },
+                |url_id| self.build_thumbnail_url(url_id),
+            );
+
             new_cache.insert(
                 folder_path.clone(),
                 super::CachedFolderMetadata {
@@ -899,6 +969,7 @@ impl Gallery {
                     images,
                     recursive_image_count: recursive_count,
                     preview_items,
+                    image_groups,
                 },
             );
         }

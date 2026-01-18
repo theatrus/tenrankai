@@ -66,6 +66,22 @@ export interface ImageUserMetadata {
   ai_analyzed_at?: string;
 }
 
+export interface RawFileInfo {
+  path: string;
+  format: string;  // e.g., "dng", "arw", "cr2"
+  file_size: number;
+  /** Pre-built download URL for this RAW file (/_raw/{path}) */
+  download_url?: string;
+}
+
+export interface ImageVersion {
+  path: string;
+  version_number?: number;  // From _vN suffix, if present
+  modification_date?: string;
+  url_id: string;
+  thumbnail_url: string;
+}
+
 export interface ImageInfo {
   path: string;
   name: string;
@@ -82,6 +98,9 @@ export interface ImageInfo {
   color_profile?: string;
   is_new: boolean;
   user_metadata?: ImageUserMetadata;
+  raw_files?: RawFileInfo[];
+  versions?: ImageVersion[];
+  is_primary: boolean;
 }
 
 export interface NavigationImage {
@@ -106,6 +125,7 @@ export interface RolePermissions {
   can_download_large: boolean;
   can_download_original: boolean;
   can_download_gallery: boolean;
+  can_download_raw: boolean;
   can_read_metadata: boolean;
   can_edit_content: boolean;
   can_add_comments: boolean;

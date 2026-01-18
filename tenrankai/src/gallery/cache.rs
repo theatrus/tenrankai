@@ -1183,7 +1183,6 @@ mod tests {
             hidden_dir.join("_folder.md"),
             r#"+++
 hidden = true
-title = "Hidden Folder"
 +++
 
 # Hidden Content

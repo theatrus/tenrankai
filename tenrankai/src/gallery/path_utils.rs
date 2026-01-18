@@ -50,10 +50,7 @@ impl FileExtension {
 
     /// Check if this is a supported image format.
     pub fn is_image(&self) -> bool {
-        matches!(
-            self.0.as_str(),
-            "jpg" | "jpeg" | "png" | "gif" | "webp" | "avif" | "heic" | "heif"
-        )
+        super::grouping::is_image_extension(&self.0)
     }
 }
 

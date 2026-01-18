@@ -380,7 +380,6 @@ mod scenario_tests {
         // Folder level permissions - private folder
         let mut folder_config = FolderConfig {
             hidden: false,
-            title: Some("Private Photos".to_string()),
             permissions: Default::default(),
         };
 
@@ -564,7 +563,6 @@ mod scenario_tests {
         // Wedding folder - guests can view and download
         let mut wedding_folder = FolderConfig {
             hidden: false,
-            title: Some("Smith Wedding 2024".to_string()),
             permissions: Default::default(),
         };
 
@@ -619,7 +617,6 @@ mod scenario_tests {
         // Corporate event folder - restricted access
         let mut corporate_folder = FolderConfig {
             hidden: true, // Hidden from gallery listings
-            title: Some("TechCorp Annual Conference".to_string()),
             permissions: Default::default(),
         };
 
