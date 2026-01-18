@@ -4,6 +4,41 @@ use image::{DynamicImage, ImageFormat};
 use std::io::{BufReader, Cursor};
 use tokio::runtime::Handle;
 
+use crate::gallery::image_processing::formats;
+
+/// Convert HeifImageInfo to local AvifImageInfo for encoding
+#[cfg(all(feature = "heif", feature = "avif"))]
+fn heif_to_avif_info(heif_info: &tenrankai_image::HeifImageInfo) -> formats::avif::AvifImageInfo {
+    formats::avif::AvifImageInfo {
+        bit_depth: heif_info.bit_depth,
+        has_alpha: heif_info.has_alpha,
+        is_hdr: heif_info.is_hdr,
+        icc_profile: heif_info.icc_profile.clone(),
+        color_primaries: heif_info.color_primaries,
+        transfer_characteristics: heif_info.transfer_characteristics,
+        matrix_coefficients: heif_info.matrix_coefficients,
+        max_cll: heif_info.max_cll,
+        max_pall: heif_info.max_pall,
+        has_gain_map: heif_info.has_gain_map,
+        gain_map_info: heif_info
+            .gain_map_info
+            .as_ref()
+            .map(|gm| formats::avif::GainMapInfo {
+                has_image: gm.has_image,
+                gamma: gm.gamma,
+                min: gm.min,
+                max: gm.max,
+                base_offset: gm.base_offset,
+                alternate_offset: gm.alternate_offset,
+                base_hdr_headroom: gm.base_hdr_headroom,
+                alternate_hdr_headroom: gm.alternate_hdr_headroom,
+                use_base_color_space: gm.use_base_color_space,
+                gain_map_image: gm.gain_map_image.clone(),
+            }),
+        exif_data: heif_info.exif_data.clone(),
+    }
+}
+
 /// A loaded image with all its metadata preserved
 /// This struct encapsulates an image and its associated metadata
 /// to enable batch processing without reloading the image multiple times
@@ -388,34 +423,7 @@ impl LoadedImage {
                 // Use HEIF info (converted to local AVIF info) if available
                 #[cfg(feature = "heif")]
                 if let Some(ref heif_info) = self.heif_info {
-                    // Convert HeifImageInfo to local AvifImageInfo for encoding
-                    let avif_info = formats::avif::AvifImageInfo {
-                        bit_depth: heif_info.bit_depth,
-                        has_alpha: heif_info.has_alpha,
-                        is_hdr: heif_info.is_hdr,
-                        icc_profile: heif_info.icc_profile.clone(),
-                        color_primaries: heif_info.color_primaries,
-                        transfer_characteristics: heif_info.transfer_characteristics,
-                        matrix_coefficients: heif_info.matrix_coefficients,
-                        max_cll: heif_info.max_cll,
-                        max_pall: heif_info.max_pall,
-                        has_gain_map: heif_info.has_gain_map,
-                        gain_map_info: heif_info.gain_map_info.as_ref().map(|gm| {
-                            formats::avif::GainMapInfo {
-                                has_image: gm.has_image,
-                                gamma: gm.gamma,
-                                min: gm.min,
-                                max: gm.max,
-                                base_offset: gm.base_offset,
-                                alternate_offset: gm.alternate_offset,
-                                base_hdr_headroom: gm.base_hdr_headroom,
-                                alternate_hdr_headroom: gm.alternate_hdr_headroom,
-                                use_base_color_space: gm.use_base_color_space,
-                                gain_map_image: gm.gain_map_image.clone(),
-                            }
-                        }),
-                        exif_data: heif_info.exif_data.clone(),
-                    };
+                    let avif_info = heif_to_avif_info(heif_info);
                     return formats::avif::encode_with_info(&self.image, 85, 6, Some(&avif_info));
                 }
 

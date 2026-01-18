@@ -4,10 +4,25 @@ use crate::error::ImageError;
 use four_cc::FourCC;
 use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
 use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
+use quick_xml::Reader;
+use quick_xml::events::Event;
 use tracing::{debug, trace};
 
 #[cfg(feature = "avif")]
 use super::avif::GainMapInfo;
+
+/// Parsed XMP gain map metadata from Apple HDR photos
+#[derive(Debug, Clone, Default)]
+struct XmpGainMapMetadata {
+    gain_map_min: f32,
+    gain_map_max: f32,
+    gamma: f32,
+    offset_sdr: f32,
+    offset_hdr: f32,
+    hdr_capacity_min: f32,
+    hdr_capacity_max: f32,
+    base_rendition_is_hdr: bool,
+}
 
 /// HEIF/HEIC specific image information
 #[derive(Debug, Clone)]
@@ -128,7 +143,7 @@ pub fn read_heif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, HeifImage
         color_primaries,
         transfer_characteristics,
         matrix_coefficients,
-        max_cll: 0,  // HEIF doesn't have standard CLLI like AVIF
+        max_cll: 0, // HEIF doesn't have standard CLLI like AVIF
         max_pall: 0,
         has_gain_map,
         #[cfg(feature = "avif")]
@@ -140,9 +155,7 @@ pub fn read_heif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, HeifImage
 }
 
 /// Extract color profile information from image handle
-fn extract_color_info(
-    handle: &libheif_rs::ImageHandle,
-) -> (u16, u16, u16, Option<Vec<u8>>) {
+fn extract_color_info(handle: &libheif_rs::ImageHandle) -> (u16, u16, u16, Option<Vec<u8>>) {
     let mut color_primaries: u16 = 2; // Unspecified
     let mut transfer_characteristics: u16 = 2;
     let mut matrix_coefficients: u16 = 2;
@@ -161,23 +174,23 @@ fn extract_color_info(
 
     // Try to get raw ICC profile
     if let Some(raw_profile) = handle.color_profile_raw() {
-        icc_profile = Some(raw_profile.data.to_vec());
-        debug!("HEIF ICC profile: {} bytes", icc_profile.as_ref().unwrap().len());
+        let profile_data = raw_profile.data.to_vec();
+        debug!("HEIF ICC profile: {} bytes", profile_data.len());
+        icc_profile = Some(profile_data);
     }
 
-    (color_primaries, transfer_characteristics, matrix_coefficients, icc_profile)
+    (
+        color_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        icc_profile,
+    )
 }
 
 /// Detect if image is HDR based on metadata
 fn detect_hdr(bit_depth: u8, transfer_characteristics: u16) -> bool {
-    if bit_depth <= 8 {
-        return false;
-    }
-
-    // HDR transfer functions: PQ (16) or HLG (18)
-    let has_hdr_transfer = matches!(transfer_characteristics, 16 | 18);
-
-    has_hdr_transfer
+    // Must be > 8-bit and have HDR transfer function: PQ (16) or HLG (18)
+    bit_depth > 8 && matches!(transfer_characteristics, 16 | 18)
 }
 
 /// Extract EXIF data from image handle
@@ -213,6 +226,119 @@ fn extract_exif_from_handle(handle: &libheif_rs::ImageHandle) -> Option<Vec<u8>>
     None
 }
 
+/// Extract XMP metadata from image handle
+fn extract_xmp_from_handle(handle: &libheif_rs::ImageHandle) -> Option<Vec<u8>> {
+    // FourCC for XMP/MIME metadata type
+    let mime_type = FourCC(*b"mime");
+
+    let num_blocks = handle.number_of_metadata_blocks(mime_type);
+    if num_blocks <= 0 {
+        trace!("No XMP/MIME metadata blocks found in HEIF");
+        return None;
+    }
+
+    let mut block_ids = vec![0u32; num_blocks as usize];
+    let count = handle.metadata_block_ids(&mut block_ids, mime_type);
+
+    if count == 0 || block_ids.is_empty() {
+        return None;
+    }
+
+    // Check each block for XMP content
+    for block_id in block_ids {
+        if let Ok(data) = handle.metadata(block_id)
+            && let Ok(text) = std::str::from_utf8(&data)
+            && (text.contains("xmpmeta") || text.contains("rdf:RDF"))
+        {
+            debug!("Found XMP metadata: {} bytes", data.len());
+            return Some(data);
+        }
+    }
+
+    None
+}
+
+/// Parse XMP data for Apple HDR gain map metadata
+fn parse_xmp_gain_map_metadata(xmp_data: &[u8]) -> Option<XmpGainMapMetadata> {
+    let text = std::str::from_utf8(xmp_data).ok()?;
+
+    // Check if this contains Apple HDR gain map data
+    if !text.contains("HDRGainMap") && !text.contains("hdrgm") {
+        return None;
+    }
+
+    let mut metadata = XmpGainMapMetadata {
+        gamma: 1.0, // Default values
+        ..Default::default()
+    };
+
+    let mut reader = Reader::from_str(text);
+    reader.config_mut().trim_text(true);
+
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+                // Check for rdf:Description with hdrgm attributes
+                if e.name().as_ref() == b"rdf:Description" {
+                    for attr in e.attributes().flatten() {
+                        let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                        let value = std::str::from_utf8(&attr.value).unwrap_or("");
+
+                        match key {
+                            "hdrgm:GainMapMin" => {
+                                metadata.gain_map_min = value.parse().unwrap_or(0.0);
+                            }
+                            "hdrgm:GainMapMax" => {
+                                metadata.gain_map_max = value.parse().unwrap_or(1.0);
+                            }
+                            "hdrgm:Gamma" => {
+                                metadata.gamma = value.parse().unwrap_or(1.0);
+                            }
+                            "hdrgm:OffsetSDR" => {
+                                metadata.offset_sdr = value.parse().unwrap_or(0.0);
+                            }
+                            "hdrgm:OffsetHDR" => {
+                                metadata.offset_hdr = value.parse().unwrap_or(0.0);
+                            }
+                            "hdrgm:HDRCapacityMin" => {
+                                metadata.hdr_capacity_min = value.parse().unwrap_or(0.0);
+                            }
+                            "hdrgm:HDRCapacityMax" => {
+                                metadata.hdr_capacity_max = value.parse().unwrap_or(1.0);
+                            }
+                            "hdrgm:BaseRenditionIsHDR" => {
+                                metadata.base_rendition_is_hdr =
+                                    value.eq_ignore_ascii_case("true") || value == "1";
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                trace!("XMP parsing error: {}", e);
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    // Only return if we found meaningful gain map data
+    if metadata.gain_map_max > 0.0 || metadata.hdr_capacity_max > 0.0 {
+        debug!(
+            "Parsed XMP gain map: min={}, max={}, gamma={}, headroom={}",
+            metadata.gain_map_min, metadata.gain_map_max, metadata.gamma, metadata.hdr_capacity_max
+        );
+        Some(metadata)
+    } else {
+        None
+    }
+}
+
 /// Extract gain map information from auxiliary images
 #[cfg(feature = "avif")]
 fn extract_gain_map_info(
@@ -225,6 +351,10 @@ fn extract_gain_map_info(
     if aux_handles.is_empty() {
         return (false, None);
     }
+
+    // Try to extract XMP metadata for gain map parameters
+    let xmp_metadata =
+        extract_xmp_from_handle(handle).and_then(|xmp| parse_xmp_gain_map_metadata(&xmp));
 
     let lib_heif = LibHeif::new();
 
@@ -249,18 +379,55 @@ fn extract_gain_map_info(
                     );
                 }
 
-                return (true, Some(GainMapInfo {
-                    has_image: true,
-                    gamma: [1.0, 1.0, 1.0],
-                    min: [0.0, 0.0, 0.0],
-                    max: [1.0, 1.0, 1.0],
-                    base_offset: [0.0, 0.0, 0.0],
-                    alternate_offset: [0.0, 0.0, 0.0],
-                    base_hdr_headroom: 1.0,
-                    alternate_hdr_headroom: 1.0,
-                    use_base_color_space: true,
-                    gain_map_image,
-                }));
+                // Use XMP metadata if available, otherwise use defaults
+                let (
+                    gamma,
+                    min,
+                    max,
+                    base_offset,
+                    alternate_offset,
+                    base_headroom,
+                    alt_headroom,
+                    use_base,
+                ) = if let Some(ref xmp) = xmp_metadata {
+                    (
+                        [xmp.gamma, xmp.gamma, xmp.gamma],
+                        [xmp.gain_map_min, xmp.gain_map_min, xmp.gain_map_min],
+                        [xmp.gain_map_max, xmp.gain_map_max, xmp.gain_map_max],
+                        [xmp.offset_sdr, xmp.offset_sdr, xmp.offset_sdr],
+                        [xmp.offset_hdr, xmp.offset_hdr, xmp.offset_hdr],
+                        xmp.hdr_capacity_min.max(1.0), // headroom must be >= 1.0
+                        xmp.hdr_capacity_max.max(1.0),
+                        !xmp.base_rendition_is_hdr,
+                    )
+                } else {
+                    (
+                        [1.0, 1.0, 1.0],
+                        [0.0, 0.0, 0.0],
+                        [1.0, 1.0, 1.0],
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0],
+                        1.0,
+                        1.0,
+                        true,
+                    )
+                };
+
+                return (
+                    true,
+                    Some(GainMapInfo {
+                        has_image: gain_map_image.is_some(),
+                        gamma,
+                        min,
+                        max,
+                        base_offset,
+                        alternate_offset,
+                        base_hdr_headroom: base_headroom,
+                        alternate_hdr_headroom: alt_headroom,
+                        use_base_color_space: use_base,
+                        gain_map_image,
+                    }),
+                );
             }
         }
     }
@@ -270,16 +437,23 @@ fn extract_gain_map_info(
 
 /// Decode an auxiliary image handle to DynamicImage
 #[cfg(feature = "avif")]
-fn decode_auxiliary_image(lib_heif: &LibHeif, aux_handle: &libheif_rs::ImageHandle) -> Option<DynamicImage> {
+fn decode_auxiliary_image(
+    lib_heif: &LibHeif,
+    aux_handle: &libheif_rs::ImageHandle,
+) -> Option<DynamicImage> {
     let width = aux_handle.width();
     let height = aux_handle.height();
     let has_alpha = aux_handle.has_alpha_channel();
 
     // Decode the auxiliary image (gain maps are typically grayscale or RGB)
     let image = if has_alpha {
-        lib_heif.decode(aux_handle, ColorSpace::Rgb(RgbChroma::Rgba), None).ok()?
+        lib_heif
+            .decode(aux_handle, ColorSpace::Rgb(RgbChroma::Rgba), None)
+            .ok()?
     } else {
-        lib_heif.decode(aux_handle, ColorSpace::Rgb(RgbChroma::Rgb), None).ok()?
+        lib_heif
+            .decode(aux_handle, ColorSpace::Rgb(RgbChroma::Rgb), None)
+            .ok()?
     };
 
     // Convert to DynamicImage
@@ -309,8 +483,7 @@ fn convert_to_dynamic_image(
 
     if has_alpha {
         // RGBA
-        let mut img_buf: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::new(width, height);
+        let mut img_buf: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
 
         for y in 0..height {
             let row_start = (y as usize) * stride;
@@ -334,8 +507,7 @@ fn convert_to_dynamic_image(
         Ok(DynamicImage::ImageRgba8(img_buf))
     } else {
         // RGB
-        let mut img_buf: ImageBuffer<Rgb<u8>, Vec<u8>> =
-            ImageBuffer::new(width, height);
+        let mut img_buf: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::new(width, height);
 
         for y in 0..height {
             let row_start = (y as usize) * stride;

@@ -5065,6 +5065,7 @@ dependencies = [
  "libavif-sys",
  "libheif-rs",
  "libwebp-sys 0.14.1",
+ "quick-xml",
  "rgb",
  "tempfile",
  "thiserror 2.0.17",
