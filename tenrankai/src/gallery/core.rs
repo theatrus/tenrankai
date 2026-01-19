@@ -568,7 +568,7 @@ impl Gallery {
                 .unwrap_or("unknown")
                 .to_string(),
             title,
-            path: relative_path.to_string(),
+            path: url_identifier.clone(),
             url: self.build_image_base_url(&url_identifier),
             thumbnail_url: self.build_thumbnail_url(&url_identifier),
             gallery_url: self.build_gallery_url(&url_identifier),
