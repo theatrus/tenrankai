@@ -137,14 +137,6 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: cargo test --workspace --verbose --no-default-features
 
-    - name: Build release (Ubuntu/macOS)
-      if: matrix.os != 'windows-latest'
-      run: cargo build --workspace --release --verbose
-
-    - name: Build release (Windows - no AVIF/HEIF)
-      if: matrix.os == 'windows-latest'
-      run: cargo build --workspace --release --verbose --no-default-features
-
   # Security audit
   security-audit:
     name: Security audit
