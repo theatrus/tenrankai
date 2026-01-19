@@ -721,9 +721,7 @@ pub async fn download_folder_handler(
                             base_name
                         }
                     };
-                    let capture_date = metadata_cache
-                        .get(image_path)
-                        .and_then(|m| m.capture_date);
+                    let capture_date = metadata_cache.get(image_path).and_then(|m| m.capture_date);
                     images.push((image_path.clone(), display_name, capture_date));
                 }
             } else {
@@ -747,9 +745,8 @@ pub async fn download_folder_handler(
                                 let indexer = gallery.image_indexer.read().await;
                                 indexer.get_display_name(image_path)
                             };
-                            let capture_date = metadata_cache
-                                .get(image_path)
-                                .and_then(|m| m.capture_date);
+                            let capture_date =
+                                metadata_cache.get(image_path).and_then(|m| m.capture_date);
                             images.push((image_path.clone(), display_name, capture_date));
                         }
                     }
@@ -996,11 +993,9 @@ mod tests {
             .unwrap()
             .and_hms_opt(14, 30, 44)
             .unwrap();
-        let system_time: SystemTime = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            datetime,
-            chrono::Utc,
-        )
-        .into();
+        let system_time: SystemTime =
+            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc)
+                .into();
 
         let zip_dt = systemtime_to_zip_datetime(system_time).expect("Should convert successfully");
 
@@ -1019,10 +1014,7 @@ mod tests {
         let result = systemtime_to_zip_datetime(epoch);
 
         // The zip crate rejects dates before 1980
-        assert!(
-            result.is_none(),
-            "Dates before 1980 should return None"
-        );
+        assert!(result.is_none(), "Dates before 1980 should return None");
     }
 
     #[test]
@@ -1033,7 +1025,10 @@ mod tests {
 
         // Should be a reasonable recent year
         assert!(zip_dt.year() >= 2020, "Year should be recent");
-        assert!(zip_dt.year() <= 2100, "Year should not be too far in future");
+        assert!(
+            zip_dt.year() <= 2100,
+            "Year should not be too far in future"
+        );
     }
 
     #[test]
@@ -1058,12 +1053,37 @@ mod tests {
             let zip_dt =
                 systemtime_to_zip_datetime(system_time).expect("Should convert successfully");
 
-            assert_eq!(zip_dt.year(), year as u16, "Year mismatch for {:?}", datetime);
-            assert_eq!(zip_dt.month(), month as u8, "Month mismatch for {:?}", datetime);
+            assert_eq!(
+                zip_dt.year(),
+                year as u16,
+                "Year mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(
+                zip_dt.month(),
+                month as u8,
+                "Month mismatch for {:?}",
+                datetime
+            );
             assert_eq!(zip_dt.day(), day as u8, "Day mismatch for {:?}", datetime);
-            assert_eq!(zip_dt.hour(), hour as u8, "Hour mismatch for {:?}", datetime);
-            assert_eq!(zip_dt.minute(), minute as u8, "Minute mismatch for {:?}", datetime);
-            assert_eq!(zip_dt.second(), second as u8, "Second mismatch for {:?}", datetime);
+            assert_eq!(
+                zip_dt.hour(),
+                hour as u8,
+                "Hour mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(
+                zip_dt.minute(),
+                minute as u8,
+                "Minute mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(
+                zip_dt.second(),
+                second as u8,
+                "Second mismatch for {:?}",
+                datetime
+            );
         }
     }
 }
