@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use serde::Deserialize;
 use tracing::{debug, error};
 
 // Named gallery handlers for multiple gallery support
@@ -619,12 +620,18 @@ pub async fn image_handler_for_named_v2(
     .into_response()
 }
 
-/// Download a gallery folder as a zip file
-/// URL format: /gallery/_download/{path}
-#[axum::debug_handler(state = crate::AppState)]
+/// Query parameters for download folder handler
+#[derive(Debug, Deserialize)]
+pub struct DownloadFolderQuery {
+    /// Include all versions of images (default: false, only primary images)
+    #[serde(default)]
+    pub include_versions: bool,
+}
+
 pub async fn download_folder_handler(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
+    Query(query): Query<DownloadFolderQuery>,
     auth: crate::login::OptionalAuth,
 ) -> Response {
     let gallery = match app_state.galleries().get(&gallery_name) {
@@ -666,23 +673,58 @@ pub async fn download_folder_handler(
             .into_response();
     }
 
-    // Recursively collect all images in the directory and subdirectories
+    // Recursively collect images in the directory and subdirectories
     let mut all_images: Vec<(String, String)> = Vec::new(); // (file_path, display_name)
+    let include_versions = query.include_versions;
 
     // Helper to recursively collect images
     async fn collect_images_recursive(
         gallery: &super::SharedGallery,
         folder_path: &str,
         images: &mut Vec<(String, String)>,
+        include_versions: bool,
     ) {
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
-            // Add images from this folder
-            for image_path in &cached.images {
-                let display_name = {
-                    let indexer = gallery.image_indexer.read().await;
-                    indexer.get_display_name(image_path)
-                };
-                images.push((image_path.clone(), display_name));
+            if include_versions {
+                // Include all images (primary + versions)
+                for image_path in &cached.images {
+                    // Get base display name and append version suffix if present
+                    let display_name = {
+                        let indexer = gallery.image_indexer.read().await;
+                        let base_name = indexer.get_display_name(image_path);
+                        // If this is a version file, append the version suffix
+                        let filename = image_path.rsplit('/').next().unwrap_or(image_path);
+                        if let Some(version_num) = super::grouping::extract_version_number(filename)
+                        {
+                            format!("{}_v{}", base_name, version_num)
+                        } else {
+                            base_name
+                        }
+                    };
+                    images.push((image_path.clone(), display_name));
+                }
+            } else {
+                // Only include primary images from each group
+                if !cached.image_groups.is_empty() {
+                    for group in &cached.image_groups {
+                        let display_name = {
+                            let indexer = gallery.image_indexer.read().await;
+                            indexer.get_display_name(&group.primary_path)
+                        };
+                        images.push((group.primary_path.clone(), display_name));
+                    }
+                } else {
+                    // Fallback: filter out version files manually
+                    for image_path in &cached.images {
+                        if !super::grouping::is_version_file(image_path) {
+                            let display_name = {
+                                let indexer = gallery.image_indexer.read().await;
+                                indexer.get_display_name(image_path)
+                            };
+                            images.push((image_path.clone(), display_name));
+                        }
+                    }
+                }
             }
 
             // Recursively process subdirectories
@@ -692,12 +734,18 @@ pub async fn download_folder_handler(
                 } else {
                     format!("{}/{}", folder_path, subdir)
                 };
-                Box::pin(collect_images_recursive(gallery, &subdir_path, images)).await;
+                Box::pin(collect_images_recursive(
+                    gallery,
+                    &subdir_path,
+                    images,
+                    include_versions,
+                ))
+                .await;
             }
         }
     }
 
-    collect_images_recursive(gallery, &path, &mut all_images).await;
+    collect_images_recursive(gallery, &path, &mut all_images, include_versions).await;
 
     if all_images.is_empty() {
         return (StatusCode::NOT_FOUND, "No images in this folder").into_response();

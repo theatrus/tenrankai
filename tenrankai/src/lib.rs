@@ -39,7 +39,7 @@ pub use template_system::{TemplateCategory, TemplatePath, TemplateType};
 
 use axum::{
     Router,
-    extract::Path,
+    extract::{Path, Query},
     http::{HeaderValue, Request},
     middleware::{self, Next},
     response::IntoResponse,
@@ -466,9 +466,17 @@ async fn create_app_internal(
             &format!("{}/_download/{{*path}}", prefix),
             axum::routing::get({
                 let name = name.clone();
-                move |state, path: Path<String>, auth| {
+                move |state,
+                      path: Path<String>,
+                      query: Query<gallery::DownloadFolderQuery>,
+                      auth| {
                     let download_path = path.0;
-                    gallery::download_folder_handler(state, Path((name, download_path)), auth)
+                    gallery::download_folder_handler(
+                        state,
+                        Path((name, download_path)),
+                        query,
+                        auth,
+                    )
                 }
             }),
         );
@@ -478,8 +486,13 @@ async fn create_app_internal(
             &format!("{}/_download", prefix),
             axum::routing::get({
                 let name = name.clone();
-                move |state, auth| {
-                    gallery::download_folder_handler(state, Path((name, String::new())), auth)
+                move |state, query: Query<gallery::DownloadFolderQuery>, auth| {
+                    gallery::download_folder_handler(
+                        state,
+                        Path((name, String::new())),
+                        query,
+                        auth,
+                    )
                 }
             }),
         );

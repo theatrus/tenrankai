@@ -76,6 +76,18 @@ pub fn extract_version_number(filename: &str) -> Option<u32> {
         })
 }
 
+/// Check if a path is a version file (has _vN suffix)
+/// e.g., "folder/IMG_0001_v2.jpg" -> true
+/// e.g., "folder/IMG_0001.jpg" -> false
+pub fn is_version_file(path: &str) -> bool {
+    use std::path::Path;
+    let filename = Path::new(path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(path);
+    extract_version_number(filename).is_some()
+}
+
 /// Get canonical path for metadata storage (strips version suffix from filename)
 /// e.g., "folder/IMG_0001_v2.jpg" -> "folder/IMG_0001.jpg"
 /// e.g., "folder/IMG_0001.jpg" -> "folder/IMG_0001.jpg"
