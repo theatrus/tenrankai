@@ -1,11 +1,12 @@
+use super::GalleryQuery;
 use super::types::ImageSize;
-use super::{GalleryQuery, NavigationImage};
 use crate::{ApiResponse, site::ResolvedState};
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use serde::Deserialize;
 use tracing::{debug, error};
 
 // Named gallery handlers for multiple gallery support
@@ -191,14 +192,11 @@ pub async fn gallery_handler_for_named(
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
         "gallery_path": path,
-        "is_root": is_root,
         "breadcrumbs": breadcrumbs,
-        "directories": directories,
         "images": images,
         "items": items,
         "images_json": images_json,
         "gallery_data_json": gallery_data_json,
-        "page": page,
         "current_page": page,
         "total_pages": total_pages,
         "folder_title": folder_title,
@@ -232,8 +230,6 @@ pub async fn gallery_handler_for_named(
                 }
             }
         }).unwrap_or_else(|| "".to_string()),
-        "app_name": app_state.app_name(),
-        "copyright_holder": gallery.config.copyright_holder,
         "base_url": app_state.base_url(),
         "og_title": folder_title.clone().unwrap_or_else(|| {
             if is_root {
@@ -271,10 +267,8 @@ pub async fn gallery_handler_for_named(
         "og_image_width": og_image_width,
         "og_image_height": og_image_height,
         "twitter_card_type": "summary_large_image",
-        // Authentication info
         "is_authenticated": auth.is_authenticated(),
         "current_user": auth.username().unwrap_or_default().to_string(),
-        // Add permissions for template use - serialize to JSON to avoid recursion limit
         "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
     });
 
@@ -404,87 +398,6 @@ pub async fn image_detail_handler_for_named(
         }
     }
 
-    // Get the parent directory for navigation
-    let parent_path = std::path::Path::new(&resolved_path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("");
-
-    // Get all images in the parent directory for navigation
-    let (_, images, _) = gallery
-        .list_directory(parent_path, 0)
-        .await
-        .unwrap_or_default();
-
-    // Find current image index and get prev/next
-    // We need to compare against the original path (indexed identifier) not the resolved path
-    let current_index = images.iter().position(|img| img.path == path);
-
-    // Debug logging to understand the issue
-    if current_index.is_none() {
-        debug!(
-            "Could not find current image in navigation. Looking for '{}', available paths: {:?}",
-            path,
-            images.iter().map(|i| &i.path).collect::<Vec<_>>()
-        );
-    }
-
-    let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
-        let prev = if index > 0 {
-            let prev_item = &images[index - 1];
-            Some(NavigationImage {
-                path: prev_item.path.clone(),
-                name: prev_item.name.clone(),
-                thumbnail_url: prev_item.thumbnail_url.clone().unwrap_or_default(),
-            })
-        } else {
-            None
-        };
-
-        let next = if index + 1 < images.len() {
-            let next_item = &images[index + 1];
-            Some(NavigationImage {
-                path: next_item.path.clone(),
-                name: next_item.name.clone(),
-                thumbnail_url: next_item.thumbnail_url.clone().unwrap_or_default(),
-            })
-        } else {
-            None
-        };
-
-        // Extended navigation: multiple images in each direction (closest first)
-        let prev_imgs: Vec<NavigationImage> = (0..index)
-            .rev()
-            .take(8)
-            .map(|i| {
-                let item = &images[i];
-                NavigationImage {
-                    path: item.path.clone(),
-                    name: item.name.clone(),
-                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
-                }
-            })
-            .collect();
-
-        let next_imgs: Vec<NavigationImage> = ((index + 1)..images.len())
-            .take(8)
-            .map(|i| {
-                let item = &images[i];
-                NavigationImage {
-                    path: item.path.clone(),
-                    name: item.name.clone(),
-                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
-                }
-            })
-            .collect();
-
-        (prev, next, prev_imgs, next_imgs)
-    } else {
-        (None, None, Vec::new(), Vec::new())
-    };
-
-    // Build breadcrumbs for the parent directory, not including the image filename
-    let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
     let gallery_config = gallery.get_config();
 
     // Technical details are now controlled by permissions, not a separate flag
@@ -505,51 +418,13 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    // Get authenticated user info from extractor
-    let is_authenticated = auth.is_authenticated();
-    let current_user = auth.username().unwrap_or_default().to_string();
-
-    // Resolve permissions for this path
-    let user_permissions = match crate::permissions::resolve_permissions_for_path(
-        &app_state,
-        &gallery_name,
-        parent_path,
-        auth.username(),
-    )
-    .await
-    {
-        Ok(perms) => perms,
-        Err(_) => {
-            // Fall back to default permissions on error
-            crate::permissions::UserPermissions::new(None::<String>, Default::default())
-        }
-    };
-
     let liquid_context = liquid::object!({
-        "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
         "image": image_info,
-        "breadcrumbs": breadcrumbs,
-        "prev_image": prev_image,
-        "next_image": next_image,
-        "prev_images": prev_images,
-        "next_images": next_images,
         "image_detail_json": image_detail_json,
-        "page_title": format!("{} - Photo Gallery", image_info.name),
-        "meta_description": format!("View {} in our photo gallery", image_info.name),
-        "app_name": app_state.app_name(),
-        "copyright_holder": gallery.config.copyright_holder,
         "base_url": app_state.base_url(),
-        "og_title": image_info.name,
-        "og_description": format!("Photo: {}", image_info.name),
-        "og_image": format!("{}{}", app_state.base_url().unwrap_or(""), image_info.medium_url),
-        "og_image_width": image_info.dimensions.0,
-        "og_image_height": image_info.dimensions.1,
-        "twitter_card_type": "summary_large_image",
-        "is_authenticated": is_authenticated,
-        "current_user": current_user,
-        // Add permissions for template use - serialize to JSON to avoid recursion limit
-        "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
+        "is_authenticated": auth.is_authenticated(),
+        "current_user": auth.username().unwrap_or_default().to_string(),
     });
 
     match template_engine
@@ -745,12 +620,18 @@ pub async fn image_handler_for_named_v2(
     .into_response()
 }
 
-/// Download a gallery folder as a zip file
-/// URL format: /gallery/_download/{path}
-#[axum::debug_handler(state = crate::AppState)]
+/// Query parameters for download folder handler
+#[derive(Debug, Deserialize)]
+pub struct DownloadFolderQuery {
+    /// Include all versions of images (default: false, only primary images)
+    #[serde(default)]
+    pub include_versions: bool,
+}
+
 pub async fn download_folder_handler(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
+    Query(query): Query<DownloadFolderQuery>,
     auth: crate::login::OptionalAuth,
 ) -> Response {
     let gallery = match app_state.galleries().get(&gallery_name) {
@@ -792,23 +673,58 @@ pub async fn download_folder_handler(
             .into_response();
     }
 
-    // Recursively collect all images in the directory and subdirectories
+    // Recursively collect images in the directory and subdirectories
     let mut all_images: Vec<(String, String)> = Vec::new(); // (file_path, display_name)
+    let include_versions = query.include_versions;
 
     // Helper to recursively collect images
     async fn collect_images_recursive(
         gallery: &super::SharedGallery,
         folder_path: &str,
         images: &mut Vec<(String, String)>,
+        include_versions: bool,
     ) {
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
-            // Add images from this folder
-            for image_path in &cached.images {
-                let display_name = {
-                    let indexer = gallery.image_indexer.read().await;
-                    indexer.get_display_name(image_path)
-                };
-                images.push((image_path.clone(), display_name));
+            if include_versions {
+                // Include all images (primary + versions)
+                for image_path in &cached.images {
+                    // Get base display name and append version suffix if present
+                    let display_name = {
+                        let indexer = gallery.image_indexer.read().await;
+                        let base_name = indexer.get_display_name(image_path);
+                        // If this is a version file, append the version suffix
+                        let filename = image_path.rsplit('/').next().unwrap_or(image_path);
+                        if let Some(version_num) = super::grouping::extract_version_number(filename)
+                        {
+                            format!("{}_v{}", base_name, version_num)
+                        } else {
+                            base_name
+                        }
+                    };
+                    images.push((image_path.clone(), display_name));
+                }
+            } else {
+                // Only include primary images from each group
+                if !cached.image_groups.is_empty() {
+                    for group in &cached.image_groups {
+                        let display_name = {
+                            let indexer = gallery.image_indexer.read().await;
+                            indexer.get_display_name(&group.primary_path)
+                        };
+                        images.push((group.primary_path.clone(), display_name));
+                    }
+                } else {
+                    // Fallback: filter out version files manually
+                    for image_path in &cached.images {
+                        if !super::grouping::is_version_file(image_path) {
+                            let display_name = {
+                                let indexer = gallery.image_indexer.read().await;
+                                indexer.get_display_name(image_path)
+                            };
+                            images.push((image_path.clone(), display_name));
+                        }
+                    }
+                }
             }
 
             // Recursively process subdirectories
@@ -818,12 +734,18 @@ pub async fn download_folder_handler(
                 } else {
                     format!("{}/{}", folder_path, subdir)
                 };
-                Box::pin(collect_images_recursive(gallery, &subdir_path, images)).await;
+                Box::pin(collect_images_recursive(
+                    gallery,
+                    &subdir_path,
+                    images,
+                    include_versions,
+                ))
+                .await;
             }
         }
     }
 
-    collect_images_recursive(gallery, &path, &mut all_images).await;
+    collect_images_recursive(gallery, &path, &mut all_images, include_versions).await;
 
     if all_images.is_empty() {
         return (StatusCode::NOT_FOUND, "No images in this folder").into_response();

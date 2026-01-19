@@ -35,6 +35,8 @@ export interface Comment {
   created_at: string;
   edited_at?: string;
   image_area?: ImageArea;
+  /** Path of the specific version this comment was made on (for grouped images) */
+  version_path?: string;
 }
 
 export interface ImageArea {
@@ -126,6 +128,7 @@ export interface RolePermissions {
   can_download_original: boolean;
   can_download_gallery: boolean;
   can_download_raw: boolean;
+  can_see_versions: boolean;
   can_read_metadata: boolean;
   can_edit_content: boolean;
   can_add_comments: boolean;
@@ -178,6 +181,7 @@ export interface GalleryItem {
   is_directory: boolean;
   is_new: boolean;
   directory_preview?: string[];
+  user_metadata?: ImageUserMetadata;
 }
 
 export interface GalleryData {

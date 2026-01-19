@@ -264,6 +264,16 @@ body {
     border-color: var(--link-color);
 }
 
+/* Current version in version picker - highlighted with accent color */
+.nav-strip-thumb-current {
+    border-color: var(--link-color);
+    cursor: default;
+}
+
+.nav-strip-thumb-current:hover {
+    transform: none;
+}
+
 /* Fade gradient overlays */
 .nav-strip-fade {
     position: absolute;
@@ -356,6 +366,34 @@ body {
 /* Responsive: Hide navigation strip on mobile (uses MobileNavigation instead) */
 @media (max-width: 768px) {
     .image-navigation {
+        display: none;
+    }
+}
+
+/* Version Picker - shows other versions of an image */
+.version-picker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.version-picker-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.version-picker-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Hide version picker on mobile (same as navigation) */
+@media (max-width: 768px) {
+    .version-picker {
         display: none;
     }
 }
@@ -1128,6 +1166,10 @@ dd {
 
 .comment-edited {
   font-style: italic;
+  color: var(--text-secondary);
+}
+
+.comment-version {
   color: var(--text-secondary);
 }
 

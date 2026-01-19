@@ -148,12 +148,13 @@ impl ImageIndexer {
             }
             ImageIndexingMode::UniqueId => {
                 // For unique ID mode, find the sequence position within the folder
+                // Only count primary images (not versions) for sequence numbering
                 let folder = Path::new(path)
                     .parent()
                     .and_then(|p| p.to_str())
                     .unwrap_or("");
 
-                // Get all paths in the same folder and sort them
+                // Get all PRIMARY paths in the same folder (excluding version files) and sort them
                 let mut folder_paths: Vec<_> = self
                     .path_to_index
                     .keys()
@@ -163,12 +164,20 @@ impl ImageIndexer {
                             .and_then(|parent| parent.to_str())
                             .unwrap_or("")
                             == folder
+                            && !super::grouping::is_version_file(p)
                     })
                     .cloned()
                     .collect();
                 folder_paths.sort();
 
-                if let Some(pos) = folder_paths.iter().position(|p| p == path) {
+                // If the path itself is a version file, use its canonical (primary) path for lookup
+                let lookup_path = if super::grouping::is_version_file(path) {
+                    super::grouping::canonical_metadata_path(path)
+                } else {
+                    path.to_string()
+                };
+
+                if let Some(pos) = folder_paths.iter().position(|p| *p == lookup_path) {
                     format!("Image {}", pos + 1)
                 } else {
                     // Fallback to filename if not found

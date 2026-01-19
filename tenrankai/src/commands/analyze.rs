@@ -164,8 +164,11 @@ async fn collect_images_recursive(
             };
 
             // Check if already analyzed (unless force is set)
+            // Use canonical path so all versions share metadata
+            let canonical_path = crate::gallery::grouping::canonical_metadata_path(&relative_path);
             if !force
-                && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
+                && let Ok(Some(metadata)) =
+                    gallery.user_metadata_storage.load(&canonical_path).await
                 && metadata.has_ai_analysis()
             {
                 debug!("Skipping {} - already analyzed", relative_path);
@@ -199,20 +202,23 @@ async fn analyze_single_image(
         .analyze_image_data_with_context(&base64_image, relative_path, context)
         .await?;
 
+    // Use canonical path so all versions share metadata
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(relative_path);
+
     // Load existing metadata or create new
     let mut metadata = gallery
         .user_metadata_storage
-        .load(relative_path)
+        .load(&canonical_path)
         .await?
         .unwrap_or_default();
 
     // Update with AI analysis results
     metadata.set_ai_analysis(result.keywords.clone(), result.alt_text.clone());
 
-    // Save metadata
+    // Save metadata to canonical path
     gallery
         .user_metadata_storage
-        .save(relative_path, &metadata)
+        .save(&canonical_path, &metadata)
         .await?;
 
     info!(

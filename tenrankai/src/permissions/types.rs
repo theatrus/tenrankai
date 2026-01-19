@@ -27,6 +27,10 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_download_raw: bool, // Download associated RAW files
 
+    // Version access
+    #[serde(default)]
+    pub can_see_versions: bool, // View previous versions of images
+
     // Metadata permissions
     #[serde(default)]
     pub can_read_metadata: bool,
@@ -96,6 +100,8 @@ impl RolePermissions {
         self.can_download_gallery |= other.can_download_gallery;
         self.can_download_raw |= other.can_download_raw;
 
+        self.can_see_versions |= other.can_see_versions;
+
         self.can_read_metadata |= other.can_read_metadata;
         self.can_edit_content |= other.can_edit_content;
         self.can_add_comments |= other.can_add_comments;
@@ -135,6 +141,8 @@ impl RolePermissions {
             self.can_download_original = true;
             self.can_download_gallery = true;
             self.can_download_raw = true;
+
+            self.can_see_versions = true;
 
             self.can_read_metadata = true;
             self.can_edit_content = true;
@@ -256,6 +264,7 @@ impl PermissionConfig {
                     can_download_large: true,
                     can_download_gallery: true,
                     can_download_raw: true,
+                    can_see_versions: true,
                     can_read_metadata: true,
                     can_add_comments: true,
                     can_edit_own_comments: true,

@@ -17,9 +17,9 @@ pub use cache::generate_tile_cache_filename;
 pub use core::BreadcrumbItem;
 pub use error::GalleryError;
 pub use handlers::{
-    download_folder_handler, gallery_handler_for_named, gallery_root_handler_for_named,
-    image_detail_handler_for_named, image_handler_for_named, image_handler_for_named_v2,
-    raw_download_handler,
+    DownloadFolderQuery, download_folder_handler, gallery_handler_for_named,
+    gallery_root_handler_for_named, image_detail_handler_for_named, image_handler_for_named,
+    image_handler_for_named_v2, raw_download_handler,
 };
 pub use types::*;
 
@@ -208,6 +208,16 @@ impl Gallery {
     /// Format: `{url_prefix}/_image/{url_id}`
     pub(crate) fn build_image_base_url(&self, url_id: &str) -> String {
         format!("{}/_image/{}", self.config.url_prefix, url_id)
+    }
+
+    /// Build a URL identifier for an image path.
+    /// Uses the image indexer if available, otherwise URL-encodes the path.
+    pub(crate) async fn build_url_identifier(&self, path: &str) -> String {
+        let indexer = self.image_indexer.read().await;
+        indexer
+            .get_index(path)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| urlencoding::encode(path).to_string())
     }
 
     pub async fn refresh_metadata_and_pregenerate_cache(

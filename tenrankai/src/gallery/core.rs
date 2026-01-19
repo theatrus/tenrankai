@@ -109,13 +109,7 @@ impl Gallery {
 
         for image_path in image_paths {
             // Get the indexed identifier for this image
-            let url_identifier = {
-                let indexer = self.image_indexer.read().await;
-                indexer
-                    .get_index(image_path)
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| urlencoding::encode(image_path).to_string())
-            };
+            let url_identifier = self.build_url_identifier(image_path).await;
 
             let thumbnail_url = self.build_thumbnail_url(&url_identifier);
             let gallery_url = self.build_gallery_url(&url_identifier);
@@ -143,6 +137,8 @@ impl Gallery {
             };
 
             // Load user metadata based on permissions
+            // Use canonical path so all versions share the same metadata
+            let canonical_path = super::grouping::canonical_metadata_path(image_path);
             let user_metadata = if user.is_some() {
                 let folder_metadata = cached.metadata.as_ref();
                 let resolver = crate::permissions::PermissionResolver::new(
@@ -153,7 +149,7 @@ impl Gallery {
 
                 if permissions.can_read_metadata {
                     self.user_metadata_storage
-                        .load(image_path)
+                        .load(&canonical_path)
                         .await
                         .ok()
                         .flatten()
@@ -396,13 +392,7 @@ impl Gallery {
         };
 
         // Get the indexed identifier for this image
-        let url_identifier = {
-            let indexer = self.image_indexer.read().await;
-            indexer
-                .get_index(relative_path)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| urlencoding::encode(relative_path).to_string())
-        };
+        let url_identifier = self.build_url_identifier(relative_path).await;
 
         // Format capture date if available
         let capture_date = cached_metadata.capture_date.and_then(|date| {
@@ -450,6 +440,7 @@ impl Gallery {
                     can_download_original: false,
                     can_download_gallery: false,
                     can_download_raw: false,
+                    can_see_versions: false,
                     can_read_metadata: false,
                     can_edit_content: false,
                     can_add_comments: false,
@@ -484,8 +475,10 @@ impl Gallery {
         };
 
         // Load user metadata if the user has permission to see any part of it
+        // Use canonical path so all versions share the same metadata
+        let canonical_path = super::grouping::canonical_metadata_path(relative_path);
         let user_metadata = if permissions.can_read_metadata || permissions.can_see_ai_analysis {
-            match self.user_metadata_storage.load(relative_path).await {
+            match self.user_metadata_storage.load(&canonical_path).await {
                 Ok(Some(mut metadata)) => {
                     // Filter metadata based on permissions
                     if !permissions.can_read_metadata {
@@ -535,9 +528,34 @@ impl Gallery {
                     None
                 };
 
-                // Always include versions if available
-                let versions = if !group.versions.is_empty() {
-                    Some(group.versions)
+                // Include versions only if user has permission
+                // Build complete version list including the primary so users can navigate
+                // between all versions from any version
+                let versions = if permissions.can_see_versions {
+                    let mut all_versions = group.versions.clone();
+
+                    // Add the primary version to the list so it can be navigated to
+                    // when viewing an older version
+                    let primary_url_id = self.build_url_identifier(&group.primary_path).await;
+                    let primary_version = super::ImageVersion {
+                        path: group.primary_path.clone(),
+                        version_number: super::grouping::extract_version_number(
+                            std::path::Path::new(&group.primary_path)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(""),
+                        ),
+                        modification_date: None, // Will be filled from cache if needed
+                        url_id: primary_url_id.clone(),
+                        thumbnail_url: self.build_thumbnail_url(&primary_url_id),
+                    };
+                    all_versions.push(primary_version);
+
+                    if all_versions.len() > 1 {
+                        Some(all_versions)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
@@ -554,7 +572,7 @@ impl Gallery {
                 .unwrap_or("unknown")
                 .to_string(),
             title,
-            path: relative_path.to_string(),
+            path: url_identifier.clone(),
             url: self.build_image_base_url(&url_identifier),
             thumbnail_url: self.build_thumbnail_url(&url_identifier),
             gallery_url: self.build_gallery_url(&url_identifier),

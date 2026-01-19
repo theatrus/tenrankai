@@ -490,7 +490,23 @@ pub async fn image_detail_api_handler_for_named(
         .unwrap_or_default();
 
     // Find current image index and get prev/next
-    let current_index = images.iter().position(|img| img.path == path);
+    // For older versions, we need to find the primary image in the navigation
+    // list since older versions aren't directly listed
+    let navigation_path =
+        if let Some((group, is_primary)) = gallery.find_image_group(&resolved_path).await {
+            if is_primary {
+                // Current image is the primary, use the URL path directly
+                path.clone()
+            } else {
+                // This is an older version - find the primary's URL identifier
+                gallery.build_url_identifier(&group.primary_path).await
+            }
+        } else {
+            // No group found, use the original path
+            path.clone()
+        };
+
+    let current_index = images.iter().position(|img| img.path == navigation_path);
 
     let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
         // Immediate prev/next for keyboard navigation
@@ -761,8 +777,11 @@ pub async fn get_metadata_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Load metadata using relative path
-    match gallery.user_metadata_storage.load(&resolved_path).await {
+    // Use canonical path for metadata (strips version suffix so all versions share metadata)
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(&resolved_path);
+
+    // Load metadata using canonical path
+    match gallery.user_metadata_storage.load(&canonical_path).await {
         Ok(Some(metadata)) => {
             let mut response = Json(MetadataResponse { metadata }).into_response();
             response.headers_mut().extend(no_cache_headers());
@@ -871,8 +890,11 @@ pub async fn update_metadata_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Load existing metadata or create new using relative path
-    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
+    // Use canonical path for metadata (strips version suffix so all versions share metadata)
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(&resolved_path);
+
+    // Load existing metadata or create new
+    let mut metadata = match gallery.user_metadata_storage.load(&canonical_path).await {
         Ok(Some(m)) => m,
         Ok(None) => crate::metadata_storage::ImageUserMetadata::new(),
         Err(e) => {
@@ -898,10 +920,10 @@ pub async fn update_metadata_handler(
 
     metadata.update_modified(user);
 
-    // Save metadata
+    // Save metadata to canonical path
     match gallery
         .user_metadata_storage
-        .save(&resolved_path, &metadata)
+        .save(&canonical_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -995,8 +1017,12 @@ pub async fn add_comment_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Load existing metadata or create new using relative path
-    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
+    // Use canonical path for metadata storage (strips version suffix)
+    // This ensures all versions of an image share the same metadata
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(&resolved_path);
+
+    // Load existing metadata or create new
+    let mut metadata = match gallery.user_metadata_storage.load(&canonical_path).await {
         Ok(Some(m)) => m,
         Ok(None) => crate::metadata_storage::ImageUserMetadata::new(),
         Err(e) => {
@@ -1005,13 +1031,19 @@ pub async fn add_comment_handler(
         }
     };
 
-    // Add comment
-    metadata.add_comment(user, request.text, request.image_area);
+    // Add comment with version tracking (record which version the comment was made on)
+    // Always store the path so we can show "on original" vs "on v2" etc.
+    metadata.add_comment(
+        user,
+        request.text,
+        request.image_area,
+        Some(resolved_path.clone()),
+    );
 
-    // Save metadata
+    // Save metadata to canonical path
     match gallery
         .user_metadata_storage
-        .save(&resolved_path, &metadata)
+        .save(&canonical_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -1094,8 +1126,11 @@ pub async fn edit_comment_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Load existing metadata using relative path
-    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
+    // Use canonical path for metadata (strips version suffix so all versions share metadata)
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(&resolved_path);
+
+    // Load existing metadata
+    let mut metadata = match gallery.user_metadata_storage.load(&canonical_path).await {
         Ok(Some(m)) => m,
         Ok(None) => {
             let mut response = ApiResponse::NotFound.into_response();
@@ -1147,10 +1182,10 @@ pub async fn edit_comment_handler(
         }
     }
 
-    // Save metadata
+    // Save metadata to canonical path
     match gallery
         .user_metadata_storage
-        .save(&resolved_path, &metadata)
+        .save(&canonical_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -1226,8 +1261,11 @@ pub async fn delete_comment_handler(
 
     // Metadata feature check removed - now controlled by permissions above
 
-    // Load existing metadata using relative path
-    let mut metadata = match gallery.user_metadata_storage.load(&resolved_path).await {
+    // Use canonical path for metadata (strips version suffix so all versions share metadata)
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(&resolved_path);
+
+    // Load existing metadata
+    let mut metadata = match gallery.user_metadata_storage.load(&canonical_path).await {
         Ok(Some(m)) => m,
         Ok(None) => {
             let mut response = ApiResponse::NotFound.into_response();
@@ -1280,10 +1318,10 @@ pub async fn delete_comment_handler(
         }
     }
 
-    // Save metadata
+    // Save metadata to canonical path
     match gallery
         .user_metadata_storage
-        .save(&resolved_path, &metadata)
+        .save(&canonical_path, &metadata)
         .await
     {
         Ok(()) => {
@@ -1658,9 +1696,12 @@ pub async fn analyze_folder_handler(
             format!("{}/{}", folder_path, image.name)
         };
 
+        // Use canonical path for metadata (strips version suffix so all versions share metadata)
+        let canonical_path = crate::gallery::grouping::canonical_metadata_path(&relative_path);
+
         // Check if already analyzed (unless force is set)
         if !request.force
-            && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
+            && let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&canonical_path).await
             && metadata.has_ai_analysis()
         {
             debug!("Skipping {} - already analyzed", relative_path);

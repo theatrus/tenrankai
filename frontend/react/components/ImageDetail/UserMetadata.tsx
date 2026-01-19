@@ -282,6 +282,16 @@ export function UserMetadata({
     }
   };
 
+  const extractVersionLabel = (versionPath: string): string => {
+    const filename = versionPath.split('/').pop() || versionPath;
+    const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+    const match = nameWithoutExt.match(/_v(\d+)$/);
+    if (match) {
+      return `v${match[1]}`;
+    }
+    return 'original';
+  };
+
   // Don't render anything for non-authenticated users
   if (!isAuthenticated) {
     return null;
@@ -442,6 +452,9 @@ export function UserMetadata({
                     <span className="comment-date">
                       {formatDate(comment.created_at)}
                       {comment.edited_at && <span className="comment-edited"> (edited)</span>}
+                      {comment.version_path && (
+                        <span className="comment-version"> on {extractVersionLabel(comment.version_path)}</span>
+                      )}
                     </span>
                     {currentUser === comment.author && isAuthenticated && (
                       <div className="comment-actions-menu">

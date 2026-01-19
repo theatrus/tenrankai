@@ -231,8 +231,10 @@ async fn collect_images_needing_analysis(
                 format!("{}/{}", path, item.name)
             };
 
-            // Check if already has AI analysis using relative path
-            if let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
+            // Check if already has AI analysis using canonical path
+            // (so all versions share the same metadata)
+            let canonical_path = crate::gallery::grouping::canonical_metadata_path(&relative_path);
+            if let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&canonical_path).await
                 && metadata.has_ai_analysis()
             {
                 continue;

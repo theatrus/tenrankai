@@ -590,7 +590,7 @@ mod tests {
         metadata.description = Some("A beautiful sunset".to_string());
         metadata.highlighted = true;
         metadata.pick_status = Some(PickStatus::Pick);
-        metadata.add_comment("user1".to_string(), "Great shot!".to_string(), None);
+        metadata.add_comment("user1".to_string(), "Great shot!".to_string(), None, None);
         metadata.tags = vec!["landscape".to_string(), "sunset".to_string()];
 
         // Save metadata

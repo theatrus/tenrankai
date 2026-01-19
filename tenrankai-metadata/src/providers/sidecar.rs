@@ -139,7 +139,7 @@ mod tests {
         let mut metadata = ImageUserMetadata::new();
         metadata.highlighted = true;
         metadata.pick_status = Some(PickStatus::Pick);
-        metadata.add_comment("user1".to_string(), "Great shot!".to_string(), None);
+        metadata.add_comment("user1".to_string(), "Great shot!".to_string(), None, None);
         metadata.tags = vec!["landscape".to_string(), "sunset".to_string()];
 
         // Save metadata using relative path
@@ -173,8 +173,13 @@ mod tests {
         let mut metadata = ImageUserMetadata::new();
         metadata.highlighted = true;
         metadata.pick_status = Some(PickStatus::NoPick);
-        metadata.add_comment("alice".to_string(), "Nice composition".to_string(), None);
-        metadata.add_comment("bob".to_string(), "I agree!".to_string(), None);
+        metadata.add_comment(
+            "alice".to_string(),
+            "Nice composition".to_string(),
+            None,
+            None,
+        );
+        metadata.add_comment("bob".to_string(), "I agree!".to_string(), None, None);
         metadata.tags = vec!["nature".to_string(), "macro".to_string()];
 
         // Save metadata

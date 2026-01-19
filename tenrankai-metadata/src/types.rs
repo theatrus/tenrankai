@@ -156,6 +156,11 @@ pub struct Comment {
     /// Optional selected area on the image (percentage coordinates)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_area: Option<ImageArea>,
+
+    /// Path of the specific version this comment was made on (for grouped images)
+    /// e.g., "folder/IMG_0001_v2.jpg" - helps track which edit the comment refers to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version_path: Option<String>,
 }
 
 /// Represents a selected area on an image with percentage-based coordinates
@@ -251,11 +256,13 @@ impl ImageUserMetadata {
     }
 
     /// Add a new comment to the thread
+    /// `version_path` is the specific image version path when the comment was made
     pub fn add_comment(
         &mut self,
         author: String,
         text: String,
         image_area: Option<ImageArea>,
+        version_path: Option<String>,
     ) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         let comment = Comment {
@@ -266,6 +273,7 @@ impl ImageUserMetadata {
             edited_at: None,
             versions: Vec::new(),
             image_area,
+            version_path,
         };
         self.comments.push(comment);
         self.update_modified(Some(author));
@@ -355,6 +363,7 @@ impl Comment {
             edited_at: None,
             versions: Vec::new(),
             image_area: None,
+            version_path: None,
         }
     }
 
@@ -368,6 +377,21 @@ impl Comment {
             edited_at: None,
             versions: Vec::new(),
             image_area: Some(image_area),
+            version_path: None,
+        }
+    }
+
+    /// Create a new comment with version tracking
+    pub fn new_with_version(author: String, text: String, version_path: String) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            author,
+            text,
+            created_at: Utc::now(),
+            edited_at: None,
+            versions: Vec::new(),
+            image_area: None,
+            version_path: Some(version_path),
         }
     }
 }
