@@ -23,6 +23,13 @@ jobs:
         os: [ubuntu-22.04, windows-latest, macos-latest]
         # No longer using rust matrix - version specified in rust-toolchain.toml
     steps:
+    - name: Free disk space (Ubuntu)
+      if: matrix.os == 'ubuntu-22.04'
+      run: |
+        # Remove large unused packages to free disk space
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo apt-get clean
+
     - uses: actions/checkout@v6
 
     - name: Install build dependencies (Ubuntu)
@@ -41,6 +48,8 @@ jobs:
         make -j$(nproc)
         sudo make install
         sudo ldconfig
+        # Clean up build directory to save space
+        rm -rf /tmp/libheif
 
     - name: Install build dependencies (macOS)
       if: matrix.os == 'macos-latest'
