@@ -837,7 +837,10 @@ fn encode_with_profile_and_color(
                 "Checking gain map for output: has_gain_map={}, has_gm_info={}, has_gm_image={}",
                 info.has_gain_map,
                 info.gain_map_info.is_some(),
-                info.gain_map_info.as_ref().and_then(|g| g.gain_map_image.as_ref()).is_some()
+                info.gain_map_info
+                    .as_ref()
+                    .and_then(|g| g.gain_map_image.as_ref())
+                    .is_some()
             );
         }
         if let Some(info) = color_info

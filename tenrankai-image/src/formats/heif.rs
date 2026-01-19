@@ -121,7 +121,9 @@ pub fn read_heif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, HeifImage
     // default to Display P3 with sRGB transfer (typical for iPhone photos)
     if has_gain_map && color_primaries == 2 && transfer_characteristics == 2 {
         // Check if ICC profile looks like Display P3 (around 536-560 bytes)
-        let is_likely_p3 = icc_profile.as_ref().is_some_and(|p| p.len() >= 500 && p.len() < 600);
+        let is_likely_p3 = icc_profile
+            .as_ref()
+            .is_some_and(|p| p.len() >= 500 && p.len() < 600);
         if is_likely_p3 {
             color_primaries = 12; // Display P3
             transfer_characteristics = 13; // sRGB
@@ -250,7 +252,10 @@ fn extract_exif_from_handle(handle: &libheif_rs::ImageHandle) -> Option<Vec<u8>>
 
             // Check for and skip "Exif\0\0" header
             let tiff_data = if data.starts_with(b"Exif\x00\x00") {
-                debug!("HEIF EXIF data: {} bytes (stripping Exif header)", exif_data.len());
+                debug!(
+                    "HEIF EXIF data: {} bytes (stripping Exif header)",
+                    exif_data.len()
+                );
                 &data[6..]
             } else {
                 debug!("HEIF EXIF data: {} bytes", exif_data.len());
@@ -403,7 +408,10 @@ fn extract_xmp_from_aux_handle(aux_handle: &libheif_rs::ImageHandle) -> Option<V
             && let Ok(text) = std::str::from_utf8(&data)
             && (text.contains("xmpmeta") || text.contains("rdf:RDF"))
         {
-            debug!("Found XMP metadata on auxiliary image: {} bytes", data.len());
+            debug!(
+                "Found XMP metadata on auxiliary image: {} bytes",
+                data.len()
+            );
             return Some(data);
         }
     }
@@ -445,15 +453,18 @@ fn extract_gain_map_info(
                 let raw_gain_map = decode_auxiliary_image(&lib_heif, &aux_handle);
 
                 // Check if this is Apple's simple format
-                let is_apple_format = xmp_metadata
-                    .as_ref()
-                    .is_some_and(|xmp| xmp.gamma == 1.0 && xmp.gain_map_min == 0.0 && xmp.gain_map_max == 0.0);
+                let is_apple_format = xmp_metadata.as_ref().is_some_and(|xmp| {
+                    xmp.gamma == 1.0 && xmp.gain_map_min == 0.0 && xmp.gain_map_max == 0.0
+                });
 
                 // Transform Apple's gain map to produce equivalent results with ISO 21496-1
                 // Apple uses 128 as neutral (SDR), ISO 21496-1 uses 0 as neutral
                 // Additionally, the curves differ in midtones so we pre-transform pixels
                 let gain_map_image = if is_apple_format {
-                    let headroom = xmp_metadata.as_ref().map(|x| x.hdr_capacity_max).unwrap_or(1.0);
+                    let headroom = xmp_metadata
+                        .as_ref()
+                        .map(|x| x.hdr_capacity_max)
+                        .unwrap_or(1.0);
                     raw_gain_map.map(|img| {
                         debug!("Transforming Apple gain map with headroom={} for ISO 21496-1 compatibility", headroom);
                         transform_apple_gain_map(&img, headroom)
@@ -529,9 +540,9 @@ fn extract_gain_map_info(
                             [max_val, max_val, max_val],
                             [offset, offset, offset],
                             [offset, offset, offset],
-                            0.0, // Base is SDR (headroom 0)
+                            0.0,     // Base is SDR (headroom 0)
                             max_val, // Use log2(headroom) as the headroom value
-                            true, // Use base (SDR) color space
+                            true,    // Use base (SDR) color space
                         )
                     } else {
                         // Full ISO 21496-1 format with explicit parameters
@@ -700,7 +711,7 @@ fn build_apple_to_iso_lut(headroom: f32) -> [u8; 256] {
     let gamma = 1.0 / 2.4; // ISO gamma parameter (≈0.417)
     let log_headroom = headroom.log2();
 
-    for i in 0..256 {
+    for (i, lut_entry) in lut.iter_mut().enumerate() {
         // Normalize pixel to 0-1 range (no shift - Apple uses full range)
         let normalized = i as f32 / 255.0;
 
@@ -726,7 +737,7 @@ fn build_apple_to_iso_lut(headroom: f32) -> [u8; 256] {
         };
 
         // Convert to 8-bit
-        lut[i] = (new_value * 255.0).round().clamp(0.0, 255.0) as u8;
+        *lut_entry = (new_value * 255.0).round().clamp(0.0, 255.0) as u8;
     }
 
     lut
@@ -972,12 +983,9 @@ fn extract_icc_profile_name(profile_data: &[u8]) -> Option<String> {
                 }
                 // 'desc' type (textDescription - older ICC v2)
                 else if tag_type == b"desc" && tag_size > 12 {
-                    let ascii_len = u32::from_be_bytes([
-                        tag_data[8],
-                        tag_data[9],
-                        tag_data[10],
-                        tag_data[11],
-                    ]) as usize;
+                    let ascii_len =
+                        u32::from_be_bytes([tag_data[8], tag_data[9], tag_data[10], tag_data[11]])
+                            as usize;
                     if ascii_len > 0
                         && 12 + ascii_len <= tag_size
                         && let Ok(s) = std::str::from_utf8(&tag_data[12..12 + ascii_len - 1])
