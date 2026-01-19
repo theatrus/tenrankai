@@ -181,6 +181,7 @@ export interface GalleryItem {
   is_directory: boolean;
   is_new: boolean;
   directory_preview?: string[];
+  user_metadata?: ImageUserMetadata;
 }
 
 export interface GalleryData {

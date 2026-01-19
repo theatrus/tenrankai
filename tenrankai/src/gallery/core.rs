@@ -137,6 +137,8 @@ impl Gallery {
             };
 
             // Load user metadata based on permissions
+            // Use canonical path so all versions share the same metadata
+            let canonical_path = super::grouping::canonical_metadata_path(image_path);
             let user_metadata = if user.is_some() {
                 let folder_metadata = cached.metadata.as_ref();
                 let resolver = crate::permissions::PermissionResolver::new(
@@ -147,7 +149,7 @@ impl Gallery {
 
                 if permissions.can_read_metadata {
                     self.user_metadata_storage
-                        .load(image_path)
+                        .load(&canonical_path)
                         .await
                         .ok()
                         .flatten()
