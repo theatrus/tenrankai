@@ -360,6 +360,94 @@ body {
     }
 }
 
+/* Version Picker - shows previous versions of an image */
+.version-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+}
+
+.version-picker-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.version-picker-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px 0;
+    scrollbar-width: thin;
+}
+
+.version-thumb {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.version-thumb img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: var(--radius-xs);
+    display: block;
+}
+
+.version-thumb:hover:not(:disabled) {
+    border-color: var(--link-color);
+    transform: scale(1.05);
+}
+
+.version-thumb:disabled {
+    cursor: default;
+}
+
+.version-thumb-current {
+    border-color: var(--link-color);
+    background: var(--bg-hover);
+}
+
+.version-thumb-current img {
+    opacity: 0.7;
+}
+
+.version-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.version-thumb-current .version-label {
+    color: var(--link-color);
+}
+
+/* Hide version picker on very small screens */
+@media (max-width: 480px) {
+    .version-picker {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .version-picker-strip {
+        width: 100%;
+    }
+}
+
 .image-controls {
     margin-top: var(--spacing-lg);
     display: flex;

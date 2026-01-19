@@ -450,6 +450,7 @@ impl Gallery {
                     can_download_original: false,
                     can_download_gallery: false,
                     can_download_raw: false,
+                    can_see_versions: false,
                     can_read_metadata: false,
                     can_edit_content: false,
                     can_add_comments: false,
@@ -535,8 +536,8 @@ impl Gallery {
                     None
                 };
 
-                // Always include versions if available
-                let versions = if !group.versions.is_empty() {
+                // Include versions only if user has permission
+                let versions = if permissions.can_see_versions && !group.versions.is_empty() {
                     Some(group.versions)
                 } else {
                     None

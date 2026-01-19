@@ -126,6 +126,7 @@ export interface RolePermissions {
   can_download_original: boolean;
   can_download_gallery: boolean;
   can_download_raw: boolean;
+  can_see_versions: boolean;
   can_read_metadata: boolean;
   can_edit_content: boolean;
   can_add_comments: boolean;

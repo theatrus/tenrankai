@@ -9,6 +9,7 @@ import { useImagePreload } from '../hooks/useImagePreload.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
+import { VersionPicker } from '../components/ImageDetail/VersionPicker.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
@@ -234,8 +235,16 @@ export function ImageDetailPage({
             canEditContent={currentData.permissions.can_edit_content}
             onEditClick={() => setIsEditModalOpen(true)}
           />
-          
-          
+
+          {/* Version picker - shows previous versions if available */}
+          {currentData.image.versions && currentData.image.versions.length > 0 && (
+            <VersionPicker
+              versions={currentData.image.versions}
+              currentPath={currentData.image.path}
+              galleryUrl={galleryUrl}
+            />
+          )}
+
           {(currentData.prev_image || currentData.next_image) && (
             <div className="nav-hint">
               {currentData.prev_image && currentData.next_image ? (
