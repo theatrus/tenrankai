@@ -458,13 +458,14 @@ fn extract_gain_map_info(
                 });
 
                 // Transform Apple's gain map to produce equivalent results with ISO 21496-1
-                // Apple uses 128 as neutral (SDR), ISO 21496-1 uses 0 as neutral
-                // Additionally, the curves differ in midtones so we pre-transform pixels
+                // Apple uses pixel 0 = no boost, 255 = max boost (NOT 128 as neutral!)
+                // The curves differ so we pre-transform pixels using a LUT
                 let gain_map_image = if is_apple_format {
                     let headroom = xmp_metadata
                         .as_ref()
                         .map(|x| x.hdr_capacity_max)
-                        .unwrap_or(1.0);
+                        .filter(|&h| h > 1.0) // Guard against invalid headroom
+                        .unwrap_or(2.0); // Default to modest HDR if missing
                     raw_gain_map.map(|img| {
                         debug!("Transforming Apple gain map with headroom={} for ISO 21496-1 compatibility", headroom);
                         transform_apple_gain_map(&img, headroom)
