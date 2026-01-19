@@ -1,5 +1,5 @@
-use super::types::ImageSize;
 use super::GalleryQuery;
+use super::types::ImageSize;
 use crate::{ApiResponse, site::ResolvedState};
 use axum::{
     extract::{Path, Query},
