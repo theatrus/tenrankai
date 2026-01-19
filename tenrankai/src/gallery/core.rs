@@ -473,8 +473,10 @@ impl Gallery {
         };
 
         // Load user metadata if the user has permission to see any part of it
+        // Use canonical path so all versions share the same metadata
+        let canonical_path = super::grouping::canonical_metadata_path(relative_path);
         let user_metadata = if permissions.can_read_metadata || permissions.can_see_ai_analysis {
-            match self.user_metadata_storage.load(relative_path).await {
+            match self.user_metadata_storage.load(&canonical_path).await {
                 Ok(Some(mut metadata)) => {
                     // Filter metadata based on permissions
                     if !permissions.can_read_metadata {

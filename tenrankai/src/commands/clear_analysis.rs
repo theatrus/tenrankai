@@ -125,7 +125,9 @@ async fn collect_analyzed_images_recursive(
             };
 
             // Check if it has AI analysis using storage-backed metadata
-            if let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&relative_path).await
+            // Use canonical path so all versions share metadata
+            let canonical_path = crate::gallery::grouping::canonical_metadata_path(&relative_path);
+            if let Ok(Some(metadata)) = gallery.user_metadata_storage.load(&canonical_path).await
                 && metadata.has_ai_analysis()
             {
                 debug!("Found analyzed image: {}", relative_path);
@@ -142,23 +144,29 @@ async fn clear_single_image_analysis(
     gallery: &Gallery,
     relative_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Use canonical path so all versions share metadata
+    let canonical_path = crate::gallery::grouping::canonical_metadata_path(relative_path);
+
     // Load existing metadata
     let mut metadata = gallery
         .user_metadata_storage
-        .load(relative_path)
+        .load(&canonical_path)
         .await?
         .ok_or("No metadata found for image")?;
 
     // Clear AI analysis
     metadata.clear_ai_analysis();
 
-    // Save metadata (or delete if empty)
+    // Save metadata (or delete if empty) using canonical path
     if metadata.is_empty() {
-        gallery.user_metadata_storage.delete(relative_path).await?;
+        gallery
+            .user_metadata_storage
+            .delete(&canonical_path)
+            .await?;
     } else {
         gallery
             .user_metadata_storage
-            .save(relative_path, &metadata)
+            .save(&canonical_path, &metadata)
             .await?;
     }
 

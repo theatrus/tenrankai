@@ -76,6 +76,34 @@ pub fn extract_version_number(filename: &str) -> Option<u32> {
         })
 }
 
+/// Get canonical path for metadata storage (strips version suffix from filename)
+/// e.g., "folder/IMG_0001_v2.jpg" -> "folder/IMG_0001.jpg"
+/// e.g., "folder/IMG_0001.jpg" -> "folder/IMG_0001.jpg"
+/// This ensures all versions of an image share the same metadata.
+pub fn canonical_metadata_path(path: &str) -> String {
+    use std::path::Path;
+
+    let p = Path::new(path);
+    let Some(filename) = p.file_name().and_then(|f| f.to_str()) else {
+        return path.to_string();
+    };
+
+    let ext = get_extension(filename);
+    let base = extract_base_name(filename);
+
+    let new_filename = match ext {
+        Some(e) => format!("{}.{}", base, e),
+        None => base,
+    };
+
+    match p.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => {
+            format!("{}/{}", parent.display(), new_filename)
+        }
+        _ => new_filename,
+    }
+}
+
 /// Information about a file for grouping
 #[derive(Debug, Clone)]
 pub struct FileEntry {
@@ -261,6 +289,29 @@ mod tests {
         assert_eq!(extract_version_number("IMG_0001_v2.jpg"), Some(2));
         assert_eq!(extract_version_number("IMG_0001_V10.jpg"), Some(10));
         assert_eq!(extract_version_number("photo_v99.png"), Some(99));
+    }
+
+    #[test]
+    fn test_canonical_metadata_path() {
+        // With version suffix
+        assert_eq!(
+            canonical_metadata_path("folder/IMG_0001_v2.jpg"),
+            "folder/IMG_0001.jpg"
+        );
+        assert_eq!(
+            canonical_metadata_path("a/b/c/photo_v1.png"),
+            "a/b/c/photo.png"
+        );
+
+        // Without version suffix (unchanged)
+        assert_eq!(
+            canonical_metadata_path("folder/IMG_0001.jpg"),
+            "folder/IMG_0001.jpg"
+        );
+
+        // Root level files
+        assert_eq!(canonical_metadata_path("IMG_0001_v3.jpg"), "IMG_0001.jpg");
+        assert_eq!(canonical_metadata_path("photo.png"), "photo.png");
     }
 
     #[test]
