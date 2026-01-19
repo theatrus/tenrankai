@@ -490,7 +490,28 @@ pub async fn image_detail_api_handler_for_named(
         .unwrap_or_default();
 
     // Find current image index and get prev/next
-    let current_index = images.iter().position(|img| img.path == path);
+    // For older versions, we need to find the primary image in the navigation
+    // list since older versions aren't directly listed
+    let navigation_path = if let Some((group, is_primary)) =
+        gallery.find_image_group(&resolved_path).await
+    {
+        if is_primary {
+            // Current image is the primary, use the URL path directly
+            path.clone()
+        } else {
+            // This is an older version - find the primary's URL identifier
+            let indexer = gallery.image_indexer.read().await;
+            indexer
+                .get_index(&group.primary_path)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| urlencoding::encode(&group.primary_path).to_string())
+        }
+    } else {
+        // No group found, use the original path
+        path.clone()
+    };
+
+    let current_index = images.iter().position(|img| img.path == navigation_path);
 
     let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
         // Immediate prev/next for keyboard navigation

@@ -264,6 +264,16 @@ body {
     border-color: var(--link-color);
 }
 
+/* Current version in version picker - highlighted with accent color */
+.nav-strip-thumb-current {
+    border-color: var(--link-color);
+    cursor: default;
+}
+
+.nav-strip-thumb-current:hover {
+    transform: none;
+}
+
 /* Fade gradient overlays */
 .nav-strip-fade {
     position: absolute;

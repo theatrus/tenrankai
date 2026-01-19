@@ -436,15 +436,6 @@ pub async fn image_detail_handler_for_named(
         .iter()
         .position(|img| img.file_path.as_deref() == Some(&navigation_file_path));
 
-    // Debug logging to understand the issue
-    if current_index.is_none() {
-        debug!(
-            "Could not find current image in navigation. Looking for '{}', available paths: {:?}",
-            path,
-            images.iter().map(|i| &i.path).collect::<Vec<_>>()
-        );
-    }
-
     let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
         let prev = if index > 0 {
             let prev_item = &images[index - 1];

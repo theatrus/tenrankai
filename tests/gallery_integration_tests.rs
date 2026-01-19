@@ -52,6 +52,7 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
                                 can_download_original: false,
                                 can_download_gallery: false,
                                 can_download_raw: false,
+                                can_see_versions: false,
                                 can_read_metadata: true,
                                 can_edit_content: false,
                                 can_add_comments: false,
@@ -1307,7 +1308,14 @@ async fn test_version_grouping_shows_latest_as_primary() {
 #[tokio::test]
 async fn test_image_api_includes_versions() {
     let temp_dir = TempDir::new().unwrap();
-    let config = create_test_config(&temp_dir);
+    let mut config = create_test_config(&temp_dir);
+
+    // Set can_see_versions permission for viewer role
+    if let Some(ref mut galleries) = config.galleries {
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_see_versions = true;
+        }
+    }
 
     let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
 
@@ -1332,14 +1340,18 @@ async fn test_image_api_includes_versions() {
     let json = response.json::<serde_json::Value>();
     let image = &json["image"];
 
-    // Should include versions array (sorted oldest-first, excluding primary)
+    // Should include versions array (sorted oldest-first, including primary for navigation)
     assert!(
         image["versions"].is_array(),
         "Primary image should include versions array"
     );
 
     let versions = image["versions"].as_array().unwrap();
-    assert_eq!(versions.len(), 2, "Should have 2 versions (base and _v1)");
+    assert_eq!(
+        versions.len(),
+        3,
+        "Should have 3 versions (base, _v1, and _v2/primary)"
+    );
 
     // Verify versions are sorted oldest-first
     assert!(
@@ -1357,12 +1369,185 @@ async fn test_image_api_includes_versions() {
             .contains("IMG_0001_v1.jpg"),
         "Second version should be _v1"
     );
+    assert!(
+        versions[2]["path"]
+            .as_str()
+            .unwrap()
+            .contains("IMG_0001_v2.jpg"),
+        "Third version should be _v2 (primary)"
+    );
 
     // is_primary should be true for the primary image
     assert_eq!(
         image["is_primary"], true,
         "Primary image should have is_primary=true"
     );
+}
+
+/// Helper to run the older version navigation test with a specific indexing mode
+async fn run_older_version_navigation_test(indexing_mode: ImageIndexingMode) {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+
+    // Set the indexing mode and add can_see_versions permission
+    if let Some(ref mut galleries) = config.galleries {
+        galleries[0].image_indexing = indexing_mode.clone();
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_see_versions = true;
+        }
+    }
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+
+    // Create multiple image groups to have navigation context
+    use image::{ImageBuffer, Rgb};
+
+    // Image group 1: AAA with versions
+    for (name, color) in [
+        ("AAA_0001.jpg", 100u8),
+        ("AAA_0001_v1.jpg", 150),
+        ("AAA_0001_v2.jpg", 200), // Primary
+    ] {
+        let img = ImageBuffer::from_fn(100, 100, |_, _| Rgb([color, color, color]));
+        img.save(photos_dir.join(name)).unwrap();
+    }
+
+    // Image group 2: BBB (no versions, just for navigation)
+    let img = ImageBuffer::from_fn(100, 100, |_, _| Rgb([50u8, 50, 50]));
+    img.save(photos_dir.join("BBB_0002.jpg")).unwrap();
+
+    // Image group 3: CCC (no versions, just for navigation)
+    let img = ImageBuffer::from_fn(100, 100, |_, _| Rgb([75u8, 75, 75]));
+    img.save(photos_dir.join("CCC_0003.jpg")).unwrap();
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // For Filename mode, we know the URL identifier is the filename itself.
+    // For UniqueId mode, we need to discover it from the API.
+    let primary_url_id = match indexing_mode {
+        ImageIndexingMode::Filename => "AAA_0001_v2.jpg".to_string(),
+        ImageIndexingMode::UniqueId => {
+            // Get any image from the preview to discover the primary's URL identifier
+            let response = server.get("/api/gallery/main/preview?count=10").await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            let listing = response.json::<serde_json::Value>();
+            eprintln!(
+                "Gallery preview (UniqueId mode): {}",
+                serde_json::to_string_pretty(&listing).unwrap()
+            );
+
+            // Find any image from the AAA group in the preview
+            let images = listing["images"].as_array().unwrap();
+            let aaa_entry = images
+                .iter()
+                .find(|img| {
+                    let name = img["name"].as_str().unwrap_or("");
+                    name.starts_with("AAA_0001")
+                })
+                .expect("Should find an AAA image in preview");
+
+            let aaa_url_id = aaa_entry["path"].as_str().unwrap();
+            eprintln!("Found AAA image with URL ID: {}", aaa_url_id);
+
+            // Request this image to get its versions array
+            let response = server
+                .get(&format!("/api/gallery/main/image/{}", aaa_url_id))
+                .await;
+            assert_eq!(response.status_code(), StatusCode::OK);
+            let json = response.json::<serde_json::Value>();
+
+            // Find the primary (highest version number) from versions
+            let versions = json["image"]["versions"].as_array().unwrap();
+            let primary = versions
+                .iter()
+                .max_by_key(|v| v["version_number"].as_u64().unwrap_or(0))
+                .expect("Should find primary in versions");
+
+            primary["url_id"].as_str().unwrap().to_string()
+        }
+        _ => panic!("Unsupported indexing mode"),
+    };
+    eprintln!("Primary URL identifier: {}", primary_url_id);
+
+    // Get the primary version via API
+    let response = server
+        .get(&format!("/api/gallery/main/image/{}", primary_url_id))
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json = response.json::<serde_json::Value>();
+    eprintln!(
+        "Primary version API response ({:?}): {}",
+        indexing_mode,
+        serde_json::to_string_pretty(&json).unwrap()
+    );
+
+    // Primary should have next_image (BBB)
+    assert!(
+        json["next_image"].is_object(),
+        "Primary version should have next_image for navigation ({:?} mode)",
+        indexing_mode
+    );
+
+    // Get the older version's URL identifier from the versions array
+    let versions = json["image"]["versions"].as_array().unwrap();
+    let older_version = versions
+        .iter()
+        .find(|v| {
+            v["path"]
+                .as_str()
+                .map(|p| p.contains("AAA_0001_v1"))
+                .unwrap_or(false)
+        })
+        .expect("Should find _v1 in versions array");
+
+    let older_url_id = older_version["url_id"].as_str().unwrap();
+    eprintln!("Older version URL identifier: {}", older_url_id);
+
+    // Now test the older version (_v1) - this is the bug we're fixing
+    let response = server
+        .get(&format!("/api/gallery/main/image/{}", older_url_id))
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json = response.json::<serde_json::Value>();
+    eprintln!(
+        "Older version (_v1) API response ({:?}): {}",
+        indexing_mode,
+        serde_json::to_string_pretty(&json).unwrap()
+    );
+
+    // The older version should ALSO have navigation (using primary's context)
+    assert!(
+        json["next_image"].is_object(),
+        "Older version should have next_image for navigation ({:?} mode)",
+        indexing_mode
+    );
+
+    // Verify is_primary is false for the older version
+    assert_eq!(
+        json["image"]["is_primary"], false,
+        "Older version should have is_primary=false ({:?} mode)",
+        indexing_mode
+    );
+
+    // Verify versions are included (should contain both base and primary)
+    assert!(
+        json["image"]["versions"].is_array(),
+        "Older version should include versions array ({:?} mode)",
+        indexing_mode
+    );
+}
+
+#[tokio::test]
+async fn test_older_version_has_navigation_filename_mode() {
+    run_older_version_navigation_test(ImageIndexingMode::Filename).await;
+}
+
+#[tokio::test]
+async fn test_older_version_has_navigation_unique_id_mode() {
+    run_older_version_navigation_test(ImageIndexingMode::UniqueId).await;
 }
 
 #[tokio::test]
