@@ -1,5 +1,5 @@
 use super::types::ImageSize;
-use super::{GalleryQuery, NavigationImage};
+use super::GalleryQuery;
 use crate::{ApiResponse, site::ResolvedState};
 use axum::{
     extract::{Path, Query},
@@ -404,94 +404,6 @@ pub async fn image_detail_handler_for_named(
         }
     }
 
-    // Get the parent directory for navigation
-    let parent_path = std::path::Path::new(&resolved_path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("");
-
-    // Get all images in the parent directory for navigation
-    let (_, images, _) = gallery
-        .list_directory(parent_path, 0)
-        .await
-        .unwrap_or_default();
-
-    // Find current image index and get prev/next
-    // For older versions, we need to find the primary image in the navigation
-    // list since older versions aren't directly listed
-    let navigation_file_path =
-        if let Some((group, is_primary)) = gallery.find_image_group(&resolved_path).await {
-            if is_primary {
-                resolved_path.clone()
-            } else {
-                // Use the primary image's path for navigation context
-                group.primary_path.clone()
-            }
-        } else {
-            resolved_path.clone()
-        };
-
-    // Compare against file_path since GalleryItem.path is the URL identifier
-    let current_index = images
-        .iter()
-        .position(|img| img.file_path.as_deref() == Some(&navigation_file_path));
-
-    let (prev_image, next_image, prev_images, next_images) = if let Some(index) = current_index {
-        let prev = if index > 0 {
-            let prev_item = &images[index - 1];
-            Some(NavigationImage {
-                path: prev_item.path.clone(),
-                name: prev_item.name.clone(),
-                thumbnail_url: prev_item.thumbnail_url.clone().unwrap_or_default(),
-            })
-        } else {
-            None
-        };
-
-        let next = if index + 1 < images.len() {
-            let next_item = &images[index + 1];
-            Some(NavigationImage {
-                path: next_item.path.clone(),
-                name: next_item.name.clone(),
-                thumbnail_url: next_item.thumbnail_url.clone().unwrap_or_default(),
-            })
-        } else {
-            None
-        };
-
-        // Extended navigation: multiple images in each direction (closest first)
-        let prev_imgs: Vec<NavigationImage> = (0..index)
-            .rev()
-            .take(8)
-            .map(|i| {
-                let item = &images[i];
-                NavigationImage {
-                    path: item.path.clone(),
-                    name: item.name.clone(),
-                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
-                }
-            })
-            .collect();
-
-        let next_imgs: Vec<NavigationImage> = ((index + 1)..images.len())
-            .take(8)
-            .map(|i| {
-                let item = &images[i];
-                NavigationImage {
-                    path: item.path.clone(),
-                    name: item.name.clone(),
-                    thumbnail_url: item.thumbnail_url.clone().unwrap_or_default(),
-                }
-            })
-            .collect();
-
-        (prev, next, prev_imgs, next_imgs)
-    } else {
-        (None, None, Vec::new(), Vec::new())
-    };
-
-    // Build breadcrumbs for the parent directory, not including the image filename
-    let breadcrumbs = gallery.build_breadcrumbs_with_mode(parent_path, true).await;
     let gallery_config = gallery.get_config();
 
     // Technical details are now controlled by permissions, not a separate flag
@@ -536,11 +448,6 @@ pub async fn image_detail_handler_for_named(
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
         "image": image_info,
-        "breadcrumbs": breadcrumbs,
-        "prev_image": prev_image,
-        "next_image": next_image,
-        "prev_images": prev_images,
-        "next_images": next_images,
         "image_detail_json": image_detail_json,
         "page_title": format!("{} - Photo Gallery", image_info.name),
         "meta_description": format!("View {} in our photo gallery", image_info.name),
@@ -555,7 +462,6 @@ pub async fn image_detail_handler_for_named(
         "twitter_card_type": "summary_large_image",
         "is_authenticated": is_authenticated,
         "current_user": current_user,
-        // Add permissions for template use - serialize to JSON to avoid recursion limit
         "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
     });
 
