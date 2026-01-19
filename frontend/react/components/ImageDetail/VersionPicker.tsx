@@ -17,6 +17,13 @@ export function VersionPicker({
     return null;
   }
 
+  // Filter out the currently viewed version
+  const otherVersions = versions.filter(v => v.path !== currentPath);
+
+  if (otherVersions.length === 0) {
+    return null;
+  }
+
   const handleVersionClick = (version: ImageVersion) => {
     if (onVersionSelect) {
       onVersionSelect(version);
@@ -25,12 +32,13 @@ export function VersionPicker({
     }
   };
 
-  const formatVersionLabel = (version: ImageVersion, index: number): string => {
-    if (version.version_number !== undefined) {
+  const formatVersionLabel = (version: ImageVersion): string => {
+    // Check for null, undefined, or missing version_number
+    if (version.version_number != null) {
       return `v${version.version_number}`;
     }
-    // Fallback to index-based label
-    return `v${index + 1}`;
+    // No version number means it's the original/base file
+    return 'Original';
   };
 
   const formatVersionDate = (version: ImageVersion): string | null => {
@@ -47,25 +55,30 @@ export function VersionPicker({
     }
   };
 
+  // Sort versions: original first, then by version number
+  const sortedVersions = [...otherVersions].sort((a, b) => {
+    const aNum = a.version_number ?? -1;
+    const bNum = b.version_number ?? -1;
+    return aNum - bNum;
+  });
+
   return (
     <div className="version-picker">
-      <div className="version-picker-label">Previous versions:</div>
+      <span className="version-picker-label">Other versions:</span>
       <div className="version-picker-strip">
-        {versions.map((version, index) => {
-          const isCurrentVersion = version.path === currentPath;
+        {sortedVersions.map((version) => {
           const thumbnailUrl = version.thumbnail_url;
           const thumbnail2xUrl = thumbnailUrl.replace(/\/thumbnail$/, '/thumbnail@2x');
-          const versionLabel = formatVersionLabel(version, index);
+          const versionLabel = formatVersionLabel(version);
           const versionDate = formatVersionDate(version);
 
           return (
             <button
               key={version.path}
-              className={`version-thumb ${isCurrentVersion ? 'version-thumb-current' : ''}`}
+              className="nav-strip-thumb"
               onClick={() => handleVersionClick(version)}
               title={versionDate ? `${versionLabel} - ${versionDate}` : versionLabel}
               aria-label={`View ${versionLabel}${versionDate ? ` from ${versionDate}` : ''}`}
-              disabled={isCurrentVersion}
             >
               <img
                 src={thumbnailUrl}
@@ -73,7 +86,6 @@ export function VersionPicker({
                 alt={versionLabel}
                 loading="lazy"
               />
-              <span className="version-label">{versionLabel}</span>
             </button>
           );
         })}

@@ -537,8 +537,41 @@ impl Gallery {
                 };
 
                 // Include versions only if user has permission
-                let versions = if permissions.can_see_versions && !group.versions.is_empty() {
-                    Some(group.versions)
+                // Build complete version list including the primary so users can navigate
+                // between all versions from any version
+                let versions = if permissions.can_see_versions {
+                    let mut all_versions = group.versions.clone();
+
+                    // Add the primary version to the list so it can be navigated to
+                    // when viewing an older version
+                    let primary_url_id = {
+                        let indexer = self.image_indexer.read().await;
+                        indexer
+                            .get_index(&group.primary_path)
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| {
+                                urlencoding::encode(&group.primary_path).to_string()
+                            })
+                    };
+                    let primary_version = super::ImageVersion {
+                        path: group.primary_path.clone(),
+                        version_number: super::grouping::extract_version_number(
+                            std::path::Path::new(&group.primary_path)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(""),
+                        ),
+                        modification_date: None, // Will be filled from cache if needed
+                        url_id: primary_url_id.clone(),
+                        thumbnail_url: self.build_thumbnail_url(&primary_url_id),
+                    };
+                    all_versions.push(primary_version);
+
+                    if all_versions.len() > 1 {
+                        Some(all_versions)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
