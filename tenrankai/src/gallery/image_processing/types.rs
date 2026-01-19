@@ -4,6 +4,7 @@ use image::{DynamicImage, ImageFormat};
 use std::io::{BufReader, Cursor};
 use tokio::runtime::Handle;
 
+#[cfg(all(feature = "heif", feature = "avif"))]
 use crate::gallery::image_processing::formats;
 
 /// Convert HeifImageInfo to local AvifImageInfo for encoding
