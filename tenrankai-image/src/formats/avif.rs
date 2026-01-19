@@ -956,6 +956,16 @@ fn encode_with_profile_and_color(
         (*encoder).speed = speed as i32;
         (*encoder).maxThreads = 1;
 
+        // Set gain map quality if we have a gain map attached
+        // This is crucial - without this, libavif won't encode the gain map
+        if let Some(info) = color_info
+            && info.has_gain_map
+            && info.gain_map_info.is_some()
+        {
+            (*encoder).qualityGainMap = quality as i32;
+            debug!("Set gain map encoder quality to {}", quality);
+        }
+
         // For HDR, ensure we use appropriate settings
         if bit_depth > 8 {
             (*encoder).minQuantizer = 0;

@@ -442,7 +442,23 @@ fn extract_gain_map_info(
                     .and_then(|xmp| parse_xmp_gain_map_metadata(&xmp));
 
                 // Try to decode the gain map image
-                let gain_map_image = decode_auxiliary_image(&lib_heif, &aux_handle);
+                let raw_gain_map = decode_auxiliary_image(&lib_heif, &aux_handle);
+
+                // Check if this is Apple's simple format
+                let is_apple_format = xmp_metadata
+                    .as_ref()
+                    .is_some_and(|xmp| xmp.gamma == 1.0 && xmp.gain_map_min == 0.0 && xmp.gain_map_max == 0.0);
+
+                // Transform Apple's gain map from 128-255 range to 0-255 range
+                // Apple uses 128 as neutral (SDR), ISO 21496-1 uses 0 as neutral
+                let gain_map_image = if is_apple_format {
+                    raw_gain_map.map(|img| {
+                        debug!("Transforming Apple gain map from 128-255 to 0-255 range");
+                        transform_apple_gain_map(&img)
+                    })
+                } else {
+                    raw_gain_map
+                };
 
                 if let Some(ref gm_img) = gain_map_image {
                     debug!(
@@ -452,7 +468,7 @@ fn extract_gain_map_info(
                     );
                 }
 
-                // Use XMP metadata if available, otherwise use defaults
+                // Compute gain map parameters for ISO 21496-1 AVIF format
                 let (
                     gamma,
                     min,
@@ -463,24 +479,80 @@ fn extract_gain_map_info(
                     alt_headroom,
                     use_base,
                 ) = if let Some(ref xmp) = xmp_metadata {
-                    (
-                        [xmp.gamma, xmp.gamma, xmp.gamma],
-                        [xmp.gain_map_min, xmp.gain_map_min, xmp.gain_map_min],
-                        [xmp.gain_map_max, xmp.gain_map_max, xmp.gain_map_max],
-                        [xmp.offset_sdr, xmp.offset_sdr, xmp.offset_sdr],
-                        [xmp.offset_hdr, xmp.offset_hdr, xmp.offset_hdr],
-                        xmp.hdr_capacity_min.max(1.0), // headroom must be >= 1.0
-                        xmp.hdr_capacity_max.max(1.0),
-                        !xmp.base_rendition_is_hdr,
-                    )
+                    // Check if this is Apple's simple format (only headroom, no explicit min/max/gamma)
+                    let is_apple_simple_format = xmp.gamma == 1.0
+                        && xmp.gain_map_min == 0.0
+                        && xmp.gain_map_max == 0.0
+                        && xmp.hdr_capacity_max > 0.0;
+
+                    if is_apple_simple_format {
+                        // Apple HDR format conversion to ISO 21496-1
+                        //
+                        // Apple's actual formula (from apple-hdr-heic library):
+                        //   gainmap_linear = sRGB_EOTF(gainmap)  // gamma ~2.4
+                        //   scale = 1.0 + (headroom - 1.0) * gainmap_linear
+                        //   HDR_linear = SDR_linear * scale
+                        //
+                        // ISO 21496-1 formula:
+                        //   recovery = pow(gainmap, gamma)
+                        //   log_boost = min + (max - min) * recovery
+                        //   HDR = SDR * exp2(log_boost)
+                        //
+                        // To approximate Apple's formula:
+                        // - gamma = 2.4 (matches sRGB EOTF applied to gain map)
+                        // - min = 0 (scale = 1 when gainmap = 0)
+                        // - max = log2(headroom) (scale = headroom when gainmap = 1)
+                        //
+                        // After our pixel transform (128-255 → 0-255), the gain map
+                        // now has 0 = SDR and 255 = full HDR, matching ISO expectations.
+
+                        let headroom = xmp.hdr_capacity_max;
+                        // ISO 21496-1 uses: recovery = pow(gainmap, 1/gamma)
+                        // Apple uses sRGB EOTF which is approximately pow(value, 2.4)
+                        // So we need: 1/gamma = 2.4, therefore gamma = 1/2.4 ≈ 0.417
+                        // The good reference file uses gamma ≈ 0.4, confirming this
+                        let gamma_val = 1.0 / 2.4; // ≈ 0.417, close to good file's 0.4
+                        let offset = 1.0 / 64.0;
+                        let min_val = 0.0; // log2(1) = 0, no boost
+                        let max_val = headroom.log2(); // log2(headroom) for exp2 to give headroom
+
+                        debug!(
+                            "Apple HDR format: headroom={}, log2(headroom)={}, gamma={}, min={}, max={}",
+                            headroom, max_val, gamma_val, min_val, max_val
+                        );
+
+                        (
+                            [gamma_val, gamma_val, gamma_val],
+                            [min_val, min_val, min_val],
+                            [max_val, max_val, max_val],
+                            [offset, offset, offset],
+                            [offset, offset, offset],
+                            0.0, // Base is SDR (headroom 0)
+                            max_val, // Use log2(headroom) as the headroom value
+                            true, // Use base (SDR) color space
+                        )
+                    } else {
+                        // Full ISO 21496-1 format with explicit parameters
+                        (
+                            [xmp.gamma, xmp.gamma, xmp.gamma],
+                            [xmp.gain_map_min, xmp.gain_map_min, xmp.gain_map_min],
+                            [xmp.gain_map_max, xmp.gain_map_max, xmp.gain_map_max],
+                            [xmp.offset_sdr, xmp.offset_sdr, xmp.offset_sdr],
+                            [xmp.offset_hdr, xmp.offset_hdr, xmp.offset_hdr],
+                            xmp.hdr_capacity_min,
+                            xmp.hdr_capacity_max,
+                            !xmp.base_rendition_is_hdr,
+                        )
+                    }
                 } else {
+                    // No XMP metadata - use sensible defaults
                     (
                         [1.0, 1.0, 1.0],
                         [0.0, 0.0, 0.0],
                         [1.0, 1.0, 1.0],
                         [0.0, 0.0, 0.0],
                         [0.0, 0.0, 0.0],
-                        1.0,
+                        0.0,
                         1.0,
                         true,
                     )
@@ -536,6 +608,82 @@ fn decode_auxiliary_image(
             trace!("Failed to convert auxiliary image: {}", e);
             None
         }
+    }
+}
+
+/// Transform Apple's gain map from 128-255 range to 0-255 range
+///
+/// Apple HDR gain maps use 128 as the neutral point (no boost):
+/// - 128 = SDR (no change)
+/// - 255 = maximum HDR boost
+///
+/// ISO 21496-1 expects 0 as the neutral point:
+/// - 0 = minimum boost (usually SDR)
+/// - 255 = maximum boost
+///
+/// This function remaps: new = clamp((old - 128) * 2, 0, 255)
+#[cfg(feature = "avif")]
+fn transform_apple_gain_map(image: &DynamicImage) -> DynamicImage {
+    use image::{GenericImageView, Pixel};
+
+    let (width, height) = image.dimensions();
+
+    match image {
+        DynamicImage::ImageRgb8(img) => {
+            let mut out = ImageBuffer::new(width, height);
+            for (x, y, pixel) in img.enumerate_pixels() {
+                let channels = pixel.channels();
+                let new_pixel = Rgb([
+                    transform_apple_pixel(channels[0]),
+                    transform_apple_pixel(channels[1]),
+                    transform_apple_pixel(channels[2]),
+                ]);
+                out.put_pixel(x, y, new_pixel);
+            }
+            DynamicImage::ImageRgb8(out)
+        }
+        DynamicImage::ImageRgba8(img) => {
+            let mut out: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+            for (x, y, pixel) in img.enumerate_pixels() {
+                let channels = pixel.channels();
+                let new_pixel = Rgba([
+                    transform_apple_pixel(channels[0]),
+                    transform_apple_pixel(channels[1]),
+                    transform_apple_pixel(channels[2]),
+                    channels[3], // Keep alpha unchanged
+                ]);
+                out.put_pixel(x, y, new_pixel);
+            }
+            DynamicImage::ImageRgba8(out)
+        }
+        _ => {
+            // For other formats, convert to RGB8 first
+            let rgb8 = image.to_rgb8();
+            let mut out = ImageBuffer::new(width, height);
+            for (x, y, pixel) in rgb8.enumerate_pixels() {
+                let channels = pixel.channels();
+                let new_pixel = Rgb([
+                    transform_apple_pixel(channels[0]),
+                    transform_apple_pixel(channels[1]),
+                    transform_apple_pixel(channels[2]),
+                ]);
+                out.put_pixel(x, y, new_pixel);
+            }
+            DynamicImage::ImageRgb8(out)
+        }
+    }
+}
+
+/// Transform a single pixel value from Apple's 128-255 range to 0-255
+#[cfg(feature = "avif")]
+#[inline]
+fn transform_apple_pixel(value: u8) -> u8 {
+    // Remap: 128 -> 0, 255 -> 254 (approximately)
+    // Formula: (value - 128) * 2, clamped to 0-255
+    if value <= 128 {
+        0
+    } else {
+        ((value as u16 - 128) * 2).min(255) as u8
     }
 }
 
@@ -773,12 +921,13 @@ fn extract_icc_profile_name(profile_data: &[u8]) -> Option<String> {
                         tag_data[10],
                         tag_data[11],
                     ]) as usize;
-                    if ascii_len > 0 && 12 + ascii_len <= tag_size {
-                        if let Ok(s) = std::str::from_utf8(&tag_data[12..12 + ascii_len - 1]) {
-                            let trimmed = s.trim();
-                            if !trimmed.is_empty() {
-                                return Some(trimmed.to_string());
-                            }
+                    if ascii_len > 0
+                        && 12 + ascii_len <= tag_size
+                        && let Ok(s) = std::str::from_utf8(&tag_data[12..12 + ascii_len - 1])
+                    {
+                        let trimmed = s.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
                         }
                     }
                 }
