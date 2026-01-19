@@ -983,3 +983,87 @@ pub async fn raw_download_handler(
         response
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_converts_correctly() {
+        // Create a known date: 2024-06-15 14:30:44 UTC
+        // Note: ZIP datetime has 2-second resolution, so we use even seconds
+        let datetime = chrono::NaiveDate::from_ymd_opt(2024, 6, 15)
+            .unwrap()
+            .and_hms_opt(14, 30, 44)
+            .unwrap();
+        let system_time: SystemTime = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+            datetime,
+            chrono::Utc,
+        )
+        .into();
+
+        let zip_dt = systemtime_to_zip_datetime(system_time).expect("Should convert successfully");
+
+        assert_eq!(zip_dt.year(), 2024);
+        assert_eq!(zip_dt.month(), 6);
+        assert_eq!(zip_dt.day(), 15);
+        assert_eq!(zip_dt.hour(), 14);
+        assert_eq!(zip_dt.minute(), 30);
+        assert_eq!(zip_dt.second(), 44);
+    }
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_rejects_pre_1980() {
+        // Unix epoch is 1970-01-01 00:00:00, which is before ZIP's 1980 minimum
+        let epoch = SystemTime::UNIX_EPOCH;
+        let result = systemtime_to_zip_datetime(epoch);
+
+        // The zip crate rejects dates before 1980
+        assert!(
+            result.is_none(),
+            "Dates before 1980 should return None"
+        );
+    }
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_handles_recent_date() {
+        // Test with current time
+        let now = SystemTime::now();
+        let zip_dt = systemtime_to_zip_datetime(now).expect("Should convert current time");
+
+        // Should be a reasonable recent year
+        assert!(zip_dt.year() >= 2020, "Year should be recent");
+        assert!(zip_dt.year() <= 2100, "Year should not be too far in future");
+    }
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_preserves_date_components() {
+        // Test boundary values (using even seconds due to ZIP's 2-second resolution)
+        let test_cases = [
+            (2000, 1, 1, 0, 0, 0),      // Y2K
+            (2023, 12, 31, 23, 59, 58), // End of year (58 not 59 due to 2-sec resolution)
+            (2024, 2, 29, 12, 0, 0),    // Leap day
+            (1980, 1, 1, 0, 0, 0),      // ZIP minimum date
+        ];
+
+        for (year, month, day, hour, minute, second) in test_cases {
+            let datetime = chrono::NaiveDate::from_ymd_opt(year, month, day)
+                .unwrap()
+                .and_hms_opt(hour, minute, second)
+                .unwrap();
+            let system_time: SystemTime =
+                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc)
+                    .into();
+
+            let zip_dt =
+                systemtime_to_zip_datetime(system_time).expect("Should convert successfully");
+
+            assert_eq!(zip_dt.year(), year as u16, "Year mismatch for {:?}", datetime);
+            assert_eq!(zip_dt.month(), month as u8, "Month mismatch for {:?}", datetime);
+            assert_eq!(zip_dt.day(), day as u8, "Day mismatch for {:?}", datetime);
+            assert_eq!(zip_dt.hour(), hour as u8, "Hour mismatch for {:?}", datetime);
+            assert_eq!(zip_dt.minute(), minute as u8, "Minute mismatch for {:?}", datetime);
+            assert_eq!(zip_dt.second(), second as u8, "Second mismatch for {:?}", datetime);
+        }
+    }
+}

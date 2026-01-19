@@ -909,6 +909,63 @@ async fn test_gallery_download_with_permission() {
 }
 
 #[tokio::test]
+async fn test_gallery_download_zip_file_dates() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+
+    // Update the viewer role to include can_download_gallery
+    if let Some(ref mut galleries) = config.galleries {
+        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
+            viewer_role.permissions.can_download_gallery = true;
+        }
+    }
+
+    // Create test images
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 2);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let response = server.get("/gallery/_download").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    // Verify the zip files have accessible date metadata
+    let bytes = response.as_bytes();
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let mut archive = zip::ZipArchive::new(cursor).expect("Should be a valid zip file");
+
+    for i in 0..archive.len() {
+        let file = archive.by_index(i).unwrap();
+        let file_name = file.name().to_string();
+
+        // Verify the date is accessible
+        // Note: Files without EXIF capture dates will have the ZIP epoch (1980)
+        // Files WITH capture dates should have their actual capture date
+        if let Some(last_modified) = file.last_modified() {
+            assert!(
+                last_modified.year() >= 1980,
+                "File '{}' should have a valid year (got {})",
+                file_name,
+                last_modified.year()
+            );
+
+            // The date should be properly formed
+            assert!(
+                last_modified.month() >= 1 && last_modified.month() <= 12,
+                "File '{}' should have valid month",
+                file_name
+            );
+            assert!(
+                last_modified.day() >= 1 && last_modified.day() <= 31,
+                "File '{}' should have valid day",
+                file_name
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn test_gallery_download_subfolder() {
     let temp_dir = TempDir::new().unwrap();
     let mut config = create_test_config(&temp_dir);
