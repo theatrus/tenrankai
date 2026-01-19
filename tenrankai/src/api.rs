@@ -1032,12 +1032,13 @@ pub async fn add_comment_handler(
     };
 
     // Add comment with version tracking (record which version the comment was made on)
-    let version_path = if resolved_path != canonical_path {
-        Some(resolved_path.clone())
-    } else {
-        None
-    };
-    metadata.add_comment(user, request.text, request.image_area, version_path);
+    // Always store the path so we can show "on original" vs "on v2" etc.
+    metadata.add_comment(
+        user,
+        request.text,
+        request.image_area,
+        Some(resolved_path.clone()),
+    );
 
     // Save metadata to canonical path
     match gallery

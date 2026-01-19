@@ -1169,6 +1169,10 @@ dd {
   color: var(--text-secondary);
 }
 
+.comment-version {
+  color: var(--text-secondary);
+}
+
 .comment-actions-menu {
   display: flex;
   gap: 0.5rem;

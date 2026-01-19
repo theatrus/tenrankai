@@ -35,6 +35,8 @@ export interface Comment {
   created_at: string;
   edited_at?: string;
   image_area?: ImageArea;
+  /** Path of the specific version this comment was made on (for grouped images) */
+  version_path?: string;
 }
 
 export interface ImageArea {
