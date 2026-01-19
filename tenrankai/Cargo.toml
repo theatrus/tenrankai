@@ -15,10 +15,13 @@ name = "tenrankai"
 path = "src/lib.rs"
 
 [features]
-default = ["avif"]
+default = ["avif", "heif"]
 # AVIF support - can be disabled on platforms where it's hard to build
 # To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
 avif = ["dep:libavif", "dep:libavif-sys", "tenrankai-image/avif"]
+# HEIF/HEIC support - enables decoding of iPhone photos
+# Note: HEIF with gain map support requires AVIF for the GainMapInfo type
+heif = ["tenrankai-image/heif", "tenrankai-image/avif"]
 # User storage backend features (forwarded to tenrankai-users)
 users-sql = ["tenrankai-users/sql"]
 users-dynamodb = ["tenrankai-users/dynamodb"]

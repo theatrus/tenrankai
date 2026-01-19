@@ -53,6 +53,35 @@ impl Gallery {
                     }
                 }
             }
+            #[cfg(feature = "heif")]
+            Some("heic") | Some("heif") => {
+                // For HEIF/HEIC files, extract EXIF data using libheif
+                match tenrankai_image::formats::heif::extract_exif_data_from_bytes(image_data) {
+                    Some(exif_bytes) => {
+                        let (result, _warnings) = rexif::parse_buffer_quiet(&exif_bytes);
+                        match result {
+                            Ok(exif_data) => {
+                                let capture_date = self.extract_capture_date(&exif_data);
+                                let camera_info = self.extract_camera_info(&exif_data);
+                                let location_info = self.extract_location_info(&exif_data);
+                                debug!("Successfully extracted EXIF from HEIC: {}", relative_path);
+                                (capture_date, camera_info, location_info)
+                            }
+                            Err(e) => {
+                                trace!(
+                                    "Failed to parse EXIF data from HEIC {}: {}",
+                                    relative_path, e
+                                );
+                                (None, None, None)
+                            }
+                        }
+                    }
+                    None => {
+                        trace!("No EXIF data found in HEIC: {}", relative_path);
+                        (None, None, None)
+                    }
+                }
+            }
             _ => {
                 // For other formats (JPEG, etc), use rexif's buffer parser
                 // Use quiet version to avoid stderr spam from malformed EXIF tags
@@ -1221,7 +1250,16 @@ impl Gallery {
             return (w, h);
         }
 
-        #[cfg(not(feature = "avif"))]
+        // For HEIC/HEIF, use libheif to extract dimensions
+        #[cfg(feature = "heif")]
+        if matches!(ext, Some("heic") | Some("heif"))
+            && let Some((w, h)) =
+                tenrankai_image::formats::heif::extract_dimensions_from_bytes(image_data)
+        {
+            return (w, h);
+        }
+
+        #[cfg(all(not(feature = "avif"), not(feature = "heif")))]
         let _ = ext; // Suppress unused warning
 
         (0, 0)
@@ -1256,6 +1294,11 @@ impl Gallery {
             Some("avif") => {
                 // For AVIF files, generate a descriptive color space string
                 super::image_processing::extract_avif_color_description_from_bytes(image_data)
+            }
+            #[cfg(feature = "heif")]
+            Some("heic") | Some("heif") => {
+                // For HEIC/HEIF files, extract ICC profile or generate color description
+                tenrankai_image::formats::heif::extract_color_description_from_bytes(image_data)
             }
             _ => None,
         }

@@ -659,6 +659,51 @@ fn process_all_tiles_from_storage(
                     tile_loaded_image.avif_info = Some(tile_avif_info);
                 }
 
+                // Handle gain map extraction for HEIF tiles
+                #[cfg(feature = "heif")]
+                if let Some(ref heif_info) = loaded_image.heif_info {
+                    // Clone the HEIF info for the tile
+                    let mut tile_heif_info = heif_info.clone();
+
+                    // Extract corresponding gain map tile if present
+                    if let Some(ref gm_info) = heif_info.gain_map_info
+                        && let Some(ref gm_image) = gm_info.gain_map_image
+                    {
+                        // Calculate gain map tile coordinates proportionally
+                        let gm_scale_x = gm_image.width() as f32 / resized_width as f32;
+                        let gm_scale_y = gm_image.height() as f32 / resized_height as f32;
+
+                        let gm_tile_x = (tile_start_x as f32 * gm_scale_x).round() as u32;
+                        let gm_tile_y = (tile_start_y as f32 * gm_scale_y).round() as u32;
+                        let gm_tile_width =
+                            (tile_actual_width as f32 * gm_scale_x).round().max(1.0) as u32;
+                        let gm_tile_height =
+                            (tile_actual_height as f32 * gm_scale_y).round().max(1.0) as u32;
+
+                        // Ensure we don't exceed gain map boundaries
+                        let gm_tile_width =
+                            gm_tile_width.min(gm_image.width().saturating_sub(gm_tile_x));
+                        let gm_tile_height =
+                            gm_tile_height.min(gm_image.height().saturating_sub(gm_tile_y));
+
+                        if gm_tile_width > 0 && gm_tile_height > 0 {
+                            let gm_tile = gm_image.crop_imm(
+                                gm_tile_x,
+                                gm_tile_y,
+                                gm_tile_width,
+                                gm_tile_height,
+                            );
+
+                            // Update the gain map info with tile
+                            if let Some(ref mut gm_info_mut) = tile_heif_info.gain_map_info {
+                                gm_info_mut.gain_map_image = Some(gm_tile);
+                            }
+                        }
+                    }
+
+                    tile_loaded_image.heif_info = Some(tile_heif_info);
+                }
+
                 // Encode both regular and @2x versions of this tile
                 for is_retina in [false, true] {
                     let cache_filename = crate::gallery::cache::generate_tile_cache_filename(

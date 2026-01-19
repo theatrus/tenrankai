@@ -1,8 +1,8 @@
 name: CI
 #
 # Platform-specific build configuration:
-# - Ubuntu/macOS: Full build with AVIF support (default features)
-# - Windows: Build without AVIF support (--no-default-features) for easier builds
+# - Ubuntu/macOS: Full build with AVIF and HEIF support (default features)
+# - Windows: Build without AVIF/HEIF support (--no-default-features) for easier builds
 
 on:
   push:
@@ -23,18 +23,38 @@ jobs:
         os: [ubuntu-22.04, windows-latest, macos-latest]
         # No longer using rust matrix - version specified in rust-toolchain.toml
     steps:
+    - name: Free disk space (Ubuntu)
+      if: matrix.os == 'ubuntu-22.04'
+      run: |
+        # Remove large unused packages to free disk space
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo apt-get clean
+
     - uses: actions/checkout@v6
 
     - name: Install build dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-22.04'
       run: |
         sudo apt-get update
-        sudo apt-get install -y nasm ninja-build meson cmake
+        # Build tools for AVIF
+        sudo apt-get install -y nasm ninja-build meson cmake pkg-config
+        # libheif dependencies
+        sudo apt-get install -y libde265-dev libx265-dev libaom-dev
+        # Build libheif from source (need >= 1.21 for libheif-rs)
+        git clone --depth 1 --branch v1.21.1 https://github.com/strukturag/libheif.git /tmp/libheif
+        cd /tmp/libheif
+        mkdir build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_EXAMPLES=OFF
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+        # Clean up build directory to save space
+        rm -rf /tmp/libheif
 
     - name: Install build dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew install nasm meson
+        brew install nasm meson libheif
 
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -48,10 +68,10 @@ jobs:
     - name: Run frontend linting (TypeScript, CSS, CSS variables)
       run: npm run lint
 
-    - name: Install build dependencies (Windows - no AVIF)
+    - name: Install build dependencies (Windows - no AVIF/HEIF)
       if: matrix.os == 'windows-latest'
       run: |
-        # Install OpenSSL via vcpkg (AVIF-related tools not needed since we build with --no-default-features)
+        # Install OpenSSL via vcpkg (AVIF/HEIF not needed since we build with --no-default-features)
         vcpkg install openssl:x64-windows-static
 
         # Set up OpenSSL environment variables
@@ -97,7 +117,7 @@ jobs:
       run: cargo clippy --workspace -- -D warnings
       if: matrix.os != 'windows-latest'
 
-    - name: Run clippy (Windows - no AVIF)
+    - name: Run clippy (Windows - no AVIF/HEIF)
       run: cargo clippy --workspace --no-default-features -- -D warnings
       if: matrix.os == 'windows-latest'
 
@@ -105,7 +125,7 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: cargo build --workspace --verbose
 
-    - name: Build (Windows - no AVIF)
+    - name: Build (Windows - no AVIF/HEIF)
       if: matrix.os == 'windows-latest'
       run: cargo build --workspace --verbose --no-default-features
 
@@ -113,7 +133,7 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: cargo test --workspace --verbose
 
-    - name: Run tests (Windows - no AVIF)
+    - name: Run tests (Windows - no AVIF/HEIF)
       if: matrix.os == 'windows-latest'
       run: cargo test --workspace --verbose --no-default-features
 
@@ -121,7 +141,7 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: cargo build --workspace --release --verbose
 
-    - name: Build release (Windows - no AVIF)
+    - name: Build release (Windows - no AVIF/HEIF)
       if: matrix.os == 'windows-latest'
       run: cargo build --workspace --release --verbose --no-default-features
 

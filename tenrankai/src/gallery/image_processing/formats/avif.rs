@@ -832,12 +832,28 @@ fn encode_with_profile_and_color(
         sys::avifRGBImageFreePixels(&mut rgb);
 
         // If we have gain map info, attach it to the image
+        if let Some(info) = color_info {
+            debug!(
+                "Checking gain map for output: has_gain_map={}, has_gm_info={}, has_gm_image={}",
+                info.has_gain_map,
+                info.gain_map_info.is_some(),
+                info.gain_map_info
+                    .as_ref()
+                    .and_then(|g| g.gain_map_image.as_ref())
+                    .is_some()
+            );
+        }
         if let Some(info) = color_info
             && info.has_gain_map
             && let Some(ref gm_info) = info.gain_map_info
             && let Some(ref gm_image) = gm_info.gain_map_image
         {
-            debug!("Attaching gain map to output AVIF");
+            debug!(
+                "Attaching gain map to output AVIF: {}x{}, headroom={:.2}",
+                gm_image.width(),
+                gm_image.height(),
+                gm_info.alternate_hdr_headroom
+            );
 
             // Create gain map structure
             let gain_map = sys::avifGainMapCreate();

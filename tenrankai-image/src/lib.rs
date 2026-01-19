@@ -13,3 +13,6 @@ pub use watermark::{CopyrightConfig, add_copyright_notice};
 
 #[cfg(feature = "avif")]
 pub use formats::avif::{AvifImageInfo, GainMapInfo};
+
+#[cfg(feature = "heif")]
+pub use formats::heif::{HeifImageInfo, is_heif_format, read_heif_info_from_bytes};
