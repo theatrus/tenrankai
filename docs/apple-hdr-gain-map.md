@@ -15,7 +15,8 @@ Apple's proprietary format differs significantly from the ISO 21496-1 standard u
 - Gain map stored as auxiliary image with type `urn:com:apple:photo:2020:aux:hdrgainmap`
 - Single-channel grayscale image, typically half the resolution of the main image
 - 8-bit pixel values encoded with sRGB transfer function
-- Pixel value 128 represents neutral (no boost), 255 represents maximum boost
+- **Pixel value 0 = no boost (scale 1.0), pixel value 255 = maximum boost**
+- Note: Some sources incorrectly document 128 as neutral - this is wrong based on the actual formula
 
 ### XMP Metadata
 
@@ -95,17 +96,27 @@ At endpoints (gainmap=0 and gainmap=1), both give the same result. But in the mi
 
 ### Our Solution: Lookup Table Transformation
 
-Rather than using a simple linear pixel shift, we pre-transform Apple's gain map pixels using a lookup table (LUT) that makes ISO's formula produce the same scale factors as Apple's formula.
+We pre-transform Apple's gain map pixels using a lookup table (LUT) that makes ISO's formula produce the same scale factors as Apple's formula.
 
-For each input pixel value (0-255 in Apple's encoding where 128=neutral):
+For each input pixel value (0-255):
 
-1. **Shift** Apple's range: `normalized = (value - 128) / 127` (128→0, 255→1)
+1. **Normalize**: `normalized = value / 255` (0→0, 255→1)
 2. **Apply sRGB EOTF** to get linear: `linear = sRGB_EOTF(normalized)`
 3. **Compute target scale** using Apple's formula: `target = 1 + (headroom - 1) * linear`
 4. **Solve for ISO input** that produces the same scale:
    - ISO: `scale = exp2(max * pow(gainmap, 1/gamma))`
    - Rearranging: `gainmap = (log2(target) / max)^gamma`
 5. **Store** the result in the LUT
+
+Example mappings (headroom = 6.91):
+
+| Apple Pixel | Apple Scale | New Pixel | ISO Scale |
+|-------------|-------------|-----------|-----------|
+| 0 | 1.000 | 0 | 1.000 |
+| 64 | 1.303 | 111 | 1.301 |
+| 128 | 2.276 | 179 | 2.287 |
+| 192 | 4.115 | 224 | 4.123 |
+| 255 | 6.910 | 255 | 6.910 |
 
 The LUT is built once per image based on its headroom value, then applied efficiently to all pixels.
 
