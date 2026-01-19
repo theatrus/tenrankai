@@ -56,7 +56,7 @@ COPY tenrankai-users/src ./tenrankai-users/src
 
 # Copy frontend source and config
 COPY frontend ./frontend
-COPY package.json package-lock.json tsconfig.json tsconfig.legacy.json vite.config.js ./
+COPY package.json package-lock.json tsconfig.json tsconfig.legacy.json vite.config.js .stylelintrc.json ./
 
 # Copy templates and static assets
 COPY templates ./templates
