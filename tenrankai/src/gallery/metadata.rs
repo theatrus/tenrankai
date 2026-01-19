@@ -1250,7 +1250,16 @@ impl Gallery {
             return (w, h);
         }
 
-        #[cfg(not(feature = "avif"))]
+        // For HEIC/HEIF, use libheif to extract dimensions
+        #[cfg(feature = "heif")]
+        if matches!(ext, Some("heic") | Some("heif"))
+            && let Some((w, h)) =
+                tenrankai_image::formats::heif::extract_dimensions_from_bytes(image_data)
+        {
+            return (w, h);
+        }
+
+        #[cfg(all(not(feature = "avif"), not(feature = "heif")))]
         let _ = ext; // Suppress unused warning
 
         (0, 0)
@@ -1285,6 +1294,11 @@ impl Gallery {
             Some("avif") => {
                 // For AVIF files, generate a descriptive color space string
                 super::image_processing::extract_avif_color_description_from_bytes(image_data)
+            }
+            #[cfg(feature = "heif")]
+            Some("heic") | Some("heif") => {
+                // For HEIC/HEIF files, extract ICC profile or generate color description
+                tenrankai_image::formats::heif::extract_color_description_from_bytes(image_data)
             }
             _ => None,
         }

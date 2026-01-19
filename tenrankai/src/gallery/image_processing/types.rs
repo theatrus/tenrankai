@@ -9,6 +9,19 @@ use crate::gallery::image_processing::formats;
 /// Convert HeifImageInfo to local AvifImageInfo for encoding
 #[cfg(all(feature = "heif", feature = "avif"))]
 fn heif_to_avif_info(heif_info: &tenrankai_image::HeifImageInfo) -> formats::avif::AvifImageInfo {
+    let has_gm_image = heif_info
+        .gain_map_info
+        .as_ref()
+        .and_then(|gm| gm.gain_map_image.as_ref())
+        .is_some();
+    tracing::debug!(
+        "Converting HEIF to AVIF info: is_hdr={}, has_gain_map={}, has_gm_image={}, primaries={}, transfer={}",
+        heif_info.is_hdr,
+        heif_info.has_gain_map,
+        has_gm_image,
+        heif_info.color_primaries,
+        heif_info.transfer_characteristics
+    );
     formats::avif::AvifImageInfo {
         bit_depth: heif_info.bit_depth,
         has_alpha: heif_info.has_alpha,
@@ -415,14 +428,32 @@ impl LoadedImage {
             OutputFormat::Png => formats::png::encode(&self.image),
             #[cfg(feature = "avif")]
             OutputFormat::Avif => {
+                // Log what info we have
+                tracing::debug!(
+                    "AVIF encode: avif_info={}, heif_info={}",
+                    self.avif_info.is_some(),
+                    {
+                        #[cfg(feature = "heif")]
+                        { self.heif_info.is_some() }
+                        #[cfg(not(feature = "heif"))]
+                        { false }
+                    }
+                );
+
                 // Use AVIF info if available
                 if let Some(ref info) = self.avif_info {
+                    tracing::debug!("Using AVIF info for encoding: has_gain_map={}", info.has_gain_map);
                     return formats::avif::encode_with_info(&self.image, 85, 6, Some(info));
                 }
 
                 // Use HEIF info (converted to local AVIF info) if available
                 #[cfg(feature = "heif")]
                 if let Some(ref heif_info) = self.heif_info {
+                    tracing::debug!(
+                        "Using HEIF info for encoding: has_gain_map={}, has_gm_image={}",
+                        heif_info.has_gain_map,
+                        heif_info.gain_map_info.as_ref().and_then(|g| g.gain_map_image.as_ref()).is_some()
+                    );
                     let avif_info = heif_to_avif_info(heif_info);
                     return formats::avif::encode_with_info(&self.image, 85, 6, Some(&avif_info));
                 }

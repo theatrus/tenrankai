@@ -105,11 +105,8 @@ pub fn read_heif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, HeifImage
     );
 
     // Extract color profile information
-    let (color_primaries, transfer_characteristics, matrix_coefficients, icc_profile) =
+    let (mut color_primaries, mut transfer_characteristics, mut matrix_coefficients, icc_profile) =
         extract_color_info(&handle);
-
-    // Detect HDR
-    let is_hdr = detect_hdr(bit_depth, transfer_characteristics);
 
     // Extract EXIF data
     let exif_data = extract_exif_from_handle(&handle);
@@ -119,6 +116,34 @@ pub fn read_heif_info_from_bytes(data: &[u8]) -> Result<(DynamicImage, HeifImage
     let (has_gain_map, gain_map_info) = extract_gain_map_info(&ctx, &handle);
     #[cfg(not(feature = "avif"))]
     let has_gain_map = false;
+
+    // For Apple HDR photos with gain maps but unspecified color properties,
+    // default to Display P3 with sRGB transfer (typical for iPhone photos)
+    if has_gain_map && color_primaries == 2 && transfer_characteristics == 2 {
+        // Check if ICC profile looks like Display P3 (around 536-560 bytes)
+        let is_likely_p3 = icc_profile.as_ref().is_some_and(|p| p.len() >= 500 && p.len() < 600);
+        if is_likely_p3 {
+            color_primaries = 12; // Display P3
+            transfer_characteristics = 13; // sRGB
+            matrix_coefficients = 1; // BT.709
+            debug!(
+                "Defaulting to Display P3/sRGB for Apple HDR photo (unspecified NCLX with gain map)"
+            );
+        } else {
+            // Default to BT.709/sRGB for standard SDR base
+            color_primaries = 1; // BT.709
+            transfer_characteristics = 13; // sRGB
+            matrix_coefficients = 1; // BT.709
+            debug!(
+                "Defaulting to BT.709/sRGB for Apple HDR photo (unspecified NCLX with gain map)"
+            );
+        }
+    }
+
+    // Detect HDR: either via transfer characteristics OR presence of gain map
+    // Apple HDR photos use 8-bit SDR base layer with gain map, so we can't rely
+    // solely on bit depth and transfer function
+    let is_hdr = detect_hdr(bit_depth, transfer_characteristics) || has_gain_map;
 
     // Decode the image
     let lib_heif = LibHeif::new();
@@ -215,43 +240,29 @@ fn extract_exif_from_handle(handle: &libheif_rs::ImageHandle) -> Option<Vec<u8>>
 
     // Get the first EXIF block
     if let Ok(exif_data) = handle.metadata(block_ids[0]) {
-        // HEIF EXIF data starts with 4-byte offset, skip it for rexif compatibility
-        if exif_data.len() > 4 {
-            debug!("HEIF EXIF data: {} bytes", exif_data.len());
-            // The first 4 bytes are the Exif header offset, skip them
-            return Some(exif_data[4..].to_vec());
-        }
-    }
+        // HEIF EXIF data format:
+        // - Bytes 0-3: 4-byte offset (usually 0)
+        // - Bytes 4-9: "Exif\0\0" header (6 bytes)
+        // - Bytes 10+: TIFF header (starts with "MM" or "II")
+        // rexif expects just the TIFF data, so we need to skip both prefixes
+        if exif_data.len() > 10 {
+            let data = &exif_data[4..]; // Skip 4-byte offset first
 
-    None
-}
+            // Check for and skip "Exif\0\0" header
+            let tiff_data = if data.starts_with(b"Exif\x00\x00") {
+                debug!("HEIF EXIF data: {} bytes (stripping Exif header)", exif_data.len());
+                &data[6..]
+            } else {
+                debug!("HEIF EXIF data: {} bytes", exif_data.len());
+                data
+            };
 
-/// Extract XMP metadata from image handle
-fn extract_xmp_from_handle(handle: &libheif_rs::ImageHandle) -> Option<Vec<u8>> {
-    // FourCC for XMP/MIME metadata type
-    let mime_type = FourCC(*b"mime");
-
-    let num_blocks = handle.number_of_metadata_blocks(mime_type);
-    if num_blocks <= 0 {
-        trace!("No XMP/MIME metadata blocks found in HEIF");
-        return None;
-    }
-
-    let mut block_ids = vec![0u32; num_blocks as usize];
-    let count = handle.metadata_block_ids(&mut block_ids, mime_type);
-
-    if count == 0 || block_ids.is_empty() {
-        return None;
-    }
-
-    // Check each block for XMP content
-    for block_id in block_ids {
-        if let Ok(data) = handle.metadata(block_id)
-            && let Ok(text) = std::str::from_utf8(&data)
-            && (text.contains("xmpmeta") || text.contains("rdf:RDF"))
-        {
-            debug!("Found XMP metadata: {} bytes", data.len());
-            return Some(data);
+            // Verify we have a valid TIFF header (MM or II)
+            if tiff_data.len() >= 4
+                && (tiff_data.starts_with(b"MM") || tiff_data.starts_with(b"II"))
+            {
+                return Some(tiff_data.to_vec());
+            }
         }
     }
 
@@ -276,12 +287,16 @@ fn parse_xmp_gain_map_metadata(xmp_data: &[u8]) -> Option<XmpGainMapMetadata> {
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
+    let mut current_element: Option<String> = None;
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
-                // Check for rdf:Description with hdrgm attributes
-                if e.name().as_ref() == b"rdf:Description" {
+                let name_bytes = e.name();
+                let name = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
+
+                // Check for rdf:Description with hdrgm attributes (ISO 21496-1 format)
+                if name == "rdf:Description" {
                     for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
                         let value = std::str::from_utf8(&attr.value).unwrap_or("");
@@ -316,6 +331,34 @@ fn parse_xmp_gain_map_metadata(xmp_data: &[u8]) -> Option<XmpGainMapMetadata> {
                         }
                     }
                 }
+
+                // Track element name for Apple's nested element format
+                current_element = Some(name.to_string());
+            }
+            Ok(Event::Text(e)) => {
+                // Handle Apple's HDRGainMap format where values are element content
+                if let Some(ref elem) = current_element {
+                    // Convert BytesText to string (quick-xml 0.39 API)
+                    let text_bytes = e.as_ref();
+                    if let Ok(value_str) = std::str::from_utf8(text_bytes) {
+                        let value = value_str.trim();
+                        match elem.as_str() {
+                            "HDRGainMap:HDRGainMapHeadroom" => {
+                                // Apple uses a single headroom value for both min and max
+                                let headroom: f32 = value.parse().unwrap_or(1.0);
+                                metadata.hdr_capacity_max = headroom;
+                                debug!("Found Apple HDRGainMapHeadroom: {}", headroom);
+                            }
+                            "HDRGainMap:HDRGainMapVersion" => {
+                                trace!("Apple HDRGainMap version: {}", value);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(_)) => {
+                current_element = None;
             }
             Ok(Event::Eof) => break,
             Err(e) => {
@@ -339,6 +382,35 @@ fn parse_xmp_gain_map_metadata(xmp_data: &[u8]) -> Option<XmpGainMapMetadata> {
     }
 }
 
+/// Extract XMP metadata from an auxiliary image handle
+fn extract_xmp_from_aux_handle(aux_handle: &libheif_rs::ImageHandle) -> Option<Vec<u8>> {
+    let mime_type = FourCC(*b"mime");
+
+    let num_blocks = aux_handle.number_of_metadata_blocks(mime_type);
+    if num_blocks <= 0 {
+        return None;
+    }
+
+    let mut block_ids = vec![0u32; num_blocks as usize];
+    let count = aux_handle.metadata_block_ids(&mut block_ids, mime_type);
+
+    if count == 0 || block_ids.is_empty() {
+        return None;
+    }
+
+    for block_id in block_ids {
+        if let Ok(data) = aux_handle.metadata(block_id)
+            && let Ok(text) = std::str::from_utf8(&data)
+            && (text.contains("xmpmeta") || text.contains("rdf:RDF"))
+        {
+            debug!("Found XMP metadata on auxiliary image: {} bytes", data.len());
+            return Some(data);
+        }
+    }
+
+    None
+}
+
 /// Extract gain map information from auxiliary images
 #[cfg(feature = "avif")]
 fn extract_gain_map_info(
@@ -352,10 +424,6 @@ fn extract_gain_map_info(
         return (false, None);
     }
 
-    // Try to extract XMP metadata for gain map parameters
-    let xmp_metadata =
-        extract_xmp_from_handle(handle).and_then(|xmp| parse_xmp_gain_map_metadata(&xmp));
-
     let lib_heif = LibHeif::new();
 
     for aux_handle in aux_handles {
@@ -367,6 +435,11 @@ fn extract_gain_map_info(
                 || type_str.contains("urn:com:apple:photo:2020:aux:hdrgainmap")
             {
                 debug!("Found HEIF gain map auxiliary image: {}", aux_type);
+
+                // Extract XMP metadata from the AUXILIARY image (not primary)
+                // Apple stores HDRGainMapHeadroom on the gain map image itself
+                let xmp_metadata = extract_xmp_from_aux_handle(&aux_handle)
+                    .and_then(|xmp| parse_xmp_gain_map_metadata(&xmp));
 
                 // Try to decode the gain map image
                 let gain_map_image = decode_auxiliary_image(&lib_heif, &aux_handle);
@@ -551,6 +624,171 @@ pub fn extract_icc_profile_from_bytes(data: &[u8]) -> Option<Vec<u8>> {
     handle.color_profile_raw().map(|p| p.data.to_vec())
 }
 
+/// Extract image dimensions from HEIF data without full decode
+pub fn extract_dimensions_from_bytes(data: &[u8]) -> Option<(u32, u32)> {
+    if !is_heif_format(data) {
+        return None;
+    }
+
+    let ctx = HeifContext::read_from_bytes(data).ok()?;
+    let handle = ctx.primary_image_handle().ok()?;
+
+    Some((handle.width(), handle.height()))
+}
+
+/// Extract color description from HEIF data
+/// Returns a human-readable string describing the color space
+pub fn extract_color_description_from_bytes(data: &[u8]) -> Option<String> {
+    if !is_heif_format(data) {
+        return None;
+    }
+
+    let ctx = HeifContext::read_from_bytes(data).ok()?;
+    let handle = ctx.primary_image_handle().ok()?;
+
+    // Try to get ICC profile name first
+    if let Some(raw_profile) = handle.color_profile_raw() {
+        let profile_data = raw_profile.data.to_vec();
+        // Extract ICC profile name (description tag)
+        if let Some(name) = extract_icc_profile_name(&profile_data) {
+            return Some(name);
+        }
+    }
+
+    // Fall back to NCLX color info
+    if let Some(nclx) = handle.color_profile_nclx() {
+        let primaries = nclx.color_primaries() as u16;
+        let transfer = nclx.transfer_characteristics() as u16;
+
+        let primaries_str = match primaries {
+            1 => "BT.709",
+            9 => "BT.2020",
+            12 => "Display P3",
+            _ => return None,
+        };
+
+        let transfer_str = match transfer {
+            1 | 6 => "SDR",
+            13 => "sRGB",
+            16 => "PQ (HDR)",
+            18 => "HLG (HDR)",
+            _ => "SDR",
+        };
+
+        // Check for gain map (indicates HDR capability)
+        let aux_handles = handle.auxiliary_images(None);
+        let has_gain_map = aux_handles.iter().any(|aux| {
+            aux.auxiliary_type()
+                .map(|t| t.to_lowercase().contains("gainmap"))
+                .unwrap_or(false)
+        });
+
+        if has_gain_map {
+            return Some(format!("{} + Gain Map (HDR)", primaries_str));
+        }
+
+        return Some(format!("{} / {}", primaries_str, transfer_str));
+    }
+
+    None
+}
+
+/// Extract ICC profile name from raw profile data
+fn extract_icc_profile_name(profile_data: &[u8]) -> Option<String> {
+    // ICC profile description is in the 'desc' tag
+    // Look for tag table and find 'desc' tag
+    if profile_data.len() < 132 {
+        return None;
+    }
+
+    // Tag count is at offset 128
+    let tag_count = u32::from_be_bytes([
+        profile_data[128],
+        profile_data[129],
+        profile_data[130],
+        profile_data[131],
+    ]) as usize;
+
+    // Each tag entry is 12 bytes starting at offset 132
+    for i in 0..tag_count {
+        let offset = 132 + i * 12;
+        if offset + 12 > profile_data.len() {
+            break;
+        }
+
+        let sig = &profile_data[offset..offset + 4];
+        if sig == b"desc" {
+            let tag_offset = u32::from_be_bytes([
+                profile_data[offset + 4],
+                profile_data[offset + 5],
+                profile_data[offset + 6],
+                profile_data[offset + 7],
+            ]) as usize;
+            let tag_size = u32::from_be_bytes([
+                profile_data[offset + 8],
+                profile_data[offset + 9],
+                profile_data[offset + 10],
+                profile_data[offset + 11],
+            ]) as usize;
+
+            if tag_offset + tag_size <= profile_data.len() && tag_size > 12 {
+                let tag_data = &profile_data[tag_offset..tag_offset + tag_size];
+                let tag_type = &tag_data[0..4];
+
+                // 'mluc' type (multi-localized Unicode)
+                if tag_type == b"mluc" && tag_size > 28 {
+                    let str_offset = u32::from_be_bytes([
+                        tag_data[24],
+                        tag_data[25],
+                        tag_data[26],
+                        tag_data[27],
+                    ]) as usize;
+                    let str_len = u32::from_be_bytes([
+                        tag_data[20],
+                        tag_data[21],
+                        tag_data[22],
+                        tag_data[23],
+                    ]) as usize;
+
+                    if str_offset + str_len <= tag_size {
+                        // UTF-16BE string
+                        let utf16_data = &tag_data[str_offset..str_offset + str_len];
+                        let utf16: Vec<u16> = utf16_data
+                            .chunks_exact(2)
+                            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                            .collect();
+                        if let Ok(s) = String::from_utf16(&utf16) {
+                            let trimmed = s.trim_matches('\0').trim();
+                            if !trimmed.is_empty() {
+                                return Some(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+                // 'desc' type (textDescription - older ICC v2)
+                else if tag_type == b"desc" && tag_size > 12 {
+                    let ascii_len = u32::from_be_bytes([
+                        tag_data[8],
+                        tag_data[9],
+                        tag_data[10],
+                        tag_data[11],
+                    ]) as usize;
+                    if ascii_len > 0 && 12 + ascii_len <= tag_size {
+                        if let Ok(s) = std::str::from_utf8(&tag_data[12..12 + ascii_len - 1]) {
+                            let trimmed = s.trim();
+                            if !trimmed.is_empty() {
+                                return Some(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,7 +824,7 @@ mod tests {
         // 10-bit with HLG transfer = HDR
         assert!(detect_hdr(10, 18));
 
-        // 8-bit is never HDR
+        // 8-bit is never HDR (via transfer function alone)
         assert!(!detect_hdr(8, 16));
 
         // 10-bit with sRGB transfer = not HDR
