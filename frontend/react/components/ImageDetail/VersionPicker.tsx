@@ -24,7 +24,7 @@ export function VersionPicker({
 
   const handleVersionClick = (version: ImageVersion) => {
     // Don't navigate if clicking the current version
-    if (version.path === currentPath) {
+    if (version.url_id === currentPath) {
       return;
     }
     if (onVersionSelect) {
@@ -73,7 +73,7 @@ export function VersionPicker({
           const thumbnail2xUrl = thumbnailUrl.replace(/\/thumbnail$/, '/thumbnail@2x');
           const versionLabel = formatVersionLabel(version);
           const versionDate = formatVersionDate(version);
-          const isCurrent = version.path === currentPath;
+          const isCurrent = version.url_id === currentPath;
 
           return (
             <button
