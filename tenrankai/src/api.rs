@@ -500,11 +500,7 @@ pub async fn image_detail_api_handler_for_named(
             path.clone()
         } else {
             // This is an older version - find the primary's URL identifier
-            let indexer = gallery.image_indexer.read().await;
-            indexer
-                .get_index(&group.primary_path)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| urlencoding::encode(&group.primary_path).to_string())
+            gallery.build_url_identifier(&group.primary_path).await
         }
     } else {
         // No group found, use the original path

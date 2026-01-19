@@ -210,6 +210,16 @@ impl Gallery {
         format!("{}/_image/{}", self.config.url_prefix, url_id)
     }
 
+    /// Build a URL identifier for an image path.
+    /// Uses the image indexer if available, otherwise URL-encodes the path.
+    pub(crate) async fn build_url_identifier(&self, path: &str) -> String {
+        let indexer = self.image_indexer.read().await;
+        indexer
+            .get_index(path)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| urlencoding::encode(path).to_string())
+    }
+
     pub async fn refresh_metadata_and_pregenerate_cache(
         self: Arc<Self>,
         pregenerate: bool,

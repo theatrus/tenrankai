@@ -109,13 +109,7 @@ impl Gallery {
 
         for image_path in image_paths {
             // Get the indexed identifier for this image
-            let url_identifier = {
-                let indexer = self.image_indexer.read().await;
-                indexer
-                    .get_index(image_path)
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| urlencoding::encode(image_path).to_string())
-            };
+            let url_identifier = self.build_url_identifier(image_path).await;
 
             let thumbnail_url = self.build_thumbnail_url(&url_identifier);
             let gallery_url = self.build_gallery_url(&url_identifier);
@@ -396,13 +390,7 @@ impl Gallery {
         };
 
         // Get the indexed identifier for this image
-        let url_identifier = {
-            let indexer = self.image_indexer.read().await;
-            indexer
-                .get_index(relative_path)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| urlencoding::encode(relative_path).to_string())
-        };
+        let url_identifier = self.build_url_identifier(relative_path).await;
 
         // Format capture date if available
         let capture_date = cached_metadata.capture_date.and_then(|date| {
@@ -544,13 +532,7 @@ impl Gallery {
 
                     // Add the primary version to the list so it can be navigated to
                     // when viewing an older version
-                    let primary_url_id = {
-                        let indexer = self.image_indexer.read().await;
-                        indexer
-                            .get_index(&group.primary_path)
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| urlencoding::encode(&group.primary_path).to_string())
-                    };
+                    let primary_url_id = self.build_url_identifier(&group.primary_path).await;
                     let primary_version = super::ImageVersion {
                         path: group.primary_path.clone(),
                         version_number: super::grouping::extract_version_number(
