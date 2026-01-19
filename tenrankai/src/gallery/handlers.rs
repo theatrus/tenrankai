@@ -7,6 +7,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
+use std::time::SystemTime;
 use tracing::{debug, error};
 
 // Named gallery handlers for multiple gallery support
@@ -620,6 +621,21 @@ pub async fn image_handler_for_named_v2(
     .into_response()
 }
 
+/// Convert SystemTime to zip::DateTime for file timestamps in zip archives
+fn systemtime_to_zip_datetime(time: SystemTime) -> Option<zip::DateTime> {
+    use chrono::{Datelike, Timelike};
+    let datetime: chrono::DateTime<chrono::Utc> = time.into();
+    zip::DateTime::from_date_and_time(
+        datetime.year() as u16,
+        datetime.month() as u8,
+        datetime.day() as u8,
+        datetime.hour() as u8,
+        datetime.minute() as u8,
+        datetime.second() as u8,
+    )
+    .ok()
+}
+
 /// Query parameters for download folder handler
 #[derive(Debug, Deserialize)]
 pub struct DownloadFolderQuery {
@@ -674,17 +690,21 @@ pub async fn download_folder_handler(
     }
 
     // Recursively collect images in the directory and subdirectories
-    let mut all_images: Vec<(String, String)> = Vec::new(); // (file_path, display_name)
+    // Tuple: (file_path, display_name, capture_date)
+    let mut all_images: Vec<(String, String, Option<SystemTime>)> = Vec::new();
     let include_versions = query.include_versions;
 
-    // Helper to recursively collect images
+    // Helper to recursively collect images with their capture dates
     async fn collect_images_recursive(
         gallery: &super::SharedGallery,
         folder_path: &str,
-        images: &mut Vec<(String, String)>,
+        images: &mut Vec<(String, String, Option<SystemTime>)>,
         include_versions: bool,
     ) {
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
+            // Read the image metadata cache once for this folder's images
+            let metadata_cache = gallery.image_cache.read_all().await;
+
             if include_versions {
                 // Include all images (primary + versions)
                 for image_path in &cached.images {
@@ -701,7 +721,8 @@ pub async fn download_folder_handler(
                             base_name
                         }
                     };
-                    images.push((image_path.clone(), display_name));
+                    let capture_date = metadata_cache.get(image_path).and_then(|m| m.capture_date);
+                    images.push((image_path.clone(), display_name, capture_date));
                 }
             } else {
                 // Only include primary images from each group
@@ -711,7 +732,10 @@ pub async fn download_folder_handler(
                             let indexer = gallery.image_indexer.read().await;
                             indexer.get_display_name(&group.primary_path)
                         };
-                        images.push((group.primary_path.clone(), display_name));
+                        let capture_date = metadata_cache
+                            .get(&group.primary_path)
+                            .and_then(|m| m.capture_date);
+                        images.push((group.primary_path.clone(), display_name, capture_date));
                     }
                 } else {
                     // Fallback: filter out version files manually
@@ -721,7 +745,9 @@ pub async fn download_folder_handler(
                                 let indexer = gallery.image_indexer.read().await;
                                 indexer.get_display_name(image_path)
                             };
-                            images.push((image_path.clone(), display_name));
+                            let capture_date =
+                                metadata_cache.get(image_path).and_then(|m| m.capture_date);
+                            images.push((image_path.clone(), display_name, capture_date));
                         }
                     }
                 }
@@ -769,11 +795,21 @@ pub async fn download_folder_handler(
         let mut zip_buffer = std::io::Cursor::new(Vec::new());
         {
             let mut zip = zip::ZipWriter::new(&mut zip_buffer);
-            // Use Stored (no compression) for faster streaming
-            let options = zip::write::SimpleFileOptions::default()
+            // Base options: no compression for faster streaming
+            let base_options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored);
 
-            for (image_path, display_name) in &all_images {
+            for (image_path, display_name, capture_date) in &all_images {
+                // Create options with the file's capture date if available
+                let options = if let Some(date) = capture_date {
+                    if let Some(zip_datetime) = systemtime_to_zip_datetime(*date) {
+                        base_options.last_modified_time(zip_datetime)
+                    } else {
+                        base_options
+                    }
+                } else {
+                    base_options
+                };
                 // Calculate relative path from download root for folder structure in zip
                 let relative_path = if download_root.is_empty() {
                     image_path.clone()
@@ -942,5 +978,112 @@ pub async fn raw_download_handler(
         response
     } else {
         response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_converts_correctly() {
+        // Create a known date: 2024-06-15 14:30:44 UTC
+        // Note: ZIP datetime has 2-second resolution, so we use even seconds
+        let datetime = chrono::NaiveDate::from_ymd_opt(2024, 6, 15)
+            .unwrap()
+            .and_hms_opt(14, 30, 44)
+            .unwrap();
+        let system_time: SystemTime =
+            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc)
+                .into();
+
+        let zip_dt = systemtime_to_zip_datetime(system_time).expect("Should convert successfully");
+
+        assert_eq!(zip_dt.year(), 2024);
+        assert_eq!(zip_dt.month(), 6);
+        assert_eq!(zip_dt.day(), 15);
+        assert_eq!(zip_dt.hour(), 14);
+        assert_eq!(zip_dt.minute(), 30);
+        assert_eq!(zip_dt.second(), 44);
+    }
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_rejects_pre_1980() {
+        // Unix epoch is 1970-01-01 00:00:00, which is before ZIP's 1980 minimum
+        let epoch = SystemTime::UNIX_EPOCH;
+        let result = systemtime_to_zip_datetime(epoch);
+
+        // The zip crate rejects dates before 1980
+        assert!(result.is_none(), "Dates before 1980 should return None");
+    }
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_handles_recent_date() {
+        // Test with current time
+        let now = SystemTime::now();
+        let zip_dt = systemtime_to_zip_datetime(now).expect("Should convert current time");
+
+        // Should be a reasonable recent year
+        assert!(zip_dt.year() >= 2020, "Year should be recent");
+        assert!(
+            zip_dt.year() <= 2100,
+            "Year should not be too far in future"
+        );
+    }
+
+    #[test]
+    fn test_systemtime_to_zip_datetime_preserves_date_components() {
+        // Test boundary values (using even seconds due to ZIP's 2-second resolution)
+        let test_cases = [
+            (2000, 1, 1, 0, 0, 0),      // Y2K
+            (2023, 12, 31, 23, 59, 58), // End of year (58 not 59 due to 2-sec resolution)
+            (2024, 2, 29, 12, 0, 0),    // Leap day
+            (1980, 1, 1, 0, 0, 0),      // ZIP minimum date
+        ];
+
+        for (year, month, day, hour, minute, second) in test_cases {
+            let datetime = chrono::NaiveDate::from_ymd_opt(year, month, day)
+                .unwrap()
+                .and_hms_opt(hour, minute, second)
+                .unwrap();
+            let system_time: SystemTime =
+                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(datetime, chrono::Utc)
+                    .into();
+
+            let zip_dt =
+                systemtime_to_zip_datetime(system_time).expect("Should convert successfully");
+
+            assert_eq!(
+                zip_dt.year(),
+                year as u16,
+                "Year mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(
+                zip_dt.month(),
+                month as u8,
+                "Month mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(zip_dt.day(), day as u8, "Day mismatch for {:?}", datetime);
+            assert_eq!(
+                zip_dt.hour(),
+                hour as u8,
+                "Hour mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(
+                zip_dt.minute(),
+                minute as u8,
+                "Minute mismatch for {:?}",
+                datetime
+            );
+            assert_eq!(
+                zip_dt.second(),
+                second as u8,
+                "Second mismatch for {:?}",
+                datetime
+            );
+        }
     }
 }
