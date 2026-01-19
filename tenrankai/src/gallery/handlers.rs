@@ -191,14 +191,11 @@ pub async fn gallery_handler_for_named(
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
         "gallery_path": path,
-        "is_root": is_root,
         "breadcrumbs": breadcrumbs,
-        "directories": directories,
         "images": images,
         "items": items,
         "images_json": images_json,
         "gallery_data_json": gallery_data_json,
-        "page": page,
         "current_page": page,
         "total_pages": total_pages,
         "folder_title": folder_title,
@@ -232,8 +229,6 @@ pub async fn gallery_handler_for_named(
                 }
             }
         }).unwrap_or_else(|| "".to_string()),
-        "app_name": app_state.app_name(),
-        "copyright_holder": gallery.config.copyright_holder,
         "base_url": app_state.base_url(),
         "og_title": folder_title.clone().unwrap_or_else(|| {
             if is_root {
@@ -271,10 +266,8 @@ pub async fn gallery_handler_for_named(
         "og_image_width": og_image_width,
         "og_image_height": og_image_height,
         "twitter_card_type": "summary_large_image",
-        // Authentication info
         "is_authenticated": auth.is_authenticated(),
         "current_user": auth.username().unwrap_or_default().to_string(),
-        // Add permissions for template use - serialize to JSON to avoid recursion limit
         "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
     });
 
@@ -424,45 +417,13 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    // Get authenticated user info from extractor
-    let is_authenticated = auth.is_authenticated();
-    let current_user = auth.username().unwrap_or_default().to_string();
-
-    // Resolve permissions for this path
-    let user_permissions = match crate::permissions::resolve_permissions_for_path(
-        &app_state,
-        &gallery_name,
-        parent_path,
-        auth.username(),
-    )
-    .await
-    {
-        Ok(perms) => perms,
-        Err(_) => {
-            // Fall back to default permissions on error
-            crate::permissions::UserPermissions::new(None::<String>, Default::default())
-        }
-    };
-
     let liquid_context = liquid::object!({
-        "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
         "image": image_info,
         "image_detail_json": image_detail_json,
-        "page_title": format!("{} - Photo Gallery", image_info.name),
-        "meta_description": format!("View {} in our photo gallery", image_info.name),
-        "app_name": app_state.app_name(),
-        "copyright_holder": gallery.config.copyright_holder,
         "base_url": app_state.base_url(),
-        "og_title": image_info.name,
-        "og_description": format!("Photo: {}", image_info.name),
-        "og_image": format!("{}{}", app_state.base_url().unwrap_or(""), image_info.medium_url),
-        "og_image_width": image_info.dimensions.0,
-        "og_image_height": image_info.dimensions.1,
-        "twitter_card_type": "summary_large_image",
-        "is_authenticated": is_authenticated,
-        "current_user": current_user,
-        "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
+        "is_authenticated": auth.is_authenticated(),
+        "current_user": auth.username().unwrap_or_default().to_string(),
     });
 
     match template_engine
