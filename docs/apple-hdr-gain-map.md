@@ -74,39 +74,52 @@ hdr = sdr * exp2(log_boost)
 
 ## Conversion Approach
 
-### Pixel Value Transformation
+### The Challenge: Different Interpolation Curves
 
-Apple's gain map uses 128-255 range (128 = neutral), while ISO expects 0-255 (0 = neutral).
+The formulas are mathematically different in the mid-tones:
 
-We transform Apple's pixels:
-```rust
-new_value = clamp((old_value - 128) * 2, 0, 255)
-```
+- **Apple**: `scale = 1 + (headroom - 1) * pow(gainmap, 2.4)` (linear interpolation)
+- **ISO**: `scale = exp2(log2(headroom) * pow(gainmap, 2.4))` (exponential interpolation)
 
-This maps:
-- Apple 128 → ISO 0 (no boost)
-- Apple 255 → ISO 254 (maximum boost)
+At endpoints (gainmap=0 and gainmap=1), both give the same result. But in the midtones, the difference is significant:
 
-### Parameter Mapping
+| Gainmap Value | Apple Scale | ISO Scale | Difference |
+|---------------|-------------|-----------|------------|
+| 0.0 | 1.000 | 1.000 | 0% |
+| 0.3 | 1.213 | 1.046 | -14% |
+| 0.5 | 2.319 | 1.490 | -36% |
+| 0.7 | 4.423 | 2.530 | -43% |
+| 1.0 | 8.000 | 8.000 | 0% |
+
+*(Example with headroom = 8.0)*
+
+### Our Solution: Lookup Table Transformation
+
+Rather than using a simple linear pixel shift, we pre-transform Apple's gain map pixels using a lookup table (LUT) that makes ISO's formula produce the same scale factors as Apple's formula.
+
+For each input pixel value (0-255 in Apple's encoding where 128=neutral):
+
+1. **Shift** Apple's range: `normalized = (value - 128) / 127` (128→0, 255→1)
+2. **Apply sRGB EOTF** to get linear: `linear = sRGB_EOTF(normalized)`
+3. **Compute target scale** using Apple's formula: `target = 1 + (headroom - 1) * linear`
+4. **Solve for ISO input** that produces the same scale:
+   - ISO: `scale = exp2(max * pow(gainmap, 1/gamma))`
+   - Rearranging: `gainmap = (log2(target) / max)^gamma`
+5. **Store** the result in the LUT
+
+The LUT is built once per image based on its headroom value, then applied efficiently to all pixels.
+
+### ISO Parameter Mapping
 
 | ISO Parameter | Value | Rationale |
 |---------------|-------|-----------|
-| `gamma` | 1/2.4 ≈ 0.417 | sRGB EOTF uses ~2.4, ISO applies 1/gamma |
-| `min` | 0.0 | log2(1) = 0, no boost at gain_map=0 |
-| `max` | log2(headroom) | e.g., log2(6.91) ≈ 2.79 |
+| `gamma` | 1/2.4 ≈ 0.417 | Matches sRGB EOTF; ISO applies 1/gamma so recovery = pow(x, 2.4) |
+| `min` | 0.0 | log2(1) = 0, no boost when gain_map = 0 |
+| `max` | log2(headroom) | e.g., log2(6.91) ≈ 2.79 for full headroom |
 | `base_offset` | 1/64 | Standard value for numerical stability |
 | `alternate_offset` | 1/64 | Standard value |
 | `base_hdr_headroom` | 0.0 | Base is SDR |
 | `alternate_hdr_headroom` | log2(headroom) | Matches max |
-
-### Mathematical Difference
-
-The formulas are mathematically different in the mid-tones:
-
-- **Apple**: `scale = 1 + (headroom - 1) * pow(gainmap, 2.4)`
-- **ISO**: `scale = exp2(log2(headroom) * pow(gainmap, 2.4))`
-
-At endpoints (gainmap=0 and gainmap=1), both give the same result. In between, there's a slight tonal difference due to the linear vs exponential interpolation.
 
 ## Implementation Notes
 

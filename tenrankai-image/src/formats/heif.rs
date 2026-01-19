@@ -449,12 +449,14 @@ fn extract_gain_map_info(
                     .as_ref()
                     .is_some_and(|xmp| xmp.gamma == 1.0 && xmp.gain_map_min == 0.0 && xmp.gain_map_max == 0.0);
 
-                // Transform Apple's gain map from 128-255 range to 0-255 range
+                // Transform Apple's gain map to produce equivalent results with ISO 21496-1
                 // Apple uses 128 as neutral (SDR), ISO 21496-1 uses 0 as neutral
+                // Additionally, the curves differ in midtones so we pre-transform pixels
                 let gain_map_image = if is_apple_format {
+                    let headroom = xmp_metadata.as_ref().map(|x| x.hdr_capacity_max).unwrap_or(1.0);
                     raw_gain_map.map(|img| {
-                        debug!("Transforming Apple gain map from 128-255 to 0-255 range");
-                        transform_apple_gain_map(&img)
+                        debug!("Transforming Apple gain map with headroom={} for ISO 21496-1 compatibility", headroom);
+                        transform_apple_gain_map(&img, headroom)
                     })
                 } else {
                     raw_gain_map
@@ -611,20 +613,26 @@ fn decode_auxiliary_image(
     }
 }
 
-/// Transform Apple's gain map from 128-255 range to 0-255 range
+/// Transform Apple's gain map to produce equivalent results with ISO 21496-1 formula
 ///
-/// Apple HDR gain maps use 128 as the neutral point (no boost):
-/// - 128 = SDR (no change)
-/// - 255 = maximum HDR boost
+/// Apple's HDR formula:
+///   linear = sRGB_EOTF(pixel/255)
+///   scale = 1 + (headroom - 1) * linear
 ///
-/// ISO 21496-1 expects 0 as the neutral point:
-/// - 0 = minimum boost (usually SDR)
-/// - 255 = maximum boost
+/// This means pixel 0 = no boost (scale 1.0), pixel 255 = max boost (scale = headroom).
+/// Pixel 128 gives scale ≈ 2.27 (NOT neutral as sometimes documented).
 ///
-/// This function remaps: new = clamp((old - 128) * 2, 0, 255)
+/// ISO 21496-1 formula:
+///   recovery = pow(pixel/255, 1/gamma)
+///   scale = exp2(max * recovery)    // with min=0
+///
+/// We pre-transform pixels using a LUT so ISO's formula produces Apple's scales.
 #[cfg(feature = "avif")]
-fn transform_apple_gain_map(image: &DynamicImage) -> DynamicImage {
+fn transform_apple_gain_map(image: &DynamicImage, headroom: f32) -> DynamicImage {
     use image::{GenericImageView, Pixel};
+
+    // Pre-compute lookup table for efficiency (256 entries)
+    let lut = build_apple_to_iso_lut(headroom);
 
     let (width, height) = image.dimensions();
 
@@ -634,9 +642,9 @@ fn transform_apple_gain_map(image: &DynamicImage) -> DynamicImage {
             for (x, y, pixel) in img.enumerate_pixels() {
                 let channels = pixel.channels();
                 let new_pixel = Rgb([
-                    transform_apple_pixel(channels[0]),
-                    transform_apple_pixel(channels[1]),
-                    transform_apple_pixel(channels[2]),
+                    lut[channels[0] as usize],
+                    lut[channels[1] as usize],
+                    lut[channels[2] as usize],
                 ]);
                 out.put_pixel(x, y, new_pixel);
             }
@@ -647,9 +655,9 @@ fn transform_apple_gain_map(image: &DynamicImage) -> DynamicImage {
             for (x, y, pixel) in img.enumerate_pixels() {
                 let channels = pixel.channels();
                 let new_pixel = Rgba([
-                    transform_apple_pixel(channels[0]),
-                    transform_apple_pixel(channels[1]),
-                    transform_apple_pixel(channels[2]),
+                    lut[channels[0] as usize],
+                    lut[channels[1] as usize],
+                    lut[channels[2] as usize],
                     channels[3], // Keep alpha unchanged
                 ]);
                 out.put_pixel(x, y, new_pixel);
@@ -663,9 +671,9 @@ fn transform_apple_gain_map(image: &DynamicImage) -> DynamicImage {
             for (x, y, pixel) in rgb8.enumerate_pixels() {
                 let channels = pixel.channels();
                 let new_pixel = Rgb([
-                    transform_apple_pixel(channels[0]),
-                    transform_apple_pixel(channels[1]),
-                    transform_apple_pixel(channels[2]),
+                    lut[channels[0] as usize],
+                    lut[channels[1] as usize],
+                    lut[channels[2] as usize],
                 ]);
                 out.put_pixel(x, y, new_pixel);
             }
@@ -674,16 +682,65 @@ fn transform_apple_gain_map(image: &DynamicImage) -> DynamicImage {
     }
 }
 
-/// Transform a single pixel value from Apple's 128-255 range to 0-255
+/// Build lookup table to convert Apple gain map values to ISO-equivalent values
+///
+/// Apple's gain map formula:
+///   linear = sRGB_EOTF(pixel/255)
+///   scale = 1.0 + (headroom - 1.0) * linear
+///
+/// This means:
+///   - Pixel 0 → scale = 1.0 (no boost)
+///   - Pixel 255 → scale = headroom (max boost)
+///   - Pixel 128 → scale ≈ 2.27 for headroom=6.91 (NOT neutral!)
+///
+/// We transform each pixel so ISO's formula produces the same scale.
+#[cfg(feature = "avif")]
+fn build_apple_to_iso_lut(headroom: f32) -> [u8; 256] {
+    let mut lut = [0u8; 256];
+    let gamma = 1.0 / 2.4; // ISO gamma parameter (≈0.417)
+    let log_headroom = headroom.log2();
+
+    for i in 0..256 {
+        // Normalize pixel to 0-1 range (no shift - Apple uses full range)
+        let normalized = i as f32 / 255.0;
+
+        // Apply sRGB EOTF to get linear value (Apple's formula)
+        let linear = srgb_eotf(normalized);
+
+        // Compute target scale using Apple's formula
+        let target_scale = 1.0 + (headroom - 1.0) * linear;
+
+        // Find the ISO gain map value that produces this scale
+        // ISO formula: scale = exp2(max * pow(gainmap, 1/gamma))
+        // where max = log2(headroom) and min = 0
+        //
+        // Solving: log2(target_scale) = max * gainmap^(1/gamma)
+        //          gainmap = (log2(target_scale) / max)^gamma
+
+        let new_value = if target_scale <= 1.0 {
+            0.0
+        } else {
+            let log_target = target_scale.log2();
+            let recovery_needed = (log_target / log_headroom).clamp(0.0, 1.0);
+            recovery_needed.powf(gamma)
+        };
+
+        // Convert to 8-bit
+        lut[i] = (new_value * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+
+    lut
+}
+
+/// sRGB Electro-Optical Transfer Function (EOTF)
+/// Converts sRGB-encoded value to linear light
 #[cfg(feature = "avif")]
 #[inline]
-fn transform_apple_pixel(value: u8) -> u8 {
-    // Remap: 128 -> 0, 255 -> 254 (approximately)
-    // Formula: (value - 128) * 2, clamped to 0-255
-    if value <= 128 {
-        0
+fn srgb_eotf(value: f32) -> f32 {
+    if value <= 0.04045 {
+        value / 12.92
     } else {
-        ((value as u16 - 128) * 2).min(255) as u8
+        ((value + 0.055) / 1.055).powf(2.4)
     }
 }
 
