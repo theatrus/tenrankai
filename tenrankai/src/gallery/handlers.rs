@@ -417,8 +417,22 @@ pub async fn image_detail_handler_for_named(
         .unwrap_or_default();
 
     // Find current image index and get prev/next
-    // We need to compare against the original path (indexed identifier) not the resolved path
-    let current_index = images.iter().position(|img| img.path == path);
+    // For older versions, we need to find the primary image in the navigation
+    // list since older versions aren't directly listed
+    let navigation_path = if let Some((group, is_primary)) =
+        gallery.find_image_group(&resolved_path).await
+    {
+        if is_primary {
+            path.clone()
+        } else {
+            // Use the primary image's path for navigation context
+            group.primary_path.clone()
+        }
+    } else {
+        path.clone()
+    };
+
+    let current_index = images.iter().position(|img| img.path == navigation_path);
 
     // Debug logging to understand the issue
     if current_index.is_none() {

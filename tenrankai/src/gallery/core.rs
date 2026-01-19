@@ -549,9 +549,7 @@ impl Gallery {
                         indexer
                             .get_index(&group.primary_path)
                             .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                urlencoding::encode(&group.primary_path).to_string()
-                            })
+                            .unwrap_or_else(|| urlencoding::encode(&group.primary_path).to_string())
                     };
                     let primary_version = super::ImageVersion {
                         path: group.primary_path.clone(),
