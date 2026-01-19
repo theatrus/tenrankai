@@ -58,9 +58,10 @@ COPY tenrankai-users/src ./tenrankai-users/src
 COPY frontend ./frontend
 COPY package.json package-lock.json tsconfig.json tsconfig.legacy.json vite.config.js .stylelintrc.json ./
 
-# Copy templates and static assets
+# Copy templates, static assets, and build scripts
 COPY templates ./templates
 COPY static ./static
+COPY scripts ./scripts
 
 # Build the application with all features in release mode (will trigger frontend build)
 RUN cargo build --release -p tenrankai
