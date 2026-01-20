@@ -33,3 +33,4 @@ TODO.md
 # Compiled JavaScript output
 /static/js/
 /static/dist/
+static/admin/

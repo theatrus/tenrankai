@@ -32,6 +32,14 @@ impl LoginState {
     }
 
     pub fn create_token(&mut self, username: String) -> String {
+        self.create_token_with_expiry(username, 600) // 10 minutes
+    }
+
+    pub fn create_invite_token(&mut self, username: String) -> String {
+        self.create_token_with_expiry(username, 72 * 60 * 60) // 72 hours
+    }
+
+    fn create_token_with_expiry(&mut self, username: String, expiry_seconds: i64) -> String {
         use rand::{Rng, rng};
 
         let token: String = rng()
@@ -40,7 +48,7 @@ impl LoginState {
             .map(|b| format!("{:02x}", b))
             .collect();
 
-        let expires_at = chrono::Utc::now().timestamp() + 600; // 10 minutes
+        let expires_at = chrono::Utc::now().timestamp() + expiry_seconds;
 
         let login_token = LoginToken {
             username: username.clone(),

@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod api;
 pub mod api_response;
 pub mod cache;
@@ -377,6 +378,57 @@ async fn create_app_internal(
                     axum::routing::put(login::webauthn::update_passkey_name),
                 );
         }
+
+        // Admin routes (require owner_access permission)
+        router = router
+            // User management
+            .route("/_admin/api/users", axum::routing::get(admin::list_users))
+            .route(
+                "/_admin/api/users",
+                axum::routing::post(admin::create_user),
+            )
+            .route(
+                "/_admin/api/users/{username}",
+                axum::routing::get(admin::get_user),
+            )
+            .route(
+                "/_admin/api/users/{username}",
+                axum::routing::put(admin::update_user),
+            )
+            .route(
+                "/_admin/api/users/{username}",
+                axum::routing::delete(admin::delete_user),
+            )
+            .route(
+                "/_admin/api/users/{username}/invite",
+                axum::routing::post(admin::send_invite),
+            )
+            // Gallery management
+            .route(
+                "/_admin/api/galleries",
+                axum::routing::get(admin::list_galleries),
+            )
+            .route(
+                "/_admin/api/galleries/{name}",
+                axum::routing::get(admin::get_gallery),
+            )
+            // Role management
+            .route("/_admin/api/roles", axum::routing::get(admin::list_roles))
+            .route(
+                "/_admin/api/roles/{name}",
+                axum::routing::get(admin::get_role),
+            )
+            // Permission groups (for UI organization)
+            .route(
+                "/_admin/api/permission-groups",
+                axum::routing::get(admin::list_permission_groups),
+            )
+            // Admin SPA catch-all (must be last)
+            .route("/_admin", axum::routing::get(admin::admin_spa_handler))
+            .route(
+                "/_admin/{*path}",
+                axum::routing::get(admin::admin_spa_handler),
+            );
     }
 
     // Add gallery routes dynamically based on site's galleries
