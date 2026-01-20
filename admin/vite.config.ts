@@ -5,7 +5,7 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react()],
   root: '.',
-  base: '/_admin/',
+  base: '/static/admin/',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
