@@ -132,6 +132,7 @@ This is the content of the second test post."#;
             cookie_secret: "test-cookie-secret".to_string(),
             base_url: Some("http://localhost:3000".to_string()),
             user_database: None,
+            config_storage: None,
         },
         templates: tenrankai::TemplateConfig {
             directories: vec![templates_dir.to_string_lossy().to_string()],

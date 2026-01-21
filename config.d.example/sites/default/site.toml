@@ -1,0 +1,35 @@
+# Default Site Configuration
+#
+# This site handles any hostname not matched by other sites.
+# The storage_prefix is set here and cannot be changed via the admin API.
+
+# Hostnames that route to this site
+# "*" is the catch-all default
+hostnames = ["*"]
+
+# Base URL for this site (used for login links, etc.)
+base_url = "https://example.com"
+
+# Template directories (first match wins)
+templates = ["templates"]
+
+# Static file directories (first match wins)
+static_files = ["static"]
+
+# Use signed URL redirects for S3 static files (default: false)
+static_use_redirects = false
+
+# User database path/URL
+# user_database = "users.toml"
+# user_database = "sqlite://users.db"
+# user_database = "postgresql://user:pass@host/db"
+
+# Storage prefix for gallery/posts paths
+# SECURITY: This field cannot be edited via the admin API
+# All gallery source/cache paths are relative to this prefix
+storage_prefix = "/data/sites/default"
+
+# Per-site email configuration (optional, overrides global)
+# [email]
+# from_address = "noreply@example.com"
+# from_name = "Example Site"

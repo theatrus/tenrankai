@@ -183,6 +183,7 @@ impl SiteConfigSection {
                 .or_else(|| app.user_database.clone())
                 .map(|p| p.to_string_lossy().to_string()),
             email,
+            config_storage: app.config_storage.clone(),
         }
     }
 }
@@ -245,6 +246,7 @@ mod tests {
                 cookie_secret: "test".to_string(),
                 base_url: None,
                 user_database: None,
+                config_storage: None,
             },
             email: None,
             openai: None,
@@ -296,6 +298,7 @@ mod tests {
                 cookie_secret: "test".to_string(),
                 base_url: None,
                 user_database: None,
+                config_storage: None,
             },
             email: None,
             openai: None,
@@ -323,6 +326,7 @@ mod tests {
                 cookie_secret: "test".to_string(),
                 base_url: None,
                 user_database: Some("users.toml".into()),
+                config_storage: None,
             },
             email: None,
             openai: None,

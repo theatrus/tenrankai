@@ -134,6 +134,7 @@ mod tests {
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_storage: None,
             email_config: None,
+            config_storage: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }
@@ -147,6 +148,7 @@ mod tests {
                 cookie_secret: "test-secret".to_string(),
                 base_url: None,
                 user_database: None,
+                config_storage: None,
             },
             server: crate::ServerConfig {
                 host: "127.0.0.1".to_string(),

@@ -118,6 +118,10 @@ impl AppState {
     pub fn email_config(&self) -> Option<&email::SiteEmailConfig> {
         self.site.email_config()
     }
+
+    pub fn config_storage(&self) -> &Option<tenrankai_config_storage::DynConfigStorage> {
+        self.site.config_storage()
+    }
 }
 
 // Accessor methods for site-specific config values
@@ -412,16 +416,49 @@ async fn create_app_internal(
                 "/_admin/api/galleries/{name}",
                 axum::routing::get(admin::get_gallery),
             )
+            .route(
+                "/_admin/api/galleries/{name}/permissions",
+                axum::routing::put(admin::update_gallery_permissions),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/users/{username}/roles",
+                axum::routing::get(admin::get_user_gallery_roles)
+                    .put(admin::assign_user_roles),
+            )
             // Role management
-            .route("/_admin/api/roles", axum::routing::get(admin::list_roles))
+            .route(
+                "/_admin/api/roles",
+                axum::routing::get(admin::list_roles)
+                    .post(admin::create_role),
+            )
             .route(
                 "/_admin/api/roles/{name}",
-                axum::routing::get(admin::get_role),
+                axum::routing::get(admin::get_role)
+                    .put(admin::update_role)
+                    .delete(admin::delete_role),
             )
             // Permission groups (for UI organization)
             .route(
                 "/_admin/api/permission-groups",
                 axum::routing::get(admin::list_permission_groups),
+            )
+            // Site management (ConfigStorage mode)
+            .route(
+                "/_admin/api/sites",
+                axum::routing::get(admin::list_sites),
+            )
+            .route(
+                "/_admin/api/sites/{name}",
+                axum::routing::get(admin::get_site)
+                    .put(admin::update_site),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries",
+                axum::routing::get(admin::list_site_galleries),
+            )
+            .route(
+                "/_admin/api/sites/{site}/reload",
+                axum::routing::post(admin::reload_site),
             )
             // Admin SPA catch-all (must be last)
             .route("/_admin", axum::routing::get(admin::admin_spa_handler))

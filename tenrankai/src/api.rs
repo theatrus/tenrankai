@@ -2305,6 +2305,7 @@ roles = ["viewer"]
                 cookie_secret: "test-secret".to_string(),
                 log_level: crate::LogLevel::Info,
                 aws_log_level: crate::LogLevel::Warn,
+                config_storage: None,
             },
             server: crate::ServerConfig {
                 host: "127.0.0.1".to_string(),
@@ -2372,6 +2373,7 @@ roles = ["viewer"]
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_storage,
             email_config: None,
+            config_storage: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);

@@ -1,0 +1,23 @@
+# Photography Portfolio Site Configuration
+#
+# This site is dedicated to photography portfolios.
+# Access via photos.example.com or photos.localhost
+
+# Hostnames that route to this site
+hostnames = ["photos.example.com", "photos.localhost"]
+
+# Base URL for this site
+base_url = "https://photos.example.com"
+
+# Template directories (custom templates first, then defaults)
+templates = ["templates-photos", "templates"]
+
+# Static file directories
+static_files = ["static-photos", "static"]
+
+# User database for this site
+user_database = "users-photos.toml"
+
+# Storage prefix for gallery/posts paths
+# SECURITY: This field cannot be edited via the admin API
+storage_prefix = "/data/sites/photos"

@@ -1,0 +1,46 @@
+# Site Permissions Configuration
+#
+# These permissions apply to all galleries in this site.
+# Can be edited via admin API at /_admin/api/sites/default/permissions
+
+# Role assigned to unauthenticated users
+# Use "none" to require authentication
+public_role = "viewer"
+
+# Role assigned to authenticated users without specific role assignments
+default_authenticated_role = "contributor"
+
+# Custom role definitions
+[roles.viewer]
+[roles.viewer.permissions]
+can_view = true
+can_download_medium = true
+
+[roles.contributor]
+inherits = "viewer"
+[roles.contributor.permissions]
+can_see_technical_details = true
+can_see_exact_dates = true
+can_see_location = true
+can_download_large = true
+can_read_metadata = true
+can_add_comments = true
+can_edit_own_comments = true
+can_delete_own_comments = true
+can_set_picks = true
+can_add_tags = true
+can_use_zoom = true
+can_use_tile_zoom = true
+
+[roles.admin]
+[roles.admin.permissions]
+owner_access = true
+
+# User role assignments
+[[user_roles]]
+username = "alice"
+roles = ["admin"]
+
+[[user_roles]]
+username = "bob"
+roles = ["contributor"]

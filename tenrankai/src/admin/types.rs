@@ -165,3 +165,111 @@ pub struct PermissionGroup {
 pub struct PermissionGroupsResponse {
     pub groups: Vec<PermissionGroup>,
 }
+
+// ============================================================================
+// Request Types for Config Storage Operations
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRoleRequest {
+    pub name: String,
+    pub permissions: RolePermissionsDto,
+    pub inherits: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRoleRequest {
+    pub permissions: RolePermissionsDto,
+    pub inherits: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateGalleryPermissionsRequest {
+    pub public_role: Option<String>,
+    pub default_authenticated_role: Option<String>,
+    #[serde(default)]
+    pub roles: HashMap<String, RoleDto>,
+    #[serde(default)]
+    pub user_roles: Vec<UserRoleAssignment>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignUserRolesRequest {
+    pub roles: Vec<String>,
+}
+
+// ============================================================================
+// Site Management Types
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct SiteInfo {
+    pub name: String,
+    pub hostnames: Vec<String>,
+    pub base_url: Option<String>,
+    pub templates: Vec<String>,
+    pub static_files: Vec<String>,
+    pub static_use_redirects: bool,
+    pub user_database: Option<String>,
+    pub storage_prefix: Option<String>,
+    pub gallery_count: usize,
+    pub posts_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SiteListResponse {
+    pub sites: Vec<SiteInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSiteRequest {
+    pub hostnames: Option<Vec<String>>,
+    pub base_url: Option<String>,
+    pub templates: Option<Vec<String>>,
+    pub static_files: Option<Vec<String>>,
+    pub static_use_redirects: Option<bool>,
+    pub user_database: Option<String>,
+    // NOTE: storage_prefix is intentionally NOT included - cannot be edited via API
+}
+
+#[derive(Debug, Serialize)]
+pub struct SiteGalleryInfo {
+    pub name: String,
+    pub url_prefix: String,
+    pub source_directory: String,
+    pub cache_directory: String,
+    pub images_per_page: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SiteGalleryListResponse {
+    pub galleries: Vec<SiteGalleryInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGalleryRequest {
+    pub name: String,
+    pub url_prefix: String,
+    pub source_directory: String,
+    pub cache_directory: String,
+    #[serde(default = "default_images_per_page")]
+    pub images_per_page: usize,
+}
+
+fn default_images_per_page() -> usize {
+    50
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateGalleryRequest {
+    pub url_prefix: Option<String>,
+    pub source_directory: Option<String>,
+    pub cache_directory: Option<String>,
+    pub images_per_page: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReloadSiteResponse {
+    pub success: bool,
+    pub message: String,
+}

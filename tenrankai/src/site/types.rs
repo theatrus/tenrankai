@@ -1,4 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
+use tenrankai_config_storage::DynConfigStorage;
 use tokio::sync::RwLock;
 
 use crate::{
@@ -20,6 +21,7 @@ pub struct SiteConfig {
     pub posts: Option<Vec<PostsSystemConfig>>,
     pub user_database: Option<String>,
     pub email: Option<SiteEmailConfig>,
+    pub config_storage: Option<String>,
 }
 
 impl SiteConfig {
@@ -42,6 +44,7 @@ impl SiteConfig {
                 .as_ref()
                 .map(|p| p.to_string_lossy().to_string()),
             email: email_config.map(SiteEmailConfig::from),
+            config_storage: config.app.config_storage.clone(),
         }
     }
 }
@@ -58,6 +61,7 @@ pub struct SiteResources {
     pub login_state: Arc<RwLock<LoginState>>,
     pub user_storage: Option<DynUserStorage>,
     pub email_config: Option<SiteEmailConfig>,
+    pub config_storage: Option<DynConfigStorage>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -117,6 +121,10 @@ impl Site {
     pub fn email_config(&self) -> Option<&SiteEmailConfig> {
         self.resources.email_config.as_ref()
     }
+
+    pub fn config_storage(&self) -> &Option<DynConfigStorage> {
+        &self.resources.config_storage
+    }
 }
 
 #[cfg(test)]
@@ -136,6 +144,7 @@ mod tests {
             login_state: Arc::new(RwLock::new(LoginState::new())),
             user_storage: None,
             email_config: None,
+            config_storage: None,
         };
         Site::new(name.to_string(), resources)
     }

@@ -164,6 +164,7 @@ impl Default for Config {
                 cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
                 base_url: None,
                 user_database: None,
+                config_storage: None,
             },
             templates: TemplateConfig {
                 directories: vec!["templates".to_string()],

@@ -13,6 +13,7 @@ use crate::{
     templating::TemplateEngine,
     user_storage::{DynUserStorage, create_user_storage},
 };
+use tenrankai_config_storage::{ConfigStorageUrl, DynConfigStorage, create_config_storage};
 
 /// Builder for constructing Site instances
 pub struct SiteBuilder {
@@ -58,6 +59,9 @@ impl SiteBuilder {
         // Build login state and user storage
         let (login_state, user_storage) = self.build_login_state().await?;
 
+        // Build config storage
+        let config_storage = self.build_config_storage().await?;
+
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),
             cookie_secret: self.config.cookie_secret.clone(),
@@ -69,6 +73,7 @@ impl SiteBuilder {
             login_state,
             user_storage,
             email_config: self.config.email.clone(),
+            config_storage,
         };
 
         info!("Site '{}' built successfully", self.config.name);
@@ -268,5 +273,27 @@ impl SiteBuilder {
         };
 
         Ok((login_state, user_storage))
+    }
+
+    async fn build_config_storage(&self) -> Result<Option<DynConfigStorage>, SiteBuilderError> {
+        let Some(config_url) = &self.config.config_storage else {
+            return Ok(None);
+        };
+
+        let url = ConfigStorageUrl::parse(config_url).map_err(|e| {
+            SiteBuilderError::ConfigStorage(format!("Failed to parse config storage URL: {}", e))
+        })?;
+
+        let storage = create_config_storage(&url).await.map_err(|e| {
+            SiteBuilderError::ConfigStorage(format!("Failed to create config storage: {}", e))
+        })?;
+
+        info!(
+            "Config storage initialized from '{}' (backend: {})",
+            config_url,
+            storage.backend_name()
+        );
+
+        Ok(Some(storage))
     }
 }

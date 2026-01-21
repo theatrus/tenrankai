@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "tenrankai",
+    "tenrankai-config-storage",
     "tenrankai-email",
     "tenrankai-image",
     "tenrankai-metadata",
@@ -108,6 +109,7 @@ axum-test = "18.7"
 regex = "1"
 
 # Internal crates
+tenrankai-config-storage = { path = "tenrankai-config-storage" }
 tenrankai-email = { path = "tenrankai-email" }
 tenrankai-image = { path = "tenrankai-image" }
 tenrankai-metadata = { path = "tenrankai-metadata" }

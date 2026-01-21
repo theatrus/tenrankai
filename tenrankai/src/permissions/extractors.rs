@@ -92,7 +92,7 @@ async fn resolve_permissions(
         None
     };
 
-    // Create resolver
+    // Use gallery's permission config directly (no per-request merging)
     let resolver = PermissionResolver::new(
         &gallery.config.permissions,
         folder_config.as_ref().map(|fc| &fc.permissions),
@@ -351,7 +351,7 @@ pub async fn resolve_permissions_for_path(
         None
     };
 
-    // Create resolver
+    // Use gallery's permission config directly (no per-request merging)
     let resolver = PermissionResolver::new(
         &gallery.config.permissions,
         folder_config.as_ref().map(|fc| &fc.permissions),
@@ -410,6 +410,7 @@ mod tests {
             )),
             user_storage: None,
             email_config: None,
+            config_storage: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);

@@ -4,6 +4,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Json,
 };
+use tenrankai_config_storage::{GalleryPermissionConfig, Role as ConfigRole};
 
 use super::error::AdminError;
 use super::extractors::RequireAdmin;
@@ -442,11 +443,11 @@ fn contributor_permissions() -> RolePermissions {
 
 /// List all available roles (built-in + custom)
 pub async fn list_roles(
-    ResolvedState(_app_state): ResolvedState,
+    ResolvedState(app_state): ResolvedState,
     _admin: RequireAdmin,
 ) -> Result<Json<RoleListResponse>, AdminError> {
     // Built-in roles
-    let roles = vec![
+    let mut roles = vec![
         RoleDto {
             name: "viewer".to_string(),
             permissions: RolePermissionsDto::from(&viewer_permissions()),
@@ -470,30 +471,44 @@ pub async fn list_roles(
         },
     ];
 
+    // Add custom roles from config storage
+    if let Some(config_storage) = app_state.config_storage()
+        && let Ok(custom_roles) = config_storage.list_roles().await
+    {
+        for (name, role) in custom_roles {
+            roles.push(RoleDto {
+                name,
+                permissions: config_role_to_dto(&role.permissions),
+                inherits: role.inherits,
+                is_builtin: false,
+            });
+        }
+    }
+
     Ok(Json(RoleListResponse { roles }))
 }
 
 /// Get a specific role
 pub async fn get_role(
-    ResolvedState(_app_state): ResolvedState,
+    ResolvedState(app_state): ResolvedState,
     _admin: RequireAdmin,
     Path(name): Path<String>,
 ) -> Result<Json<RoleDto>, AdminError> {
-    // Check built-in roles
+    // Check built-in roles first
     let role = match name.as_str() {
-        "viewer" => RoleDto {
+        "viewer" => Some(RoleDto {
             name: "viewer".to_string(),
             permissions: RolePermissionsDto::from(&viewer_permissions()),
             inherits: None,
             is_builtin: true,
-        },
-        "contributor" => RoleDto {
+        }),
+        "contributor" => Some(RoleDto {
             name: "contributor".to_string(),
             permissions: RolePermissionsDto::from(&contributor_permissions()),
             inherits: None,
             is_builtin: true,
-        },
-        "admin" => RoleDto {
+        }),
+        "admin" => Some(RoleDto {
             name: "admin".to_string(),
             permissions: RolePermissionsDto {
                 owner_access: true,
@@ -501,11 +516,145 @@ pub async fn get_role(
             },
             inherits: None,
             is_builtin: true,
-        },
-        _ => return Err(AdminError::NotFound(format!("Role not found: {}", name))),
+        }),
+        _ => None,
     };
 
-    Ok(Json(role))
+    if let Some(role) = role {
+        return Ok(Json(role));
+    }
+
+    // Check custom roles from config storage
+    if let Some(config_storage) = app_state.config_storage()
+        && let Ok(Some(role)) = config_storage.get_role(&name).await
+    {
+        return Ok(Json(RoleDto {
+            name,
+            permissions: config_role_to_dto(&role.permissions),
+            inherits: role.inherits,
+            is_builtin: false,
+        }));
+    }
+
+    Err(AdminError::NotFound(format!("Role not found: {}", name)))
+}
+
+/// Create a new custom role
+pub async fn create_role(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Json(request): Json<CreateRoleRequest>,
+) -> Result<Json<RoleDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Don't allow overwriting built-in roles
+    if matches!(request.name.as_str(), "viewer" | "contributor" | "admin") {
+        return Err(AdminError::BadRequest(
+            "Cannot create role with built-in name".into(),
+        ));
+    }
+
+    // Check if role already exists
+    if let Ok(Some(_)) = config_storage.get_role(&request.name).await {
+        return Err(AdminError::BadRequest(format!(
+            "Role already exists: {}",
+            request.name
+        )));
+    }
+
+    let role = ConfigRole {
+        permissions: dto_to_config_permissions(&request.permissions),
+        inherits: request.inherits,
+    };
+
+    config_storage
+        .set_role(&request.name, &role, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(Json(RoleDto {
+        name: request.name,
+        permissions: request.permissions,
+        inherits: role.inherits,
+        is_builtin: false,
+    }))
+}
+
+/// Update an existing custom role
+pub async fn update_role(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path(name): Path<String>,
+    Json(request): Json<UpdateRoleRequest>,
+) -> Result<Json<RoleDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Don't allow modifying built-in roles
+    if matches!(name.as_str(), "viewer" | "contributor" | "admin") {
+        return Err(AdminError::BadRequest(
+            "Cannot modify built-in roles".into(),
+        ));
+    }
+
+    // Verify role exists
+    config_storage
+        .get_role(&name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound(format!("Role not found: {}", name)))?;
+
+    let role = ConfigRole {
+        permissions: dto_to_config_permissions(&request.permissions),
+        inherits: request.inherits,
+    };
+
+    config_storage
+        .set_role(&name, &role, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(Json(RoleDto {
+        name,
+        permissions: request.permissions,
+        inherits: role.inherits,
+        is_builtin: false,
+    }))
+}
+
+/// Delete a custom role
+pub async fn delete_role(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path(name): Path<String>,
+) -> Result<StatusCode, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Don't allow deleting built-in roles
+    if matches!(name.as_str(), "viewer" | "contributor" | "admin") {
+        return Err(AdminError::BadRequest(
+            "Cannot delete built-in roles".into(),
+        ));
+    }
+
+    let deleted = config_storage
+        .delete_role(&name, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AdminError::NotFound(format!("Role not found: {}", name)))
+    }
 }
 
 // ============================================================================
@@ -587,4 +736,457 @@ pub async fn list_permission_groups(_admin: RequireAdmin) -> Json<PermissionGrou
     ];
 
     Json(PermissionGroupsResponse { groups })
+}
+
+// ============================================================================
+// Gallery Permission Management
+// ============================================================================
+
+/// Update gallery permissions
+pub async fn update_gallery_permissions(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path(gallery_name): Path<String>,
+    Json(request): Json<UpdateGalleryPermissionsRequest>,
+) -> Result<Json<GalleryInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify gallery exists
+    let gallery = app_state
+        .galleries()
+        .get(&gallery_name)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery_name)))?;
+
+    // Build the gallery permission config
+    let config = GalleryPermissionConfig {
+        public_role: request.public_role,
+        default_authenticated_role: request.default_authenticated_role,
+        roles: request
+            .roles
+            .into_iter()
+            .map(|(name, role)| {
+                (
+                    name,
+                    ConfigRole {
+                        permissions: dto_to_config_permissions(&role.permissions),
+                        inherits: role.inherits,
+                    },
+                )
+            })
+            .collect(),
+        user_roles: request
+            .user_roles
+            .into_iter()
+            .map(|ur| tenrankai_config_storage::UserRole {
+                username: ur.username,
+                roles: ur.roles,
+            })
+            .collect(),
+    };
+
+    config_storage
+        .set_gallery_config(&gallery_name, &config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Return the updated gallery info
+    let gallery_config = gallery.get_config();
+    Ok(Json(GalleryInfo {
+        name: gallery_name,
+        url_prefix: gallery_config.url_prefix.clone(),
+        permissions: PermissionConfigDto {
+            public_role: config.public_role,
+            default_authenticated_role: config.default_authenticated_role,
+            roles: config
+                .roles
+                .iter()
+                .map(|(name, role)| {
+                    (
+                        name.clone(),
+                        RoleDto {
+                            name: name.clone(),
+                            permissions: config_role_to_dto(&role.permissions),
+                            inherits: role.inherits.clone(),
+                            is_builtin: false,
+                        },
+                    )
+                })
+                .collect(),
+            user_roles: config
+                .user_roles
+                .iter()
+                .map(|ur| UserRoleAssignment {
+                    username: ur.username.clone(),
+                    roles: ur.roles.clone(),
+                })
+                .collect(),
+        },
+    }))
+}
+
+/// Assign roles to a user for a gallery
+pub async fn assign_user_roles(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery_name, username)): Path<(String, String)>,
+    Json(request): Json<AssignUserRolesRequest>,
+) -> Result<StatusCode, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify gallery exists
+    if !app_state.galleries().contains_key(&gallery_name) {
+        return Err(AdminError::NotFound(format!(
+            "Gallery not found: {}",
+            gallery_name
+        )));
+    }
+
+    config_storage
+        .set_user_roles(&gallery_name, &username, &request.roles, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Get roles assigned to a user for a gallery
+pub async fn get_user_gallery_roles(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((gallery_name, username)): Path<(String, String)>,
+) -> Result<Json<UserRoleAssignment>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify gallery exists
+    if !app_state.galleries().contains_key(&gallery_name) {
+        return Err(AdminError::NotFound(format!(
+            "Gallery not found: {}",
+            gallery_name
+        )));
+    }
+
+    let roles = config_storage
+        .get_user_roles(&gallery_name, &username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(Json(UserRoleAssignment { username, roles }))
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Convert config storage RolePermissions to DTO
+fn config_role_to_dto(perms: &tenrankai_config_storage::RolePermissions) -> RolePermissionsDto {
+    RolePermissionsDto {
+        can_view: perms.can_view,
+        can_see_technical_details: perms.can_see_technical_details,
+        can_see_exact_dates: perms.can_see_exact_dates,
+        can_see_location: perms.can_see_location,
+        can_download_medium: perms.can_download_medium,
+        can_download_large: perms.can_download_large,
+        can_download_original: perms.can_download_original,
+        can_download_gallery: perms.can_download_gallery,
+        can_download_raw: perms.can_download_raw,
+        can_see_versions: perms.can_see_versions,
+        can_read_metadata: perms.can_read_metadata,
+        can_edit_content: perms.can_edit_content,
+        can_add_comments: perms.can_add_comments,
+        can_edit_own_comments: perms.can_edit_own_comments,
+        can_delete_own_comments: perms.can_delete_own_comments,
+        can_set_picks: perms.can_set_picks,
+        can_add_tags: perms.can_add_tags,
+        can_edit_any_comments: perms.can_edit_any_comments,
+        can_delete_any_comments: perms.can_delete_any_comments,
+        can_use_zoom: perms.can_use_zoom,
+        can_use_tile_zoom: perms.can_use_tile_zoom,
+        can_analyze_images: perms.can_analyze_images,
+        can_see_ai_analysis: perms.can_see_ai_analysis,
+        can_see_ai_alt_text: perms.can_see_ai_alt_text,
+        owner_access: perms.owner_access,
+    }
+}
+
+/// Convert DTO to config storage RolePermissions
+fn dto_to_config_permissions(dto: &RolePermissionsDto) -> tenrankai_config_storage::RolePermissions {
+    tenrankai_config_storage::RolePermissions {
+        can_view: dto.can_view,
+        can_see_technical_details: dto.can_see_technical_details,
+        can_see_exact_dates: dto.can_see_exact_dates,
+        can_see_location: dto.can_see_location,
+        can_download_medium: dto.can_download_medium,
+        can_download_large: dto.can_download_large,
+        can_download_original: dto.can_download_original,
+        can_download_gallery: dto.can_download_gallery,
+        can_download_raw: dto.can_download_raw,
+        can_see_versions: dto.can_see_versions,
+        can_read_metadata: dto.can_read_metadata,
+        can_edit_content: dto.can_edit_content,
+        can_add_comments: dto.can_add_comments,
+        can_edit_own_comments: dto.can_edit_own_comments,
+        can_delete_own_comments: dto.can_delete_own_comments,
+        can_set_picks: dto.can_set_picks,
+        can_add_tags: dto.can_add_tags,
+        can_edit_any_comments: dto.can_edit_any_comments,
+        can_delete_any_comments: dto.can_delete_any_comments,
+        can_use_zoom: dto.can_use_zoom,
+        can_use_tile_zoom: dto.can_use_tile_zoom,
+        can_analyze_images: dto.can_analyze_images,
+        can_see_ai_analysis: dto.can_see_ai_analysis,
+        can_see_ai_alt_text: dto.can_see_ai_alt_text,
+        owner_access: dto.owner_access,
+    }
+}
+
+// ============================================================================
+// Site Management
+// ============================================================================
+
+/// List all sites
+pub async fn list_sites(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+) -> Result<Json<SiteListResponse>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let site_names = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let mut sites = Vec::new();
+    for name in site_names {
+        if let Ok(Some(config)) = config_storage.get_site_config(&name).await {
+            let gallery_count = config_storage
+                .list_galleries(&name)
+                .await
+                .map(|g| g.len())
+                .unwrap_or(0);
+            let posts_count = config_storage
+                .list_posts(&name)
+                .await
+                .map(|p| p.len())
+                .unwrap_or(0);
+
+            sites.push(SiteInfo {
+                name,
+                hostnames: config.hostnames,
+                base_url: config.base_url,
+                templates: config.templates,
+                static_files: config.static_files,
+                static_use_redirects: config.static_use_redirects,
+                user_database: config.user_database,
+                storage_prefix: config.storage_prefix,
+                gallery_count,
+                posts_count,
+            });
+        }
+    }
+
+    Ok(Json(SiteListResponse { sites }))
+}
+
+/// Get a single site
+pub async fn get_site(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(name): Path<String>,
+) -> Result<Json<SiteInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let config = config_storage
+        .get_site_config(&name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound(format!("Site not found: {}", name)))?;
+
+    let gallery_count = config_storage
+        .list_galleries(&name)
+        .await
+        .map(|g| g.len())
+        .unwrap_or(0);
+    let posts_count = config_storage
+        .list_posts(&name)
+        .await
+        .map(|p| p.len())
+        .unwrap_or(0);
+
+    Ok(Json(SiteInfo {
+        name,
+        hostnames: config.hostnames,
+        base_url: config.base_url,
+        templates: config.templates,
+        static_files: config.static_files,
+        static_use_redirects: config.static_use_redirects,
+        user_database: config.user_database,
+        storage_prefix: config.storage_prefix,
+        gallery_count,
+        posts_count,
+    }))
+}
+
+/// Update a site (NOTE: storage_prefix cannot be edited via API)
+pub async fn update_site(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path(name): Path<String>,
+    Json(request): Json<UpdateSiteRequest>,
+) -> Result<Json<SiteInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Get existing config
+    let mut config = config_storage
+        .get_site_config(&name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound(format!("Site not found: {}", name)))?;
+
+    // Update fields (storage_prefix is NOT updated)
+    if let Some(hostnames) = request.hostnames {
+        config.hostnames = hostnames;
+    }
+    if let Some(base_url) = request.base_url {
+        config.base_url = Some(base_url);
+    }
+    if let Some(templates) = request.templates {
+        config.templates = templates;
+    }
+    if let Some(static_files) = request.static_files {
+        config.static_files = static_files;
+    }
+    if let Some(static_use_redirects) = request.static_use_redirects {
+        config.static_use_redirects = static_use_redirects;
+    }
+    if let Some(user_database) = request.user_database {
+        config.user_database = Some(user_database);
+    }
+
+    // Save the updated config
+    config_storage
+        .set_site_config(&name, &config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let gallery_count = config_storage
+        .list_galleries(&name)
+        .await
+        .map(|g| g.len())
+        .unwrap_or(0);
+    let posts_count = config_storage
+        .list_posts(&name)
+        .await
+        .map(|p| p.len())
+        .unwrap_or(0);
+
+    Ok(Json(SiteInfo {
+        name,
+        hostnames: config.hostnames,
+        base_url: config.base_url,
+        templates: config.templates,
+        static_files: config.static_files,
+        static_use_redirects: config.static_use_redirects,
+        user_database: config.user_database,
+        storage_prefix: config.storage_prefix,
+        gallery_count,
+        posts_count,
+    }))
+}
+
+/// List galleries for a site
+pub async fn list_site_galleries(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(site): Path<String>,
+) -> Result<Json<SiteGalleryListResponse>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let gallery_names = config_storage
+        .list_galleries(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let mut galleries = Vec::new();
+    for name in gallery_names {
+        if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
+            galleries.push(SiteGalleryInfo {
+                name,
+                url_prefix: config.url_prefix,
+                source_directory: config.source_directory,
+                cache_directory: config.cache_directory,
+                images_per_page: config.images_per_page,
+            });
+        }
+    }
+
+    Ok(Json(SiteGalleryListResponse { galleries }))
+}
+
+/// Trigger site reload
+pub async fn reload_site(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(site): Path<String>,
+) -> Result<Json<ReloadSiteResponse>, AdminError> {
+    // Check if we have a site manager
+    let Some(site_manager) = app_state.site_manager.as_ref() else {
+        return Ok(Json(ReloadSiteResponse {
+            success: false,
+            message: "Site manager not available (single-site mode)".to_string(),
+        }));
+    };
+
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Get the config_storage URL from the app config
+    let config_storage_url = app_state
+        .config
+        .app
+        .config_storage
+        .as_ref()
+        .ok_or(AdminError::Internal(
+            "Config storage URL not configured".into(),
+        ))?;
+
+    // Create a ConfigStorageLoader
+    let loader = crate::config::ConfigStorageLoader::new(
+        config_storage.clone(),
+        app_state.config.app.cookie_secret.clone(),
+    );
+
+    // Reload the site
+    match site_manager.reload_site(&site, &loader, config_storage_url).await {
+        Ok(()) => Ok(Json(ReloadSiteResponse {
+            success: true,
+            message: format!("Site '{}' reloaded successfully", site),
+        })),
+        Err(e) => Ok(Json(ReloadSiteResponse {
+            success: false,
+            message: format!("Failed to reload site '{}': {}", site, e),
+        })),
+    }
 }

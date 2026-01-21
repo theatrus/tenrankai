@@ -45,6 +45,13 @@ pub struct AppConfig {
     pub base_url: Option<String>,
     #[serde(default)]
     pub user_database: Option<PathBuf>,
+    /// Config storage backend for admin UI changes
+    /// Supports file directories or S3 URLs:
+    /// - `"config.d"` - relative directory path
+    /// - `"/var/lib/tenrankai/config.d"` - absolute directory path
+    /// - `"s3://bucket/config"` - S3 storage
+    #[serde(default)]
+    pub config_storage: Option<String>,
 }
 
 /// Template directory configuration with custom serialization

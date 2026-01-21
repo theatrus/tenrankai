@@ -8,7 +8,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
     Config, GallerySystemConfig, LogLevel, commands,
-    config::MultiSiteConfig,
+    config::{ConfigStorageLoader, MultiSiteConfig},
     create_app, create_app_with_site_manager,
     gallery::Gallery,
     openai, posts,
@@ -16,6 +16,7 @@ use tenrankai::{
     startup_checks, storage,
     user_storage::{User, create_user_storage},
 };
+use tenrankai_config_storage::{ConfigStorageUrl, create_config_storage};
 
 #[cfg(unix)]
 use tenrankai::site::ConfigReloader;
@@ -741,13 +742,22 @@ async fn run_server(
     info!("Starting {} server", config.app.name);
     info!("Log level: {}", config.app.log_level);
 
-    // Check if we're in multi-site mode
-    let is_multi_site = multi_site_config
-        .as_ref()
-        .is_some_and(|m| m.is_multi_site());
+    // Check if we're loading sites from ConfigStorage
+    let use_config_storage = config.app.config_storage.is_some();
 
-    if is_multi_site {
-        info!("Running in multi-site mode");
+    // Check if we're in multi-site mode (from config.toml)
+    let is_multi_site = !use_config_storage
+        && multi_site_config
+            .as_ref()
+            .is_some_and(|m| m.is_multi_site());
+
+    if use_config_storage {
+        info!(
+            "Loading site configuration from ConfigStorage: {}",
+            config.app.config_storage.as_ref().unwrap()
+        );
+    } else if is_multi_site {
+        info!("Running in multi-site mode (from config.toml)");
     } else {
         info!("Template directories: {:?}", config.templates.directories);
         info!(
@@ -800,8 +810,135 @@ async fn run_server(
     let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
 
     // Build the app differently based on mode
-    let (app, site_manager) = if is_multi_site {
-        // Multi-site mode: Build sites using SiteBuilder and create SiteManager
+    let (app, site_manager) = if use_config_storage {
+        // ConfigStorage mode: Load sites from ConfigStorage
+        let config_storage_url = config.app.config_storage.as_ref().unwrap();
+        let url = match ConfigStorageUrl::parse(config_storage_url) {
+            Ok(u) => u,
+            Err(e) => {
+                return Err(format!("Invalid config_storage URL: {}", e).into());
+            }
+        };
+
+        let storage = match create_config_storage(&url).await {
+            Ok(s) => s,
+            Err(e) => {
+                return Err(format!("Failed to create config storage: {}", e).into());
+            }
+        };
+
+        info!(
+            "ConfigStorage initialized (backend: {})",
+            storage.backend_name()
+        );
+
+        let loader = ConfigStorageLoader::new(storage.clone(), config.app.cookie_secret.clone());
+        let loaded_sites = match loader.load_all_sites().await {
+            Ok(sites) => sites,
+            Err(e) => {
+                return Err(format!("Failed to load sites from ConfigStorage: {}", e).into());
+            }
+        };
+
+        info!("Loaded {} site(s) from ConfigStorage", loaded_sites.len());
+
+        let site_manager = Arc::new(SiteManager::new());
+
+        for (site_name, mut site_config) in loaded_sites {
+            info!("Building site '{}'...", site_name);
+
+            // Set the config_storage URL so the site can use it for permission writes
+            site_config.config_storage = Some(config_storage_url.clone());
+
+            // Get hostnames before building (from the loaded config's templates, we need to re-load)
+            // Re-fetch site config to get hostnames
+            let hostnames = match storage.get_site_config(&site_name).await {
+                Ok(Some(stored)) => stored.hostnames,
+                _ => vec!["*".to_string()], // Default to catch-all
+            };
+
+            // Build the site
+            let site_builder = SiteBuilder::new(site_config);
+            let site = match site_builder.build().await {
+                Ok(s) => Arc::new(s),
+                Err(e) => {
+                    tracing::error!("Failed to build site '{}': {}", site_name, e);
+                    continue;
+                }
+            };
+
+            // Initialize galleries for this site
+            for (gallery_name, gallery) in site.galleries().iter() {
+                let gallery_config = gallery.get_config();
+
+                if let Err(e) = gallery.initialize_and_check_version().await {
+                    tracing::warn!(
+                        "Failed to initialize gallery '{}' metadata cache: {}",
+                        gallery_name,
+                        e
+                    );
+                }
+
+                let metadata_empty = gallery.is_metadata_cache_empty().await;
+                let pregenerate = gallery_config.pregenerate.is_some();
+
+                if metadata_empty {
+                    info!(
+                        "Metadata cache for gallery '{}' (site '{}') is empty, triggering initial refresh",
+                        gallery_name, site_name
+                    );
+                }
+
+                if metadata_empty || pregenerate {
+                    if pregenerate {
+                        info!(
+                            "Cache pre-generation enabled for gallery '{}' (site '{}')",
+                            gallery_name, site_name
+                        );
+                    }
+                    if let Err(e) = gallery
+                        .clone()
+                        .refresh_metadata_and_pregenerate_cache(pregenerate)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to refresh metadata for gallery '{}' (site '{}'): {}",
+                            gallery_name,
+                            site_name,
+                            e
+                        );
+                    }
+                }
+
+                if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
+                    && interval_minutes > 0
+                {
+                    info!(
+                        "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
+                        gallery_name, site_name, interval_minutes
+                    );
+                    Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+                }
+
+                info!(
+                    "Starting periodic cache save for gallery '{}' (site '{}')",
+                    gallery_name, site_name
+                );
+                Gallery::start_periodic_cache_save(gallery.clone(), 5);
+
+                galleries_for_shutdown.push(gallery.clone());
+                all_galleries_map
+                    .insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
+            }
+
+            site_manager.add_site(site, hostnames.clone()).await;
+            info!("Site '{}' ready with hostnames: {:?}", site_name, hostnames);
+        }
+
+        let app = create_app_with_site_manager(config.clone(), site_manager.clone()).await;
+        (app, Some(site_manager))
+    } else if is_multi_site {
+        // Multi-site mode (from config.toml): Build sites using SiteBuilder and create SiteManager
         let multi_config = multi_site_config.as_ref().unwrap();
         let site_manager = Arc::new(SiteManager::new());
 
