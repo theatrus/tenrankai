@@ -4,7 +4,6 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Json,
 };
-use tenrankai_config_storage::{GalleryPermissionConfig, Role as ConfigRole};
 
 use super::error::AdminError;
 use super::extractors::RequireAdmin;
@@ -441,13 +440,14 @@ fn contributor_permissions() -> RolePermissions {
     }
 }
 
-/// List all available roles (built-in + custom)
+/// List all available roles (built-in only)
+/// Note: Custom roles are now managed through site permissions
 pub async fn list_roles(
-    ResolvedState(app_state): ResolvedState,
+    ResolvedState(_app_state): ResolvedState,
     _admin: RequireAdmin,
 ) -> Result<Json<RoleListResponse>, AdminError> {
-    // Built-in roles
-    let mut roles = vec![
+    // Built-in roles only - custom roles are now in site permissions
+    let roles = vec![
         RoleDto {
             name: "viewer".to_string(),
             permissions: RolePermissionsDto::from(&viewer_permissions()),
@@ -471,44 +471,31 @@ pub async fn list_roles(
         },
     ];
 
-    // Add custom roles from config storage
-    if let Some(config_storage) = app_state.config_storage()
-        && let Ok(custom_roles) = config_storage.list_roles().await
-    {
-        for (name, role) in custom_roles {
-            roles.push(RoleDto {
-                name,
-                permissions: config_role_to_dto(&role.permissions),
-                inherits: role.inherits,
-                is_builtin: false,
-            });
-        }
-    }
-
     Ok(Json(RoleListResponse { roles }))
 }
 
-/// Get a specific role
+/// Get a specific role (built-in only)
+/// Note: Custom roles are now managed through site permissions
 pub async fn get_role(
-    ResolvedState(app_state): ResolvedState,
+    ResolvedState(_app_state): ResolvedState,
     _admin: RequireAdmin,
     Path(name): Path<String>,
 ) -> Result<Json<RoleDto>, AdminError> {
-    // Check built-in roles first
-    let role = match name.as_str() {
-        "viewer" => Some(RoleDto {
+    // Built-in roles only - custom roles are now in site permissions
+    match name.as_str() {
+        "viewer" => Ok(Json(RoleDto {
             name: "viewer".to_string(),
             permissions: RolePermissionsDto::from(&viewer_permissions()),
             inherits: None,
             is_builtin: true,
-        }),
-        "contributor" => Some(RoleDto {
+        })),
+        "contributor" => Ok(Json(RoleDto {
             name: "contributor".to_string(),
             permissions: RolePermissionsDto::from(&contributor_permissions()),
             inherits: None,
             is_builtin: true,
-        }),
-        "admin" => Some(RoleDto {
+        })),
+        "admin" => Ok(Json(RoleDto {
             name: "admin".to_string(),
             permissions: RolePermissionsDto {
                 owner_access: true,
@@ -516,85 +503,34 @@ pub async fn get_role(
             },
             inherits: None,
             is_builtin: true,
-        }),
-        _ => None,
-    };
-
-    if let Some(role) = role {
-        return Ok(Json(role));
+        })),
+        _ => Err(AdminError::NotFound(format!(
+            "Role not found: {} (custom roles are now managed through site permissions)",
+            name
+        ))),
     }
-
-    // Check custom roles from config storage
-    if let Some(config_storage) = app_state.config_storage()
-        && let Ok(Some(role)) = config_storage.get_role(&name).await
-    {
-        return Ok(Json(RoleDto {
-            name,
-            permissions: config_role_to_dto(&role.permissions),
-            inherits: role.inherits,
-            is_builtin: false,
-        }));
-    }
-
-    Err(AdminError::NotFound(format!("Role not found: {}", name)))
 }
 
 /// Create a new custom role
+/// Note: Custom roles are now managed through site permissions (/_admin/api/sites/{site}/permissions)
 pub async fn create_role(
-    ResolvedState(app_state): ResolvedState,
-    admin: RequireAdmin,
-    Json(request): Json<CreateRoleRequest>,
+    ResolvedState(_app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Json(_request): Json<CreateRoleRequest>,
 ) -> Result<Json<RoleDto>, AdminError> {
-    let config_storage = app_state
-        .config_storage()
-        .as_ref()
-        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
-
-    // Don't allow overwriting built-in roles
-    if matches!(request.name.as_str(), "viewer" | "contributor" | "admin") {
-        return Err(AdminError::BadRequest(
-            "Cannot create role with built-in name".into(),
-        ));
-    }
-
-    // Check if role already exists
-    if let Ok(Some(_)) = config_storage.get_role(&request.name).await {
-        return Err(AdminError::BadRequest(format!(
-            "Role already exists: {}",
-            request.name
-        )));
-    }
-
-    let role = ConfigRole {
-        permissions: dto_to_config_permissions(&request.permissions),
-        inherits: request.inherits,
-    };
-
-    config_storage
-        .set_role(&request.name, &role, &admin.0.username)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
-
-    Ok(Json(RoleDto {
-        name: request.name,
-        permissions: request.permissions,
-        inherits: role.inherits,
-        is_builtin: false,
-    }))
+    Err(AdminError::BadRequest(
+        "Custom roles are now managed through site permissions. Use /_admin/api/sites/{site}/permissions instead.".into(),
+    ))
 }
 
 /// Update an existing custom role
+/// Note: Custom roles are now managed through site permissions (/_admin/api/sites/{site}/permissions)
 pub async fn update_role(
-    ResolvedState(app_state): ResolvedState,
-    admin: RequireAdmin,
+    ResolvedState(_app_state): ResolvedState,
+    _admin: RequireAdmin,
     Path(name): Path<String>,
-    Json(request): Json<UpdateRoleRequest>,
+    Json(_request): Json<UpdateRoleRequest>,
 ) -> Result<Json<RoleDto>, AdminError> {
-    let config_storage = app_state
-        .config_storage()
-        .as_ref()
-        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
-
     // Don't allow modifying built-in roles
     if matches!(name.as_str(), "viewer" | "contributor" | "admin") {
         return Err(AdminError::BadRequest(
@@ -602,42 +538,18 @@ pub async fn update_role(
         ));
     }
 
-    // Verify role exists
-    config_storage
-        .get_role(&name)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?
-        .ok_or_else(|| AdminError::NotFound(format!("Role not found: {}", name)))?;
-
-    let role = ConfigRole {
-        permissions: dto_to_config_permissions(&request.permissions),
-        inherits: request.inherits,
-    };
-
-    config_storage
-        .set_role(&name, &role, &admin.0.username)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
-
-    Ok(Json(RoleDto {
-        name,
-        permissions: request.permissions,
-        inherits: role.inherits,
-        is_builtin: false,
-    }))
+    Err(AdminError::BadRequest(
+        "Custom roles are now managed through site permissions. Use /_admin/api/sites/{site}/permissions instead.".into(),
+    ))
 }
 
 /// Delete a custom role
+/// Note: Custom roles are now managed through site permissions (/_admin/api/sites/{site}/permissions)
 pub async fn delete_role(
-    ResolvedState(app_state): ResolvedState,
-    admin: RequireAdmin,
+    ResolvedState(_app_state): ResolvedState,
+    _admin: RequireAdmin,
     Path(name): Path<String>,
 ) -> Result<StatusCode, AdminError> {
-    let config_storage = app_state
-        .config_storage()
-        .as_ref()
-        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
-
     // Don't allow deleting built-in roles
     if matches!(name.as_str(), "viewer" | "contributor" | "admin") {
         return Err(AdminError::BadRequest(
@@ -645,16 +557,9 @@ pub async fn delete_role(
         ));
     }
 
-    let deleted = config_storage
-        .delete_role(&name, &admin.0.username)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
-
-    if deleted {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(AdminError::NotFound(format!("Role not found: {}", name)))
-    }
+    Err(AdminError::BadRequest(
+        "Custom roles are now managed through site permissions. Use /_admin/api/sites/{site}/permissions instead.".into(),
+    ))
 }
 
 // ============================================================================
@@ -743,84 +648,50 @@ pub async fn list_permission_groups(_admin: RequireAdmin) -> Json<PermissionGrou
 // ============================================================================
 
 /// Update gallery permissions
+/// Note: Permissions are now managed at the site level. Use /_admin/api/sites/{site}/permissions instead.
 pub async fn update_gallery_permissions(
     ResolvedState(app_state): ResolvedState,
-    admin: RequireAdmin,
+    _admin: RequireAdmin,
     Path(gallery_name): Path<String>,
-    Json(request): Json<UpdateGalleryPermissionsRequest>,
+    Json(_request): Json<UpdateGalleryPermissionsRequest>,
 ) -> Result<Json<GalleryInfo>, AdminError> {
-    let config_storage = app_state
-        .config_storage()
-        .as_ref()
-        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
-
     // Verify gallery exists
     let gallery = app_state
         .galleries()
         .get(&gallery_name)
         .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery_name)))?;
 
-    // Build the gallery permission config
-    let config = GalleryPermissionConfig {
-        public_role: request.public_role,
-        default_authenticated_role: request.default_authenticated_role,
-        roles: request
-            .roles
-            .into_iter()
-            .map(|(name, role)| {
-                (
-                    name,
-                    ConfigRole {
-                        permissions: dto_to_config_permissions(&role.permissions),
-                        inherits: role.inherits,
-                    },
-                )
-            })
-            .collect(),
-        user_roles: request
-            .user_roles
-            .into_iter()
-            .map(|ur| tenrankai_config_storage::UserRole {
-                username: ur.username,
-                roles: ur.roles,
-            })
-            .collect(),
-    };
-
-    config_storage
-        .set_gallery_config(&gallery_name, &config, &admin.0.username)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
-
-    // Return the updated gallery info
+    // Return current gallery info but indicate permissions should be managed at site level
     let gallery_config = gallery.get_config();
+    let permissions = &gallery_config.permissions;
+
     Ok(Json(GalleryInfo {
         name: gallery_name,
         url_prefix: gallery_config.url_prefix.clone(),
         permissions: PermissionConfigDto {
-            public_role: config.public_role,
-            default_authenticated_role: config.default_authenticated_role,
-            roles: config
+            public_role: permissions.public_role.clone(),
+            default_authenticated_role: permissions.default_authenticated_role.clone(),
+            roles: permissions
                 .roles
                 .iter()
-                .map(|(name, role)| {
+                .map(|(role_name, role)| {
                     (
-                        name.clone(),
+                        role_name.clone(),
                         RoleDto {
-                            name: name.clone(),
-                            permissions: config_role_to_dto(&role.permissions),
+                            name: role_name.clone(),
+                            permissions: RolePermissionsDto::from(&role.permissions),
                             inherits: role.inherits.clone(),
                             is_builtin: false,
                         },
                     )
                 })
                 .collect(),
-            user_roles: config
+            user_roles: permissions
                 .user_roles
                 .iter()
-                .map(|ur| UserRoleAssignment {
-                    username: ur.username.clone(),
-                    roles: ur.roles.clone(),
+                .map(|user_role| UserRoleAssignment {
+                    username: user_role.username.clone(),
+                    roles: user_role.roles.clone(),
                 })
                 .collect(),
         },
@@ -828,17 +699,13 @@ pub async fn update_gallery_permissions(
 }
 
 /// Assign roles to a user for a gallery
+/// Note: User roles are now managed at the site level through site permissions.
 pub async fn assign_user_roles(
     ResolvedState(app_state): ResolvedState,
-    admin: RequireAdmin,
-    Path((gallery_name, username)): Path<(String, String)>,
-    Json(request): Json<AssignUserRolesRequest>,
+    _admin: RequireAdmin,
+    Path((gallery_name, _username)): Path<(String, String)>,
+    Json(_request): Json<AssignUserRolesRequest>,
 ) -> Result<StatusCode, AdminError> {
-    let config_storage = app_state
-        .config_storage()
-        .as_ref()
-        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
-
     // Verify gallery exists
     if !app_state.galleries().contains_key(&gallery_name) {
         return Err(AdminError::NotFound(format!(
@@ -847,105 +714,32 @@ pub async fn assign_user_roles(
         )));
     }
 
-    config_storage
-        .set_user_roles(&gallery_name, &username, &request.roles, &admin.0.username)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
-
-    Ok(StatusCode::NO_CONTENT)
+    Err(AdminError::BadRequest(
+        "User roles are now managed through site permissions. Use /_admin/api/sites/{site}/permissions instead.".into(),
+    ))
 }
 
 /// Get roles assigned to a user for a gallery
+/// Note: User roles are now stored in site permissions. This returns the user's roles from the gallery's current config.
 pub async fn get_user_gallery_roles(
     ResolvedState(app_state): ResolvedState,
     _admin: RequireAdmin,
     Path((gallery_name, username)): Path<(String, String)>,
 ) -> Result<Json<UserRoleAssignment>, AdminError> {
-    let config_storage = app_state
-        .config_storage()
-        .as_ref()
-        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+    // Verify gallery exists and get its permissions
+    let gallery = app_state
+        .galleries()
+        .get(&gallery_name)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery_name)))?;
 
-    // Verify gallery exists
-    if !app_state.galleries().contains_key(&gallery_name) {
-        return Err(AdminError::NotFound(format!(
-            "Gallery not found: {}",
-            gallery_name
-        )));
-    }
-
-    let roles = config_storage
-        .get_user_roles(&gallery_name, &username)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
+    let config = gallery.get_config();
+    let roles = config
+        .permissions
+        .get_user_roles(&username)
+        .map(|r| r.to_vec())
+        .unwrap_or_default();
 
     Ok(Json(UserRoleAssignment { username, roles }))
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Convert config storage RolePermissions to DTO
-fn config_role_to_dto(perms: &tenrankai_config_storage::RolePermissions) -> RolePermissionsDto {
-    RolePermissionsDto {
-        can_view: perms.can_view,
-        can_see_technical_details: perms.can_see_technical_details,
-        can_see_exact_dates: perms.can_see_exact_dates,
-        can_see_location: perms.can_see_location,
-        can_download_medium: perms.can_download_medium,
-        can_download_large: perms.can_download_large,
-        can_download_original: perms.can_download_original,
-        can_download_gallery: perms.can_download_gallery,
-        can_download_raw: perms.can_download_raw,
-        can_see_versions: perms.can_see_versions,
-        can_read_metadata: perms.can_read_metadata,
-        can_edit_content: perms.can_edit_content,
-        can_add_comments: perms.can_add_comments,
-        can_edit_own_comments: perms.can_edit_own_comments,
-        can_delete_own_comments: perms.can_delete_own_comments,
-        can_set_picks: perms.can_set_picks,
-        can_add_tags: perms.can_add_tags,
-        can_edit_any_comments: perms.can_edit_any_comments,
-        can_delete_any_comments: perms.can_delete_any_comments,
-        can_use_zoom: perms.can_use_zoom,
-        can_use_tile_zoom: perms.can_use_tile_zoom,
-        can_analyze_images: perms.can_analyze_images,
-        can_see_ai_analysis: perms.can_see_ai_analysis,
-        can_see_ai_alt_text: perms.can_see_ai_alt_text,
-        owner_access: perms.owner_access,
-    }
-}
-
-/// Convert DTO to config storage RolePermissions
-fn dto_to_config_permissions(dto: &RolePermissionsDto) -> tenrankai_config_storage::RolePermissions {
-    tenrankai_config_storage::RolePermissions {
-        can_view: dto.can_view,
-        can_see_technical_details: dto.can_see_technical_details,
-        can_see_exact_dates: dto.can_see_exact_dates,
-        can_see_location: dto.can_see_location,
-        can_download_medium: dto.can_download_medium,
-        can_download_large: dto.can_download_large,
-        can_download_original: dto.can_download_original,
-        can_download_gallery: dto.can_download_gallery,
-        can_download_raw: dto.can_download_raw,
-        can_see_versions: dto.can_see_versions,
-        can_read_metadata: dto.can_read_metadata,
-        can_edit_content: dto.can_edit_content,
-        can_add_comments: dto.can_add_comments,
-        can_edit_own_comments: dto.can_edit_own_comments,
-        can_delete_own_comments: dto.can_delete_own_comments,
-        can_set_picks: dto.can_set_picks,
-        can_add_tags: dto.can_add_tags,
-        can_edit_any_comments: dto.can_edit_any_comments,
-        can_delete_any_comments: dto.can_delete_any_comments,
-        can_use_zoom: dto.can_use_zoom,
-        can_use_tile_zoom: dto.can_use_tile_zoom,
-        can_analyze_images: dto.can_analyze_images,
-        can_see_ai_analysis: dto.can_see_ai_analysis,
-        can_see_ai_alt_text: dto.can_see_ai_alt_text,
-        owner_access: dto.owner_access,
-    }
 }
 
 // ============================================================================

@@ -105,7 +105,7 @@ pub struct GalleryPermissionConfig {
 
 /// Stored site configuration
 /// The storage_prefix field is NOT editable via admin API for security
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct StoredSiteConfig {
     /// Hostnames that route to this site
     /// Special values: "*" (catch-all), "*.example.com" (wildcard)

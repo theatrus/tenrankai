@@ -1,6 +1,6 @@
 use crate::{
     AuditAction, AuditEntry, ConfigStorage, ConfigStorageError, GalleryPermissionConfig, Result,
-    Role, StoredGalleryConfig, StoredPostsConfig, StoredSiteConfig,
+    StoredGalleryConfig, StoredPostsConfig, StoredSiteConfig,
 };
 use async_trait::async_trait;
 use fs2::FileExt;
@@ -11,23 +11,16 @@ use tokio::task;
 use tracing::{debug, instrument, warn};
 
 pub struct FileDirConfigStorage {
-    #[allow(dead_code)]
     base_path: PathBuf,
-    galleries_path: PathBuf,
-    roles_path: PathBuf,
     audit_path: PathBuf,
 }
 
 impl FileDirConfigStorage {
     pub async fn new(base_path: PathBuf) -> Result<Self> {
-        let galleries_path = base_path.join("galleries");
-        let roles_path = base_path.join("roles");
         let audit_path = base_path.join(".audit");
 
         let storage = Self {
             base_path,
-            galleries_path,
-            roles_path,
             audit_path,
         };
 
@@ -37,13 +30,9 @@ impl FileDirConfigStorage {
     }
 
     async fn ensure_directories(&self) -> Result<()> {
-        let galleries_path = self.galleries_path.clone();
-        let roles_path = self.roles_path.clone();
         let audit_path = self.audit_path.clone();
 
         task::spawn_blocking(move || {
-            fs::create_dir_all(&galleries_path)?;
-            fs::create_dir_all(&roles_path)?;
             fs::create_dir_all(&audit_path)?;
             Ok::<_, std::io::Error>(())
         })
@@ -51,14 +40,6 @@ impl FileDirConfigStorage {
         .map_err(|e| ConfigStorageError::Io(std::io::Error::other(e.to_string())))??;
 
         Ok(())
-    }
-
-    fn gallery_file_path(&self, gallery: &str) -> PathBuf {
-        self.galleries_path.join(format!("{}.toml", gallery))
-    }
-
-    fn role_file_path(&self, name: &str) -> PathBuf {
-        self.roles_path.join(format!("{}.toml", name))
     }
 
     fn audit_log_path(&self) -> PathBuf {
@@ -255,207 +236,6 @@ impl FileDirConfigStorage {
 
 #[async_trait]
 impl ConfigStorage for FileDirConfigStorage {
-    #[instrument(skip(self), fields(backend = "file_dir"))]
-    async fn get_gallery_config(&self, gallery: &str) -> Result<Option<GalleryPermissionConfig>> {
-        let path = self.gallery_file_path(gallery);
-        debug!(gallery = gallery, path = ?path, "Getting gallery config");
-        self.read_toml_file(path).await
-    }
-
-    #[instrument(skip(self, config), fields(backend = "file_dir"))]
-    async fn set_gallery_config(
-        &self,
-        gallery: &str,
-        config: &GalleryPermissionConfig,
-        username: &str,
-    ) -> Result<()> {
-        let path = self.gallery_file_path(gallery);
-        debug!(gallery = gallery, path = ?path, user = username, "Setting gallery config");
-
-        self.write_toml_file(path, config).await?;
-
-        let entry = AuditEntry::new(username, AuditAction::SetGalleryConfig)
-            .with_target(gallery)
-            .with_changes(serde_json::to_value(config).unwrap_or_default());
-
-        if let Err(e) = self.append_audit(entry).await {
-            warn!(error = %e, "Failed to write audit log");
-        }
-
-        Ok(())
-    }
-
-    #[instrument(skip(self), fields(backend = "file_dir"))]
-    async fn delete_gallery_config(&self, gallery: &str, username: &str) -> Result<bool> {
-        let path = self.gallery_file_path(gallery);
-        debug!(gallery = gallery, path = ?path, user = username, "Deleting gallery config");
-
-        let deleted = self.delete_file(path).await?;
-
-        if deleted {
-            let entry =
-                AuditEntry::new(username, AuditAction::DeleteGalleryConfig).with_target(gallery);
-
-            if let Err(e) = self.append_audit(entry).await {
-                warn!(error = %e, "Failed to write audit log");
-            }
-        }
-
-        Ok(deleted)
-    }
-
-    #[instrument(skip(self), fields(backend = "file_dir"))]
-    async fn list_roles(&self) -> Result<Vec<(String, Role)>> {
-        let roles_path = self.roles_path.clone();
-
-        task::spawn_blocking(move || {
-            let mut roles = Vec::new();
-
-            if !roles_path.exists() {
-                return Ok(roles);
-            }
-
-            for entry in fs::read_dir(&roles_path)? {
-                let entry = entry?;
-                let path = entry.path();
-
-                if path.extension().is_some_and(|ext| ext == "toml") {
-                    let name = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .map(String::from)
-                        .ok_or_else(|| {
-                            ConfigStorageError::InvalidData("Invalid role filename".to_string())
-                        })?;
-
-                    let file = File::open(&path)?;
-                    file.lock_shared()?;
-
-                    let content = fs::read_to_string(&path)?;
-                    file.unlock()?;
-
-                    let role: Role = toml_edit::de::from_str(&content)
-                        .map_err(|e| ConfigStorageError::Serialization(e.to_string()))?;
-
-                    roles.push((name, role));
-                }
-            }
-
-            Ok(roles)
-        })
-        .await
-        .map_err(|e| ConfigStorageError::Io(std::io::Error::other(e.to_string())))?
-    }
-
-    #[instrument(skip(self), fields(backend = "file_dir"))]
-    async fn get_role(&self, name: &str) -> Result<Option<Role>> {
-        let path = self.role_file_path(name);
-        debug!(role = name, path = ?path, "Getting role");
-        self.read_toml_file(path).await
-    }
-
-    #[instrument(skip(self, role), fields(backend = "file_dir"))]
-    async fn set_role(&self, name: &str, role: &Role, username: &str) -> Result<()> {
-        let path = self.role_file_path(name);
-        debug!(role = name, path = ?path, user = username, "Setting role");
-
-        self.write_toml_file(path, role).await?;
-
-        let entry = AuditEntry::new(username, AuditAction::SetRole)
-            .with_target(name)
-            .with_changes(serde_json::to_value(role).unwrap_or_default());
-
-        if let Err(e) = self.append_audit(entry).await {
-            warn!(error = %e, "Failed to write audit log");
-        }
-
-        Ok(())
-    }
-
-    #[instrument(skip(self), fields(backend = "file_dir"))]
-    async fn delete_role(&self, name: &str, username: &str) -> Result<bool> {
-        let path = self.role_file_path(name);
-        debug!(role = name, path = ?path, user = username, "Deleting role");
-
-        let deleted = self.delete_file(path).await?;
-
-        if deleted {
-            let entry = AuditEntry::new(username, AuditAction::DeleteRole).with_target(name);
-
-            if let Err(e) = self.append_audit(entry).await {
-                warn!(error = %e, "Failed to write audit log");
-            }
-        }
-
-        Ok(deleted)
-    }
-
-    #[instrument(skip(self), fields(backend = "file_dir"))]
-    async fn get_user_roles(&self, gallery: &str, username: &str) -> Result<Vec<String>> {
-        let config = self.get_gallery_config(gallery).await?;
-
-        Ok(config
-            .and_then(|c| {
-                c.user_roles
-                    .iter()
-                    .find(|ur| ur.username == username)
-                    .map(|ur| ur.roles.clone())
-            })
-            .unwrap_or_default())
-    }
-
-    #[instrument(skip(self, roles), fields(backend = "file_dir"))]
-    async fn set_user_roles(
-        &self,
-        gallery: &str,
-        target_username: &str,
-        roles: &[String],
-        actor_username: &str,
-    ) -> Result<()> {
-        let path = self.gallery_file_path(gallery);
-        debug!(
-            gallery = gallery,
-            target = target_username,
-            actor = actor_username,
-            roles = ?roles,
-            "Setting user roles"
-        );
-
-        let mut config = self
-            .get_gallery_config(gallery)
-            .await?
-            .unwrap_or_default();
-
-        if let Some(existing) = config
-            .user_roles
-            .iter_mut()
-            .find(|ur| ur.username == target_username)
-        {
-            existing.roles = roles.to_vec();
-        } else {
-            config.user_roles.push(crate::UserRole {
-                username: target_username.to_string(),
-                roles: roles.to_vec(),
-            });
-        }
-
-        config.user_roles.retain(|ur| !ur.roles.is_empty());
-
-        self.write_toml_file(path, &config).await?;
-
-        let entry = AuditEntry::new(actor_username, AuditAction::SetUserRoles)
-            .with_target(format!("{}:{}", gallery, target_username))
-            .with_changes(serde_json::json!({
-                "roles": roles
-            }));
-
-        if let Err(e) = self.append_audit(entry).await {
-            warn!(error = %e, "Failed to write audit log");
-        }
-
-        Ok(())
-    }
-
     fn backend_name(&self) -> &'static str {
         "file_dir"
     }
@@ -683,7 +463,7 @@ impl ConfigStorage for FileDirConfigStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::RolePermissions;
+    use crate::types::{StoredImageSizeConfig, StoredPreviewConfig};
     use tempfile::TempDir;
 
     async fn create_test_storage() -> (FileDirConfigStorage, TempDir) {
@@ -694,8 +474,141 @@ mod tests {
         (storage, temp_dir)
     }
 
+    fn create_test_gallery_config(
+        name: &str,
+        url_prefix: &str,
+        source: &str,
+        cache: &str,
+    ) -> StoredGalleryConfig {
+        StoredGalleryConfig {
+            name: name.to_string(),
+            url_prefix: url_prefix.to_string(),
+            source_directory: source.to_string(),
+            cache_directory: cache.to_string(),
+            gallery_template: "modules/gallery.html.liquid".to_string(),
+            image_detail_template: "modules/image_detail.html.liquid".to_string(),
+            images_per_page: 50,
+            thumbnail: StoredImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: StoredImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: StoredImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: StoredImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: None,
+            webp_quality: None,
+            new_threshold_days: None,
+            copyright_holder: None,
+            image_indexing: "filename".to_string(),
+            metadata_cache_size: 100,
+            tiles: None,
+            pregenerate: None,
+            preview: Some(StoredPreviewConfig {
+                max_images: 10,
+                max_depth: 3,
+                max_per_folder: 5,
+            }),
+        }
+    }
+
     #[tokio::test]
-    async fn test_gallery_config_roundtrip() {
+    async fn test_site_config_roundtrip() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            base_url: Some("https://example.com".to_string()),
+            templates: vec!["templates".to_string()],
+            static_files: vec!["static".to_string()],
+            static_use_redirects: false,
+            user_database: Some("users.toml".to_string()),
+            cookie_secret: None,
+            storage_prefix: Some("/data/sites/default".to_string()),
+            email: None,
+        };
+
+        storage
+            .set_site_config("default", &config, "alice")
+            .await
+            .unwrap();
+
+        let loaded = storage.get_site_config("default").await.unwrap();
+        assert_eq!(loaded, Some(config));
+    }
+
+    #[tokio::test]
+    async fn test_list_sites() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+
+        storage
+            .set_site_config("site1", &config, "alice")
+            .await
+            .unwrap();
+        storage
+            .set_site_config("site2", &config, "alice")
+            .await
+            .unwrap();
+
+        let sites = storage.list_sites().await.unwrap();
+        assert_eq!(sites.len(), 2);
+        assert!(sites.contains(&"site1".to_string()));
+        assert!(sites.contains(&"site2".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_gallery_full_config_roundtrip() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config = create_test_gallery_config("main", "/gallery", "photos", "cache/main");
+
+        storage
+            .set_gallery_full_config("default", "main", &config, "alice")
+            .await
+            .unwrap();
+
+        let loaded = storage
+            .get_gallery_full_config("default", "main")
+            .await
+            .unwrap();
+        assert_eq!(loaded, Some(config));
+    }
+
+    #[tokio::test]
+    async fn test_list_galleries() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config = create_test_gallery_config("test", "/test", "photos", "cache");
+
+        storage
+            .set_gallery_full_config("default", "main", &config, "alice")
+            .await
+            .unwrap();
+        storage
+            .set_gallery_full_config("default", "archive", &config, "alice")
+            .await
+            .unwrap();
+
+        let galleries = storage.list_galleries("default").await.unwrap();
+        assert_eq!(galleries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_site_permissions_roundtrip() {
         let (storage, _dir) = create_test_storage().await;
 
         let config = GalleryPermissionConfig {
@@ -705,106 +618,33 @@ mod tests {
         };
 
         storage
-            .set_gallery_config("test", &config, "alice")
+            .set_site_permissions("default", &config, "alice")
             .await
             .unwrap();
 
-        let loaded = storage.get_gallery_config("test").await.unwrap();
+        let loaded = storage.get_site_permissions("default").await.unwrap();
         assert_eq!(loaded, Some(config));
     }
 
     #[tokio::test]
-    async fn test_role_roundtrip() {
+    async fn test_delete_site() {
         let (storage, _dir) = create_test_storage().await;
 
-        let role = Role {
-            permissions: RolePermissions {
-                can_view: true,
-                can_download_medium: true,
-                ..Default::default()
-            },
-            inherits: Some("viewer".to_string()),
+        let site_config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
         };
 
-        storage.set_role("editor", &role, "alice").await.unwrap();
+        storage
+            .set_site_config("testsite", &site_config, "alice")
+            .await
+            .unwrap();
+        assert!(storage.get_site_config("testsite").await.unwrap().is_some());
 
-        let loaded = storage.get_role("editor").await.unwrap();
-        assert_eq!(loaded, Some(role));
-    }
-
-    #[tokio::test]
-    async fn test_list_roles() {
-        let (storage, _dir) = create_test_storage().await;
-
-        let role1 = Role {
-            permissions: RolePermissions {
-                can_view: true,
-                ..Default::default()
-            },
-            inherits: None,
-        };
-
-        let role2 = Role {
-            permissions: RolePermissions {
-                can_view: true,
-                can_download_medium: true,
-                ..Default::default()
-            },
-            inherits: Some("viewer".to_string()),
-        };
-
-        storage.set_role("viewer", &role1, "alice").await.unwrap();
-        storage.set_role("editor", &role2, "alice").await.unwrap();
-
-        let roles = storage.list_roles().await.unwrap();
-        assert_eq!(roles.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_delete_role() {
-        let (storage, _dir) = create_test_storage().await;
-
-        let role = Role {
-            permissions: RolePermissions {
-                can_view: true,
-                ..Default::default()
-            },
-            inherits: None,
-        };
-
-        storage.set_role("viewer", &role, "alice").await.unwrap();
-        assert!(storage.get_role("viewer").await.unwrap().is_some());
-
-        let deleted = storage.delete_role("viewer", "alice").await.unwrap();
+        let deleted = storage.delete_site("testsite", "alice").await.unwrap();
         assert!(deleted);
 
-        assert!(storage.get_role("viewer").await.unwrap().is_none());
-    }
-
-    #[tokio::test]
-    async fn test_user_roles() {
-        let (storage, _dir) = create_test_storage().await;
-
-        storage
-            .set_user_roles("main", "bob", &["viewer".to_string()], "alice")
-            .await
-            .unwrap();
-
-        let roles = storage.get_user_roles("main", "bob").await.unwrap();
-        assert_eq!(roles, vec!["viewer"]);
-
-        storage
-            .set_user_roles(
-                "main",
-                "bob",
-                &["viewer".to_string(), "editor".to_string()],
-                "alice",
-            )
-            .await
-            .unwrap();
-
-        let roles = storage.get_user_roles("main", "bob").await.unwrap();
-        assert_eq!(roles, vec!["viewer", "editor"]);
+        assert!(storage.get_site_config("testsite").await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -817,7 +657,7 @@ mod tests {
         };
 
         storage
-            .set_gallery_config("test", &config, "alice")
+            .set_site_permissions("default", &config, "alice")
             .await
             .unwrap();
 

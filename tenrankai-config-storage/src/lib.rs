@@ -107,49 +107,6 @@ pub trait ConfigStorage: Send + Sync + 'static {
     ) -> Result<()>;
 
     // ========================================================================
-    // Legacy Permission Methods (for backward compatibility)
-    // These operate on the default site or a flat structure
-    // ========================================================================
-
-    /// Get gallery-level permission configuration (legacy - uses flat structure)
-    async fn get_gallery_config(&self, gallery: &str) -> Result<Option<GalleryPermissionConfig>>;
-
-    /// Set gallery-level permission configuration (legacy)
-    async fn set_gallery_config(
-        &self,
-        gallery: &str,
-        config: &GalleryPermissionConfig,
-        username: &str,
-    ) -> Result<()>;
-
-    /// Delete gallery-level permission configuration (legacy)
-    async fn delete_gallery_config(&self, gallery: &str, username: &str) -> Result<bool>;
-
-    /// List all custom role definitions (legacy - flat structure)
-    async fn list_roles(&self) -> Result<Vec<(String, Role)>>;
-
-    /// Get a specific role definition (legacy)
-    async fn get_role(&self, name: &str) -> Result<Option<Role>>;
-
-    /// Set a role definition (legacy)
-    async fn set_role(&self, name: &str, role: &Role, username: &str) -> Result<()>;
-
-    /// Delete a role definition (legacy)
-    async fn delete_role(&self, name: &str, username: &str) -> Result<bool>;
-
-    /// Get roles assigned to a user for a specific gallery (legacy)
-    async fn get_user_roles(&self, gallery: &str, username: &str) -> Result<Vec<String>>;
-
-    /// Set roles for a user in a specific gallery (legacy)
-    async fn set_user_roles(
-        &self,
-        gallery: &str,
-        target_username: &str,
-        roles: &[String],
-        actor_username: &str,
-    ) -> Result<()>;
-
-    // ========================================================================
     // Metadata
     // ========================================================================
 
