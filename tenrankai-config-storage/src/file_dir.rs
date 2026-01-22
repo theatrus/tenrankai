@@ -88,10 +88,10 @@ impl FileDirConfigStorage {
             for entry in fs::read_dir(&dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.extension().is_some_and(|ext| ext == "toml") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        names.push(stem.to_string());
-                    }
+                if path.extension().is_some_and(|ext| ext == "toml")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    names.push(stem.to_string());
                 }
             }
             Ok(names)
@@ -109,13 +109,11 @@ impl FileDirConfigStorage {
             for entry in fs::read_dir(&dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.is_dir() {
-                    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                        // Skip hidden directories
-                        if !name.starts_with('.') {
-                            names.push(name.to_string());
-                        }
-                    }
+                if path.is_dir()
+                    && let Some(name) = path.file_name().and_then(|s| s.to_str())
+                    && !name.starts_with('.')
+                {
+                    names.push(name.to_string());
                 }
             }
             Ok(names)
@@ -534,6 +532,7 @@ mod tests {
             user_database: Some("users.toml".to_string()),
             cookie_secret: None,
             storage_prefix: Some("/data/sites/default".to_string()),
+            cache_prefix: Some("/var/cache/sites/default".to_string()),
             email: None,
         };
 

@@ -130,10 +130,10 @@ impl ConfigStorage for StorageConfigStorage {
 
         for key in keys {
             // Extract site name from keys like "sites/{site}/..."
-            if let Some(rest) = key.strip_prefix("sites/") {
-                if let Some(site) = rest.split('/').next() {
-                    sites.insert(site.to_string());
-                }
+            if let Some(rest) = key.strip_prefix("sites/")
+                && let Some(site) = rest.split('/').next()
+            {
+                sites.insert(site.to_string());
             }
         }
 
@@ -207,13 +207,12 @@ impl ConfigStorage for StorageConfigStorage {
         let mut galleries = Vec::new();
 
         for key in keys {
-            if key.ends_with(".json") {
-                if let Some(name) = key
+            if key.ends_with(".json")
+                && let Some(name) = key
                     .strip_prefix(&prefix)
                     .and_then(|s| s.strip_suffix(".json"))
-                {
-                    galleries.push(name.to_string());
-                }
+            {
+                galleries.push(name.to_string());
             }
         }
 
@@ -286,13 +285,12 @@ impl ConfigStorage for StorageConfigStorage {
         let mut posts_list = Vec::new();
 
         for key in keys {
-            if key.ends_with(".json") {
-                if let Some(name) = key
+            if key.ends_with(".json")
+                && let Some(name) = key
                     .strip_prefix(&prefix)
                     .and_then(|s| s.strip_suffix(".json"))
-                {
-                    posts_list.push(name.to_string());
-                }
+            {
+                posts_list.push(name.to_string());
             }
         }
 

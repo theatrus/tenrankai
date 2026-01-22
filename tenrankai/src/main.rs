@@ -330,7 +330,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_server(
                 config,
                 multi_site_config,
-                cli.config.clone(),
                 port,
                 host,
                 quit_after,
@@ -342,7 +341,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_server(
                 config,
                 multi_site_config,
-                cli.config.clone(),
                 None,
                 None,
                 None,
@@ -615,83 +613,45 @@ struct ExportedPasskey {
 async fn handle_cache_command(
     cmd: CacheCommands,
     config: Config,
-    multi_site_config: Option<MultiSiteConfig>,
+    _multi_site_config: Option<MultiSiteConfig>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Helper to find gallery config from either multi-site or legacy config
-    let find_gallery =
-        |site_name: &str, gallery_name: &str| -> Result<GallerySystemConfig, String> {
-            // First, try multi-site config
-            if let Some(ref multi_config) = multi_site_config
-                && multi_config.is_multi_site()
-            {
-                // Look up the site
-                let site_configs = multi_config.get_site_configs();
-                if let Some((_, site_section)) =
-                    site_configs.iter().find(|(name, _)| *name == site_name)
-                {
-                    // Look up the gallery within the site's galleries list
-                    if let Some(ref galleries) = site_section.galleries {
-                        if let Some(gallery) = galleries.iter().find(|g| g.name == gallery_name) {
-                            return Ok(gallery.clone());
-                        }
-                        let available = galleries
-                            .iter()
-                            .map(|g| g.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return Err(format!(
-                            "Gallery '{}' not found in site '{}'. Available galleries: {}",
-                            gallery_name, site_name, available
-                        ));
-                    }
-                    return Err(format!("Site '{}' has no galleries configured.", site_name));
-                }
-                return Err(format!(
-                    "Site '{}' not found. Available sites: {}",
-                    site_name,
-                    site_configs
-                        .keys()
-                        .map(|n| n.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-
-            // Fall back to legacy config.galleries
-            if let Some(ref gallery_configs) = config.galleries {
-                gallery_configs
-                    .iter()
-                    .find(|g| g.name == gallery_name)
-                    .cloned()
-                    .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))
-            } else {
-                Err("No galleries configured".to_string())
-            }
-        };
+    // Helper to find gallery config from legacy config
+    // Note: For ConfigStorage mode, use the admin API or direct config.d access
+    let find_gallery = |gallery_name: &str| -> Result<GallerySystemConfig, String> {
+        if let Some(ref gallery_configs) = config.galleries {
+            gallery_configs
+                .iter()
+                .find(|g| g.name == gallery_name)
+                .cloned()
+                .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))
+        } else {
+            Err("No galleries configured. For ConfigStorage mode, access galleries through the admin API.".to_string())
+        }
+    };
 
     match cmd {
         CacheCommands::Report {
             gallery: gallery_name,
-            site: site_name,
+            site: _,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&gallery_name)?;
             commands::cache::report(&gallery_config).await?;
         }
         CacheCommands::Cleanup {
             gallery: gallery_name,
-            site: site_name,
+            site: _,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&gallery_name)?;
             commands::cache::cleanup(&gallery_config).await?;
         }
         CacheCommands::Invalidate {
             gallery: gallery_name,
-            site: site_name,
+            site: _,
             cache_type,
             path,
             dry_run,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&gallery_name)?;
 
             match cache_type.as_str() {
                 "composite" => {
@@ -714,9 +674,9 @@ async fn handle_cache_command(
         }
         CacheCommands::ListComposites {
             gallery: gallery_name,
-            site: site_name,
+            site: _,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&gallery_name)?;
             commands::cache::list_composites(&gallery_config).await?;
         }
     }
@@ -726,15 +686,11 @@ async fn handle_cache_command(
 
 async fn run_server(
     config: Config,
-    multi_site_config: Option<MultiSiteConfig>,
-    config_path: PathBuf,
+    _multi_site_config: Option<MultiSiteConfig>,
     port: Option<u16>,
     host: Option<String>,
     quit_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // config_path is only used on Unix for SIGHUP reload
-    #[cfg(not(unix))]
-    let _ = &config_path;
 
     let host = host.unwrap_or(config.server.host.clone());
     let port = port.unwrap_or(config.server.port);
@@ -745,19 +701,11 @@ async fn run_server(
     // Check if we're loading sites from ConfigStorage
     let use_config_storage = config.app.config_storage.is_some();
 
-    // Check if we're in multi-site mode (from config.toml)
-    let is_multi_site = !use_config_storage
-        && multi_site_config
-            .as_ref()
-            .is_some_and(|m| m.is_multi_site());
-
     if use_config_storage {
         info!(
             "Loading site configuration from ConfigStorage: {}",
             config.app.config_storage.as_ref().unwrap()
         );
-    } else if is_multi_site {
-        info!("Running in multi-site mode (from config.toml)");
     } else {
         info!("Template directories: {:?}", config.templates.directories);
         info!(
@@ -778,8 +726,8 @@ async fn run_server(
         }
     }
 
-    // Perform startup checks (only for legacy mode, multi-site does checks per-site)
-    if !is_multi_site {
+    // Perform startup checks (only for legacy mode, ConfigStorage mode does checks per-site)
+    if !use_config_storage {
         match startup_checks::perform_startup_checks(&config).await {
             Ok(()) => info!("All startup checks passed"),
             Err(errors) => {
@@ -809,6 +757,10 @@ async fn run_server(
     // Track all galleries for background analysis (combined from all sites)
     let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
 
+    // ConfigStorage for SIGHUP reload (captured in ConfigStorage mode)
+    #[cfg(unix)]
+    let mut config_storage_for_reload: Option<(tenrankai_config_storage::DynConfigStorage, String)> = None;
+
     // Build the app differently based on mode
     let (app, site_manager) = if use_config_storage {
         // ConfigStorage mode: Load sites from ConfigStorage
@@ -831,6 +783,12 @@ async fn run_server(
             "ConfigStorage initialized (backend: {})",
             storage.backend_name()
         );
+
+        // Capture for SIGHUP reload
+        #[cfg(unix)]
+        {
+            config_storage_for_reload = Some((storage.clone(), config_storage_url.clone()));
+        }
 
         let loader = ConfigStorageLoader::new(storage.clone(), config.app.cookie_secret.clone());
         let loaded_sites = match loader.load_all_sites().await {
@@ -935,115 +893,6 @@ async fn run_server(
             info!("Site '{}' ready with hostnames: {:?}", site_name, hostnames);
         }
 
-        let app = create_app_with_site_manager(config.clone(), site_manager.clone()).await;
-        (app, Some(site_manager))
-    } else if is_multi_site {
-        // Multi-site mode (from config.toml): Build sites using SiteBuilder and create SiteManager
-        let multi_config = multi_site_config.as_ref().unwrap();
-        let site_manager = Arc::new(SiteManager::new());
-
-        for (site_name, site_section) in multi_config.get_site_configs() {
-            info!("Building site '{}'...", site_name);
-
-            // Convert site section to SiteConfig
-            let site_config = site_section.to_site_config(
-                &site_name,
-                &multi_config.app,
-                multi_config.email.as_ref(),
-            );
-
-            // Build the site
-            let site_builder = SiteBuilder::new(site_config);
-            let site = match site_builder.build().await {
-                Ok(s) => Arc::new(s),
-                Err(e) => {
-                    tracing::error!("Failed to build site '{}': {}", site_name, e);
-                    continue;
-                }
-            };
-
-            // Initialize galleries for this site (additional setup not done by SiteBuilder)
-            for (gallery_name, gallery) in site.galleries().iter() {
-                let gallery_config = gallery.get_config();
-
-                // Initialize gallery and check for version changes
-                if let Err(e) = gallery.initialize_and_check_version().await {
-                    tracing::warn!(
-                        "Failed to initialize gallery '{}' metadata cache: {}",
-                        gallery_name,
-                        e
-                    );
-                }
-
-                // Trigger refresh and/or pre-generation on startup
-                let metadata_empty = gallery.is_metadata_cache_empty().await;
-                let pregenerate = gallery_config.pregenerate.is_some();
-
-                if metadata_empty {
-                    info!(
-                        "Metadata cache for gallery '{}' (site '{}') is empty, triggering initial refresh",
-                        gallery_name, site_name
-                    );
-                }
-
-                if metadata_empty || pregenerate {
-                    if pregenerate {
-                        info!(
-                            "Cache pre-generation enabled for gallery '{}' (site '{}')",
-                            gallery_name, site_name
-                        );
-                    }
-                    if let Err(e) = gallery
-                        .clone()
-                        .refresh_metadata_and_pregenerate_cache(pregenerate)
-                        .await
-                    {
-                        tracing::error!(
-                            "Failed to refresh metadata for gallery '{}' (site '{}'): {}",
-                            gallery_name,
-                            site_name,
-                            e
-                        );
-                    }
-                }
-
-                // Start background cache refresh if configured
-                if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
-                    && interval_minutes > 0
-                {
-                    info!(
-                        "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
-                        gallery_name, site_name, interval_minutes
-                    );
-                    Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
-                }
-
-                // Start periodic cache save (every 5 minutes)
-                info!(
-                    "Starting periodic cache save for gallery '{}' (site '{}')",
-                    gallery_name, site_name
-                );
-                Gallery::start_periodic_cache_save(gallery.clone(), 5);
-
-                // Track gallery for shutdown
-                galleries_for_shutdown.push(gallery.clone());
-
-                // Add to combined galleries map (use site_name prefix for uniqueness)
-                all_galleries_map
-                    .insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
-            }
-
-            // Add site to manager with its hostnames
-            site_manager
-                .add_site(site, site_section.hostnames.clone())
-                .await;
-            info!(
-                "Site '{}' ready with hostnames: {:?}",
-                site_name, site_section.hostnames
-            );
-        }
-
-        // Create app with site manager
         let app = create_app_with_site_manager(config.clone(), site_manager.clone()).await;
         (app, Some(site_manager))
     } else {
@@ -1244,12 +1093,16 @@ async fn run_server(
         }
     }
 
-    // Set up SIGHUP handler for config reload (Unix only, multi-site mode only)
+    // Set up SIGHUP handler for config reload (Unix only, ConfigStorage mode only)
     #[cfg(unix)]
     let reload_token = tokio_util::sync::CancellationToken::new();
     #[cfg(unix)]
-    if let Some(ref manager) = site_manager {
-        let config_reloader = Arc::new(ConfigReloader::new(&config_path));
+    if let (Some(manager), Some((storage, storage_url))) = (&site_manager, config_storage_for_reload) {
+        let config_reloader = Arc::new(ConfigReloader::new(
+            storage,
+            config.app.cookie_secret.clone(),
+            storage_url,
+        ));
         let manager_clone = manager.clone();
         let reload_token_clone = reload_token.clone();
 

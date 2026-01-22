@@ -77,11 +77,6 @@ impl AppState {
             config: self.config.clone(),
         }
     }
-
-    /// Check if this is multi-site mode
-    pub fn is_multi_site(&self) -> bool {
-        self.site_manager.is_some()
-    }
 }
 
 // Accessor methods for site-specific resources
