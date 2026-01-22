@@ -81,6 +81,83 @@ export interface GalleryListResponse {
   galleries: GalleryInfo[];
 }
 
+export interface SiteGalleryInfo {
+  name: string;
+  url_prefix: string;
+  source_directory: string;
+  cache_directory: string;
+  images_per_page: number;
+}
+
+export interface SiteGalleryListResponse {
+  galleries: SiteGalleryInfo[];
+}
+
+export interface CreateGalleryRequest {
+  name: string;
+  url_prefix: string;
+  source_directory: string;
+  cache_directory: string;
+  images_per_page?: number;
+}
+
+export interface SiteInfo {
+  name: string;
+  hostnames: string[];
+  base_url: string | null;
+  templates: string[];
+  static_files: string[];
+  static_use_redirects: boolean;
+  user_database: string | null;
+  storage_prefix: string | null;
+  cache_prefix: string | null;
+  gallery_count: number;
+  posts_count: number;
+}
+
+export interface SiteListResponse {
+  sites: SiteInfo[];
+}
+
+export interface ReloadSiteResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface FolderInfo {
+  path: string;
+  name: string;
+  has_custom_permissions: boolean;
+  image_count: number;
+}
+
+export interface FolderListResponse {
+  folders: FolderInfo[];
+}
+
+export interface FolderPermissions {
+  hidden: boolean;
+  permissions: PermissionConfig;
+  description: string;
+}
+
+export interface UpdateFolderPermissionsRequest {
+  hidden: boolean;
+  permissions: PermissionConfig;
+  description: string;
+}
+
+export interface ShareFolderRequest {
+  email: string;
+  role: string;
+}
+
+export interface ShareFolderResponse {
+  success: boolean;
+  message: string;
+  user_created: boolean;
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -130,11 +207,27 @@ export const api = {
   deleteUser: (username: string) => request<void>('DELETE', `/users/${username}`),
   sendInvite: (username: string) => request<void>('POST', `/users/${username}/invite`),
 
-  // Galleries
+  // Galleries (legacy - uses runtime gallery config)
   listGalleries: () => request<GalleryListResponse>('GET', '/galleries'),
   getGallery: (name: string) => request<GalleryInfo>('GET', `/galleries/${name}`),
   updateGalleryPermissions: (name: string, permissions: PermissionConfig) =>
     request<void>('PUT', `/galleries/${name}/permissions`, permissions),
+
+  // Sites
+  listSites: () => request<SiteListResponse>('GET', '/sites'),
+  getSite: (name: string) => request<SiteInfo>('GET', `/sites/${name}`),
+  reloadSite: (site: string) => request<ReloadSiteResponse>('POST', `/sites/${site}/reload`),
+
+  // Site Galleries (ConfigStorage mode - editable)
+  listSiteGalleries: (site: string) => request<SiteGalleryListResponse>('GET', `/sites/${site}/galleries`),
+  getSiteGallery: (site: string, name: string) =>
+    request<SiteGalleryInfo>('GET', `/sites/${site}/galleries/${name}`),
+  createGallery: (site: string, name: string, data: CreateGalleryRequest) =>
+    request<SiteGalleryInfo>('PUT', `/sites/${site}/galleries/${name}`, data),
+  updateGallery: (site: string, name: string, data: CreateGalleryRequest) =>
+    request<SiteGalleryInfo>('PUT', `/sites/${site}/galleries/${name}`, data),
+  deleteGallery: (site: string, name: string) =>
+    request<void>('DELETE', `/sites/${site}/galleries/${name}`),
 
   // Roles
   listRoles: () => request<RoleListResponse>('GET', '/roles'),
@@ -142,4 +235,22 @@ export const api = {
   upsertRole: (name: string, role: Omit<RoleInfo, 'name' | 'is_builtin'>) =>
     request<void>('PUT', `/roles/${name}`, role),
   deleteRole: (name: string) => request<void>('DELETE', `/roles/${name}`),
+
+  // Site Permissions
+  getSitePermissions: (site: string) =>
+    request<PermissionConfig>('GET', `/sites/${site}/permissions`),
+  updateSitePermissions: (site: string, permissions: PermissionConfig) =>
+    request<PermissionConfig>('PUT', `/sites/${site}/permissions`, permissions),
+
+  // Gallery Folders
+  listGalleryFolders: (site: string, gallery: string) =>
+    request<FolderListResponse>('GET', `/sites/${site}/galleries/${gallery}/folders`),
+  getFolderPermissions: (site: string, gallery: string, folderPath: string) =>
+    request<FolderPermissions>('GET', `/sites/${site}/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}`),
+  updateFolderPermissions: (site: string, gallery: string, folderPath: string, data: UpdateFolderPermissionsRequest) =>
+    request<FolderPermissions>('PUT', `/sites/${site}/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}`, data),
+
+  // Folder Sharing
+  shareFolder: (site: string, gallery: string, folderPath: string, data: ShareFolderRequest) =>
+    request<ShareFolderResponse>('POST', `/sites/${site}/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/share`, data),
 };

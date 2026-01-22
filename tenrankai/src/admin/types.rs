@@ -274,3 +274,51 @@ pub struct ReloadSiteResponse {
     pub success: bool,
     pub message: String,
 }
+
+// ============================================================================
+// Folder Management Types
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct FolderInfo {
+    pub path: String,
+    pub name: String,
+    pub has_custom_permissions: bool,
+    pub image_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderListResponse {
+    pub folders: Vec<FolderInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FolderPermissionsResponse {
+    pub hidden: bool,
+    pub permissions: PermissionConfigDto,
+    pub description: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFolderPermissionsRequest {
+    pub hidden: bool,
+    pub permissions: PermissionConfigDto,
+    pub description: String,
+}
+
+// ============================================================================
+// Folder Sharing Types
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct ShareFolderRequest {
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShareFolderResponse {
+    pub success: bool,
+    pub message: String,
+    pub user_created: bool,
+}

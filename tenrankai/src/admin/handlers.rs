@@ -943,6 +943,156 @@ pub async fn list_site_galleries(
     Ok(Json(SiteGalleryListResponse { galleries }))
 }
 
+/// Get a single gallery configuration
+pub async fn get_site_gallery(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, name)): Path<(String, String)>,
+) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let config = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", name)))?;
+
+    Ok(Json(SiteGalleryInfo {
+        name,
+        url_prefix: config.url_prefix,
+        source_directory: config.source_directory,
+        cache_directory: config.cache_directory,
+        images_per_page: config.images_per_page,
+    }))
+}
+
+/// Create or update a gallery
+pub async fn upsert_site_gallery(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((site, name)): Path<(String, String)>,
+    Json(request): Json<CreateGalleryRequest>,
+) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify site exists
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Validate name matches URL parameter
+    if request.name != name {
+        return Err(AdminError::BadRequest(
+            "Gallery name in URL must match name in request body".into(),
+        ));
+    }
+
+    // Validate URL prefix starts with /
+    if !request.url_prefix.starts_with('/') {
+        return Err(AdminError::BadRequest(
+            "URL prefix must start with /".into(),
+        ));
+    }
+
+    // Create the stored config with sensible defaults
+    let stored_config = tenrankai_config_storage::StoredGalleryConfig {
+        name: name.clone(),
+        url_prefix: request.url_prefix.clone(),
+        source_directory: request.source_directory.clone(),
+        cache_directory: request.cache_directory.clone(),
+        images_per_page: request.images_per_page,
+        gallery_template: "modules/gallery.html.liquid".to_string(),
+        image_detail_template: "modules/image_detail.html.liquid".to_string(),
+        thumbnail: tenrankai_config_storage::StoredImageSizeConfig {
+            width: 300,
+            height: 300,
+        },
+        gallery_size: tenrankai_config_storage::StoredImageSizeConfig {
+            width: 800,
+            height: 800,
+        },
+        medium: tenrankai_config_storage::StoredImageSizeConfig {
+            width: 1200,
+            height: 1200,
+        },
+        large: tenrankai_config_storage::StoredImageSizeConfig {
+            width: 1600,
+            height: 1600,
+        },
+        image_indexing: "filename".to_string(),
+        metadata_cache_size: 1000,
+        cache_refresh_interval_minutes: None,
+        jpeg_quality: None,
+        webp_quality: None,
+        new_threshold_days: None,
+        copyright_holder: None,
+        tiles: None,
+        pregenerate: None,
+        preview: None,
+    };
+
+    // Save the gallery config
+    config_storage
+        .set_gallery_full_config(&site, &name, &stored_config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(Json(SiteGalleryInfo {
+        name,
+        url_prefix: request.url_prefix,
+        source_directory: request.source_directory,
+        cache_directory: request.cache_directory,
+        images_per_page: request.images_per_page,
+    }))
+}
+
+/// Delete a gallery
+pub async fn delete_site_gallery(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((site, name)): Path<(String, String)>,
+) -> Result<StatusCode, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify site exists
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    let deleted = config_storage
+        .delete_gallery(&site, &name, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AdminError::NotFound(format!(
+            "Gallery not found: {}",
+            name
+        )))
+    }
+}
+
 /// Trigger site reload
 pub async fn reload_site(
     ResolvedState(app_state): ResolvedState,
@@ -1175,5 +1325,848 @@ pub async fn update_site_permissions(
         default_authenticated_role: request.default_authenticated_role,
         roles: request.roles,
         user_roles: request.user_roles,
+    }))
+}
+
+// ============================================================================
+// Folder Management
+// ============================================================================
+
+/// List all folders in a gallery
+pub async fn list_gallery_folders(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery)): Path<(String, String)>,
+) -> Result<Json<FolderListResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // Read all folders from the cache
+    let folder_cache = gallery_obj.folder_cache.read_all().await;
+
+    let mut folders: Vec<FolderInfo> = folder_cache
+        .iter()
+        .map(|(path, cached)| {
+            let name = path.rsplit('/').next().unwrap_or(path).to_string();
+            let has_custom_permissions = cached.metadata.as_ref().is_some_and(|m| {
+                let perms = &m.config.permissions;
+                perms.public_role.is_some()
+                    || perms.default_authenticated_role.is_some()
+                    || !perms.roles.is_empty()
+                    || !perms.user_roles.is_empty()
+            });
+
+            FolderInfo {
+                path: path.clone(),
+                name: if path.is_empty() {
+                    "(root)".to_string()
+                } else {
+                    name
+                },
+                has_custom_permissions,
+                image_count: cached.images.len(),
+            }
+        })
+        .collect();
+
+    // Sort by path
+    folders.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(Json(FolderListResponse { folders }))
+}
+
+/// Get folder permissions
+pub async fn get_folder_permissions(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+) -> Result<Json<FolderPermissionsResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // URL decode the folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    // Handle special _root marker for root folder
+    let folder_path = if folder_path == "_root" {
+        String::new()
+    } else {
+        folder_path
+    };
+
+    // Read folder metadata from cache or storage
+    // read_folder_metadata_full returns Option<FolderMetadata>
+    let metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
+
+    let (hidden, permissions, description) = match metadata {
+        Some(meta) => {
+            let perms = &meta.config.permissions;
+            (
+                meta.config.hidden,
+                PermissionConfigDto {
+                    public_role: perms.public_role.clone(),
+                    default_authenticated_role: perms.default_authenticated_role.clone(),
+                    roles: perms
+                        .roles
+                        .iter()
+                        .map(|(name, role)| {
+                            (
+                                name.clone(),
+                                RoleDto {
+                                    name: name.clone(),
+                                    permissions: RolePermissionsDto::from(&role.permissions),
+                                    inherits: role.inherits.clone(),
+                                    is_builtin: false,
+                                },
+                            )
+                        })
+                        .collect(),
+                    user_roles: perms
+                        .user_roles
+                        .iter()
+                        .map(|user_role| UserRoleAssignment {
+                            username: user_role.username.clone(),
+                            roles: user_role.roles.clone(),
+                        })
+                        .collect(),
+                },
+                meta.description_markdown,
+            )
+        }
+        None => {
+            // Folder exists in cache but has no _folder.md - return empty permissions
+            // Check if the folder exists in the cache at all
+            let folder_cache = gallery_obj.folder_cache.read_all().await;
+            if !folder_cache.contains_key(&folder_path) {
+                return Err(AdminError::NotFound(format!(
+                    "Folder not found: {}",
+                    folder_path
+                )));
+            }
+            (
+                false,
+                PermissionConfigDto {
+                    public_role: None,
+                    default_authenticated_role: None,
+                    roles: std::collections::HashMap::new(),
+                    user_roles: vec![],
+                },
+                String::new(),
+            )
+        }
+    };
+
+    Ok(Json(FolderPermissionsResponse {
+        hidden,
+        permissions,
+        description,
+    }))
+}
+
+/// Update folder permissions
+pub async fn update_folder_permissions(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+    Json(request): Json<UpdateFolderPermissionsRequest>,
+) -> Result<Json<FolderPermissionsResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // URL decode the folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    // Handle special _root marker for root folder
+    let folder_path = if folder_path == "_root" {
+        String::new()
+    } else {
+        folder_path
+    };
+
+    // Build the _folder.md content with TOML frontmatter
+    let mut toml_content = toml_edit::DocumentMut::new();
+
+    toml_content["hidden"] = toml_edit::value(request.hidden);
+
+    // Build permissions section
+    let mut permissions_table = toml_edit::Table::new();
+
+    if let Some(ref public_role) = request.permissions.public_role {
+        permissions_table["public_role"] = toml_edit::value(public_role.clone());
+    }
+    if let Some(ref default_auth_role) = request.permissions.default_authenticated_role {
+        permissions_table["default_authenticated_role"] =
+            toml_edit::value(default_auth_role.clone());
+    }
+
+    // Add roles
+    if !request.permissions.roles.is_empty() {
+        let mut roles_table = toml_edit::Table::new();
+        for (role_name, role) in &request.permissions.roles {
+            let mut role_table = toml_edit::Table::new();
+            if let Some(ref inherits) = role.inherits {
+                role_table["inherits"] = toml_edit::value(inherits.clone());
+            }
+
+            // Build permissions inline table
+            let mut perms_table = toml_edit::InlineTable::new();
+            if role.permissions.can_view {
+                perms_table.insert("can_view", true.into());
+            }
+            if role.permissions.can_see_technical_details {
+                perms_table.insert("can_see_technical_details", true.into());
+            }
+            if role.permissions.can_see_exact_dates {
+                perms_table.insert("can_see_exact_dates", true.into());
+            }
+            if role.permissions.can_see_location {
+                perms_table.insert("can_see_location", true.into());
+            }
+            if role.permissions.can_download_medium {
+                perms_table.insert("can_download_medium", true.into());
+            }
+            if role.permissions.can_download_large {
+                perms_table.insert("can_download_large", true.into());
+            }
+            if role.permissions.can_download_original {
+                perms_table.insert("can_download_original", true.into());
+            }
+            if role.permissions.can_download_gallery {
+                perms_table.insert("can_download_gallery", true.into());
+            }
+            if role.permissions.can_download_raw {
+                perms_table.insert("can_download_raw", true.into());
+            }
+            if role.permissions.can_see_versions {
+                perms_table.insert("can_see_versions", true.into());
+            }
+            if role.permissions.can_read_metadata {
+                perms_table.insert("can_read_metadata", true.into());
+            }
+            if role.permissions.can_edit_content {
+                perms_table.insert("can_edit_content", true.into());
+            }
+            if role.permissions.can_add_comments {
+                perms_table.insert("can_add_comments", true.into());
+            }
+            if role.permissions.can_edit_own_comments {
+                perms_table.insert("can_edit_own_comments", true.into());
+            }
+            if role.permissions.can_delete_own_comments {
+                perms_table.insert("can_delete_own_comments", true.into());
+            }
+            if role.permissions.can_edit_any_comments {
+                perms_table.insert("can_edit_any_comments", true.into());
+            }
+            if role.permissions.can_delete_any_comments {
+                perms_table.insert("can_delete_any_comments", true.into());
+            }
+            if role.permissions.can_set_picks {
+                perms_table.insert("can_set_picks", true.into());
+            }
+            if role.permissions.can_add_tags {
+                perms_table.insert("can_add_tags", true.into());
+            }
+            if role.permissions.can_use_zoom {
+                perms_table.insert("can_use_zoom", true.into());
+            }
+            if role.permissions.can_use_tile_zoom {
+                perms_table.insert("can_use_tile_zoom", true.into());
+            }
+            if role.permissions.can_analyze_images {
+                perms_table.insert("can_analyze_images", true.into());
+            }
+            if role.permissions.can_see_ai_analysis {
+                perms_table.insert("can_see_ai_analysis", true.into());
+            }
+            if role.permissions.can_see_ai_alt_text {
+                perms_table.insert("can_see_ai_alt_text", true.into());
+            }
+            if role.permissions.owner_access {
+                perms_table.insert("owner_access", true.into());
+            }
+
+            role_table["permissions"] = toml_edit::value(perms_table);
+            roles_table[role_name] = toml_edit::Item::Table(role_table);
+        }
+        permissions_table["roles"] = toml_edit::Item::Table(roles_table);
+    }
+
+    // Add user_roles as array of tables: [[permissions.user_roles]]
+    if !request.permissions.user_roles.is_empty() {
+        let mut user_roles_array = toml_edit::ArrayOfTables::new();
+        for assignment in &request.permissions.user_roles {
+            let mut user_role_table = toml_edit::Table::new();
+            user_role_table["username"] = toml_edit::value(assignment.username.clone());
+            let roles_array: toml_edit::Array = assignment
+                .roles
+                .iter()
+                .map(|r| toml_edit::Value::from(r.clone()))
+                .collect();
+            user_role_table["roles"] = toml_edit::value(roles_array);
+            user_roles_array.push(user_role_table);
+        }
+        permissions_table["user_roles"] = toml_edit::Item::ArrayOfTables(user_roles_array);
+    }
+
+    if !permissions_table.is_empty() {
+        toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
+    }
+
+    // Build the full _folder.md content
+    let toml_str = toml_content.to_string();
+    let content = if toml_str.trim().is_empty() && request.description.is_empty() {
+        String::new()
+    } else if toml_str.trim().is_empty() {
+        request.description.clone()
+    } else {
+        format!("+++\n{}+++\n{}", toml_str, request.description)
+    };
+
+    // Write the _folder.md file
+    let folder_md_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    gallery_obj
+        .source_storage()
+        .write(&folder_md_path, bytes::Bytes::from(content))
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to write _folder.md: {}", e)))?;
+
+    // Refresh the folder cache to pick up changes
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh folder cache: {}", e)))?;
+
+    Ok(Json(FolderPermissionsResponse {
+        hidden: request.hidden,
+        permissions: request.permissions,
+        description: request.description,
+    }))
+}
+
+/// Share a folder with a user by email
+pub async fn share_folder(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+    Json(request): Json<ShareFolderRequest>,
+) -> Result<Json<ShareFolderResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    let gallery_config = gallery_obj.get_config();
+
+    // URL decode the folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    // Handle special _root marker for root folder
+    let folder_path = if folder_path == "_root" {
+        String::new()
+    } else {
+        folder_path
+    };
+
+    // Verify folder exists in cache
+    {
+        let folder_cache = gallery_obj.folder_cache.read_all().await;
+        if !folder_cache.contains_key(&folder_path) {
+            return Err(AdminError::NotFound(format!(
+                "Folder not found: {}",
+                folder_path
+            )));
+        }
+    }
+
+    // Validate email format (basic check)
+    let email = request.email.trim().to_lowercase();
+    if !email.contains('@') || email.len() < 5 {
+        return Err(AdminError::BadRequest("Invalid email address".into()));
+    }
+
+    // Get site permissions to check for custom roles
+    let site_permissions = config_storage
+        .get_site_permissions(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Validate role (must be built-in, defined in site permissions, or in gallery)
+    let valid_roles = ["viewer", "contributor", "admin"];
+    let is_valid_role = valid_roles.contains(&request.role.as_str())
+        || gallery_config.permissions.roles.contains_key(&request.role)
+        || site_permissions
+            .as_ref()
+            .map(|p| p.roles.contains_key(&request.role))
+            .unwrap_or(false);
+    if !is_valid_role {
+        return Err(AdminError::BadRequest(format!(
+            "Invalid role: {}. Define custom roles in Site Permissions first.",
+            request.role
+        )));
+    }
+
+    // Get user storage
+    let user_storage = app_state
+        .user_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("User storage not configured".into()))?;
+
+    // Find or create user
+    let (username, user_created) = match user_storage.get_user_by_email(&email).await {
+        Ok(Some((existing_username, _))) => (existing_username, false),
+        Ok(None) => {
+            // Create new user with email-based username
+            let username = email
+                .split('@')
+                .next()
+                .unwrap_or("user")
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .take(32)
+                .collect::<String>()
+                .to_lowercase();
+
+            // Ensure username is at least 3 chars
+            let username = if username.len() < 3 {
+                format!("user_{}", &email.replace(['@', '.'], "_")[..8.min(email.len())])
+            } else {
+                username
+            };
+
+            // Check if username already exists, add suffix if needed
+            let mut final_username = username.clone();
+            let mut suffix = 1;
+            while user_storage
+                .get_user(&final_username)
+                .await
+                .map_err(|e| AdminError::Internal(e.to_string()))?
+                .is_some()
+            {
+                final_username = format!("{}_{}", username, suffix);
+                suffix += 1;
+            }
+
+            // Create the user
+            let user = tenrankai_users::User {
+                email: email.clone(),
+                passkeys: vec![],
+            };
+            user_storage
+                .add_user(&final_username, &user)
+                .await
+                .map_err(|e| AdminError::Internal(format!("Failed to create user: {}", e)))?;
+
+            (final_username, true)
+        }
+        Err(e) => {
+            return Err(AdminError::Internal(format!(
+                "Failed to lookup user: {}",
+                e
+            )));
+        }
+    };
+
+    // Add user to folder's user_roles
+    // Read current folder metadata
+    let current_metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
+
+    let (hidden, mut permissions, description) = match current_metadata {
+        Some(meta) => {
+            let perms = &meta.config.permissions;
+            (
+                meta.config.hidden,
+                PermissionConfigDto {
+                    public_role: perms.public_role.clone(),
+                    default_authenticated_role: perms.default_authenticated_role.clone(),
+                    roles: perms
+                        .roles
+                        .iter()
+                        .map(|(name, role)| {
+                            (
+                                name.clone(),
+                                RoleDto {
+                                    name: name.clone(),
+                                    permissions: RolePermissionsDto::from(&role.permissions),
+                                    inherits: role.inherits.clone(),
+                                    is_builtin: false,
+                                },
+                            )
+                        })
+                        .collect(),
+                    user_roles: perms
+                        .user_roles
+                        .iter()
+                        .map(|user_role| UserRoleAssignment {
+                            username: user_role.username.clone(),
+                            roles: user_role.roles.clone(),
+                        })
+                        .collect(),
+                },
+                meta.description_markdown,
+            )
+        }
+        None => (
+            false,
+            PermissionConfigDto {
+                public_role: None,
+                default_authenticated_role: None,
+                roles: std::collections::HashMap::new(),
+                user_roles: vec![],
+            },
+            String::new(),
+        ),
+    };
+
+    // Update or add user role assignment
+    let mut found = false;
+    for assignment in &mut permissions.user_roles {
+        if assignment.username == username {
+            // Add role if not already present
+            if !assignment.roles.contains(&request.role) {
+                assignment.roles.push(request.role.clone());
+            }
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        permissions.user_roles.push(UserRoleAssignment {
+            username: username.clone(),
+            roles: vec![request.role.clone()],
+        });
+    }
+
+    // Write updated _folder.md
+    let update_request = UpdateFolderPermissionsRequest {
+        hidden,
+        permissions: permissions.clone(),
+        description,
+    };
+
+    // Build the _folder.md content (reuse logic from update_folder_permissions)
+    let mut toml_content = toml_edit::DocumentMut::new();
+
+    toml_content["hidden"] = toml_edit::value(update_request.hidden);
+
+    let mut permissions_table = toml_edit::Table::new();
+
+    if let Some(ref public_role) = update_request.permissions.public_role {
+        permissions_table["public_role"] = toml_edit::value(public_role.clone());
+    }
+    if let Some(ref default_auth_role) = update_request.permissions.default_authenticated_role {
+        permissions_table["default_authenticated_role"] =
+            toml_edit::value(default_auth_role.clone());
+    }
+
+    // Add roles
+    if !update_request.permissions.roles.is_empty() {
+        let mut roles_table = toml_edit::Table::new();
+        for (role_name, role) in &update_request.permissions.roles {
+            let mut role_table = toml_edit::Table::new();
+            if let Some(ref inherits) = role.inherits {
+                role_table["inherits"] = toml_edit::value(inherits.clone());
+            }
+
+            let mut perms_table = toml_edit::InlineTable::new();
+            if role.permissions.can_view {
+                perms_table.insert("can_view", true.into());
+            }
+            if role.permissions.can_see_technical_details {
+                perms_table.insert("can_see_technical_details", true.into());
+            }
+            if role.permissions.can_see_exact_dates {
+                perms_table.insert("can_see_exact_dates", true.into());
+            }
+            if role.permissions.can_see_location {
+                perms_table.insert("can_see_location", true.into());
+            }
+            if role.permissions.can_download_medium {
+                perms_table.insert("can_download_medium", true.into());
+            }
+            if role.permissions.can_download_large {
+                perms_table.insert("can_download_large", true.into());
+            }
+            if role.permissions.can_download_original {
+                perms_table.insert("can_download_original", true.into());
+            }
+            if role.permissions.can_download_gallery {
+                perms_table.insert("can_download_gallery", true.into());
+            }
+            if role.permissions.can_download_raw {
+                perms_table.insert("can_download_raw", true.into());
+            }
+            if role.permissions.can_see_versions {
+                perms_table.insert("can_see_versions", true.into());
+            }
+            if role.permissions.can_read_metadata {
+                perms_table.insert("can_read_metadata", true.into());
+            }
+            if role.permissions.can_edit_content {
+                perms_table.insert("can_edit_content", true.into());
+            }
+            if role.permissions.can_add_comments {
+                perms_table.insert("can_add_comments", true.into());
+            }
+            if role.permissions.can_edit_own_comments {
+                perms_table.insert("can_edit_own_comments", true.into());
+            }
+            if role.permissions.can_delete_own_comments {
+                perms_table.insert("can_delete_own_comments", true.into());
+            }
+            if role.permissions.can_edit_any_comments {
+                perms_table.insert("can_edit_any_comments", true.into());
+            }
+            if role.permissions.can_delete_any_comments {
+                perms_table.insert("can_delete_any_comments", true.into());
+            }
+            if role.permissions.can_set_picks {
+                perms_table.insert("can_set_picks", true.into());
+            }
+            if role.permissions.can_add_tags {
+                perms_table.insert("can_add_tags", true.into());
+            }
+            if role.permissions.can_use_zoom {
+                perms_table.insert("can_use_zoom", true.into());
+            }
+            if role.permissions.can_use_tile_zoom {
+                perms_table.insert("can_use_tile_zoom", true.into());
+            }
+            if role.permissions.can_analyze_images {
+                perms_table.insert("can_analyze_images", true.into());
+            }
+            if role.permissions.can_see_ai_analysis {
+                perms_table.insert("can_see_ai_analysis", true.into());
+            }
+            if role.permissions.can_see_ai_alt_text {
+                perms_table.insert("can_see_ai_alt_text", true.into());
+            }
+            if role.permissions.owner_access {
+                perms_table.insert("owner_access", true.into());
+            }
+
+            role_table["permissions"] = toml_edit::value(perms_table);
+            roles_table[role_name] = toml_edit::Item::Table(role_table);
+        }
+        permissions_table["roles"] = toml_edit::Item::Table(roles_table);
+    }
+
+    // Add user_roles as array of tables: [[permissions.user_roles]]
+    if !update_request.permissions.user_roles.is_empty() {
+        let mut user_roles_array = toml_edit::ArrayOfTables::new();
+        for assignment in &update_request.permissions.user_roles {
+            let mut user_role_table = toml_edit::Table::new();
+            user_role_table["username"] = toml_edit::value(assignment.username.clone());
+            let roles_array: toml_edit::Array = assignment
+                .roles
+                .iter()
+                .map(|r| toml_edit::Value::from(r.clone()))
+                .collect();
+            user_role_table["roles"] = toml_edit::value(roles_array);
+            user_roles_array.push(user_role_table);
+        }
+        permissions_table["user_roles"] = toml_edit::Item::ArrayOfTables(user_roles_array);
+    }
+
+    if !permissions_table.is_empty() {
+        toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
+    }
+
+    let toml_str = toml_content.to_string();
+    let content = if toml_str.trim().is_empty() && update_request.description.is_empty() {
+        String::new()
+    } else if toml_str.trim().is_empty() {
+        update_request.description.clone()
+    } else {
+        format!("+++\n{}+++\n{}", toml_str, update_request.description)
+    };
+
+    // Write the _folder.md file
+    let folder_md_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    gallery_obj
+        .source_storage()
+        .write(&folder_md_path, bytes::Bytes::from(content))
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to write _folder.md: {}", e)))?;
+
+    // Refresh the folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh folder cache: {}", e)))?;
+
+    // Create invite token and send email
+    let token = {
+        let mut login_state = app_state.login_state().write().await;
+        login_state.create_invite_token(username.clone())
+    };
+
+    // Build folder URL for redirect after login
+    let folder_url = if folder_path.is_empty() {
+        gallery_config.url_prefix.clone()
+    } else {
+        format!("{}/{}", gallery_config.url_prefix, folder_path)
+    };
+
+    let base_url = app_state.base_url().unwrap_or("http://localhost:3000");
+    let login_url = format!(
+        "{}/_login/verify?token={}&return={}",
+        base_url,
+        token,
+        urlencoding::encode(&folder_url)
+    );
+
+    // Send the email if provider is configured
+    if let Some(email_provider) = &app_state.email_provider
+        && let Some(email_config) = app_state.email_config()
+    {
+        let folder_display = if folder_path.is_empty() {
+            gallery.clone()
+        } else {
+            format!("{}/{}", gallery, folder_path)
+        };
+
+        let mut email_message = crate::email::EmailMessage::new(
+            &email,
+            email_config.format_from(),
+            format!(
+                "{} has shared '{}' with you",
+                admin.0.username, folder_display
+            ),
+        );
+
+        if let Some(reply_to) = &email_config.reply_to {
+            email_message = email_message.with_reply_to(reply_to);
+        }
+
+        email_message = email_message.with_both(
+            format!(
+                "{} has shared the folder '{}' with you on {}.\n\nClick this link to view it:\n\n{}\n\nThis link will expire in 72 hours.",
+                admin.0.username, folder_display, app_state.app_name(), login_url
+            ),
+            format!(
+                r#"<p><strong>{}</strong> has shared the folder <strong>{}</strong> with you on {}.</p>
+<p>Click this link to view it:</p>
+<p><a href="{}">{}</a></p>
+<p>This link will expire in 72 hours.</p>"#,
+                admin.0.username, folder_display, app_state.app_name(), login_url, login_url
+            ),
+        );
+
+        if let Err(e) = email_provider.send_email(email_message).await {
+            tracing::error!("Failed to send share invitation email: {}", e);
+            // Don't fail the request - user is already added to folder
+        }
+    } else {
+        // Log the URL if no email provider
+        tracing::info!("Share invitation URL for {}: {}", email, login_url);
+    }
+
+    let message = if user_created {
+        format!(
+            "Created account for {} and shared folder with {} role. Invitation email sent.",
+            email, request.role
+        )
+    } else {
+        format!(
+            "Shared folder with {} ({} role). Invitation email sent.",
+            email, request.role
+        )
+    };
+
+    Ok(Json(ShareFolderResponse {
+        success: true,
+        message,
+        user_created,
     }))
 }

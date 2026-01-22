@@ -442,6 +442,25 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
                 axum::routing::get(admin::list_site_galleries),
             )
             .route(
+                "/_admin/api/sites/{site}/galleries/{name}",
+                axum::routing::get(admin::get_site_gallery)
+                    .put(admin::upsert_site_gallery)
+                    .delete(admin::delete_site_gallery),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders",
+                axum::routing::get(admin::list_gallery_folders),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders/{folder_path}",
+                axum::routing::get(admin::get_folder_permissions)
+                    .put(admin::update_folder_permissions),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders/{folder_path}/share",
+                axum::routing::post(admin::share_folder),
+            )
+            .route(
                 "/_admin/api/sites/{site}/permissions",
                 axum::routing::get(admin::get_site_permissions).put(admin::update_site_permissions),
             )
