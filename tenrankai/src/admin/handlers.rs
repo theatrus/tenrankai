@@ -1086,10 +1086,7 @@ pub async fn delete_site_gallery(
     if deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AdminError::NotFound(format!(
-            "Gallery not found: {}",
-            name
-        )))
+        Err(AdminError::NotFound(format!("Gallery not found: {}", name)))
     }
 }
 
@@ -1814,7 +1811,10 @@ pub async fn share_folder(
 
             // Ensure username is at least 3 chars
             let username = if username.len() < 3 {
-                format!("user_{}", &email.replace(['@', '.'], "_")[..8.min(email.len())])
+                format!(
+                    "user_{}",
+                    &email.replace(['@', '.'], "_")[..8.min(email.len())]
+                )
             } else {
                 username
             };
