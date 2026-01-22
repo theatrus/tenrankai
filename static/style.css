@@ -413,7 +413,7 @@ footer p {
 
 .nav-edit-link:hover {
     color: var(--text-primary);
-    border-color: var(--accent-color);
+    border-color: var(--link-color);
 }
 
 .folder-description {
