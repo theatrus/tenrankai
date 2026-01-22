@@ -70,7 +70,12 @@ impl ConfigStorageLoader {
         let site_permissions = self.load_site_permissions(name).await?;
 
         let galleries = self
-            .load_galleries(name, storage_prefix, cache_prefix, site_permissions.as_ref())
+            .load_galleries(
+                name,
+                storage_prefix,
+                cache_prefix,
+                site_permissions.as_ref(),
+            )
             .await?;
         let posts = self.load_posts(name, storage_prefix).await?;
 
@@ -102,8 +107,12 @@ impl ConfigStorageLoader {
                 .get_gallery_full_config(site, &gallery_name)
                 .await?
             {
-                let gallery =
-                    self.convert_gallery_config(stored, storage_prefix, cache_prefix, site_permissions)?;
+                let gallery = self.convert_gallery_config(
+                    stored,
+                    storage_prefix,
+                    cache_prefix,
+                    site_permissions,
+                )?;
                 galleries.push(gallery);
             }
         }
@@ -416,14 +425,24 @@ mod tests {
     fn test_validate_relative_path_dot_slash() {
         let result = ConfigStorageLoader::validate_relative_path("./photos");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("cannot start with './'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("cannot start with './'")
+        );
     }
 
     #[test]
     fn test_validate_relative_path_traversal() {
         let result = ConfigStorageLoader::validate_relative_path("photos/../secrets");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("directory traversal"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("directory traversal")
+        );
 
         let result = ConfigStorageLoader::validate_relative_path("..\\secrets");
         assert!(result.is_err());

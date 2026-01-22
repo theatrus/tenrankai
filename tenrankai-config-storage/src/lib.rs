@@ -7,11 +7,23 @@ pub mod url;
 
 pub use error::ConfigStorageError;
 pub use types::{
-    AuditAction, AuditEntry, GalleryPermissionConfig, Role, RolePermissions, UserRole,
+    AuditAction,
+    AuditEntry,
+    GalleryPermissionConfig,
+    Role,
+    RolePermissions,
     // Site configuration types
-    StoredGalleryConfig, StoredImageSizeConfig, StoredPostsConfig, StoredPreviewConfig,
-    StoredPregenerateConfig, StoredPregenerateFormats, StoredPregenerateSizes,
-    StoredSiteConfig, StoredSiteEmailConfig, StoredTileConfig,
+    StoredGalleryConfig,
+    StoredImageSizeConfig,
+    StoredPostsConfig,
+    StoredPregenerateConfig,
+    StoredPregenerateFormats,
+    StoredPregenerateSizes,
+    StoredPreviewConfig,
+    StoredSiteConfig,
+    StoredSiteEmailConfig,
+    StoredTileConfig,
+    UserRole,
 };
 pub use url::ConfigStorageUrl;
 

@@ -77,7 +77,11 @@ pub struct ConfigReloader {
 }
 
 impl ConfigReloader {
-    pub fn new(storage: DynConfigStorage, cookie_secret: String, config_storage_url: String) -> Self {
+    pub fn new(
+        storage: DynConfigStorage,
+        cookie_secret: String,
+        config_storage_url: String,
+    ) -> Self {
         Self {
             reload_lock: Mutex::new(()),
             storage,
@@ -156,7 +160,10 @@ impl ConfigReloader {
                 _ => vec!["*".to_string()],
             };
 
-            match self.build_site_with_galleries(&site_name, site_config).await {
+            match self
+                .build_site_with_galleries(&site_name, site_config)
+                .await
+            {
                 Ok(site) => {
                     site_manager.add_site(site, hostnames.clone()).await;
                     result.added.push(site_name);
@@ -186,7 +193,10 @@ impl ConfigReloader {
                 _ => vec!["*".to_string()],
             };
 
-            match self.build_site_with_galleries(&site_name, site_config).await {
+            match self
+                .build_site_with_galleries(&site_name, site_config)
+                .await
+            {
                 Ok(new_site) => {
                     site_manager
                         .replace_site(&site_name, new_site, hostnames.clone())

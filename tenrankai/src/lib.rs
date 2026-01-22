@@ -382,10 +382,7 @@ async fn create_app_internal(
         router = router
             // User management
             .route("/_admin/api/users", axum::routing::get(admin::list_users))
-            .route(
-                "/_admin/api/users",
-                axum::routing::post(admin::create_user),
-            )
+            .route("/_admin/api/users", axum::routing::post(admin::create_user))
             .route(
                 "/_admin/api/users/{username}",
                 axum::routing::get(admin::get_user),
@@ -417,14 +414,12 @@ async fn create_app_internal(
             )
             .route(
                 "/_admin/api/galleries/{gallery}/users/{username}/roles",
-                axum::routing::get(admin::get_user_gallery_roles)
-                    .put(admin::assign_user_roles),
+                axum::routing::get(admin::get_user_gallery_roles).put(admin::assign_user_roles),
             )
             // Role management
             .route(
                 "/_admin/api/roles",
-                axum::routing::get(admin::list_roles)
-                    .post(admin::create_role),
+                axum::routing::get(admin::list_roles).post(admin::create_role),
             )
             .route(
                 "/_admin/api/roles/{name}",
@@ -438,14 +433,10 @@ async fn create_app_internal(
                 axum::routing::get(admin::list_permission_groups),
             )
             // Site management (ConfigStorage mode)
-            .route(
-                "/_admin/api/sites",
-                axum::routing::get(admin::list_sites),
-            )
+            .route("/_admin/api/sites", axum::routing::get(admin::list_sites))
             .route(
                 "/_admin/api/sites/{name}",
-                axum::routing::get(admin::get_site)
-                    .put(admin::update_site),
+                axum::routing::get(admin::get_site).put(admin::update_site),
             )
             .route(
                 "/_admin/api/sites/{site}/galleries",

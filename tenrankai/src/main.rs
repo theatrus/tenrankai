@@ -326,26 +326,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             port,
             host,
             quit_after,
-        }) => {
-            run_server(
-                config,
-                multi_site_config,
-                port,
-                host,
-                quit_after,
-            )
-            .await
-        }
+        }) => run_server(config, multi_site_config, port, host, quit_after).await,
         None => {
             // Default to serve command if no subcommand specified
-            run_server(
-                config,
-                multi_site_config,
-                None,
-                None,
-                None,
-            )
-            .await
+            run_server(config, multi_site_config, None, None, None).await
         }
     }
 }
@@ -691,7 +675,6 @@ async fn run_server(
     host: Option<String>,
     quit_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-
     let host = host.unwrap_or(config.server.host.clone());
     let port = port.unwrap_or(config.server.port);
 
@@ -759,7 +742,10 @@ async fn run_server(
 
     // ConfigStorage for SIGHUP reload (captured in ConfigStorage mode)
     #[cfg(unix)]
-    let mut config_storage_for_reload: Option<(tenrankai_config_storage::DynConfigStorage, String)> = None;
+    let mut config_storage_for_reload: Option<(
+        tenrankai_config_storage::DynConfigStorage,
+        String,
+    )> = None;
 
     // Build the app differently based on mode
     let (app, site_manager) = if use_config_storage {
@@ -1097,7 +1083,9 @@ async fn run_server(
     #[cfg(unix)]
     let reload_token = tokio_util::sync::CancellationToken::new();
     #[cfg(unix)]
-    if let (Some(manager), Some((storage, storage_url))) = (&site_manager, config_storage_for_reload) {
+    if let (Some(manager), Some((storage, storage_url))) =
+        (&site_manager, config_storage_for_reload)
+    {
         let config_reloader = Arc::new(ConfigReloader::new(
             storage,
             config.app.cookie_secret.clone(),

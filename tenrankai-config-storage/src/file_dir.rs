@@ -64,7 +64,8 @@ impl FileDirConfigStorage {
     }
 
     fn site_gallery_path(&self, site: &str, gallery: &str) -> PathBuf {
-        self.site_galleries_path(site).join(format!("{}.toml", gallery))
+        self.site_galleries_path(site)
+            .join(format!("{}.toml", gallery))
     }
 
     fn site_posts_path(&self, site: &str) -> PathBuf {

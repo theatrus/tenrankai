@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::Path,
     http::StatusCode,
     response::{Html, IntoResponse, Response},
-    Json,
 };
 
 use super::error::AdminError;
@@ -230,7 +230,10 @@ pub async fn delete_user(
     if removed {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AdminError::NotFound(format!("User not found: {}", username)))
+        Err(AdminError::NotFound(format!(
+            "User not found: {}",
+            username
+        )))
     }
 }
 
@@ -960,14 +963,15 @@ pub async fn reload_site(
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
 
     // Get the config_storage URL from the app config
-    let config_storage_url = app_state
-        .config
-        .app
-        .config_storage
-        .as_ref()
-        .ok_or(AdminError::Internal(
-            "Config storage URL not configured".into(),
-        ))?;
+    let config_storage_url =
+        app_state
+            .config
+            .app
+            .config_storage
+            .as_ref()
+            .ok_or(AdminError::Internal(
+                "Config storage URL not configured".into(),
+            ))?;
 
     // Create a ConfigStorageLoader
     let loader = crate::config::ConfigStorageLoader::new(
@@ -976,7 +980,10 @@ pub async fn reload_site(
     );
 
     // Reload the site
-    match site_manager.reload_site(&site, &loader, config_storage_url).await {
+    match site_manager
+        .reload_site(&site, &loader, config_storage_url)
+        .await
+    {
         Ok(()) => Ok(Json(ReloadSiteResponse {
             success: true,
             message: format!("Site '{}' reloaded successfully", site),

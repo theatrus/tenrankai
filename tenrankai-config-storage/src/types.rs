@@ -316,10 +316,10 @@ pub struct StoredPostsConfig {
 
 // Default value functions
 fn default_gallery_template() -> String {
-    "gallery.html.liquid".to_string()
+    "modules/gallery.html.liquid".to_string()
 }
 fn default_image_detail_template() -> String {
-    "image_detail.html.liquid".to_string()
+    "modules/image_detail.html.liquid".to_string()
 }
 fn default_images_per_page() -> usize {
     50
@@ -370,10 +370,10 @@ fn default_preview_max_per_folder() -> usize {
     2
 }
 fn default_posts_index_template() -> String {
-    "posts_index.html.liquid".to_string()
+    "modules/posts_index.html.liquid".to_string()
 }
 fn default_posts_detail_template() -> String {
-    "post.html.liquid".to_string()
+    "modules/post_detail.html.liquid".to_string()
 }
 fn default_posts_per_page() -> usize {
     10

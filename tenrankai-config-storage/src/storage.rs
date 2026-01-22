@@ -155,7 +155,12 @@ impl ConfigStorage for StorageConfigStorage {
         username: &str,
     ) -> Result<()> {
         let key = self.site_config_key(site);
-        debug!(site = site, key = key, user = username, "Setting site config");
+        debug!(
+            site = site,
+            key = key,
+            user = username,
+            "Setting site config"
+        );
 
         self.write_json(&key, config, username).await?;
 
@@ -226,7 +231,12 @@ impl ConfigStorage for StorageConfigStorage {
         gallery: &str,
     ) -> Result<Option<StoredGalleryConfig>> {
         let key = self.site_gallery_key(site, gallery);
-        debug!(site = site, gallery = gallery, key = key, "Getting gallery full config");
+        debug!(
+            site = site,
+            gallery = gallery,
+            key = key,
+            "Getting gallery full config"
+        );
         self.read_json(&key).await
     }
 
@@ -239,7 +249,13 @@ impl ConfigStorage for StorageConfigStorage {
         username: &str,
     ) -> Result<()> {
         let key = self.site_gallery_key(site, gallery);
-        debug!(site = site, gallery = gallery, key = key, user = username, "Setting gallery full config");
+        debug!(
+            site = site,
+            gallery = gallery,
+            key = key,
+            user = username,
+            "Setting gallery full config"
+        );
 
         self.write_json(&key, config, username).await?;
 
@@ -257,7 +273,13 @@ impl ConfigStorage for StorageConfigStorage {
     #[instrument(skip(self), fields(backend = "storage"))]
     async fn delete_gallery(&self, site: &str, gallery: &str, username: &str) -> Result<bool> {
         let key = self.site_gallery_key(site, gallery);
-        debug!(site = site, gallery = gallery, key = key, user = username, "Deleting gallery");
+        debug!(
+            site = site,
+            gallery = gallery,
+            key = key,
+            user = username,
+            "Deleting gallery"
+        );
 
         let deleted = self.delete_key(&key).await?;
 
@@ -300,7 +322,12 @@ impl ConfigStorage for StorageConfigStorage {
     #[instrument(skip(self), fields(backend = "storage"))]
     async fn get_posts_config(&self, site: &str, posts: &str) -> Result<Option<StoredPostsConfig>> {
         let key = self.site_posts_key(site, posts);
-        debug!(site = site, posts = posts, key = key, "Getting posts config");
+        debug!(
+            site = site,
+            posts = posts,
+            key = key,
+            "Getting posts config"
+        );
         self.read_json(&key).await
     }
 
@@ -313,7 +340,13 @@ impl ConfigStorage for StorageConfigStorage {
         username: &str,
     ) -> Result<()> {
         let key = self.site_posts_key(site, posts);
-        debug!(site = site, posts = posts, key = key, user = username, "Setting posts config");
+        debug!(
+            site = site,
+            posts = posts,
+            key = key,
+            user = username,
+            "Setting posts config"
+        );
 
         self.write_json(&key, config, username).await?;
 
@@ -331,7 +364,13 @@ impl ConfigStorage for StorageConfigStorage {
     #[instrument(skip(self), fields(backend = "storage"))]
     async fn delete_posts(&self, site: &str, posts: &str, username: &str) -> Result<bool> {
         let key = self.site_posts_key(site, posts);
-        debug!(site = site, posts = posts, key = key, user = username, "Deleting posts");
+        debug!(
+            site = site,
+            posts = posts,
+            key = key,
+            user = username,
+            "Deleting posts"
+        );
 
         let deleted = self.delete_key(&key).await?;
 
@@ -366,7 +405,12 @@ impl ConfigStorage for StorageConfigStorage {
         username: &str,
     ) -> Result<()> {
         let key = self.site_permissions_key(site);
-        debug!(site = site, key = key, user = username, "Setting site permissions");
+        debug!(
+            site = site,
+            key = key,
+            user = username,
+            "Setting site permissions"
+        );
 
         self.write_json(&key, config, username).await?;
 

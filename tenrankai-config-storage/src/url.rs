@@ -66,19 +66,25 @@ mod tests {
     #[test]
     fn test_parse_relative_path() {
         let url = ConfigStorageUrl::parse("config.d").unwrap();
-        assert!(matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("config.d")));
+        assert!(
+            matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("config.d"))
+        );
     }
 
     #[test]
     fn test_parse_absolute_path() {
         let url = ConfigStorageUrl::parse("/var/lib/tenrankai/config.d").unwrap();
-        assert!(matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("/var/lib/tenrankai/config.d")));
+        assert!(
+            matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("/var/lib/tenrankai/config.d"))
+        );
     }
 
     #[test]
     fn test_parse_file_url() {
         let url = ConfigStorageUrl::parse("file:///var/lib/config.d").unwrap();
-        assert!(matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("/var/lib/config.d")));
+        assert!(
+            matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("/var/lib/config.d"))
+        );
     }
 
     #[test]

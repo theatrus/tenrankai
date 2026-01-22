@@ -2,13 +2,13 @@
 
 use axum::{
     extract::{FromRef, FromRequestParts},
-    http::{request::Parts, StatusCode},
+    http::{StatusCode, request::Parts},
 };
 use std::future::Future;
 
-use crate::login::extractors::RequireAuth;
-use crate::login::AuthUser;
 use crate::AppState;
+use crate::login::AuthUser;
+use crate::login::extractors::RequireAuth;
 
 /// Extractor that requires the user to have owner_access permission.
 /// This is used to gate access to admin endpoints.
