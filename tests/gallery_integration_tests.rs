@@ -1,12 +1,13 @@
 use axum::http::StatusCode;
 use axum_test::TestServer;
 use tempfile::TempDir;
-use tenrankai::{Config, GallerySystemConfig, ImageIndexingMode, create_app};
+use tenrankai::{
+    GallerySystemConfig, ImageIndexingMode, StaticConfig, TemplateConfig, create_app,
+    site::SiteConfig,
+};
 
 /// Helper to create a test configuration with galleries
-fn create_test_config(temp_dir: &TempDir) -> Config {
-    let mut config = Config::default();
-
+fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
     // Create test directories
     let photos_dir = temp_dir.path().join("photos");
     let portfolio_dir = temp_dir.path().join("portfolio");
@@ -16,11 +17,14 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
     std::fs::create_dir_all(&portfolio_dir).unwrap();
     std::fs::create_dir_all(&cache_dir).unwrap();
 
-    // Set base URL for OpenGraph testing
-    config.app.base_url = Some("https://example.com".to_string());
+    // Set template directory to the actual project templates
+    // CARGO_MANIFEST_DIR is the tenrankai package dir, templates are at workspace root
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
 
     // Configure multiple galleries
-    config.galleries = Some(vec![
+    let galleries = vec![
         GallerySystemConfig {
             name: "main".to_string(),
             source_directory: photos_dir.to_string_lossy().to_string(),
@@ -94,23 +98,30 @@ fn create_test_config(temp_dir: &TempDir) -> Config {
             image_indexing: ImageIndexingMode::Filename,
             ..Default::default()
         },
-    ]);
-
-    // Set template directory to the actual project templates
-    // CARGO_MANIFEST_DIR is the tenrankai package dir, templates are at workspace root
-    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
-    config.templates.directories = vec![
-        workspace_root
-            .join("templates")
-            .to_string_lossy()
-            .to_string(),
     ];
-    config.static_files.directories =
-        vec![workspace_root.join("static").to_string_lossy().to_string()];
 
-    config
+    SiteConfig {
+        name: "test".to_string(),
+        base_url: Some("https://example.com".to_string()),
+        cookie_secret: "test-secret".to_string(),
+        templates: TemplateConfig {
+            directories: vec![
+                workspace_root
+                    .join("templates")
+                    .to_string_lossy()
+                    .to_string(),
+            ],
+        },
+        static_files: StaticConfig {
+            directories: vec![workspace_root.join("static").to_string_lossy().to_string()],
+            use_redirects: false,
+        },
+        galleries: Some(galleries),
+        posts: None,
+        user_database: None,
+        email: None,
+        config_storage: None,
+    }
 }
 
 /// Helper to create test images in a directory
@@ -1098,18 +1109,19 @@ async fn test_gallery_download_recursive() {
 // ============================================================================
 
 /// Helper to create a test configuration with RAW download permission
-fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> Config {
-    let mut config = Config::default();
-
+fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> SiteConfig {
     let photos_dir = temp_dir.path().join("photos");
     let cache_dir = temp_dir.path().join("cache");
 
     std::fs::create_dir_all(&photos_dir).unwrap();
     std::fs::create_dir_all(&cache_dir).unwrap();
 
-    config.app.base_url = Some("https://example.com".to_string());
+    // CARGO_MANIFEST_DIR is the tenrankai package dir, templates are at workspace root
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
 
-    config.galleries = Some(vec![GallerySystemConfig {
+    let galleries = vec![GallerySystemConfig {
         name: "main".to_string(),
         source_directory: photos_dir.to_string_lossy().to_string(),
         cache_directory: cache_dir.join("main").to_string_lossy().to_string(),
@@ -1136,22 +1148,30 @@ fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> Config {
             user_roles: vec![],
         },
         ..Default::default()
-    }]);
+    }];
 
-    // CARGO_MANIFEST_DIR is the tenrankai package dir, templates are at workspace root
-    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
-    config.templates.directories = vec![
-        workspace_root
-            .join("templates")
-            .to_string_lossy()
-            .to_string(),
-    ];
-    config.static_files.directories =
-        vec![workspace_root.join("static").to_string_lossy().to_string()];
-
-    config
+    SiteConfig {
+        name: "test".to_string(),
+        base_url: Some("https://example.com".to_string()),
+        cookie_secret: "test-secret".to_string(),
+        templates: TemplateConfig {
+            directories: vec![
+                workspace_root
+                    .join("templates")
+                    .to_string_lossy()
+                    .to_string(),
+            ],
+        },
+        static_files: StaticConfig {
+            directories: vec![workspace_root.join("static").to_string_lossy().to_string()],
+            use_redirects: false,
+        },
+        galleries: Some(galleries),
+        posts: None,
+        user_database: None,
+        email: None,
+        config_storage: None,
+    }
 }
 
 /// Helper to create a dummy RAW file (just a text file with .dng extension for testing)

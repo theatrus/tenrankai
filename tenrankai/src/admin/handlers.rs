@@ -962,21 +962,15 @@ pub async fn reload_site(
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
 
-    // Get the config_storage URL from the app config
-    let config_storage_url =
-        app_state
-            .config
-            .app
-            .config_storage
-            .as_ref()
-            .ok_or(AdminError::Internal(
-                "Config storage URL not configured".into(),
-            ))?;
+    // Get the config_storage URL from the site
+    let config_storage_url = app_state.config_storage_url().ok_or(AdminError::Internal(
+        "Config storage URL not configured".into(),
+    ))?;
 
     // Create a ConfigStorageLoader
     let loader = crate::config::ConfigStorageLoader::new(
         config_storage.clone(),
-        app_state.config.app.cookie_secret.clone(),
+        app_state.cookie_secret().to_string(),
     );
 
     // Reload the site
@@ -993,4 +987,193 @@ pub async fn reload_site(
             message: format!("Failed to reload site '{}': {}", site, e),
         })),
     }
+}
+
+// ============================================================================
+// Site Permissions Management
+// ============================================================================
+
+/// Get site-level permissions
+pub async fn get_site_permissions(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(site): Path<String>,
+) -> Result<Json<PermissionConfigDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify site exists
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    let permissions = config_storage
+        .get_site_permissions(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Convert to DTO
+    let dto = match permissions {
+        Some(perms) => PermissionConfigDto {
+            public_role: perms.public_role,
+            default_authenticated_role: perms.default_authenticated_role,
+            roles: perms
+                .roles
+                .into_iter()
+                .map(|(name, role)| {
+                    let p = &role.permissions;
+                    (
+                        name.clone(),
+                        RoleDto {
+                            name,
+                            permissions: RolePermissionsDto {
+                                can_view: p.can_view,
+                                can_see_technical_details: p.can_see_technical_details,
+                                can_see_exact_dates: p.can_see_exact_dates,
+                                can_see_location: p.can_see_location,
+                                can_download_medium: p.can_download_medium,
+                                can_download_large: p.can_download_large,
+                                can_download_original: p.can_download_original,
+                                can_download_gallery: p.can_download_gallery,
+                                can_download_raw: p.can_download_raw,
+                                can_see_versions: p.can_see_versions,
+                                can_read_metadata: p.can_read_metadata,
+                                can_edit_content: p.can_edit_content,
+                                can_add_comments: p.can_add_comments,
+                                can_edit_own_comments: p.can_edit_own_comments,
+                                can_delete_own_comments: p.can_delete_own_comments,
+                                can_edit_any_comments: p.can_edit_any_comments,
+                                can_delete_any_comments: p.can_delete_any_comments,
+                                can_set_picks: p.can_set_picks,
+                                can_add_tags: p.can_add_tags,
+                                can_use_zoom: p.can_use_zoom,
+                                can_use_tile_zoom: p.can_use_tile_zoom,
+                                can_analyze_images: p.can_analyze_images,
+                                can_see_ai_analysis: p.can_see_ai_analysis,
+                                can_see_ai_alt_text: p.can_see_ai_alt_text,
+                                owner_access: p.owner_access,
+                            },
+                            inherits: role.inherits,
+                            is_builtin: false,
+                        },
+                    )
+                })
+                .collect(),
+            user_roles: perms
+                .user_roles
+                .into_iter()
+                .map(|ur| UserRoleAssignment {
+                    username: ur.username,
+                    roles: ur.roles,
+                })
+                .collect(),
+        },
+        None => PermissionConfigDto {
+            public_role: Some("viewer".to_string()),
+            default_authenticated_role: Some("viewer".to_string()),
+            roles: std::collections::HashMap::new(),
+            user_roles: Vec::new(),
+        },
+    };
+
+    Ok(Json(dto))
+}
+
+/// Update site-level permissions
+pub async fn update_site_permissions(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path(site): Path<String>,
+    Json(request): Json<UpdateGalleryPermissionsRequest>,
+) -> Result<Json<PermissionConfigDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Verify site exists
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Convert DTO to storage format
+    let permission_config = tenrankai_config_storage::GalleryPermissionConfig {
+        public_role: request.public_role.clone(),
+        default_authenticated_role: request.default_authenticated_role.clone(),
+        roles: request
+            .roles
+            .iter()
+            .map(|(name, role_dto)| {
+                (
+                    name.clone(),
+                    tenrankai_config_storage::Role {
+                        inherits: role_dto.inherits.clone(),
+                        permissions: tenrankai_config_storage::RolePermissions {
+                            can_view: role_dto.permissions.can_view,
+                            can_see_technical_details: role_dto
+                                .permissions
+                                .can_see_technical_details,
+                            can_see_exact_dates: role_dto.permissions.can_see_exact_dates,
+                            can_see_location: role_dto.permissions.can_see_location,
+                            can_download_medium: role_dto.permissions.can_download_medium,
+                            can_download_large: role_dto.permissions.can_download_large,
+                            can_download_original: role_dto.permissions.can_download_original,
+                            can_download_gallery: role_dto.permissions.can_download_gallery,
+                            can_download_raw: role_dto.permissions.can_download_raw,
+                            can_see_versions: role_dto.permissions.can_see_versions,
+                            can_read_metadata: role_dto.permissions.can_read_metadata,
+                            can_edit_content: role_dto.permissions.can_edit_content,
+                            can_add_comments: role_dto.permissions.can_add_comments,
+                            can_edit_own_comments: role_dto.permissions.can_edit_own_comments,
+                            can_delete_own_comments: role_dto.permissions.can_delete_own_comments,
+                            can_edit_any_comments: role_dto.permissions.can_edit_any_comments,
+                            can_delete_any_comments: role_dto.permissions.can_delete_any_comments,
+                            can_set_picks: role_dto.permissions.can_set_picks,
+                            can_add_tags: role_dto.permissions.can_add_tags,
+                            can_use_zoom: role_dto.permissions.can_use_zoom,
+                            can_use_tile_zoom: role_dto.permissions.can_use_tile_zoom,
+                            can_analyze_images: role_dto.permissions.can_analyze_images,
+                            can_see_ai_analysis: role_dto.permissions.can_see_ai_analysis,
+                            can_see_ai_alt_text: role_dto.permissions.can_see_ai_alt_text,
+                            owner_access: role_dto.permissions.owner_access,
+                        },
+                    },
+                )
+            })
+            .collect(),
+        user_roles: request
+            .user_roles
+            .iter()
+            .map(|ur| tenrankai_config_storage::UserRole {
+                username: ur.username.clone(),
+                roles: ur.roles.clone(),
+            })
+            .collect(),
+    };
+
+    // Save permissions
+    config_storage
+        .set_site_permissions(&site, &permission_config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Return the saved permissions
+    Ok(Json(PermissionConfigDto {
+        public_role: request.public_role,
+        default_authenticated_role: request.default_authenticated_role,
+        roles: request.roles,
+        user_roles: request.user_roles,
+    }))
 }

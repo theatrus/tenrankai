@@ -158,12 +158,7 @@ pub async fn gallery_handler_for_named(
         let composite_path = if path.is_empty() { "_root" } else { &path };
         let og_image_url = format!(
             "{}/api/gallery/{}/composite/{}",
-            app_state
-                .config
-                .app
-                .base_url
-                .as_ref()
-                .unwrap_or(&String::new()),
+            app_state.base_url().unwrap_or(""),
             gallery_name,
             composite_path
         );
@@ -172,12 +167,7 @@ pub async fn gallery_handler_for_named(
         // Use the first image if we only have one
         let og_image_url = format!(
             "{}{}",
-            app_state
-                .config
-                .app
-                .base_url
-                .as_ref()
-                .unwrap_or(&String::new()),
+            app_state.base_url().unwrap_or(""),
             first_image.gallery_url.as_ref().unwrap_or(&String::new())
         );
         (

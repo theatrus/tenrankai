@@ -3,10 +3,9 @@ use tenrankai_config_storage::DynConfigStorage;
 use tokio::sync::RwLock;
 
 use crate::{
-    Config, GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig,
-    email::SiteEmailConfig, favicon::FaviconRenderer, gallery::SharedGallery, login::LoginState,
-    posts::PostsManager, static_files::StaticFileHandler, templating::TemplateEngine,
-    user_storage::DynUserStorage,
+    GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig, email::SiteEmailConfig,
+    favicon::FaviconRenderer, gallery::SharedGallery, login::LoginState, posts::PostsManager,
+    static_files::StaticFileHandler, templating::TemplateEngine, user_storage::DynUserStorage,
 };
 
 /// Configuration for a single site (extracted from legacy Config or multi-site config)
@@ -24,31 +23,6 @@ pub struct SiteConfig {
     pub config_storage: Option<String>,
 }
 
-impl SiteConfig {
-    /// Create a default site config from legacy Config (backward compatibility)
-    pub fn from_legacy_config(
-        config: &Config,
-        email_config: Option<&crate::email::EmailConfig>,
-    ) -> Self {
-        Self {
-            name: config.app.name.clone(),
-            base_url: config.app.base_url.clone(),
-            cookie_secret: config.app.cookie_secret.clone(),
-            templates: config.templates.clone(),
-            static_files: config.static_files.clone(),
-            galleries: config.galleries.clone(),
-            posts: config.posts.clone(),
-            user_database: config
-                .app
-                .user_database
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string()),
-            email: email_config.map(SiteEmailConfig::from),
-            config_storage: config.app.config_storage.clone(),
-        }
-    }
-}
-
 /// Resources for a single site - encapsulates all site-specific components
 pub struct SiteResources {
     pub base_url: Option<String>,
@@ -62,6 +36,7 @@ pub struct SiteResources {
     pub user_storage: Option<DynUserStorage>,
     pub email_config: Option<SiteEmailConfig>,
     pub config_storage: Option<DynConfigStorage>,
+    pub config_storage_url: Option<String>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -125,6 +100,10 @@ impl Site {
     pub fn config_storage(&self) -> &Option<DynConfigStorage> {
         &self.resources.config_storage
     }
+
+    pub fn config_storage_url(&self) -> Option<&str> {
+        self.resources.config_storage_url.as_deref()
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +124,7 @@ mod tests {
             user_storage: None,
             email_config: None,
             config_storage: None,
+            config_storage_url: None,
         };
         Site::new(name.to_string(), resources)
     }

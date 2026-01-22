@@ -74,6 +74,7 @@ impl SiteBuilder {
             user_storage,
             email_config: self.config.email.clone(),
             config_storage,
+            config_storage_url: self.config.config_storage.clone(),
         };
 
         info!("Site '{}' built successfully", self.config.name);

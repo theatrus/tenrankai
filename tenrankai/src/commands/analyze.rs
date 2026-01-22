@@ -1,14 +1,17 @@
 use crate::Config;
+use crate::config::ConfigStorageLoader;
 use crate::gallery::Gallery;
 use crate::openai::{ImageContext, LocationContext, OpenAIClient, OpenAIError};
 use crate::storage;
 use base64::{Engine as _, engine::general_purpose};
 use std::sync::Arc;
+use tenrankai_config_storage::{ConfigStorageUrl, create_config_storage};
 use tracing::{debug, info, warn};
 
 /// Handle the analyze-images CLI command
 pub async fn handle_analyze_command(
     config: Config,
+    site_name: String,
     gallery_name: String,
     folder: Option<String>,
     limit: Option<usize>,
@@ -20,13 +23,30 @@ pub async fn handle_analyze_command(
         .openai
         .ok_or("OpenAI not configured. Add [openai] section to config.toml with api_key.")?;
 
-    // Find the gallery
-    let gallery_configs = config.galleries.as_ref().ok_or("No galleries configured")?;
+    // Load gallery config from ConfigStorage
+    let config_storage_url = config.app.config_storage.ok_or(
+        "config_storage is required. Add 'config_storage = \"config.d\"' to [app] section of config.toml.",
+    )?;
 
-    let gallery_config = gallery_configs
-        .iter()
-        .find(|g| g.name == gallery_name)
-        .ok_or_else(|| format!("Gallery '{}' not found", gallery_name))?;
+    let storage_url = ConfigStorageUrl::parse(&config_storage_url)?;
+    let storage = create_config_storage(&storage_url).await?;
+    let loader = ConfigStorageLoader::new(storage, config.app.cookie_secret.clone());
+
+    let site_config = loader
+        .load_site(&site_name)
+        .await?
+        .ok_or_else(|| format!("Site '{}' not found", site_name))?;
+
+    let gallery_config = site_config
+        .galleries
+        .as_ref()
+        .and_then(|galleries| galleries.iter().find(|g| g.name == gallery_name).cloned())
+        .ok_or_else(|| {
+            format!(
+                "Gallery '{}' not found in site '{}'",
+                gallery_name, site_name
+            )
+        })?;
 
     let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;

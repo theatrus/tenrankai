@@ -2142,7 +2142,7 @@ mod tests {
     use super::*;
     use crate::storage::FilesystemStorage;
     use crate::user_storage::UserStorage;
-    use crate::{AppState, Config, GallerySystemConfig, api_response::short_cache_headers};
+    use crate::{AppState, GallerySystemConfig, api_response::short_cache_headers};
     use axum::http::{HeaderMap, HeaderValue};
     use std::{collections::HashMap, sync::Arc};
     use tempfile::TempDir;
@@ -2297,46 +2297,12 @@ roles = ["viewer"]
         let mut galleries = HashMap::new();
         galleries.insert("test".to_string(), gallery);
 
-        let config = Config {
-            app: crate::AppConfig {
-                name: "Test".to_string(),
-                base_url: Some("http://test.com".to_string()),
-                user_database: Some("users.toml".into()),
-                cookie_secret: "test-secret".to_string(),
-                log_level: crate::LogLevel::Info,
-                aws_log_level: crate::LogLevel::Warn,
-                config_storage: None,
-            },
-            server: crate::ServerConfig {
-                host: "127.0.0.1".to_string(),
-                port: 3000,
-            },
-            static_files: crate::StaticConfig {
-                directories: vec!["static".into()],
-                use_redirects: false,
-            },
-            templates: crate::TemplateConfig {
-                directories: vec!["templates".into()],
-            },
-            galleries: Some(vec![]),
-            posts: None,
-            email: None,
-            openai: None,
-        };
-
-        // Convert static directory strings to PathBufs for testing
-        let static_paths: Vec<std::path::PathBuf> = config
-            .static_files
-            .directories
-            .iter()
-            .map(std::path::PathBuf::from)
-            .collect();
+        // Create static handler for testing
+        let static_paths: Vec<std::path::PathBuf> = vec!["static".into()];
         let static_handler = crate::static_files::StaticFileHandler::from_paths(static_paths);
 
         // Convert template directories to storage backends
-        let template_storages: Vec<crate::storage::DynStorage> = config
-            .templates
-            .directories
+        let template_storages: Vec<crate::storage::DynStorage> = vec!["templates"]
             .iter()
             .map(|dir| {
                 Arc::new(crate::storage::FilesystemStorage::new(
@@ -2374,6 +2340,7 @@ roles = ["viewer"]
             user_storage,
             email_config: None,
             config_storage: None,
+            config_storage_url: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);
@@ -2384,7 +2351,6 @@ roles = ["viewer"]
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config,
         };
 
         (app_state, temp_dir)

@@ -400,6 +400,7 @@ mod tests {
             user_storage: None,
             email_config: None,
             config_storage: None,
+            config_storage_url: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }

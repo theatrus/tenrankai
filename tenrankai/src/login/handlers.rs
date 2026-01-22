@@ -135,12 +135,7 @@ pub async fn login_request(
         };
 
         // Build login URL
-        let base_url = app_state
-            .config
-            .app
-            .base_url
-            .as_deref()
-            .unwrap_or("http://localhost:8080");
+        let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
         let login_url = format!("{}/_login/verify?token={}", base_url, token);
 
         // Send email if provider is configured, otherwise log the URL

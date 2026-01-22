@@ -3,18 +3,15 @@ use std::path::PathBuf;
 
 use crate::{LogLevel, email, openai};
 
-/// Main application configuration
+/// Main application configuration (from config.toml)
+///
+/// This is the bootstrap configuration that specifies server settings and
+/// points to ConfigStorage for site-specific configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub server: ServerConfig,
     pub app: AppConfig,
-    pub templates: TemplateConfig,
-    pub static_files: StaticConfig,
-    #[serde(default)]
-    pub galleries: Option<Vec<GallerySystemConfig>>,
-    #[serde(default)]
-    pub posts: Option<Vec<PostsSystemConfig>>,
     #[serde(default)]
     pub email: Option<email::EmailConfig>,
     #[serde(default)]

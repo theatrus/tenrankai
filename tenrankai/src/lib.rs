@@ -60,9 +60,6 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
-    // Config is pub(crate) to discourage direct access - use accessor methods instead
-    // Direct access to config.app.user_database caused multi-site bugs (see PR #121)
-    pub(crate) config: Config,
 }
 
 impl AppState {
@@ -74,7 +71,6 @@ impl AppState {
             email_provider: self.email_provider.clone(),
             webauthn: self.webauthn.clone(),
             openai_client: self.openai_client.clone(),
-            config: self.config.clone(),
         }
     }
 }
@@ -116,6 +112,10 @@ impl AppState {
 
     pub fn config_storage(&self) -> &Option<tenrankai_config_storage::DynConfigStorage> {
         self.site.config_storage()
+    }
+
+    pub fn config_storage_url(&self) -> Option<&str> {
+        self.site.config_storage_url()
     }
 }
 
@@ -166,11 +166,43 @@ async fn server_header_middleware(
     response
 }
 
+/// Create an app for testing with a SiteConfig
+/// Note: This does not initialize email, webauthn, or openai - use for testing only
 pub async fn create_app(
-    config: Config,
+    site_config: site::SiteConfig,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
-    create_app_internal(config, galleries, None).await
+    // Build site from provided SiteConfig
+    let mut site_builder = site::SiteBuilder::new(site_config);
+
+    // Inject provided galleries if any (for testing)
+    if let Some(provided_galleries) = galleries {
+        site_builder = site_builder.with_galleries(provided_galleries);
+    }
+
+    let built_site = match site_builder.build().await {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            error!("Failed to build site: {}", e);
+            panic!("Cannot start without a valid site configuration: {}", e);
+        }
+    };
+
+    // Start periodic cleanup for login if user database is configured
+    if built_site.user_storage().is_some() {
+        login::start_periodic_cleanup(built_site.login_state().clone());
+    }
+
+    // Create minimal AppState for testing (no email, webauthn, openai)
+    let app_state = AppState {
+        site: built_site.clone(),
+        site_manager: None,
+        email_provider: None,
+        webauthn: None,
+        openai_client: None,
+    };
+
+    create_router(app_state, built_site)
 }
 
 /// Create an app with multi-site support using SiteManager
@@ -178,58 +210,22 @@ pub async fn create_app_with_site_manager(
     config: Config,
     site_manager: Arc<site::SiteManager>,
 ) -> axum::Router {
-    create_app_internal(config, None, Some(site_manager)).await
-}
-
-async fn create_app_internal(
-    config: Config,
-    galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
-    site_manager: Option<Arc<site::SiteManager>>,
-) -> axum::Router {
-    // Get or build the site
-    let built_site = if let Some(ref manager) = site_manager {
-        // In multi-site mode, get the default site from SiteManager
-        // The site_resolution_middleware will swap in the correct site per-request
-        match manager.get_default_site().await {
-            Some(site) => {
-                info!("Using default site '{}' from SiteManager", site.name);
-                // Start periodic login cleanup for all sites with user databases
-                for site in manager.sites().await {
-                    if site.user_storage().is_some() {
-                        login::start_periodic_cleanup(site.login_state().clone());
-                    }
+    // In multi-site mode, get the default site from SiteManager
+    // The site_resolution_middleware will swap in the correct site per-request
+    let built_site = match site_manager.get_default_site().await {
+        Some(site) => {
+            info!("Using default site '{}' from SiteManager", site.name);
+            // Start periodic login cleanup for all sites with user databases
+            for site in site_manager.sites().await {
+                if site.user_storage().is_some() {
+                    login::start_periodic_cleanup(site.login_state().clone());
                 }
-                // Return the Arc<Site> directly, we'll handle conversion below
-                site
             }
-            None => {
-                panic!("SiteManager has no default site configured");
-            }
+            site
         }
-    } else {
-        // Single-site mode: build the site from config
-        let site_config = site::SiteConfig::from_legacy_config(&config, config.email.as_ref());
-        let mut site_builder = site::SiteBuilder::new(site_config);
-
-        // Inject provided galleries if any (for testing)
-        if let Some(provided_galleries) = galleries {
-            site_builder = site_builder.with_galleries(provided_galleries);
+        None => {
+            panic!("SiteManager has no default site configured");
         }
-
-        let site = match site_builder.build().await {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Failed to build site: {}", e);
-                panic!("Cannot start without a valid site configuration: {}", e);
-            }
-        };
-
-        // Start periodic cleanup for login if user database is configured
-        if site.user_storage().is_some() {
-            login::start_periodic_cleanup(site.login_state().clone());
-        }
-
-        Arc::new(site)
     };
 
     // Initialize global resources (shared across all sites)
@@ -284,13 +280,16 @@ async fn create_app_internal(
 
     let app_state = AppState {
         site: built_site.clone(),
-        site_manager: site_manager.clone(),
+        site_manager: Some(site_manager.clone()),
         email_provider,
         webauthn,
         openai_client,
-        config: config.clone(),
     };
 
+    create_router(app_state, built_site)
+}
+
+fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Router {
     let mut router = Router::new()
         .route(
             "/",
@@ -441,6 +440,10 @@ async fn create_app_internal(
             .route(
                 "/_admin/api/sites/{site}/galleries",
                 axum::routing::get(admin::list_site_galleries),
+            )
+            .route(
+                "/_admin/api/sites/{site}/permissions",
+                axum::routing::get(admin::get_site_permissions).put(admin::update_site_permissions),
             )
             .route(
                 "/_admin/api/sites/{site}/reload",
@@ -844,7 +847,7 @@ async fn create_app_internal(
     );
 
     // Add site resolution middleware if in multi-site mode
-    let router = if site_manager.is_some() {
+    let router = if app_state.site_manager.is_some() {
         router.layer(middleware::from_fn_with_state(
             app_state.clone(),
             site::site_resolution_middleware,

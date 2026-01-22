@@ -65,12 +65,7 @@ pub async fn posts_index_handler(
     let total_pages = posts_manager.get_total_pages().await;
     let config = posts_manager.get_config();
 
-    let base_url = app_state
-        .config
-        .app
-        .base_url
-        .as_deref()
-        .unwrap_or("http://localhost:8080");
+    let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
 
     let page_title = posts_name
         .chars()
@@ -133,12 +128,7 @@ pub async fn post_detail_handler(
 
     let config = posts_manager.get_config();
 
-    let base_url = app_state
-        .config
-        .app
-        .base_url
-        .as_deref()
-        .unwrap_or("http://localhost:8080");
+    let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
 
     let full_url = format!("{}{}/{}", base_url, config.url_prefix, post.slug);
 

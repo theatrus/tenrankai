@@ -380,7 +380,6 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_permissions_for_path_public() {
         // Create minimal app state for testing
-        let config = crate::Config::default();
         let mut gallery_config = crate::GallerySystemConfig::default();
         gallery_config.name = "test".to_string();
         gallery_config.source_directory = ".".to_string();
@@ -411,6 +410,7 @@ mod tests {
             user_storage: None,
             email_config: None,
             config_storage: None,
+            config_storage_url: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);
@@ -421,7 +421,6 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config,
         };
 
         // Test public user permissions

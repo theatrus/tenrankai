@@ -1,16 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use super::types::{
-    AppConfig, GallerySystemConfig, PostsSystemConfig, ServerConfig, StaticConfig, TemplateConfig,
-};
+use super::types::{AppConfig, ServerConfig};
 use crate::{email, openai};
 
-/// Root configuration structure
+/// Root configuration structure (config.toml)
 ///
-/// This is the top-level config structure that supports single-site configuration.
-/// For multi-site deployments, use ConfigStorage (`config_storage = "config.d"`).
+/// This is the bootstrap configuration that specifies server settings and
+/// points to ConfigStorage for site configuration.
 ///
-/// ## Single-Site Format
+/// ## Format
 /// ```toml
 /// [server]
 /// host = "0.0.0.0"
@@ -18,22 +16,17 @@ use crate::{email, openai};
 ///
 /// [app]
 /// name = "My Gallery"
-/// config_storage = "config.d"  # For multi-site, point to ConfigStorage
+/// config_storage = "config.d"  # Required: path to ConfigStorage
 ///
-/// # Single-site mode (when config_storage is not set):
-/// [[galleries]]
-/// name = "main"
-/// url_prefix = "/gallery"
-/// # ...
+/// [email]
+/// # Global email provider configuration
+///
+/// [openai]
+/// # Global OpenAI configuration
 /// ```
 ///
-/// ## Multi-Site Mode
-/// Set `config_storage` in `[app]` to load sites from ConfigStorage:
-/// ```toml
-/// [app]
-/// config_storage = "config.d"  # or "s3://bucket/prefix"
-/// ```
-/// Site configurations are then loaded from the ConfigStorage backend.
+/// Site configurations (galleries, posts, static files, templates) are loaded
+/// from ConfigStorage, not from this file.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootConfig {
@@ -50,32 +43,9 @@ pub struct RootConfig {
     /// OpenAI configuration (shared across all sites)
     #[serde(default)]
     pub openai: Option<openai::OpenAIConfig>,
-
-    /// Template configuration (single-site mode only)
-    #[serde(default)]
-    pub templates: Option<TemplateConfig>,
-
-    /// Static files configuration (single-site mode only)
-    #[serde(default)]
-    pub static_files: Option<StaticConfig>,
-
-    /// Galleries (single-site mode only)
-    #[serde(default)]
-    pub galleries: Option<Vec<GallerySystemConfig>>,
-
-    /// Posts/blog systems (single-site mode only)
-    #[serde(default)]
-    pub posts: Option<Vec<PostsSystemConfig>>,
 }
 
-impl RootConfig {
-    /// Check if this config uses ConfigStorage for multi-site
-    pub fn uses_config_storage(&self) -> bool {
-        self.app.config_storage.is_some()
-    }
-}
-
-/// Convert RootConfig to legacy Config
+/// Convert RootConfig to Config
 impl From<RootConfig> for super::types::Config {
     fn from(config: RootConfig) -> Self {
         Self {
@@ -83,15 +53,6 @@ impl From<RootConfig> for super::types::Config {
             app: config.app,
             email: config.email,
             openai: config.openai,
-            templates: config.templates.unwrap_or_else(|| TemplateConfig {
-                directories: vec!["templates".to_string()],
-            }),
-            static_files: config.static_files.unwrap_or_else(|| StaticConfig {
-                directories: vec!["static".to_string()],
-                use_redirects: false,
-            }),
-            galleries: config.galleries,
-            posts: config.posts,
         }
     }
 }
@@ -104,40 +65,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_uses_config_storage_false() {
-        let config = RootConfig {
-            server: ServerConfig {
-                host: "0.0.0.0".to_string(),
-                port: 3000,
-            },
-            app: AppConfig {
-                name: "Test".to_string(),
-                log_level: crate::LogLevel::Info,
-                aws_log_level: crate::LogLevel::Warn,
-                cookie_secret: "test".to_string(),
-                base_url: None,
-                user_database: None,
-                config_storage: None,
-            },
-            email: None,
-            openai: None,
-            templates: Some(TemplateConfig {
-                directories: vec!["templates".to_string()],
-            }),
-            static_files: Some(StaticConfig {
-                directories: vec!["static".to_string()],
-                use_redirects: false,
-            }),
-            galleries: None,
-            posts: None,
-        };
-
-        assert!(!config.uses_config_storage());
-    }
-
-    #[test]
-    fn test_uses_config_storage_true() {
-        let config = RootConfig {
+    fn test_root_config_to_config() {
+        let root = RootConfig {
             server: ServerConfig {
                 host: "0.0.0.0".to_string(),
                 port: 3000,
@@ -153,12 +82,10 @@ mod tests {
             },
             email: None,
             openai: None,
-            templates: None,
-            static_files: None,
-            galleries: None,
-            posts: None,
         };
 
-        assert!(config.uses_config_storage());
+        let config: super::super::types::Config = root.into();
+        assert_eq!(config.server.port, 3000);
+        assert_eq!(config.app.config_storage, Some("config.d".to_string()));
     }
 }

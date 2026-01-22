@@ -1,3 +1,14 @@
+# Tenrankai Configuration
+#
+# This file contains bootstrap configuration only. Site-specific settings
+# (galleries, posts, templates, static files) are managed in ConfigStorage.
+#
+# Quick Start:
+# 1. Copy this file to config.toml
+# 2. Create a config.d directory: mkdir -p config.d/sites/default/galleries
+# 3. Copy example site config: cp -r config.d.example/* config.d/
+# 4. Run: cargo run -- serve
+
 [server]
 host = "127.0.0.1"
 port = 3000
@@ -5,31 +16,47 @@ port = 3000
 [app]
 name = "Tenrankai"
 log_level = "info"
+# Change this in production - use a long random string
 cookie_secret = "change-me-in-production-use-a-long-random-string"
-base_url = "https://your-domain.com"
-# Optional: Set user_database to enable authentication
-# user_database = "users.toml"
 
-[templates]
-# Single directory (backward compatible)
-directories = "templates"
-# OR multiple directories with precedence (first overrides later)
-# directories = ["templates-custom", "templates"]
+# ConfigStorage location (required)
+# Options:
+# - Local filesystem: "config.d" (relative) or "/etc/tenrankai/config" (absolute)
+# - S3 bucket: "s3://bucket-name/prefix?region=us-east-1"
+config_storage = "config.d"
 
-[static_files]
-# Single directory (backward compatible)
-directories = "static"
-# OR multiple directories with precedence (first overrides later)
-# directories = ["static-custom", "static"]
+# =============================================================================
+# ConfigStorage Directory Structure
+# =============================================================================
+#
+# config.d/
+#   sites/
+#     default/           # Site name (used as identifier)
+#       site.toml        # Site settings: hostnames, templates, static_files, base_url
+#       galleries/
+#         main.toml      # Gallery config: source, cache, sizes, permissions
+#         portfolio.toml # Additional gallery
+#       posts/
+#         blog.toml      # Posts config: source, templates, pagination
+#       permissions.toml # Permissions overrides (optional)
+#     photos/            # Another site
+#       site.toml
+#       galleries/
+#         photos.toml
+#
+# See config.d.example/ for complete examples of all configuration files.
 
-# Optional: Configure email provider for login emails
-# Required when user_database is enabled to send login links via email
+# =============================================================================
+# Optional: Email Configuration
+# =============================================================================
+# Required when using authentication to send login links via email.
+#
 # [email]
 # from_address = "noreply@your-domain.com"
 # from_name = "Tenrankai"  # Optional: Name shown in the "From" field
 # reply_to = "support@your-domain.com"  # Optional: Reply-to address
 # provider = "ses"  # Options: "ses" for production, "null" for development/testing
-# 
+#
 # # Amazon SES configuration (when provider = "ses")
 # # Optional: AWS region where SES is configured (defaults to AWS SDK default region)
 # region = "us-east-1"
@@ -40,197 +67,17 @@ directories = "static"
 # # 3. IAM role credentials (for EC2, ECS, Lambda, etc.)
 # # access_key_id = "your-access-key"
 # # secret_access_key = "your-secret-key"
-# 
+#
 # # Null provider configuration (when provider = "null")
 # # - Logs email content to console instead of sending
 # # - Perfect for development and testing
 # # - No additional configuration required
 
-# Configure one or more gallery systems
-# Each gallery has its own source directory, URL prefix, and settings
-
-# Main photo gallery
-[[galleries]]
-name = "photos"
-url_prefix = "/gallery"
-source_directory = "photos"
-cache_directory = "cache/photos"
-gallery_template = "modules/gallery.html.liquid"
-image_detail_template = "modules/image_detail.html.liquid"
-images_per_page = 50
-cache_refresh_interval_minutes = 60
-jpeg_quality = 85
-webp_quality = 85.0
-# Pre-generation configuration for cache warming
-# Uncomment to enable pre-generation of resized images on startup
-# [galleries.pregenerate]
-# # Which formats to pre-generate (defaults: jpeg=true, webp=true, avif=false)
-# formats = { jpeg = true, webp = true, avif = false }
-# # Which sizes to pre-generate (defaults: thumbnail=true, gallery=true, medium=true, large=false)
-# sizes = { thumbnail = true, gallery = true, medium = true, large = false }
-# # Whether to pre-generate tiles (requires tiles config, default: false)
-# tiles = false
-
-# Number of days to consider an image as "new" (based on file modification date)
-# Remove or comment out to disable the feature
-new_threshold_days = 7
-# Copyright holder name for watermarking medium-sized images
-copyright_holder = "Your Name"
-# Image indexing mode for gallery URLs
-# Options: "filename" (default), "sequence", "unique_id"
-# - filename: Use actual filename in URLs (e.g., /gallery/image/IMG_1234.jpg)
-# - sequence: Use sequential numbers (e.g., /gallery/image/1, /gallery/image/2)
-# - unique_id: Use base36 hash IDs (e.g., /gallery/image/a8k3m9)
-# image_indexing = "filename"
-
-# Permission configuration for this gallery
-# Default: If no permissions are configured, public users can view
-[galleries.permissions]
-# Role assigned to unauthenticated users (omit or use "none" for no public access)
-public_role = "viewer"
-# Role assigned to authenticated users without specific role assignments
-default_authenticated_role = "contributor"
-
-# Define the viewer role for public/unauthenticated users
-[galleries.permissions.roles.viewer]
-name = "viewer"
-permissions = { can_view = true, can_download_medium = true }
-# Note: By default, viewers cannot see exact dates, location, technical details, or use zoom
-
-# Define the contributor role for authenticated users
-[galleries.permissions.roles.contributor]
-name = "contributor"
-# Inherits all permissions from viewer role
-inherits = "viewer"
-# can_use_zoom: basic zoom using medium image
-# can_use_tile_zoom: enhanced zoom using high-res tiles (requires tiles config)
-permissions = { can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true, can_download_large = true, can_read_metadata = true, can_add_comments = true, can_edit_own_comments = true, can_delete_own_comments = true, can_set_picks = true, can_add_tags = true, can_use_zoom = true, can_use_tile_zoom = true }
-
-# Define an admin role with full access
-[galleries.permissions.roles.admin]
-name = "admin"
-permissions = { owner_access = true }  # Full access to everything
-
-# Assign roles to specific users
-[[galleries.permissions.user_roles]]
-username = "alice"
-roles = ["admin"]
-
-[[galleries.permissions.user_roles]]
-username = "bob"
-roles = ["contributor"]
-
-[galleries.thumbnail]
-width = 300
-height = 300
-
-[galleries.gallery_size]
-width = 800
-height = 800
-
-[galleries.medium]
-width = 1200
-height = 1200
-
-[galleries.large]
-width = 1600
-height = 1600
-
-# Optional: Tile configuration for enhanced zoom feature
-# Tiles provide high-resolution zoom capability (access controlled by can_use_tile_zoom permission)
-# [galleries.tiles]
-# tile_size = 1024     # Size of each tile in pixels (1024x1024)
-# Note: To pre-generate tiles, enable tiles = true in [galleries.pregenerate]
-
-[galleries.preview]
-max_images = 6
-max_depth = 3
-max_per_folder = 3
-
-# Example: Portfolio gallery with different settings
-[[galleries]]
-name = "portfolio"
-url_prefix = "/portfolio"
-source_directory = "portfolio_images"
-cache_directory = "cache/portfolio"
-gallery_template = "modules/gallery.html.liquid"
-image_detail_template = "modules/image_detail.html.liquid"
-images_per_page = 20
-jpeg_quality = 90
-webp_quality = 90.0
-copyright_holder = "Your Portfolio Name"
-# Use unique IDs for portfolio images for cleaner URLs
-image_indexing = "unique_id"
-
-# Restrict portfolio to authenticated users only
-[galleries.permissions]
-public_role = "none"  # No access for unauthenticated users
-default_authenticated_role = "none"  # Authenticated users need explicit role assignment
-
-# Client role - can view and download portfolio images
-[galleries.permissions.roles.client]
-name = "client"
-permissions = { can_view = true, can_see_technical_details = true, can_download_medium = true }
-
-# Portfolio owner role - full control
-[galleries.permissions.roles.owner]
-name = "owner"
-permissions = { owner_access = true }  # Full access to everything
-
-# Assign users to roles
-[[galleries.permissions.user_roles]]
-username = "client1"
-roles = ["client"]
-
-[[galleries.permissions.user_roles]]
-username = "client2"
-roles = ["client"]
-
-[[galleries.permissions.user_roles]]
-username = "owner"
-roles = ["owner"]
-
-# Example: Screenshots gallery
-[[galleries]]
-name = "screenshots"
-url_prefix = "/screenshots"
-source_directory = "screenshots"
-cache_directory = "cache/screenshots"
-images_per_page = 100
-# Custom templates can be specified
-# gallery_template = "modules/screenshot_gallery.html.liquid"
-# image_detail_template = "modules/screenshot_detail.html.liquid"
-
-# Public gallery with default permissions (everyone can view)
-# No permission configuration needed - defaults to public access
-
-# Optional: Configure multiple post systems
-# Each posts system has its own source directory and URL prefix
-# You can have multiple systems like blog, stories, documentation, etc.
-
-# Example blog configuration
-[[posts]]
-name = "blog"
-source_directory = "posts/blog"
-url_prefix = "/blog"
-index_template = "modules/posts_index.html.liquid"
-post_template = "modules/post_detail.html.liquid"
-posts_per_page = 20
-
-# Example stories configuration
-[[posts]]
-name = "stories"
-source_directory = "posts/stories"
-url_prefix = "/stories"
-index_template = "modules/posts_index.html.liquid"
-post_template = "modules/post_detail.html.liquid"
-posts_per_page = 10
-
-# Example instructions/documentation configuration
-[[posts]]
-name = "instructions"
-source_directory = "posts/instructions"
-url_prefix = "/instructions"
-index_template = "modules/posts_index.html.liquid"
-post_template = "modules/post_detail.html.liquid"
-posts_per_page = 15
+# =============================================================================
+# Optional: OpenAI Configuration
+# =============================================================================
+# Enable AI-powered image analysis features.
+#
+# [openai]
+# api_key = "sk-..."
+# model = "gpt-4o"  # Default model for image analysis

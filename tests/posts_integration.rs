@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use axum_test::TestServer;
 use std::fs;
 use tempfile::TempDir;
-use tenrankai::{Config, PostsSystemConfig, create_app};
+use tenrankai::{PostsSystemConfig, StaticConfig, TemplateConfig, create_app, site::SiteConfig};
 
 async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
     // Create temporary directories
@@ -120,24 +120,14 @@ This is the content of the second test post."#;
     fs::write(blog_dir.join("second-post.md"), post2_content).unwrap();
 
     // Create test config
-    let config = Config {
-        server: tenrankai::ServerConfig {
-            host: "127.0.0.1".to_string(),
-            port: 0,
-        },
-        app: tenrankai::AppConfig {
-            name: "TestServer".to_string(),
-            log_level: tenrankai::LogLevel::Error,
-            aws_log_level: tenrankai::LogLevel::Error,
-            cookie_secret: "test-cookie-secret".to_string(),
-            base_url: Some("http://localhost:3000".to_string()),
-            user_database: None,
-            config_storage: None,
-        },
-        templates: tenrankai::TemplateConfig {
+    let config = SiteConfig {
+        name: "TestServer".to_string(),
+        base_url: Some("http://localhost:3000".to_string()),
+        cookie_secret: "test-cookie-secret".to_string(),
+        templates: TemplateConfig {
             directories: vec![templates_dir.to_string_lossy().to_string()],
         },
-        static_files: tenrankai::StaticConfig {
+        static_files: StaticConfig {
             directories: vec![static_dir.to_string_lossy().to_string()],
             use_redirects: false,
         },
@@ -159,8 +149,9 @@ This is the content of the second test post."#;
             posts_per_page: 10,
             refresh_interval_minutes: None,
         }]),
+        user_database: None,
         email: None,
-        openai: None,
+        config_storage: None,
     };
 
     let app = create_app(config, None).await;
