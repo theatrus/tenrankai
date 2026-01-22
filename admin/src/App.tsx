@@ -14,6 +14,7 @@ export function App() {
           <Route path="users" element={<Users />} />
           <Route path="galleries" element={<Galleries />} />
           <Route path="galleries/:name" element={<Galleries />} />
+          <Route path="galleries/:name/folders/*" element={<Galleries />} />
           <Route path="roles" element={<Roles />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

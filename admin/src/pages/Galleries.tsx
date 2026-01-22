@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -14,7 +14,7 @@ import {
 const DEFAULT_SITE = 'default';
 
 export function Galleries() {
-  const { name } = useParams<{ name: string }>();
+  const { name, '*': folderPath } = useParams<{ name: string; '*': string }>();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editGallery, setEditGallery] = useState<SiteGalleryInfo | null>(null);
@@ -120,7 +120,7 @@ export function Galleries() {
   }
 
   if (name) {
-    return <GalleryDetail name={name} />;
+    return <GalleryDetail name={name} initialFolderPath={folderPath} />;
   }
 
   const isLoading = runtimeLoading || (hasConfigStorage && siteLoading);
@@ -419,13 +419,14 @@ function getAvailableRoles(customRoles: Record<string, RoleInfo>): string[] {
   return Array.from(roleSet);
 }
 
-function GalleryDetail({ name }: { name: string }) {
+function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolderPath?: string }) {
   const queryClient = useQueryClient();
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserAssignment, setNewUserAssignment] = useState({ username: '', roles: ['viewer'] });
   const [localPermissions, setLocalPermissions] = useState<PermissionConfig | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [editFolder, setEditFolder] = useState<FolderInfo | null>(null);
+  const [initialFolderOpened, setInitialFolderOpened] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['gallery', name],
@@ -455,6 +456,35 @@ function GalleryDetail({ name }: { name: string }) {
       setHasChanges(false);
     },
   });
+
+  // Auto-open folder modal if initialFolderPath is provided via URL
+  useEffect(() => {
+    if (initialFolderPath && foldersData && !initialFolderOpened) {
+      // Decode the folder path from URL
+      const decodedPath = decodeURIComponent(initialFolderPath);
+      // Find the folder in the list (empty string for root)
+      const folder = foldersData.folders.find(
+        (f) => f.path === decodedPath || (decodedPath === '_root' && f.path === '')
+      );
+      if (folder) {
+        setEditFolder(folder);
+        setInitialFolderOpened(true);
+      }
+    }
+  }, [initialFolderPath, foldersData, initialFolderOpened]);
+
+  // When modal closes, navigate back appropriately
+  const handleFolderModalClose = () => {
+    setEditFolder(null);
+    if (initialFolderPath && data) {
+      // User came from main site - redirect back there
+      const folderPath = initialFolderPath === '_root' ? '' : decodeURIComponent(initialFolderPath);
+      const mainSiteUrl = folderPath
+        ? `${data.url_prefix}/${folderPath}`
+        : data.url_prefix;
+      window.location.href = mainSiteUrl;
+    }
+  };
 
   const permissions = localPermissions ?? sitePermissions ?? data?.permissions;
 
@@ -747,10 +777,10 @@ function GalleryDetail({ name }: { name: string }) {
           galleryName={name}
           folder={editFolder}
           availableRoles={availableRoles}
-          onClose={() => setEditFolder(null)}
+          onClose={handleFolderModalClose}
           onSaved={() => {
             queryClient.invalidateQueries({ queryKey: ['galleryFolders'] });
-            setEditFolder(null);
+            handleFolderModalClose();
           }}
         />
       )}

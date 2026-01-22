@@ -20,6 +20,9 @@
                 <a href="{{ gallery_url }}{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
             {% endif %}
         {% endfor %}
+        {% if permissions.owner_access %}
+            <a href="/_admin/galleries/{{ gallery_name }}/folders/{% if gallery_path != '' %}{{ gallery_path | url_encode }}{% else %}_root{% endif %}" class="nav-edit-link" title="Edit folder permissions">Edit</a>
+        {% endif %}
     </nav>
 
     <div class="gallery-header">
