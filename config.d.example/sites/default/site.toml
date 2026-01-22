@@ -24,10 +24,15 @@ static_use_redirects = false
 # user_database = "sqlite://users.db"
 # user_database = "postgresql://user:pass@host/db"
 
-# Storage prefix for gallery/posts paths
+# Storage prefix for gallery/posts source paths
 # SECURITY: This field cannot be edited via the admin API
-# All gallery source/cache paths are relative to this prefix
+# All gallery source directories are relative to this prefix
 storage_prefix = "/data/sites/default"
+
+# Cache prefix for gallery cache paths (optional)
+# If not set, cache paths are relative to the working directory
+# Useful when source and cache should be on different storage
+# cache_prefix = "/var/cache/tenrankai/default"
 
 # Per-site email configuration (optional, overrides global)
 # [email]

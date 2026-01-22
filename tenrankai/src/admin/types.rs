@@ -212,6 +212,7 @@ pub struct SiteInfo {
     pub static_use_redirects: bool,
     pub user_database: Option<String>,
     pub storage_prefix: Option<String>,
+    pub cache_prefix: Option<String>,
     pub gallery_count: usize,
     pub posts_count: usize,
 }

@@ -784,6 +784,7 @@ pub async fn list_sites(
                 static_use_redirects: config.static_use_redirects,
                 user_database: config.user_database,
                 storage_prefix: config.storage_prefix,
+                cache_prefix: config.cache_prefix,
                 gallery_count,
                 posts_count,
             });
@@ -830,12 +831,13 @@ pub async fn get_site(
         static_use_redirects: config.static_use_redirects,
         user_database: config.user_database,
         storage_prefix: config.storage_prefix,
+        cache_prefix: config.cache_prefix,
         gallery_count,
         posts_count,
     }))
 }
 
-/// Update a site (NOTE: storage_prefix cannot be edited via API)
+/// Update a site (NOTE: storage_prefix and cache_prefix cannot be edited via API)
 pub async fn update_site(
     ResolvedState(app_state): ResolvedState,
     admin: RequireAdmin,
@@ -900,6 +902,7 @@ pub async fn update_site(
         static_use_redirects: config.static_use_redirects,
         user_database: config.user_database,
         storage_prefix: config.storage_prefix,
+        cache_prefix: config.cache_prefix,
         gallery_count,
         posts_count,
     }))

@@ -64,12 +64,13 @@ impl ConfigStorageLoader {
         };
 
         let storage_prefix = stored_config.storage_prefix.as_deref();
+        let cache_prefix = stored_config.cache_prefix.as_deref();
 
         // Load site permissions (to be applied to all galleries)
         let site_permissions = self.load_site_permissions(name).await?;
 
         let galleries = self
-            .load_galleries(name, storage_prefix, site_permissions.as_ref())
+            .load_galleries(name, storage_prefix, cache_prefix, site_permissions.as_ref())
             .await?;
         let posts = self.load_posts(name, storage_prefix).await?;
 
@@ -89,6 +90,7 @@ impl ConfigStorageLoader {
         &self,
         site: &str,
         storage_prefix: Option<&str>,
+        cache_prefix: Option<&str>,
         site_permissions: Option<&PermissionConfig>,
     ) -> Result<Vec<GallerySystemConfig>> {
         let gallery_names = self.storage.list_galleries(site).await?;
@@ -101,7 +103,7 @@ impl ConfigStorageLoader {
                 .await?
             {
                 let gallery =
-                    self.convert_gallery_config(stored, storage_prefix, site_permissions)?;
+                    self.convert_gallery_config(stored, storage_prefix, cache_prefix, site_permissions)?;
                 galleries.push(gallery);
             }
         }
@@ -169,10 +171,11 @@ impl ConfigStorageLoader {
         &self,
         stored: StoredGalleryConfig,
         storage_prefix: Option<&str>,
+        cache_prefix: Option<&str>,
         site_permissions: Option<&PermissionConfig>,
     ) -> Result<GallerySystemConfig> {
         let source_directory = self.resolve_path(storage_prefix, &stored.source_directory)?;
-        let cache_directory = self.resolve_path(storage_prefix, &stored.cache_directory)?;
+        let cache_directory = self.resolve_path(cache_prefix, &stored.cache_directory)?;
 
         let tiles = stored.tiles.map(|t| TileConfig {
             tile_size: t.tile_size,

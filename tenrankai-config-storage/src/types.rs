@@ -136,11 +136,18 @@ pub struct StoredSiteConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cookie_secret: Option<String>,
 
-    /// Storage prefix for gallery/posts paths
-    /// All gallery source/cache paths are relative to this prefix
+    /// Storage prefix for gallery/posts source paths
+    /// All source directories are relative to this prefix
     /// NOT editable via admin API - must be set manually in site.toml
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_prefix: Option<String>,
+
+    /// Cache prefix for gallery cache paths
+    /// All cache directories are relative to this prefix
+    /// Defaults to current working directory if not set
+    /// NOT editable via admin API - must be set manually in site.toml
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_prefix: Option<String>,
 
     /// Per-site email sender configuration
     #[serde(skip_serializing_if = "Option::is_none")]
