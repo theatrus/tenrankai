@@ -857,7 +857,7 @@ function FolderPermissionsModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: '600px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: '800px', width: '90vw', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           Folder: {folder.name}
           <small style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 'normal' }}>
