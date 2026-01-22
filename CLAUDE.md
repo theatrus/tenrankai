@@ -65,6 +65,10 @@ pub async fn my_handler(State(app_state): State<AppState>) -> impl IntoResponse 
 | `src/storage/` | Pluggable storage (filesystem, S3) |
 | `src/user_storage/` | User backends (TOML, SQLite, PostgreSQL, DynamoDB) |
 | `src/email/` | Email providers (SES) |
+| `src/config/` | Configuration loading and multi-site support |
+| `src/site/` | Site management, routing, and reload |
+| `src/admin/` | Admin API handlers |
+| `tenrankai-config-storage/` | ConfigStorage backends (FileDir, S3) |
 
 ### Storage Abstraction
 URL-based configuration for flexible backends:
@@ -115,12 +119,27 @@ cargo run -- avif-debug photos/image.avif --verbose  # Analyze AVIF
 
 ## Configuration
 
-### Gallery Configuration
+Tenrankai uses a two-tier configuration:
+1. **Bootstrap config** (`config.toml`): Server settings, email, OpenAI
+2. **ConfigStorage** (`config.d/`): Site-specific configuration (galleries, posts, permissions)
+
+### CLI Config Commands
+```bash
+cargo run -- config init config.d              # Initialize ConfigStorage directory
+cargo run -- config list-sites                 # List all sites
+cargo run -- config add-site mysite --hostname example.com
+cargo run -- config list-galleries default     # List galleries for a site
+cargo run -- config add-gallery photos --site default --source photos --url-prefix /gallery
+cargo run -- config list-posts default         # List posts configs
+cargo run -- config add-posts blog --site default --source posts/blog --url-prefix /blog
+```
+
+### Gallery Configuration (in ConfigStorage)
 ```toml
-[[galleries]]
+# config.d/sites/default/galleries/main.toml
 name = "main"
 url_prefix = "/gallery"
-source_directory = "photos"
+source_directory = "photos"          # Relative to storage_prefix
 cache_directory = "cache/main"
 images_per_page = 50
 jpeg_quality = 85
@@ -129,11 +148,11 @@ copyright_holder = "Your Name"
 image_indexing = "filename"  # or "sequence", "unique_id"
 new_threshold_days = 7
 
-[galleries.thumbnail]
+[thumbnail]
 width = 300
 height = 300
 
-[galleries.medium]
+[medium]
 width = 1200
 height = 1200
 ```

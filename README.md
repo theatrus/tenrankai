@@ -207,7 +207,23 @@ directories = ["themes/dark", "templates"]
 
 ## Configuration
 
-Create a `config.toml` file in the project root. See `config.example.toml` for a complete example:
+Tenrankai uses a two-tier configuration system:
+
+1. **Bootstrap config** (`config.toml`): Server settings, email, OpenAI - static settings
+2. **ConfigStorage** (`config.d/`): Site-specific configuration that can be managed via CLI or admin API
+
+### Quick Setup
+
+```bash
+# Initialize ConfigStorage directory with a default site
+cargo run -- config init config.d
+
+# Add galleries and posts to your site
+cargo run -- config add-gallery photos --site default --source photos --url-prefix /gallery
+cargo run -- config add-posts blog --site default --source posts/blog --url-prefix /blog
+```
+
+### Bootstrap Configuration (config.toml)
 
 ```toml
 [server]
@@ -216,39 +232,7 @@ port = 3000
 
 [app]
 name = "My Gallery"
-cookie_secret = "change-me-in-production-use-a-long-random-string"  # Required: Used for signing auth cookies
-base_url = "https://yourdomain.com"
-user_database = "users.toml"  # Optional: Enable user authentication
-
-# Gallery configuration (multiple galleries supported)
-[[galleries]]
-name = "main"
-url_prefix = "/gallery"
-source_directory = "photos/main"
-cache_directory = "cache/main"
-images_per_page = 50
-jpeg_quality = 85
-webp_quality = 85.0
-copyright_holder = "Your Name"  # Optional: Add watermark to medium-sized images
-
-[[galleries]]
-name = "portfolio"
-url_prefix = "/portfolio"
-source_directory = "photos/portfolio"
-cache_directory = "cache/portfolio"
-images_per_page = 20
-jpeg_quality = 90
-webp_quality = 90.0
-copyright_holder = "Your Portfolio Name"
-
-[templates]
-directory = "templates"
-
-[static_files]
-# Single directory (backward compatible)
-directories = "static"
-# OR multiple directories with precedence (first overrides later)
-# directories = ["static-custom", "static"]
+config_storage = "config.d"  # Path to ConfigStorage directory
 
 # Email configuration (required for login emails)
 [email]
@@ -256,45 +240,110 @@ from_address = "noreply@yourdomain.com"
 from_name = "My Gallery"
 provider = "ses"  # Options: "ses" for production, "null" for development
 region = "us-east-1"
-# Optional: specify AWS credentials (otherwise uses AWS SDK default chain)
-# access_key_id = "your-access-key"
-# secret_access_key = "your-secret-key"
+```
+
+### ConfigStorage Directory Structure
+
+```
+config.d/
+  sites/
+    default/
+      site.toml              # Site settings (hostnames, templates, static dirs)
+      galleries/
+        main.toml            # Gallery configuration
+        portfolio.toml
+      posts/
+        blog.toml            # Posts/blog configuration
+      permissions.toml       # Roles and user permissions
+```
+
+### Site Configuration (site.toml)
+
+```toml
+hostnames = ["localhost", "example.com"]
+templates = ["templates"]
+static_files = ["static"]
+base_url = "https://example.com"
+cookie_secret = "change-me-in-production"
+user_database = "users.toml"
+storage_prefix = "/data/sites/default"  # Base path for galleries/posts
+```
+
+### Gallery Configuration
+
+```toml
+# config.d/sites/default/galleries/main.toml
+name = "main"
+url_prefix = "/gallery"
+source_directory = "photos"       # Relative to storage_prefix
+cache_directory = "cache/main"
+images_per_page = 50
+jpeg_quality = 85
+webp_quality = 85.0
+copyright_holder = "Your Name"
+
+[thumbnail]
+width = 300
+height = 300
+
+[medium]
+width = 1200
+height = 1200
+```
+
+### Posts Configuration
+
+```toml
+# config.d/sites/default/posts/blog.toml
+name = "blog"
+source_directory = "posts/blog"   # Relative to storage_prefix
+url_prefix = "/blog"
+posts_per_page = 20
+refresh_interval_minutes = 30
+```
+
+### CLI Config Commands
+
+```bash
+cargo run -- config init <path>                    # Initialize ConfigStorage
+cargo run -- config list-sites                     # List all sites
+cargo run -- config add-site <name> --hostname <host>
+cargo run -- config list-galleries <site>          # List galleries
+cargo run -- config add-gallery <name> --site <site> --source <dir> --url-prefix <prefix>
+cargo run -- config list-posts <site>              # List posts configs
+cargo run -- config add-posts <name> --site <site> --source <dir> --url-prefix <prefix>
 ```
 
 ### Key Configuration Options
 
+**Site Configuration (site.toml):**
+- `hostnames`: List of hostnames this site responds to
+- `templates`: Template directory paths (first match wins)
+- `static_files`: Static file directory paths
+- `base_url`: Public URL for the site (required for WebAuthn)
+- `cookie_secret`: Secret for signing session cookies
+- `user_database`: Path to user database file
+- `storage_prefix`: Base path for galleries/posts (security boundary)
+
 **Gallery Configuration:**
-- `name`: Unique identifier for the gallery (required for multiple galleries)
-- `url_prefix`: URL path where the gallery will be accessible (e.g., `/gallery`, `/portfolio`)
-- `source_directory`: Path to your photo directory
-- `cache_directory`: Where processed images and metadata are cached
-- `images_per_page`: Number of images to display per page
-- `new_threshold_days`: Days to consider an image "new" (remove to disable)
-- `pregenerate`: Pre-generation configuration section with format/size/tile options
+- `name`: Unique identifier for the gallery
+- `url_prefix`: URL path (e.g., `/gallery`, `/portfolio`)
+- `source_directory`: Photo directory (relative to storage_prefix)
+- `cache_directory`: Cache directory (relative to storage_prefix)
+- `images_per_page`: Number of images per page
+- `new_threshold_days`: Days to consider an image "new"
 - `jpeg_quality`: JPEG compression quality (1-100)
 - `webp_quality`: WebP compression quality (0.0-100.0)
-- `gallery_template`: Custom template for gallery pages (default: "modules/gallery.html.liquid")
-- `image_detail_template`: Custom template for image detail pages (default: "modules/image_detail.html.liquid")
-- `copyright_holder`: Copyright holder name for watermarking medium-sized images (optional)
+- `copyright_holder`: Name for watermarking (optional)
+- `gallery_template`: Custom template (default: "modules/gallery.html.liquid")
+- `image_detail_template`: Custom template (default: "modules/image_detail.html.liquid")
 
-**Static Files Configuration:**
-- `directories`: Static file directories (string or array)
-  - Single directory: `directories = "static"`
-  - Multiple directories: `directories = ["static-custom", "static"]`
-  - Files in earlier directories override files in later directories
-
-**Email Configuration:**
+**Email Configuration (config.toml):**
 - `from_address`: Email address to send from (required)
 - `from_name`: Display name for the sender (optional)
-- `reply_to`: Reply-to address (optional)
-- `provider`: Email provider to use ("ses" or "null")
-- **Amazon SES Options:**
-  - `region`: AWS region where SES is configured (optional, uses SDK default)
-  - `access_key_id`: AWS access key (optional, uses SDK default chain)
-  - `secret_access_key`: AWS secret key (optional, uses SDK default chain)
-- **Null Provider Options:**
-  - For development/testing: logs emails instead of sending them
-  - No additional configuration required
+- `provider`: Email provider ("ses" or "null")
+- **Amazon SES**: `region`, optional `access_key_id`, `secret_access_key`
+- **Null Provider**: Logs emails to console for development
 
 ### S3 Storage Configuration
 
@@ -519,16 +568,13 @@ Tenrankai uses a flexible role-based access control (RBAC) system that allows fi
   - `can_delete_any_comments` - Delete anyone's comments
 - **Full Control**: `owner_access` - Bypass all restrictions
 
-### Gallery-Level Permissions
+### Site-Level Permissions
 
-Configure default permissions for an entire gallery in your `config.toml`:
+Configure permissions in ConfigStorage:
 
 ```toml
-[[galleries]]
-name = "main"
-# ... other gallery settings ...
+# config.d/sites/default/permissions.toml
 
-[galleries.permissions]
 # Role for unauthenticated users (omit for no public access)
 public_role = "viewer"
 
@@ -536,14 +582,12 @@ public_role = "viewer"
 default_authenticated_role = "contributor"
 
 # Define custom roles
-[galleries.permissions.roles.viewer]
-name = "viewer"
+[roles.viewer]
 permissions = { can_view = true, can_download_medium = true }
 
-[galleries.permissions.roles.contributor]
-name = "contributor"
+[roles.contributor]
 inherits = "viewer"  # Inherit all viewer permissions
-permissions = { 
+permissions = {
     can_see_technical_details = true,
     can_see_exact_dates = true,
     can_see_location = true,
@@ -554,19 +598,16 @@ permissions = {
     can_set_picks = true
 }
 
-[galleries.permissions.roles.admin]
-name = "admin"
+[roles.admin]
 permissions = { owner_access = true }  # Full access
 
 # Assign roles to users
-[[galleries.permissions.user_roles]]
-username = "alice"
-roles = ["admin"]
-
-[[galleries.permissions.user_roles]]
-username = "bob"
-roles = ["contributor", "viewer"]  # Multiple roles allowed
+[user_roles]
+alice = "admin"
+bob = "contributor"
 ```
+
+Permissions can also be managed via the admin API at `/_admin/api/sites/{site}/permissions`.
 
 ### Folder-Level Permissions
 
@@ -666,21 +707,27 @@ Your markdown content here...
 
 ### Multiple Post Systems
 
-Configure multiple independent post systems in your `config.toml`:
+Configure multiple post systems in ConfigStorage:
 
 ```toml
-[[posts]]
+# config.d/sites/default/posts/blog.toml
 name = "blog"
-source_directory = "posts/blog"
+source_directory = "posts/blog"    # Relative to storage_prefix
 url_prefix = "/blog"
 posts_per_page = 20
-refresh_interval_minutes = 30  # Auto-refresh posts every 30 minutes
+refresh_interval_minutes = 30
 
-[[posts]]
+# config.d/sites/default/posts/stories.toml
 name = "stories"
 source_directory = "posts/stories"
 url_prefix = "/stories"
 posts_per_page = 10
+```
+
+Or use the CLI:
+```bash
+cargo run -- config add-posts blog --site default --source posts/blog --url-prefix /blog
+cargo run -- config add-posts stories --site default --source posts/stories --url-prefix /stories
 ```
 
 Each system has its own:
@@ -1014,6 +1061,10 @@ Tenrankai is under active development with a comprehensive codebase and document
 
 ### Recent Major Features
 
+- ✅ **ConfigStorage System**: Centralized site configuration via directory structure or S3
+- ✅ **CLI Config Commands**: Manage sites, galleries, and posts from command line
+- ✅ **Admin API**: REST API for site configuration and permissions management
+- ✅ **Multi-Site Support**: Host multiple independent sites from one server
 - ✅ **Pluggable User Storage**: TOML, SQLite, PostgreSQL, and DynamoDB backends for user data
 - ✅ **User Migration Tools**: Export/import commands for migrating between storage backends
 - ✅ **Pluggable Storage Abstraction**: S3 and filesystem backends for all components

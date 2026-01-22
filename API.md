@@ -394,6 +394,174 @@ Update the display name of a passkey.
 }
 ```
 
+## Admin API
+
+The admin API requires authentication and admin privileges.
+
+### List Sites
+
+**Endpoint**: `GET /_admin/api/sites`
+
+**Authentication**: Required (admin)
+
+**Response**:
+```json
+{
+  "sites": ["default", "photos", "blog"]
+}
+```
+
+### Get Site Configuration
+
+**Endpoint**: `GET /_admin/api/sites/{name}`
+
+**Authentication**: Required (admin)
+
+**Response**:
+```json
+{
+  "name": "default",
+  "hostnames": ["localhost", "example.com"],
+  "templates": ["templates"],
+  "static_files": ["static"],
+  "base_url": "https://example.com",
+  "user_database": "users.toml"
+}
+```
+
+### Update Site Configuration
+
+**Endpoint**: `PUT /_admin/api/sites/{name}`
+
+**Authentication**: Required (admin)
+
+**Note**: `storage_prefix` cannot be modified via API for security.
+
+**Body**:
+```json
+{
+  "hostnames": ["localhost", "example.com"],
+  "templates": ["templates"],
+  "static_files": ["static"],
+  "base_url": "https://example.com"
+}
+```
+
+### List Galleries
+
+**Endpoint**: `GET /_admin/api/sites/{site}/galleries`
+
+**Authentication**: Required (admin)
+
+**Response**:
+```json
+{
+  "galleries": ["main", "portfolio"]
+}
+```
+
+### Get Gallery Configuration
+
+**Endpoint**: `GET /_admin/api/sites/{site}/galleries/{name}`
+
+**Authentication**: Required (admin)
+
+**Response**:
+```json
+{
+  "name": "main",
+  "url_prefix": "/gallery",
+  "source_directory": "photos",
+  "cache_directory": "cache/main",
+  "images_per_page": 50,
+  "jpeg_quality": 85
+}
+```
+
+### Add/Update Gallery
+
+**Endpoint**: `PUT /_admin/api/sites/{site}/galleries/{name}`
+
+**Authentication**: Required (admin)
+
+**Body**:
+```json
+{
+  "name": "main",
+  "url_prefix": "/gallery",
+  "source_directory": "photos",
+  "cache_directory": "cache/main",
+  "images_per_page": 50
+}
+```
+
+### Delete Gallery
+
+**Endpoint**: `DELETE /_admin/api/sites/{site}/galleries/{name}`
+
+**Authentication**: Required (admin)
+
+### Get Site Permissions
+
+**Endpoint**: `GET /_admin/api/sites/{site}/permissions`
+
+**Authentication**: Required (admin)
+
+**Response**:
+```json
+{
+  "public_role": "viewer",
+  "default_authenticated_role": "contributor",
+  "roles": {
+    "viewer": {
+      "permissions": { "can_view": true }
+    },
+    "admin": {
+      "permissions": { "owner_access": true }
+    }
+  },
+  "user_roles": {
+    "alice": "admin"
+  }
+}
+```
+
+### Update Site Permissions
+
+**Endpoint**: `PUT /_admin/api/sites/{site}/permissions`
+
+**Authentication**: Required (admin)
+
+**Body**:
+```json
+{
+  "public_role": "viewer",
+  "default_authenticated_role": "contributor",
+  "roles": {
+    "viewer": {
+      "permissions": { "can_view": true }
+    }
+  },
+  "user_roles": {
+    "alice": "admin"
+  }
+}
+```
+
+### Reload Site
+
+**Endpoint**: `POST /_admin/api/sites/{site}/reload`
+
+**Authentication**: Required (admin)
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Site reloaded successfully"
+}
+```
+
 ## Utility API
 
 ### Refresh Static File Versions
