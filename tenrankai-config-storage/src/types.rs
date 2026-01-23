@@ -8,6 +8,8 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_view: bool,
     #[serde(default)]
+    pub can_see_hidden: bool,
+    #[serde(default)]
     pub can_see_technical_details: bool,
     #[serde(default)]
     pub can_see_exact_dates: bool,

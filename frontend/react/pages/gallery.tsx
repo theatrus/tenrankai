@@ -1,9 +1,115 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GalleryWithFilter } from '@components/Gallery/GalleryWithFilter';
 import { EditModal } from '../components/Editor/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
-import type { GalleryData } from '../types/index.ts';
+import type { GalleryData, GalleryItem } from '../types/index.ts';
+
+interface GalleryPageProps {
+  galleryData: GalleryData;
+  images: GalleryItem[];
+  galleryUrl: string;
+  filterMount: HTMLElement | null;
+  toolbarMount: HTMLElement | null;
+  manageButton: HTMLElement | null;
+}
+
+const GalleryPage: React.FC<GalleryPageProps> = ({
+  galleryData,
+  images: initialImages,
+  galleryUrl,
+  filterMount,
+  toolbarMount,
+  manageButton,
+}) => {
+  const [images, setImages] = useState(initialImages);
+  const [hiddenImages, setHiddenImages] = useState<string[]>(galleryData.hidden_images || []);
+  const [isManageMode, setIsManageMode] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+
+  const hasOwnerAccess = galleryData.permissions?.owner_access;
+
+  // Wire up the manage button click
+  useEffect(() => {
+    if (!manageButton || !hasOwnerAccess) return;
+
+    const handleClick = () => {
+      if (isManageMode) {
+        setIsManageMode(false);
+        setSelectedImages(new Set());
+        manageButton.textContent = 'Manage';
+        manageButton.classList.remove('active');
+      } else {
+        setIsManageMode(true);
+        manageButton.textContent = 'Cancel';
+        manageButton.classList.add('active');
+      }
+    };
+
+    manageButton.addEventListener('click', handleClick);
+    return () => manageButton.removeEventListener('click', handleClick);
+  }, [manageButton, hasOwnerAccess, isManageMode]);
+
+  const handleToggleSelect = useCallback((path: string) => {
+    setSelectedImages((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleHideSuccess = useCallback((newHiddenImages: string[]) => {
+    setHiddenImages(newHiddenImages);
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Manage';
+      manageButton.classList.remove('active');
+    }
+  }, [manageButton]);
+
+  const handleDeleteSuccess = useCallback((deletedPaths: string[]) => {
+    setImages((prev) => prev.filter((img) => !deletedPaths.includes(img.path)));
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Manage';
+      manageButton.classList.remove('active');
+    }
+  }, [manageButton]);
+
+  const handleCancelManage = useCallback(() => {
+    setIsManageMode(false);
+    setSelectedImages(new Set());
+    if (manageButton) {
+      manageButton.textContent = 'Manage';
+      manageButton.classList.remove('active');
+    }
+  }, [manageButton]);
+
+  return (
+    <GalleryWithFilter
+      images={images}
+      galleryUrl={galleryUrl}
+      permissions={galleryData.permissions}
+      filterMount={filterMount}
+      galleryName={galleryData.gallery_name}
+      galleryPath={galleryData.gallery_path}
+      hiddenImages={hiddenImages}
+      isManageMode={isManageMode}
+      selectedImages={selectedImages}
+      onToggleSelect={handleToggleSelect}
+      onHideSuccess={handleHideSuccess}
+      onDeleteSuccess={handleDeleteSuccess}
+      onCancelManage={handleCancelManage}
+      toolbarMount={toolbarMount}
+    />
+  );
+};
 
 // Mount React masonry gallery on server-rendered page
 document.addEventListener('DOMContentLoaded', () => {
@@ -12,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const imagesDataElement = document.getElementById('gallery-images');
 
   let galleryData: GalleryData | null = null;
-  let images: any[] = [];
+  let images: GalleryItem[] = [];
 
   // Try to parse the full gallery data
   if (galleryDataElement) {
@@ -56,8 +162,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // Find the filter mount point
+  // Find mount points
   const filterMount = document.getElementById('gallery-filter-mount');
+  const manageButton = document.getElementById('manage-images-btn');
+
+  // Create toolbar mount point if owner access
+  let toolbarMount: HTMLElement | null = null;
+  if (galleryData?.permissions?.owner_access) {
+    toolbarMount = document.getElementById('manage-toolbar-mount');
+    if (!toolbarMount) {
+      toolbarMount = document.createElement('div');
+      toolbarMount.id = 'manage-toolbar-mount';
+      document.body.appendChild(toolbarMount);
+    }
+  }
 
   // Clear existing content (remove the static grid)
   galleryImages.innerHTML = '';
@@ -65,11 +183,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Mount React component
   const root = createRoot(galleryImages);
   root.render(
-    <GalleryWithFilter
+    <GalleryPage
+      galleryData={galleryData!}
       images={images}
       galleryUrl={galleryUrl}
-      permissions={galleryData?.permissions}
       filterMount={filterMount}
+      toolbarMount={toolbarMount}
+      manageButton={manageButton}
     />
   );
 });

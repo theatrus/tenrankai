@@ -48,6 +48,7 @@ export class WebAuthnUtils {
         headers: {
             'Content-Type': 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({ username })
     });
     
@@ -68,6 +69,7 @@ export class WebAuthnUtils {
         headers: {
             'Content-Type': 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({ username })
     });
     
@@ -109,6 +111,7 @@ export class WebAuthnUtils {
         headers: {
             'Content-Type': 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
             id: credential.id,
             rawId: this.arrayBufferToBase64(credential.rawId),
@@ -139,6 +142,7 @@ export class WebAuthnUtils {
         headers: {
             'Content-Type': 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({ name: name || 'Passkey' })
     });
     
@@ -185,6 +189,7 @@ export class WebAuthnUtils {
         headers: {
             'Content-Type': 'application/json',
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
             id: credential.id,
             rawId: this.arrayBufferToBase64(credential.rawId),
@@ -215,7 +220,9 @@ export class PasskeyManager {
    * Load user's passkeys
    */
   static async loadPasskeys(): Promise<PasskeyInfo[]> {
-    const response = await fetch('/api/webauthn/passkeys');
+    const response = await fetch('/api/webauthn/passkeys', {
+        credentials: 'same-origin',
+    });
     if (!response.ok) {
         throw new Error('Failed to load passkeys');
     }
@@ -227,9 +234,10 @@ export class PasskeyManager {
    */
   static async deletePasskey(passkeyId: string): Promise<void> {
     const response = await fetch(`/api/webauthn/passkeys/${passkeyId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'same-origin',
     });
-    
+
     if (!response.ok) {
         throw new Error('Failed to delete passkey');
     }

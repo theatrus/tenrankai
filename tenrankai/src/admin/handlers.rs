@@ -1182,6 +1182,7 @@ pub async fn get_site_permissions(
                             name,
                             permissions: RolePermissionsDto {
                                 can_view: p.can_view,
+                                can_see_hidden: p.can_see_hidden,
                                 can_see_technical_details: p.can_see_technical_details,
                                 can_see_exact_dates: p.can_see_exact_dates,
                                 can_see_location: p.can_see_location,
@@ -1269,6 +1270,7 @@ pub async fn update_site_permissions(
                         inherits: role_dto.inherits.clone(),
                         permissions: tenrankai_config_storage::RolePermissions {
                             can_view: role_dto.permissions.can_view,
+                            can_see_hidden: role_dto.permissions.can_see_hidden,
                             can_see_technical_details: role_dto
                                 .permissions
                                 .can_see_technical_details,
@@ -1435,11 +1437,12 @@ pub async fn get_folder_permissions(
     // read_folder_metadata_full returns Option<FolderMetadata>
     let metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
 
-    let (hidden, permissions, description) = match metadata {
+    let (hidden, hidden_images, permissions, description) = match metadata {
         Some(meta) => {
             let perms = &meta.config.permissions;
             (
                 meta.config.hidden,
+                meta.config.hidden_images.clone(),
                 PermissionConfigDto {
                     public_role: perms.public_role.clone(),
                     default_authenticated_role: perms.default_authenticated_role.clone(),
@@ -1482,6 +1485,7 @@ pub async fn get_folder_permissions(
             }
             (
                 false,
+                vec![],
                 PermissionConfigDto {
                     public_role: None,
                     default_authenticated_role: None,
@@ -1495,6 +1499,7 @@ pub async fn get_folder_permissions(
 
     Ok(Json(FolderPermissionsResponse {
         hidden,
+        hidden_images,
         permissions,
         description,
     }))
@@ -1546,6 +1551,16 @@ pub async fn update_folder_permissions(
 
     toml_content["hidden"] = toml_edit::value(request.hidden);
 
+    // Add hidden_images array if non-empty
+    if !request.hidden_images.is_empty() {
+        let hidden_images_array: toml_edit::Array = request
+            .hidden_images
+            .iter()
+            .map(|img| toml_edit::Value::from(img.clone()))
+            .collect();
+        toml_content["hidden_images"] = toml_edit::value(hidden_images_array);
+    }
+
     // Build permissions section
     let mut permissions_table = toml_edit::Table::new();
 
@@ -1570,6 +1585,9 @@ pub async fn update_folder_permissions(
             let mut perms_table = toml_edit::InlineTable::new();
             if role.permissions.can_view {
                 perms_table.insert("can_view", true.into());
+            }
+            if role.permissions.can_see_hidden {
+                perms_table.insert("can_see_hidden", true.into());
             }
             if role.permissions.can_see_technical_details {
                 perms_table.insert("can_see_technical_details", true.into());
@@ -1702,6 +1720,7 @@ pub async fn update_folder_permissions(
 
     Ok(Json(FolderPermissionsResponse {
         hidden: request.hidden,
+        hidden_images: request.hidden_images,
         permissions: request.permissions,
         description: request.description,
     }))
@@ -1856,11 +1875,12 @@ pub async fn share_folder(
     // Read current folder metadata
     let current_metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
 
-    let (hidden, mut permissions, description) = match current_metadata {
+    let (hidden, hidden_images, mut permissions, description) = match current_metadata {
         Some(meta) => {
             let perms = &meta.config.permissions;
             (
                 meta.config.hidden,
+                meta.config.hidden_images.clone(),
                 PermissionConfigDto {
                     public_role: perms.public_role.clone(),
                     default_authenticated_role: perms.default_authenticated_role.clone(),
@@ -1893,6 +1913,7 @@ pub async fn share_folder(
         }
         None => (
             false,
+            vec![],
             PermissionConfigDto {
                 public_role: None,
                 default_authenticated_role: None,
@@ -1925,6 +1946,7 @@ pub async fn share_folder(
     // Write updated _folder.md
     let update_request = UpdateFolderPermissionsRequest {
         hidden,
+        hidden_images,
         permissions: permissions.clone(),
         description,
     };
@@ -2169,4 +2191,352 @@ pub async fn share_folder(
         message,
         user_created,
     }))
+}
+
+// ============================================================================
+// Image Management
+// ============================================================================
+
+/// Delete images from a gallery
+pub async fn delete_gallery_images(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery)): Path<(String, String)>,
+    Json(request): Json<DeleteImagesRequest>,
+) -> Result<Json<DeleteImagesResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    if request.paths.is_empty() {
+        return Ok(Json(DeleteImagesResponse {
+            success: true,
+            deleted_count: 0,
+            errors: vec![],
+        }));
+    }
+
+    let mut deleted_count = 0;
+    let mut errors = Vec::new();
+
+    // Delete each image from source storage
+    for path in &request.paths {
+        // Basic path validation - no traversal
+        if path.contains("..") || path.starts_with('/') {
+            errors.push(format!("Invalid path: {}", path));
+            continue;
+        }
+
+        match gallery_obj.source_storage().delete(path).await {
+            Ok(()) => {
+                deleted_count += 1;
+                tracing::info!("Deleted image: {} from gallery {}", path, gallery);
+            }
+            Err(e) => {
+                errors.push(format!("Failed to delete {}: {}", path, e));
+                tracing::error!("Failed to delete image {}: {}", path, e);
+            }
+        }
+    }
+
+    // Refresh the folder cache to update image listings
+    if deleted_count > 0 && let Err(e) = gallery_obj.refresh_folder_cache().await {
+        tracing::error!("Failed to refresh folder cache: {}", e);
+        errors.push(format!("Failed to refresh cache: {}", e));
+    }
+
+    Ok(Json(DeleteImagesResponse {
+        success: errors.is_empty(),
+        deleted_count,
+        errors,
+    }))
+}
+
+/// Delete images from a gallery (site-resolved version)
+/// Uses the current site from the resolved state (determined by host)
+pub async fn delete_gallery_images_resolved(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(gallery): Path<String>,
+    Json(request): Json<DeleteImagesRequest>,
+) -> Result<Json<DeleteImagesResponse>, AdminError> {
+    let site = app_state.site.name.clone();
+    delete_gallery_images(
+        ResolvedState(app_state),
+        _admin,
+        Path((site, gallery)),
+        Json(request),
+    )
+    .await
+}
+
+/// Hide or unhide images in a gallery folder
+pub async fn hide_gallery_images(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+    Json(request): Json<HideImagesRequest>,
+) -> Result<Json<HideImagesResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // URL decode the folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    // Handle special _root marker for root folder
+    let folder_path = if folder_path == "_root" {
+        String::new()
+    } else {
+        folder_path
+    };
+
+    // Get current folder metadata
+    let current_metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
+
+    // Extract just the filenames from the paths
+    let filenames: Vec<String> = request
+        .paths
+        .iter()
+        .filter_map(|p| p.rsplit('/').next().map(String::from))
+        .collect();
+
+    // Build the updated hidden_images list
+    let mut hidden_images: Vec<String> = current_metadata
+        .as_ref()
+        .map(|m| m.config.hidden_images.clone())
+        .unwrap_or_default();
+
+    if request.hide {
+        // Add to hidden list
+        for filename in &filenames {
+            if !hidden_images.contains(filename) {
+                hidden_images.push(filename.clone());
+            }
+        }
+    } else {
+        // Remove from hidden list
+        hidden_images.retain(|f| !filenames.contains(f));
+    }
+
+    // Get other metadata values to preserve
+    let (hidden, permissions, description) = match &current_metadata {
+        Some(meta) => {
+            let perms = &meta.config.permissions;
+            (
+                meta.config.hidden,
+                PermissionConfigDto {
+                    public_role: perms.public_role.clone(),
+                    default_authenticated_role: perms.default_authenticated_role.clone(),
+                    roles: perms
+                        .roles
+                        .iter()
+                        .map(|(name, role)| {
+                            (
+                                name.clone(),
+                                RoleDto {
+                                    name: name.clone(),
+                                    permissions: RolePermissionsDto::from(&role.permissions),
+                                    inherits: role.inherits.clone(),
+                                    is_builtin: false,
+                                },
+                            )
+                        })
+                        .collect(),
+                    user_roles: perms
+                        .user_roles
+                        .iter()
+                        .map(|user_role| UserRoleAssignment {
+                            username: user_role.username.clone(),
+                            roles: user_role.roles.clone(),
+                        })
+                        .collect(),
+                },
+                meta.description_markdown.clone(),
+            )
+        }
+        None => (
+            false,
+            PermissionConfigDto {
+                public_role: None,
+                default_authenticated_role: None,
+                roles: std::collections::HashMap::new(),
+                user_roles: vec![],
+            },
+            String::new(),
+        ),
+    };
+
+    // Build the _folder.md content
+    let update_request = UpdateFolderPermissionsRequest {
+        hidden,
+        hidden_images: hidden_images.clone(),
+        permissions,
+        description,
+    };
+
+    // Build the TOML content
+    let mut toml_content = toml_edit::DocumentMut::new();
+    toml_content["hidden"] = toml_edit::value(update_request.hidden);
+
+    // Add hidden_images array if non-empty
+    if !update_request.hidden_images.is_empty() {
+        let hidden_images_array: toml_edit::Array = update_request
+            .hidden_images
+            .iter()
+            .map(|img| toml_edit::Value::from(img.clone()))
+            .collect();
+        toml_content["hidden_images"] = toml_edit::value(hidden_images_array);
+    }
+
+    // Build permissions section
+    let mut permissions_table = toml_edit::Table::new();
+
+    if let Some(ref public_role) = update_request.permissions.public_role {
+        permissions_table["public_role"] = toml_edit::value(public_role.clone());
+    }
+    if let Some(ref default_auth_role) = update_request.permissions.default_authenticated_role {
+        permissions_table["default_authenticated_role"] =
+            toml_edit::value(default_auth_role.clone());
+    }
+
+    // Add roles if any
+    if !update_request.permissions.roles.is_empty() {
+        let mut roles_table = toml_edit::Table::new();
+        for (role_name, role) in &update_request.permissions.roles {
+            let mut role_table = toml_edit::Table::new();
+            if let Some(ref inherits) = role.inherits {
+                role_table["inherits"] = toml_edit::value(inherits.clone());
+            }
+
+            let mut perms_table = toml_edit::InlineTable::new();
+            if role.permissions.can_view {
+                perms_table.insert("can_view", true.into());
+            }
+            if role.permissions.can_see_hidden {
+                perms_table.insert("can_see_hidden", true.into());
+            }
+            if role.permissions.owner_access {
+                perms_table.insert("owner_access", true.into());
+            }
+
+            role_table["permissions"] = toml_edit::value(perms_table);
+            roles_table[role_name] = toml_edit::Item::Table(role_table);
+        }
+        permissions_table["roles"] = toml_edit::Item::Table(roles_table);
+    }
+
+    // Add user_roles if any
+    if !update_request.permissions.user_roles.is_empty() {
+        let mut user_roles_array = toml_edit::ArrayOfTables::new();
+        for assignment in &update_request.permissions.user_roles {
+            let mut user_role_table = toml_edit::Table::new();
+            user_role_table["username"] = toml_edit::value(assignment.username.clone());
+            let roles_array: toml_edit::Array = assignment
+                .roles
+                .iter()
+                .map(|r| toml_edit::Value::from(r.clone()))
+                .collect();
+            user_role_table["roles"] = toml_edit::value(roles_array);
+            user_roles_array.push(user_role_table);
+        }
+        permissions_table["user_roles"] = toml_edit::Item::ArrayOfTables(user_roles_array);
+    }
+
+    if !permissions_table.is_empty() {
+        toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
+    }
+
+    // Build the full _folder.md content
+    let toml_str = toml_content.to_string();
+    let content = if toml_str.trim().is_empty() && update_request.description.is_empty() {
+        String::new()
+    } else if toml_str.trim().is_empty() {
+        update_request.description.clone()
+    } else {
+        format!("+++\n{}+++\n{}", toml_str, update_request.description)
+    };
+
+    // Write the _folder.md file
+    let folder_md_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    gallery_obj
+        .source_storage()
+        .write(&folder_md_path, bytes::Bytes::from(content))
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to write _folder.md: {}", e)))?;
+
+    // Refresh the folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh folder cache: {}", e)))?;
+
+    Ok(Json(HideImagesResponse {
+        success: true,
+        hidden_images,
+    }))
+}
+
+/// Hide or unhide images in a gallery folder (site-resolved version)
+/// Uses the current site from the resolved state (determined by host)
+pub async fn hide_gallery_images_resolved(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((gallery, folder_path)): Path<(String, String)>,
+    Json(request): Json<HideImagesRequest>,
+) -> Result<Json<HideImagesResponse>, AdminError> {
+    // Get site name from resolved state
+    let site = app_state.site.name.clone();
+
+    // Call the existing handler logic with the resolved site
+    hide_gallery_images(
+        ResolvedState(app_state),
+        _admin,
+        Path((site, gallery, folder_path)),
+        Json(request),
+    )
+    .await
 }

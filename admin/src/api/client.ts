@@ -158,6 +158,16 @@ export interface ShareFolderResponse {
   user_created: boolean;
 }
 
+export interface DeleteImagesRequest {
+  paths: string[];
+}
+
+export interface DeleteImagesResponse {
+  success: boolean;
+  deleted_count: number;
+  errors: string[];
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -253,4 +263,8 @@ export const api = {
   // Folder Sharing
   shareFolder: (site: string, gallery: string, folderPath: string, data: ShareFolderRequest) =>
     request<ShareFolderResponse>('POST', `/sites/${site}/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/share`, data),
+
+  // Image Management
+  deleteGalleryImages: (site: string, gallery: string, paths: string[]) =>
+    request<DeleteImagesResponse>('DELETE', `/sites/${site}/galleries/${gallery}/images`, { paths }),
 };

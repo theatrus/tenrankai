@@ -49,10 +49,10 @@ export class LoginForm {
           // Try passkey authentication first
           try {
             const response = await WebAuthnUtils.authenticateWithPasskey(username);
-            const result = await response.json();
-            
-            if (result.success) {
-              this.handleLoginSuccess(result);
+            // Passkey auth returns 200 OK with Set-Cookie header (no body)
+            // If we get here without throwing, authentication succeeded
+            if (response.ok) {
+              this.handleLoginSuccess({});
               return;
             }
           } catch (passkeyError) {
@@ -94,9 +94,9 @@ export class LoginForm {
     // Check for return URL
     const returnUrl = AuthUtils.getReturnUrl();
     const redirectUrl = result.redirect || returnUrl || '/';
-    
+
     AuthUtils.showSuccess('Authentication successful! Redirecting...');
-    
+
     // Redirect after a short delay
     setTimeout(() => {
       window.location.href = redirectUrl;

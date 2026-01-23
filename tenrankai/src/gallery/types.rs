@@ -317,6 +317,10 @@ pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
 
+    /// List of hidden image filenames (relative to this folder)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_images: Vec<String>,
+
     /// Folder-specific permission overrides
     #[serde(default)]
     pub permissions: crate::permissions::types::PermissionConfig,

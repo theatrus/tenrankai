@@ -9,6 +9,8 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_view: bool,
     #[serde(default)]
+    pub can_see_hidden: bool,
+    #[serde(default)]
     pub can_see_technical_details: bool,
     #[serde(default)]
     pub can_see_exact_dates: bool,
@@ -90,6 +92,7 @@ impl RolePermissions {
     /// Most permissive wins
     pub fn merge(&mut self, other: &RolePermissions) {
         self.can_view |= other.can_view;
+        self.can_see_hidden |= other.can_see_hidden;
         self.can_see_technical_details |= other.can_see_technical_details;
         self.can_see_exact_dates |= other.can_see_exact_dates;
         self.can_see_location |= other.can_see_location;
@@ -132,6 +135,7 @@ impl RolePermissions {
     pub fn apply_owner_override(&mut self) {
         if self.owner_access {
             self.can_view = true;
+            self.can_see_hidden = true;
             self.can_see_technical_details = true;
             self.can_see_exact_dates = true;
             self.can_see_location = true;

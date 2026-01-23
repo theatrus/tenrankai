@@ -120,6 +120,7 @@ export interface BreadcrumbItem {
 
 export interface RolePermissions {
   can_view: boolean;
+  can_see_hidden: boolean;
   can_see_technical_details: boolean;
   can_see_exact_dates: boolean;
   can_see_location: boolean;
@@ -185,6 +186,7 @@ export interface GalleryItem {
 }
 
 export interface GalleryData {
+  site_name: string;
   gallery_name: string;
   gallery_path: string;
   is_root: boolean;
@@ -198,6 +200,8 @@ export interface GalleryData {
   /** Raw markdown for folder description (for editing) */
   folder_description_markdown?: string;
   permissions: RolePermissions;
+  /** List of hidden image filenames in this folder */
+  hidden_images?: string[];
 }
 
 export interface ApiError {

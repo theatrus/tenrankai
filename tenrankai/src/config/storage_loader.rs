@@ -367,6 +367,7 @@ impl ConfigStorageLoader {
     ) -> RolePermissions {
         RolePermissions {
             can_view: stored.can_view,
+            can_see_hidden: stored.can_see_hidden,
             can_see_technical_details: stored.can_see_technical_details,
             can_see_exact_dates: stored.can_see_exact_dates,
             can_see_location: stored.can_see_location,

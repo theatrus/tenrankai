@@ -33,6 +33,8 @@ pub struct RolePermissionsDto {
     #[serde(default)]
     pub can_view: bool,
     #[serde(default)]
+    pub can_see_hidden: bool,
+    #[serde(default)]
     pub can_see_technical_details: bool,
     #[serde(default)]
     pub can_see_exact_dates: bool,
@@ -86,6 +88,7 @@ impl From<&RolePermissions> for RolePermissionsDto {
     fn from(perms: &RolePermissions) -> Self {
         Self {
             can_view: perms.can_view,
+            can_see_hidden: perms.can_see_hidden,
             can_see_technical_details: perms.can_see_technical_details,
             can_see_exact_dates: perms.can_see_exact_dates,
             can_see_location: perms.can_see_location,
@@ -295,6 +298,8 @@ pub struct FolderListResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FolderPermissionsResponse {
     pub hidden: bool,
+    #[serde(default)]
+    pub hidden_images: Vec<String>,
     pub permissions: PermissionConfigDto,
     pub description: String,
 }
@@ -302,6 +307,8 @@ pub struct FolderPermissionsResponse {
 #[derive(Debug, Deserialize)]
 pub struct UpdateFolderPermissionsRequest {
     pub hidden: bool,
+    #[serde(default)]
+    pub hidden_images: Vec<String>,
     pub permissions: PermissionConfigDto,
     pub description: String,
 }
@@ -321,4 +328,32 @@ pub struct ShareFolderResponse {
     pub success: bool,
     pub message: String,
     pub user_created: bool,
+}
+
+// ============================================================================
+// Image Management Types
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteImagesRequest {
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteImagesResponse {
+    pub success: bool,
+    pub deleted_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HideImagesRequest {
+    pub paths: Vec<String>,
+    pub hide: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HideImagesResponse {
+    pub success: bool,
+    pub hidden_images: Vec<String>,
 }

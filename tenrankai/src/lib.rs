@@ -460,6 +460,15 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
                 "/_admin/api/sites/{site}/galleries/{gallery}/folders/{folder_path}/share",
                 axum::routing::post(admin::share_folder),
             )
+            // Image management (site determined from host)
+            .route(
+                "/_admin/api/galleries/{gallery}/images",
+                axum::routing::delete(admin::delete_gallery_images_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/images/hide",
+                axum::routing::post(admin::hide_gallery_images_resolved),
+            )
             .route(
                 "/_admin/api/sites/{site}/permissions",
                 axum::routing::get(admin::get_site_permissions).put(admin::update_site_permissions),

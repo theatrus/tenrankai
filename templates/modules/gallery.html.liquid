@@ -52,6 +52,12 @@
                     Download All
                 </a>
             {% endif %}
+
+            {% if permissions.owner_access %}
+                <button id="manage-images-btn" class="btn btn-manage" title="Manage images">
+                    Manage
+                </button>
+            {% endif %}
         </div>
     </div>
     
@@ -98,34 +104,31 @@
 {{ gallery_data_json }}
         </script>
 
-        <!-- Image Gallery -->
+        <!-- Image Gallery (React renders into this container) -->
         {% if images.size > 0 %}
             <div class="gallery-images">
-                <div class="image-grid" id="gallery-grid">
-                    <div class="masonry-column" data-column="0"></div>
-                    <div class="masonry-column" data-column="1"></div>
-                </div>
-
-                <!-- Hidden template for images (legacy) -->
-                <script type="application/json" id="gallery-images">
-{{ images_json }}
-                </script>
-
-                <!-- Pagination -->
-                {% if total_pages > 1 %}
-                    <div class="gallery-pagination">
-                        {% if has_prev %}
-                            <a href="?page={{ prev_page }}" class="page-link">← Previous</a>
-                        {% endif %}
-                        
-                        <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
-                        
-                        {% if has_next %}
-                            <a href="?page={{ next_page }}" class="page-link">Next →</a>
-                        {% endif %}
-                    </div>
-                {% endif %}
+                <!-- React will render the masonry grid here -->
             </div>
+
+            <!-- Image data for React -->
+            <script type="application/json" id="gallery-images">
+{{ images_json }}
+            </script>
+
+            <!-- Pagination -->
+            {% if total_pages > 1 %}
+                <div class="gallery-pagination">
+                    {% if has_prev %}
+                        <a href="?page={{ prev_page }}" class="page-link">← Previous</a>
+                    {% endif %}
+
+                    <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
+
+                    {% if has_next %}
+                        <a href="?page={{ next_page }}" class="page-link">Next →</a>
+                    {% endif %}
+                </div>
+            {% endif %}
         {% endif %}
     {% else %}
         <p class="empty-gallery">No images found in this directory.</p>
@@ -135,5 +138,169 @@
 
 <!-- Gallery URL for React component -->
 <div data-gallery-url="{{ gallery_url }}" style="display: none"></div>
+
+{% if permissions.owner_access %}
+<style>
+.btn-manage {
+    background: var(--link-color, #007bff);
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+.btn-manage:hover {
+    opacity: 0.9;
+}
+.btn-manage.active {
+    background: #dc3545;
+}
+.manage-toolbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #333;
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 100;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+}
+.manage-count {
+    flex: 1;
+    font-weight: bold;
+}
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.btn-warning {
+    background: #ffc107;
+    color: #212529;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.btn-warning:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.btn-success {
+    background: #28a745;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.btn-success:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.image-item.is-hidden {
+    opacity: 0.5;
+}
+.image-item.is-hidden::after {
+    content: 'HIDDEN';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    pointer-events: none;
+}
+.image-item.select-mode {
+    cursor: pointer !important;
+}
+.image-item .selection-checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 28px;
+    height: 28px;
+    border: 2px solid white;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.4);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+}
+.image-item.selected .selection-checkbox {
+    background: #dc3545;
+    border-color: white;
+}
+.image-item.select-mode .image-link {
+    pointer-events: none;
+}
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+.modal-content {
+    background: white;
+    padding: 24px;
+    border-radius: 8px;
+    max-width: 400px;
+    text-align: center;
+}
+.modal-content h3 {
+    margin: 0 0 16px 0;
+    color: #333;
+}
+.modal-content p {
+    margin: 0 0 8px 0;
+    color: #666;
+}
+.modal-content .warning-text {
+    color: #dc3545;
+    font-size: 14px;
+}
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+}
+</style>
+{% endif %}
 
 {% include "_footer.html.liquid" %}

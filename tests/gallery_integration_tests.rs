@@ -48,6 +48,7 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
                             "viewer".to_string(),
                             tenrankai::permissions::RolePermissions {
                                 can_view: true,
+                                can_see_hidden: false,
                                 can_see_technical_details: true,
                                 can_see_exact_dates: true,
                                 can_see_location: true,

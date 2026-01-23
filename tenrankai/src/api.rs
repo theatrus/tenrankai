@@ -105,9 +105,9 @@ pub fn is_https_request(headers: &HeaderMap) -> bool {
         return false;
     }
 
-    // Default to HTTPS when no proxy headers present
-    // Most production deployments use HTTPS behind a reverse proxy
-    true
+    // Default to HTTP when no proxy headers present
+    // Production deployments behind HTTPS reverse proxies should set X-Forwarded-Proto
+    false
 }
 
 #[derive(Deserialize)]
@@ -122,6 +122,7 @@ pub struct GalleryPreviewResponse {
 
 #[derive(Serialize, Debug)]
 pub struct GalleryApiResponse {
+    pub site_name: String,
     pub gallery_name: String,
     pub gallery_path: String,
     pub is_root: bool,
@@ -135,6 +136,8 @@ pub struct GalleryApiResponse {
     /// Raw markdown for folder description (for editing)
     pub folder_description_markdown: Option<String>,
     pub permissions: crate::permissions::RolePermissions,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hidden_images: Vec<String>,
 }
 
 /// Maximum number of navigation images to include in each direction
@@ -348,7 +351,19 @@ pub async fn gallery_api_handler_for_named(
         }
     };
 
+    // Get hidden_images from folder metadata (only include if user has can_see_hidden permission)
+    let hidden_images = if user_permissions.permissions.can_see_hidden {
+        gallery
+            .read_folder_metadata_full(&path)
+            .await
+            .map(|m| m.config.hidden_images)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     Ok(Json(GalleryApiResponse {
+        site_name: app_state.site.name.clone(),
         gallery_name,
         gallery_path: path,
         is_root,
@@ -361,6 +376,7 @@ pub async fn gallery_api_handler_for_named(
         folder_description,
         folder_description_markdown,
         permissions: user_permissions.permissions,
+        hidden_images,
     }))
 }
 
@@ -1962,6 +1978,11 @@ pub async fn update_folder_description_handler(
                     .as_ref()
                     .map(|m| m.config.hidden)
                     .unwrap_or(false),
+                hidden_images: cached_entry
+                    .metadata
+                    .as_ref()
+                    .map(|m| m.config.hidden_images.clone())
+                    .unwrap_or_default(),
                 permissions: cached_entry
                     .metadata
                     .as_ref()

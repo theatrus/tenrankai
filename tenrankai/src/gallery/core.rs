@@ -107,6 +107,40 @@ impl Gallery {
             cached.images.iter().map(|s| s.as_str()).collect()
         };
 
+        // Get hidden images list and check user permissions
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
+
+        let can_see_hidden = if !hidden_images.is_empty() {
+            // Only resolve permissions if there are hidden images
+            let folder_metadata = cached.metadata.as_ref();
+            let resolver = crate::permissions::PermissionResolver::new(
+                &self.config.permissions,
+                folder_metadata.map(|m| &m.config.permissions),
+            );
+            let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
+            permissions.can_see_hidden
+        } else {
+            false // No hidden images, permission doesn't matter
+        };
+
+        // Filter out hidden images if user doesn't have permission
+        let image_paths: Vec<&str> = if !hidden_images.is_empty() && !can_see_hidden {
+            image_paths
+                .into_iter()
+                .filter(|path| {
+                    // Extract just the filename from the path
+                    let filename = path.rsplit('/').next().unwrap_or(path);
+                    !hidden_images.contains(&filename.to_string())
+                })
+                .collect()
+        } else {
+            image_paths
+        };
+
         for image_path in image_paths {
             // Get the indexed identifier for this image
             let url_identifier = self.build_url_identifier(image_path).await;
@@ -432,6 +466,7 @@ impl Gallery {
                 // On error, use most restrictive permissions
                 crate::permissions::RolePermissions {
                     can_view: true, // They can view if they got this far
+                    can_see_hidden: false,
                     can_see_location: false,
                     can_see_technical_details: false,
                     can_see_exact_dates: false,
@@ -730,6 +765,7 @@ impl Gallery {
                 Some(super::FolderMetadata {
                     config: super::FolderConfig {
                         hidden: false,
+                        hidden_images: vec![],
                         permissions: Default::default(),
                     },
                     description_markdown: content,

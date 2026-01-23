@@ -80,7 +80,7 @@
                   
                   try {
                       await WebAuthnUtils.authenticateWithPasskey(username);
-                      // Success - user will be redirected
+                      // Success - redirect to return URL or gallery
                       const returnUrl = AuthUtils.getReturnUrl();
                       window.location.href = returnUrl || '/gallery';
                       return;

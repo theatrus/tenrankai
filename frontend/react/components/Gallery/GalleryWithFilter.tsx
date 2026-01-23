@@ -1,6 +1,8 @@
 import React, { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { MasonryGrid } from './MasonryGrid';
 import { FilterBar, FilterType } from './FilterBar';
+import { ManageToolbar } from './ManageToolbar';
 import type { GalleryImage } from './MasonryGrid';
 import type { RolePermissions } from '../../types';
 
@@ -9,13 +11,33 @@ interface GalleryWithFilterProps {
   galleryUrl: string;
   permissions?: RolePermissions;
   filterMount?: HTMLElement | null;
+  galleryName: string;
+  galleryPath: string;
+  hiddenImages: string[];
+  isManageMode: boolean;
+  selectedImages: Set<string>;
+  onToggleSelect: (path: string) => void;
+  onHideSuccess: (hiddenImages: string[]) => void;
+  onDeleteSuccess: (deletedPaths: string[]) => void;
+  onCancelManage: () => void;
+  toolbarMount?: HTMLElement | null;
 }
 
-export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({ 
-  images, 
-  galleryUrl, 
+export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
+  images,
+  galleryUrl,
   permissions,
-  filterMount 
+  filterMount,
+  galleryName,
+  galleryPath,
+  hiddenImages,
+  isManageMode,
+  selectedImages,
+  onToggleSelect,
+  onHideSuccess,
+  onDeleteSuccess,
+  onCancelManage,
+  toolbarMount,
 }) => {
   // Initialize filter from URL parameters
   const getInitialFilter = (): FilterType => {
@@ -143,10 +165,27 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   }, [activeFilter, filterCounts, handleFilterChange, permissions?.can_read_metadata]);
 
   return (
-    <MasonryGrid 
-      images={filteredImages}
-      galleryUrl={galleryUrl}
-      permissions={permissions}
-    />
+    <>
+      <MasonryGrid
+        images={filteredImages}
+        galleryUrl={galleryUrl}
+        permissions={permissions}
+        isManageMode={isManageMode}
+        selectedImages={selectedImages}
+        hiddenImages={hiddenImages}
+        onToggleSelect={onToggleSelect}
+      />
+      {isManageMode && toolbarMount && createPortal(
+        <ManageToolbar
+          galleryName={galleryName}
+          galleryPath={galleryPath}
+          selectedImages={selectedImages}
+          onHideSuccess={onHideSuccess}
+          onDeleteSuccess={onDeleteSuccess}
+          onCancel={onCancelManage}
+        />,
+        toolbarMount
+      )}
+    </>
   );
 };
