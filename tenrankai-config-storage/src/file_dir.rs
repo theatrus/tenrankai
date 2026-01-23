@@ -146,11 +146,15 @@ impl FileDirConfigStorage {
 
             file.lock_exclusive()?;
 
-            let mut writer = BufWriter::new(&file);
-            let json = serde_json::to_string(&entry)
-                .map_err(|e| ConfigStorageError::Serialization(e.to_string()))?;
-            writeln!(writer, "{}", json)?;
-            writer.flush()?;
+            // Use a scope to ensure writer is dropped before unlock
+            {
+                let mut writer = BufWriter::new(&file);
+                let json = serde_json::to_string(&entry)
+                    .map_err(|e| ConfigStorageError::Serialization(e.to_string()))?;
+                writeln!(writer, "{}", json)?;
+                writer.flush()?;
+                // writer drops here, ensuring all data is written
+            }
 
             file.unlock()?;
             Ok::<_, ConfigStorageError>(())
@@ -206,9 +210,12 @@ impl FileDirConfigStorage {
 
             file.lock_exclusive()?;
 
-            let mut writer = BufWriter::new(&file);
-            writer.write_all(content.as_bytes())?;
-            writer.flush()?;
+            // Use a scope to ensure writer is dropped before unlock
+            {
+                let mut writer = BufWriter::new(&file);
+                writer.write_all(content.as_bytes())?;
+                writer.flush()?;
+            }
 
             file.unlock()?;
             Ok::<_, ConfigStorageError>(())
