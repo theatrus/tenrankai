@@ -39,6 +39,7 @@ npm run build:prod                                 # Production frontend
 - Use `thiserror` crate for error types
 - Run `cargo fmt` and `cargo clippy` before finalizing
 - **Always use `ResolvedState` in handlers** (never `State<AppState>` directly)
+- **Frontend code must be TypeScript and React** - never write vanilla JS in templates or HTML files
 
 ## Architecture
 
