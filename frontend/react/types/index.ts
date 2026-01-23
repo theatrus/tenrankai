@@ -167,6 +167,8 @@ export interface ImageDetailData {
   next_images: NavigationImage[];
   permissions: RolePermissions;
   tile_config?: TileConfig;
+  /** Whether this image is hidden (only set for users who can see hidden images) */
+  is_hidden?: boolean;
 }
 
 export interface GalleryItem {

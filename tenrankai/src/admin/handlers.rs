@@ -2258,7 +2258,9 @@ pub async fn delete_gallery_images(
     }
 
     // Refresh the folder cache to update image listings
-    if deleted_count > 0 && let Err(e) = gallery_obj.refresh_folder_cache().await {
+    if deleted_count > 0
+        && let Err(e) = gallery_obj.refresh_folder_cache().await
+    {
         tracing::error!("Failed to refresh folder cache: {}", e);
         errors.push(format!("Failed to refresh cache: {}", e));
     }
@@ -2332,12 +2334,27 @@ pub async fn hide_gallery_images(
     // Get current folder metadata
     let current_metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
 
-    // Extract just the filenames from the paths
-    let filenames: Vec<String> = request
-        .paths
-        .iter()
-        .filter_map(|p| p.rsplit('/').next().map(String::from))
-        .collect();
+    // Resolve URL paths through the indexer and extract actual filenames
+    // This handles unique_id indexing where URL has "3f601x" but file is "CRW_1978.jpg"
+    let filenames: Vec<String> = {
+        let indexer = gallery_obj.image_indexer.read().await;
+        request
+            .paths
+            .iter()
+            .filter_map(|p| {
+                // Get the URL identifier from the path
+                let url_id = p.rsplit('/').next()?;
+                // Resolve through indexer to get actual path
+                if let Some(resolved) = indexer.get_path(p) {
+                    // Extract filename from resolved path
+                    resolved.rsplit('/').next().map(String::from)
+                } else {
+                    // Fallback: use the URL id as-is (for filename indexing mode)
+                    Some(url_id.to_string())
+                }
+            })
+            .collect()
+    };
 
     // Build the updated hidden_images list
     let mut hidden_images: Vec<String> = current_metadata
@@ -2346,7 +2363,7 @@ pub async fn hide_gallery_images(
         .unwrap_or_default();
 
     if request.hide {
-        // Add to hidden list
+        // Add to hidden list using actual filenames
         for filename in &filenames {
             if !hidden_images.contains(filename) {
                 hidden_images.push(filename.clone());

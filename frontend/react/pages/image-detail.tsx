@@ -260,6 +260,13 @@ export function ImageDetailPage({
         
         {/* Info section - below the image viewer */}
         <div className="image-info-section">
+          {/* Hidden image indicator */}
+          {currentData.is_hidden && (
+            <div className="image-hidden-badge" title="This image is hidden from users without permission">
+              <span className="hidden-icon">HIDDEN</span>
+            </div>
+          )}
+
           {/* Image title and description */}
           <div className="image-header-mobile">
             {/* Title with edit icon */}

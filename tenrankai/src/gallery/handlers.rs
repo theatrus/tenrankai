@@ -264,10 +264,25 @@ pub async fn gallery_handler_for_named(
         "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
         "hidden_images_json": if user_permissions.permissions.owner_access {
             // For owners, provide the list of hidden images so they can be marked in the UI
+            // Translate filenames to URL IDs so frontend can match them against image URLs
             let folder_metadata = gallery.read_folder_metadata_full(&path).await;
-            let hidden_images: Vec<String> = folder_metadata
+            let filenames: Vec<String> = folder_metadata
                 .map(|m| m.config.hidden_images)
                 .unwrap_or_default();
+            let indexer = gallery.image_indexer.read().await;
+            let hidden_images: Vec<String> = filenames
+                .into_iter()
+                .filter_map(|filename| {
+                    let full_path = if path.is_empty() {
+                        filename.clone()
+                    } else {
+                        format!("{}/{}", path, filename)
+                    };
+                    indexer.get_index(&full_path).map(|url_path| {
+                        url_path.rsplit('/').next().unwrap_or(url_path).to_string()
+                    })
+                })
+                .collect();
             serde_json::to_string(&hidden_images).unwrap_or_else(|_| "[]".to_string())
         } else {
             "[]".to_string()
@@ -347,19 +362,19 @@ pub async fn image_detail_handler_for_named(
     }
 
     // Check if image is hidden and user doesn't have can_see_hidden permission
-    if !user_permissions.permissions.can_see_hidden {
-        if let Some(cached) = gallery.get_cached_folder_data(parent_path).await {
-            let hidden_images: &[String] = cached
-                .metadata
-                .as_ref()
-                .map(|m| m.config.hidden_images.as_slice())
-                .unwrap_or(&[]);
+    if !user_permissions.permissions.can_see_hidden
+        && let Some(cached) = gallery.get_cached_folder_data(parent_path).await
+    {
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
 
-            if !hidden_images.is_empty() {
-                let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
-                if hidden_images.contains(&filename.to_string()) {
-                    return ApiResponse::NotFound.into_response(); // Hide existence
-                }
+        if !hidden_images.is_empty() {
+            let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+            if hidden_images.contains(&filename.to_string()) {
+                return ApiResponse::NotFound.into_response(); // Hide existence
             }
         }
     }
@@ -513,19 +528,19 @@ pub async fn image_handler_for_named(
     }
 
     // Check if image is hidden and user doesn't have can_see_hidden permission
-    if !user_permissions.permissions.can_see_hidden {
-        if let Some(cached) = gallery.get_cached_folder_data(&parent_path).await {
-            let hidden_images: &[String] = cached
-                .metadata
-                .as_ref()
-                .map(|m| m.config.hidden_images.as_slice())
-                .unwrap_or(&[]);
+    if !user_permissions.permissions.can_see_hidden
+        && let Some(cached) = gallery.get_cached_folder_data(&parent_path).await
+    {
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
 
-            if !hidden_images.is_empty() {
-                let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
-                if hidden_images.contains(&filename.to_string()) {
-                    return ApiResponse::NotFound.into_response(); // Hide existence
-                }
+        if !hidden_images.is_empty() {
+            let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+            if hidden_images.contains(&filename.to_string()) {
+                return ApiResponse::NotFound.into_response(); // Hide existence
             }
         }
     }
@@ -843,7 +858,14 @@ pub async fn download_folder_handler(
         }
     }
 
-    collect_images_recursive(gallery, &path, &mut all_images, include_versions, can_see_hidden).await;
+    collect_images_recursive(
+        gallery,
+        &path,
+        &mut all_images,
+        include_versions,
+        can_see_hidden,
+    )
+    .await;
 
     if all_images.is_empty() {
         return (StatusCode::NOT_FOUND, "No images in this folder").into_response();
@@ -1023,33 +1045,33 @@ pub async fn raw_download_handler(
 
     // Check if the associated image is hidden
     // RAW files share the base name with their associated image
-    if !user_permissions.permissions.can_see_hidden {
-        if let Some(cached) = gallery.get_cached_folder_data(&parent_path).await {
-            let hidden_images: &[String] = cached
-                .metadata
-                .as_ref()
-                .map(|m| m.config.hidden_images.as_slice())
-                .unwrap_or(&[]);
+    if !user_permissions.permissions.can_see_hidden
+        && let Some(cached) = gallery.get_cached_folder_data(&parent_path).await
+    {
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
 
-            if !hidden_images.is_empty() {
-                // Get the base name of the RAW file (without extension)
-                let raw_filename = path.rsplit('/').next().unwrap_or(&path);
-                let raw_base = if let Some(dot_pos) = raw_filename.rfind('.') {
-                    &raw_filename[..dot_pos]
+        if !hidden_images.is_empty() {
+            // Get the base name of the RAW file (without extension)
+            let raw_filename = path.rsplit('/').next().unwrap_or(&path);
+            let raw_base = if let Some(dot_pos) = raw_filename.rfind('.') {
+                &raw_filename[..dot_pos]
+            } else {
+                raw_filename
+            };
+
+            // Check if any hidden image has the same base name
+            for hidden in hidden_images {
+                let hidden_base = if let Some(dot_pos) = hidden.rfind('.') {
+                    &hidden[..dot_pos]
                 } else {
-                    raw_filename
+                    hidden.as_str()
                 };
-
-                // Check if any hidden image has the same base name
-                for hidden in hidden_images {
-                    let hidden_base = if let Some(dot_pos) = hidden.rfind('.') {
-                        &hidden[..dot_pos]
-                    } else {
-                        hidden.as_str()
-                    };
-                    if raw_base == hidden_base {
-                        return ApiResponse::NotFound.into_response(); // Hide existence
-                    }
+                if raw_base == hidden_base {
+                    return ApiResponse::NotFound.into_response(); // Hide existence
                 }
             }
         }

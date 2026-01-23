@@ -156,6 +156,9 @@ pub struct ImageDetailApiResponse {
     pub next_images: Vec<crate::gallery::NavigationImage>,
     pub permissions: crate::permissions::RolePermissions,
     pub tile_config: Option<TileConfigInfo>,
+    /// Whether this image is hidden (only set for users who can see hidden images)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_hidden: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -352,12 +355,31 @@ pub async fn gallery_api_handler_for_named(
     };
 
     // Get hidden_images from folder metadata (only include if user has can_see_hidden permission)
+    // Translate filenames to URL IDs so frontend can match them against image URLs
     let hidden_images = if user_permissions.permissions.can_see_hidden {
-        gallery
+        let filenames = gallery
             .read_folder_metadata_full(&path)
             .await
             .map(|m| m.config.hidden_images)
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        // Translate filenames to URL IDs
+        let indexer = gallery.image_indexer.read().await;
+        filenames
+            .into_iter()
+            .filter_map(|filename| {
+                // Construct full path
+                let full_path = if path.is_empty() {
+                    filename.clone()
+                } else {
+                    format!("{}/{}", path, filename)
+                };
+                // Get URL ID from indexer and extract just the ID part
+                indexer
+                    .get_index(&full_path)
+                    .map(|url_path| url_path.rsplit('/').next().unwrap_or(url_path).to_string())
+            })
+            .collect()
     } else {
         Vec::new()
     };
@@ -447,6 +469,20 @@ pub async fn image_detail_api_handler_for_named(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    // Check if this is a hidden image that the user can't see
+    if !user_permissions.permissions.can_see_hidden {
+        let folder_metadata = gallery.read_folder_metadata_full(parent_path).await;
+        if let Some(meta) = folder_metadata {
+            let hidden_images = &meta.config.hidden_images;
+            if !hidden_images.is_empty() {
+                let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+                if hidden_images.contains(&filename.to_string()) {
+                    return Err(StatusCode::NOT_FOUND);
+                }
+            }
+        }
+    }
+
     // Get image info (this function already handles authentication logic internally)
     let mut image_info = gallery
         .get_image_info_with_user(&resolved_path, auth.username())
@@ -500,8 +536,9 @@ pub async fn image_detail_api_handler_for_named(
     }
 
     // Get all images in the parent directory for navigation
+    // Use list_directory_with_user to filter hidden images based on user permissions
     let (_, images, _) = gallery
-        .list_directory(parent_path, 0)
+        .list_directory_with_user(parent_path, 0, auth.username())
         .await
         .unwrap_or_default();
 
@@ -641,6 +678,19 @@ pub async fn image_detail_api_handler_for_named(
         None
     };
 
+    // Check if image is hidden (only relevant for users who can see hidden)
+    let is_hidden = if user_permissions.permissions.can_see_hidden {
+        let folder_metadata = gallery.read_folder_metadata_full(parent_path).await;
+        folder_metadata
+            .map(|meta| {
+                let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+                meta.config.hidden_images.contains(&filename.to_string())
+            })
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
     Ok(Json(ImageDetailApiResponse {
         gallery_name,
         image: image_info,
@@ -651,6 +701,7 @@ pub async fn image_detail_api_handler_for_named(
         next_images,
         permissions: user_permissions.permissions,
         tile_config,
+        is_hidden,
     }))
 }
 
