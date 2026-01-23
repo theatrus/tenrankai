@@ -1,10 +1,15 @@
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum_test::TestServer;
+use base64::{Engine, engine::general_purpose};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use tempfile::TempDir;
 use tenrankai::{
     GallerySystemConfig, ImageIndexingMode, StaticConfig, TemplateConfig, create_app,
     site::SiteConfig,
 };
+
+const TEST_COOKIE_SECRET: &str = "test-secret-key-for-testing-purposes";
 
 /// Helper to create a test configuration with admin capabilities
 fn create_admin_test_config(temp_dir: &TempDir, indexing_mode: ImageIndexingMode) -> SiteConfig {
@@ -600,4 +605,443 @@ async fn test_navigation_with_multiple_hidden_images() {
         "Next image should be test_003.jpg, skipping hidden test_001.jpg and test_002.jpg. Got: {}",
         next_path
     );
+}
+
+// ============================================================================
+// Admin API Tests - Helpers
+// ============================================================================
+
+/// Create a signed authentication cookie for testing
+fn create_auth_cookie(username: &str, secret: &str) -> String {
+    type HmacSha256 = Hmac<Sha256>;
+
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(username.as_bytes());
+    let signature = mac.finalize().into_bytes();
+    let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature);
+    format!("auth={}:{}", username, signature_b64)
+}
+
+/// Helper to create a test user database TOML file
+fn create_user_database(temp_dir: &TempDir, users: &[(&str, &str)]) -> String {
+    let path = temp_dir.path().join("users.toml");
+    let mut content = String::from("[users]\n");
+
+    for (username, email) in users {
+        content.push_str(&format!(
+            r#"
+[users.{}]
+email = "{}"
+"#,
+            username, email
+        ));
+    }
+
+    std::fs::write(&path, content).unwrap();
+    path.to_string_lossy().to_string()
+}
+
+/// Helper to create config with user database for admin tests
+fn create_admin_config_with_users(temp_dir: &TempDir) -> SiteConfig {
+    let mut config = create_admin_test_config(temp_dir, ImageIndexingMode::Filename);
+    let user_db = create_user_database(temp_dir, &[("testadmin", "admin@example.com")]);
+    config.user_database = Some(user_db);
+    config
+}
+
+// ============================================================================
+// Admin API Tests - Authentication
+// ============================================================================
+
+#[tokio::test]
+async fn test_admin_api_requires_authentication() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Admin endpoints should require authentication
+    let response = server.get("/_admin/api/galleries").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::UNAUTHORIZED,
+        "Admin API should require authentication"
+    );
+
+    let response = server.get("/_admin/api/roles").await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::UNAUTHORIZED,
+        "Admin API should require authentication"
+    );
+}
+
+#[tokio::test]
+async fn test_admin_api_requires_admin_role() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_admin_test_config(&temp_dir, ImageIndexingMode::Filename);
+
+    // Create user database with a regular user (not admin)
+    let user_db = create_user_database(&temp_dir, &[("regularuser", "user@example.com")]);
+    config.user_database = Some(user_db);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Authenticated but non-admin user should be forbidden
+    let cookie = create_auth_cookie("regularuser", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::FORBIDDEN,
+        "Non-admin user should be forbidden"
+    );
+}
+
+#[tokio::test]
+async fn test_admin_api_allows_admin_user() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    // Admin user should have access
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(
+        response.status_code(),
+        StatusCode::OK,
+        "Admin user should have access"
+    );
+}
+
+// ============================================================================
+// Admin API Tests - Gallery Endpoints
+// ============================================================================
+
+#[tokio::test]
+async fn test_admin_list_galleries() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    let galleries = json.get("galleries").unwrap().as_array().unwrap();
+    assert_eq!(galleries.len(), 1);
+    assert_eq!(galleries[0].get("name").unwrap().as_str().unwrap(), "main");
+}
+
+#[tokio::test]
+async fn test_admin_get_gallery() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries/main")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    assert_eq!(json.get("name").unwrap().as_str().unwrap(), "main");
+    assert!(json.get("permissions").is_some());
+}
+
+#[tokio::test]
+async fn test_admin_get_nonexistent_gallery() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries/nonexistent")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
+
+// ============================================================================
+// Admin API Tests - Role Endpoints
+// ============================================================================
+
+#[tokio::test]
+async fn test_admin_list_roles() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/roles")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    let roles = json.get("roles").unwrap().as_array().unwrap();
+
+    // Should have built-in roles
+    let role_names: Vec<&str> = roles
+        .iter()
+        .map(|r| r.get("name").unwrap().as_str().unwrap())
+        .collect();
+    assert!(role_names.contains(&"viewer"));
+    assert!(role_names.contains(&"contributor"));
+    assert!(role_names.contains(&"admin"));
+}
+
+#[tokio::test]
+async fn test_admin_get_role() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/roles/viewer")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    assert_eq!(json.get("name").unwrap().as_str().unwrap(), "viewer");
+    assert!(json.get("permissions").is_some());
+    assert_eq!(json.get("is_builtin").unwrap().as_bool().unwrap(), true);
+}
+
+#[tokio::test]
+async fn test_admin_get_nonexistent_role() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/roles/nonexistent")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
+
+// ============================================================================
+// Admin API Tests - Permission Groups
+// ============================================================================
+
+#[tokio::test]
+async fn test_admin_list_permission_groups() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/permission-groups")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    let groups = json.get("groups").unwrap().as_array().unwrap();
+    assert!(!groups.is_empty(), "Should have permission groups");
+
+    // Check that groups have required fields
+    for group in groups {
+        assert!(group.get("name").is_some());
+        assert!(group.get("description").is_some());
+        assert!(group.get("permissions").is_some());
+    }
+}
+
+// ============================================================================
+// Admin API Tests - Hide/Unhide Images
+// ============================================================================
+
+#[tokio::test]
+async fn test_admin_hide_images_api_accepts_json() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let filenames = create_test_images(photos_dir, 3);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+
+    // Test that the endpoint accepts JSON and processes it (even if it returns an error
+    // due to missing config storage, it should be a different error than 401/400)
+    let hide_request = serde_json::json!({
+        "paths": [filenames[1].clone()],
+        "hide": true
+    });
+
+    let response = server
+        .post("/_admin/api/galleries/main/folders/_root/images/hide")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .json(&hide_request)
+        .await;
+
+    // The endpoint should accept the request (not 401 or 400)
+    // It may return 500 if config storage is not configured, which is expected
+    // in this minimal test setup
+    assert!(
+        response.status_code() != StatusCode::UNAUTHORIZED,
+        "Admin should be authenticated"
+    );
+    assert!(
+        response.status_code() != StatusCode::BAD_REQUEST,
+        "JSON request should be valid"
+    );
+}
+
+#[tokio::test]
+async fn test_admin_hide_images_requires_auth() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    let filenames = create_test_images(photos_dir, 3);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let hide_request = serde_json::json!({
+        "paths": [filenames[1].clone()],
+        "hide": true
+    });
+
+    // Without authentication
+    let response = server
+        .post("/_admin/api/galleries/main/folders/_root/images/hide")
+        .json(&hide_request)
+        .await;
+
+    assert_eq!(
+        response.status_code(),
+        StatusCode::UNAUTHORIZED,
+        "Hide API should require authentication"
+    );
+}
+
+// ============================================================================
+// Admin API Tests - User Role Validation
+// ============================================================================
+
+#[tokio::test]
+async fn test_admin_gallery_permissions_include_user_roles() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries/main")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    let permissions = json.get("permissions").unwrap();
+    let user_roles = permissions.get("user_roles").unwrap().as_array().unwrap();
+
+    // Should include our testadmin user
+    let has_testadmin = user_roles
+        .iter()
+        .any(|ur| ur.get("username").unwrap().as_str().unwrap() == "testadmin");
+    assert!(has_testadmin, "Should include testadmin in user_roles");
+}
+
+#[tokio::test]
+async fn test_admin_gallery_permissions_include_roles() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_admin_config_with_users(&temp_dir);
+
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+    create_test_images(photos_dir, 1);
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app).unwrap();
+
+    let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
+    let response = server
+        .get("/_admin/api/galleries/main")
+        .add_header(header::COOKIE, HeaderValue::from_str(&cookie).unwrap())
+        .await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let json: serde_json::Value = response.json();
+    let permissions = json.get("permissions").unwrap();
+    let roles = permissions.get("roles").unwrap().as_object().unwrap();
+
+    // Should include our configured roles
+    assert!(roles.contains_key("viewer"), "Should have viewer role");
+    assert!(roles.contains_key("admin"), "Should have admin role");
 }
