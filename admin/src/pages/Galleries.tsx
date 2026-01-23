@@ -777,6 +777,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
           galleryName={name}
           folder={editFolder}
           availableRoles={availableRoles}
+          fullScreen={!!initialFolderPath}
           onClose={handleFolderModalClose}
           onSaved={() => {
             queryClient.invalidateQueries({ queryKey: ['galleryFolders'] });
@@ -792,12 +793,14 @@ function FolderPermissionsModal({
   galleryName,
   folder,
   availableRoles,
+  fullScreen = false,
   onClose,
   onSaved,
 }: {
   galleryName: string;
   folder: FolderInfo;
   availableRoles: string[];
+  fullScreen?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -885,10 +888,14 @@ function FolderPermissionsModal({
     }
   };
 
+  const modalStyle = fullScreen
+    ? { width: '100vw', height: '100vh', maxWidth: '100vw', maxHeight: '100vh', margin: 0, borderRadius: 0, overflow: 'auto' }
+    : { maxWidth: '800px', width: '90vw', maxHeight: '90vh', overflow: 'auto' };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: '800px', width: '90vw', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+    <div className="modal-overlay" onClick={onClose} style={fullScreen ? { padding: 0 } : undefined}>
+      <div className="modal" style={modalStyle} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header" style={fullScreen ? { position: 'sticky', top: 0, background: 'var(--color-bg-primary)', zIndex: 10, borderBottom: '1px solid var(--color-border)' } : undefined}>
           Folder: {folder.name}
           <small style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 'normal' }}>
             {folder.path || '(root)'}
@@ -1155,7 +1162,7 @@ function FolderPermissionsModal({
           </>
         )}
 
-        <div className="modal-actions">
+        <div className="modal-actions" style={fullScreen ? { position: 'sticky', bottom: 0, background: 'var(--color-bg-primary)', zIndex: 10, borderTop: '1px solid var(--color-border)', padding: '1rem', margin: 0 } : undefined}>
           <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
