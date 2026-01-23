@@ -55,6 +55,10 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_delete_any_comments: bool,
 
+    // Image management permissions
+    #[serde(default)]
+    pub can_manage_images: bool, // Move, copy, hide, delete images
+
     // Interactive permissions
     #[serde(default)]
     pub can_use_zoom: bool,
@@ -116,6 +120,8 @@ impl RolePermissions {
         self.can_edit_any_comments |= other.can_edit_any_comments;
         self.can_delete_any_comments |= other.can_delete_any_comments;
 
+        self.can_manage_images |= other.can_manage_images;
+
         self.can_use_zoom |= other.can_use_zoom;
         self.can_use_tile_zoom |= other.can_use_tile_zoom;
 
@@ -158,6 +164,8 @@ impl RolePermissions {
 
             self.can_edit_any_comments = true;
             self.can_delete_any_comments = true;
+
+            self.can_manage_images = true;
 
             self.can_use_zoom = true;
             self.can_use_tile_zoom = true;

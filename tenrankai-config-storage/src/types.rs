@@ -51,6 +51,9 @@ pub struct RolePermissions {
     pub can_delete_any_comments: bool,
 
     #[serde(default)]
+    pub can_manage_images: bool,
+
+    #[serde(default)]
     pub can_use_zoom: bool,
     #[serde(default)]
     pub can_use_tile_zoom: bool,

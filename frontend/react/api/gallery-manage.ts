@@ -9,6 +9,25 @@ export interface DeleteImagesResponse {
   errors?: string[];
 }
 
+export interface MoveImagesResponse {
+  success: boolean;
+  moved_count: number;
+  errors: string[];
+}
+
+export interface CopyImagesResponse {
+  success: boolean;
+  copied_count: number;
+  errors: string[];
+}
+
+export interface FolderInfo {
+  path: string;
+  name: string;
+  has_custom_permissions: boolean;
+  image_count: number;
+}
+
 class ApiError extends Error {
   constructor(public message: string, public status: number) {
     super(message);
@@ -53,5 +72,25 @@ export const galleryManageApi = {
       'DELETE',
       `/galleries/${encodeURIComponent(galleryName)}/images`,
       { paths }
+    ),
+
+  moveImages: (galleryName: string, folderPath: string, paths: string[], targetFolder: string) =>
+    adminRequest<MoveImagesResponse>(
+      'POST',
+      `/galleries/${encodeURIComponent(galleryName)}/folders/${encodeURIComponent(folderPath || '_root')}/images/move`,
+      { paths, target_folder: targetFolder }
+    ),
+
+  copyImages: (galleryName: string, folderPath: string, paths: string[], targetFolder: string) =>
+    adminRequest<CopyImagesResponse>(
+      'POST',
+      `/galleries/${encodeURIComponent(galleryName)}/folders/${encodeURIComponent(folderPath || '_root')}/images/copy`,
+      { paths, target_folder: targetFolder }
+    ),
+
+  listFolders: (site: string, galleryName: string) =>
+    adminRequest<{ folders: FolderInfo[] }>(
+      'GET',
+      `/sites/${encodeURIComponent(site)}/galleries/${encodeURIComponent(galleryName)}/folders`
     ),
 };

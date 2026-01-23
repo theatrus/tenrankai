@@ -139,6 +139,7 @@ export interface RolePermissions {
   can_add_tags: boolean;
   can_edit_any_comments: boolean;
   can_delete_any_comments: boolean;
+  can_manage_images: boolean;
   can_use_zoom: boolean;
   can_use_tile_zoom: boolean;
   can_analyze_images: boolean;

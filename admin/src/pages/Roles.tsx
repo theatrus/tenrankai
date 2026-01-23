@@ -50,6 +50,7 @@ const PERMISSION_CATEGORIES = [
     permissions: [
       { key: 'can_set_picks', label: 'Set picks' },
       { key: 'can_add_tags', label: 'Add tags' },
+      { key: 'can_manage_images', label: 'Manage images' },
     ],
   },
   {
@@ -94,6 +95,7 @@ function emptyPermissions(): RolePermissions {
     can_delete_own_comments: false,
     can_edit_any_comments: false,
     can_delete_any_comments: false,
+    can_manage_images: false,
     can_set_picks: false,
     can_add_tags: false,
     can_use_zoom: false,

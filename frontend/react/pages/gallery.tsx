@@ -27,11 +27,11 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
 
-  const hasOwnerAccess = galleryData.permissions?.owner_access;
+  const canManageImages = galleryData.permissions?.can_manage_images;
 
   // Wire up the manage button click
   useEffect(() => {
-    if (!manageButton || !hasOwnerAccess) return;
+    if (!manageButton || !canManageImages) return;
 
     const handleClick = () => {
       if (isManageMode) {
@@ -48,7 +48,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
 
     manageButton.addEventListener('click', handleClick);
     return () => manageButton.removeEventListener('click', handleClick);
-  }, [manageButton, hasOwnerAccess, isManageMode]);
+  }, [manageButton, canManageImages, isManageMode]);
 
   const handleToggleSelect = useCallback((path: string) => {
     setSelectedImages((prev) => {
@@ -91,6 +91,29 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     }
   }, [manageButton]);
 
+  const handleMoveSuccess = useCallback((movedCount: number) => {
+    // Remove moved images from the current view
+    setImages((prev) => prev.filter((img) => !selectedImages.has(img.path)));
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Manage';
+      manageButton.classList.remove('active');
+    }
+    alert(`Successfully moved ${movedCount} image(s)`);
+  }, [manageButton, selectedImages]);
+
+  const handleCopySuccess = useCallback((copiedCount: number) => {
+    // Images stay in current view after copy
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Manage';
+      manageButton.classList.remove('active');
+    }
+    alert(`Successfully copied ${copiedCount} image(s)`);
+  }, [manageButton]);
+
   return (
     <GalleryWithFilter
       images={images}
@@ -105,6 +128,8 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       onToggleSelect={handleToggleSelect}
       onHideSuccess={handleHideSuccess}
       onDeleteSuccess={handleDeleteSuccess}
+      onMoveSuccess={handleMoveSuccess}
+      onCopySuccess={handleCopySuccess}
       onCancelManage={handleCancelManage}
       toolbarMount={toolbarMount}
     />

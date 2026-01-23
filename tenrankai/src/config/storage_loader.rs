@@ -386,6 +386,7 @@ impl ConfigStorageLoader {
             can_add_tags: stored.can_add_tags,
             can_edit_any_comments: stored.can_edit_any_comments,
             can_delete_any_comments: stored.can_delete_any_comments,
+            can_manage_images: stored.can_manage_images,
             can_use_zoom: stored.can_use_zoom,
             can_use_tile_zoom: stored.can_use_tile_zoom,
             can_analyze_images: stored.can_analyze_images,

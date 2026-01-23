@@ -1199,6 +1199,7 @@ pub async fn get_site_permissions(
                                 can_delete_own_comments: p.can_delete_own_comments,
                                 can_edit_any_comments: p.can_edit_any_comments,
                                 can_delete_any_comments: p.can_delete_any_comments,
+                                can_manage_images: p.can_manage_images,
                                 can_set_picks: p.can_set_picks,
                                 can_add_tags: p.can_add_tags,
                                 can_use_zoom: p.can_use_zoom,
@@ -1289,6 +1290,7 @@ pub async fn update_site_permissions(
                             can_delete_own_comments: role_dto.permissions.can_delete_own_comments,
                             can_edit_any_comments: role_dto.permissions.can_edit_any_comments,
                             can_delete_any_comments: role_dto.permissions.can_delete_any_comments,
+                            can_manage_images: role_dto.permissions.can_manage_images,
                             can_set_picks: role_dto.permissions.can_set_picks,
                             can_add_tags: role_dto.permissions.can_add_tags,
                             can_use_zoom: role_dto.permissions.can_use_zoom,
@@ -1724,6 +1726,85 @@ pub async fn update_folder_permissions(
         permissions: request.permissions,
         description: request.description,
     }))
+}
+
+/// List images in a folder (for admin management)
+pub async fn list_folder_images(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+) -> Result<Json<FolderImagesResponse>, AdminError> {
+    use crate::admin::types::{FolderImageInfo, FolderImagesResponse};
+
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get the runtime gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // URL decode the folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    // Handle special _root marker for root folder
+    let folder_path = if folder_path == "_root" {
+        String::new()
+    } else {
+        folder_path
+    };
+
+    // Get folder cache data
+    let folder_cache = gallery_obj.folder_cache.read_all().await;
+    let cached = folder_cache
+        .get(&folder_path)
+        .ok_or_else(|| AdminError::NotFound(format!("Folder not found: {}", folder_path)))?;
+
+    // Get hidden images list
+    let hidden_images: std::collections::HashSet<String> = cached
+        .metadata
+        .as_ref()
+        .map(|m| m.config.hidden_images.iter().cloned().collect())
+        .unwrap_or_default();
+
+    // Build response from preview items
+    let images: Vec<FolderImageInfo> = cached
+        .preview_items
+        .iter()
+        .map(|item| {
+            // Extract filename from path
+            let filename = item
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&item.path)
+                .to_string();
+            FolderImageInfo {
+                url_id: item.url_id.clone(),
+                filename,
+                thumbnail_url: item.thumbnail_url.clone(),
+                is_hidden: hidden_images.contains(&item.path),
+            }
+        })
+        .collect();
+
+    Ok(Json(FolderImagesResponse { images }))
 }
 
 /// Share a folder with a user by email
@@ -2239,20 +2320,29 @@ pub async fn delete_gallery_images(
 
     // Delete each image from source storage
     for path in &request.paths {
+        // URL decode the path
+        let decoded_path = match urlencoding::decode(path) {
+            Ok(p) => p.to_string(),
+            Err(e) => {
+                errors.push(format!("Invalid path encoding {}: {}", path, e));
+                continue;
+            }
+        };
+
         // Basic path validation - no traversal
-        if path.contains("..") || path.starts_with('/') {
-            errors.push(format!("Invalid path: {}", path));
+        if decoded_path.contains("..") || decoded_path.starts_with('/') {
+            errors.push(format!("Invalid path: {}", decoded_path));
             continue;
         }
 
-        match gallery_obj.source_storage().delete(path).await {
+        match gallery_obj.source_storage().delete(&decoded_path).await {
             Ok(()) => {
                 deleted_count += 1;
-                tracing::info!("Deleted image: {} from gallery {}", path, gallery);
+                tracing::info!("Deleted image: {} from gallery {}", decoded_path, gallery);
             }
             Err(e) => {
-                errors.push(format!("Failed to delete {}: {}", path, e));
-                tracing::error!("Failed to delete image {}: {}", path, e);
+                errors.push(format!("Failed to delete {}: {}", decoded_path, e));
+                tracing::error!("Failed to delete image {}: {}", decoded_path, e);
             }
         }
     }
@@ -2556,4 +2646,611 @@ pub async fn hide_gallery_images_resolved(
         Json(request),
     )
     .await
+}
+
+// ============================================================================
+// Folder Management
+// ============================================================================
+
+/// Validate folder name - no path traversal or special characters
+fn is_valid_folder_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 255 {
+        return false;
+    }
+    // No path separators or parent directory references
+    if name.contains('/') || name.contains('\\') || name == ".." || name == "." {
+        return false;
+    }
+    // Only allow alphanumeric, hyphen, underscore, space, and common chars
+    name.chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' || c == '.')
+}
+
+/// Create a new folder in a gallery
+pub async fn create_gallery_folder(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, parent_folder)): Path<(String, String, String)>,
+    Json(request): Json<CreateFolderRequest>,
+) -> Result<Json<CreateFolderResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to check site: {}", e)))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // Validate folder name
+    if !is_valid_folder_name(&request.name) {
+        return Err(AdminError::BadRequest(
+            "Invalid folder name. Use only letters, numbers, hyphens, underscores, and spaces."
+                .into(),
+        ));
+    }
+
+    // Decode parent folder path
+    let parent_folder = urlencoding::decode(&parent_folder)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    let parent_folder = if parent_folder == "_root" {
+        String::new()
+    } else {
+        parent_folder
+    };
+
+    // Build new folder path
+    let new_folder_path = if parent_folder.is_empty() {
+        request.name.clone()
+    } else {
+        format!("{}/{}", parent_folder, request.name)
+    };
+
+    // Check if folder already exists
+    let folder_md_path = format!("{}/_folder.md", new_folder_path);
+    if gallery_obj
+        .source_storage()
+        .exists(&folder_md_path)
+        .await
+        .unwrap_or(false)
+    {
+        return Err(AdminError::AlreadyExists(format!(
+            "Folder already exists: {}",
+            new_folder_path
+        )));
+    }
+
+    // Also check if there are any files in that path (folder exists without _folder.md)
+    let entries = gallery_obj
+        .source_storage()
+        .list(&new_folder_path)
+        .await
+        .unwrap_or_default();
+    if !entries.is_empty() {
+        return Err(AdminError::AlreadyExists(format!(
+            "Folder already exists: {}",
+            new_folder_path
+        )));
+    }
+
+    // Create _folder.md with default config
+    let description = request.description.clone().unwrap_or_default();
+    let content = if description.is_empty() {
+        "+++\nhidden = false\n+++\n".to_string()
+    } else {
+        format!("+++\nhidden = false\n+++\n\n{}", description)
+    };
+
+    gallery_obj
+        .source_storage()
+        .write(&folder_md_path, bytes::Bytes::from(content))
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to create folder: {}", e)))?;
+
+    // Refresh folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+    Ok(Json(CreateFolderResponse {
+        success: true,
+        folder_path: new_folder_path,
+    }))
+}
+
+/// Create a new folder in a gallery (site-resolved version)
+pub async fn create_gallery_folder_resolved(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery, parent_folder)): Path<(String, String)>,
+    Json(request): Json<CreateFolderRequest>,
+) -> Result<Json<CreateFolderResponse>, AdminError> {
+    let site = app_state.site.name.clone();
+    create_gallery_folder(
+        ResolvedState(app_state),
+        admin,
+        Path((site, gallery, parent_folder)),
+        Json(request),
+    )
+    .await
+}
+
+/// Move images from one folder to another
+pub async fn move_gallery_images(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, source_folder)): Path<(String, String, String)>,
+    Json(request): Json<MoveImagesRequest>,
+) -> Result<Json<MoveImagesResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to check site: {}", e)))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // Decode folder paths
+    let source_folder = urlencoding::decode(&source_folder)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid source folder encoding: {}", e)))?
+        .to_string();
+
+    let source_folder = if source_folder == "_root" {
+        String::new()
+    } else {
+        source_folder
+    };
+
+    let target_folder = if request.target_folder == "_root" {
+        String::new()
+    } else {
+        request.target_folder.clone()
+    };
+
+    // Can't move to same folder
+    if source_folder == target_folder {
+        return Err(AdminError::BadRequest(
+            "Cannot move images to the same folder".into(),
+        ));
+    }
+
+    // Get source folder metadata for hidden images
+    let source_metadata = gallery_obj.read_folder_metadata_full(&source_folder).await;
+    let mut source_hidden_images: Vec<String> = source_metadata
+        .as_ref()
+        .map(|m| m.config.hidden_images.clone())
+        .unwrap_or_default();
+
+    // Get target folder metadata
+    let target_metadata = gallery_obj.read_folder_metadata_full(&target_folder).await;
+    let mut target_hidden_images: Vec<String> = target_metadata
+        .as_ref()
+        .map(|m| m.config.hidden_images.clone())
+        .unwrap_or_default();
+
+    // URL decode and resolve paths to actual filenames via indexer
+    let filenames: Vec<(String, String)> = {
+        let indexer = gallery_obj.image_indexer.read().await;
+        request
+            .paths
+            .iter()
+            .filter_map(|p| {
+                // URL decode the path first
+                let decoded_path = urlencoding::decode(p).ok()?.to_string();
+                let url_id = decoded_path.rsplit('/').next()?.to_string();
+                if let Some(resolved) = indexer.get_path(&decoded_path) {
+                    let filename = resolved.rsplit('/').next()?.to_string();
+                    Some((decoded_path, filename))
+                } else {
+                    // Fallback for filename indexing mode
+                    Some((decoded_path, url_id))
+                }
+            })
+            .collect()
+    };
+
+    let mut moved_count = 0;
+    let mut errors = Vec::new();
+
+    for (_url_path, filename) in &filenames {
+        // Build source and destination paths
+        let source_path = if source_folder.is_empty() {
+            filename.clone()
+        } else {
+            format!("{}/{}", source_folder, filename)
+        };
+
+        let dest_path = if target_folder.is_empty() {
+            filename.clone()
+        } else {
+            format!("{}/{}", target_folder, filename)
+        };
+
+        // Check if destination already has this file
+        if gallery_obj
+            .source_storage()
+            .exists(&dest_path)
+            .await
+            .unwrap_or(false)
+        {
+            errors.push(format!("File already exists at destination: {}", filename));
+            continue;
+        }
+
+        // Read source file
+        let data = match gallery_obj.source_storage().read(&source_path).await {
+            Ok(data) => data,
+            Err(e) => {
+                errors.push(format!("Failed to read {}: {}", filename, e));
+                continue;
+            }
+        };
+
+        // Write to destination
+        if let Err(e) = gallery_obj.source_storage().write(&dest_path, data).await {
+            errors.push(format!("Failed to write {}: {}", filename, e));
+            continue;
+        }
+
+        // Delete source
+        if let Err(e) = gallery_obj.source_storage().delete(&source_path).await {
+            errors.push(format!(
+                "Failed to delete source {}: {} (file was copied)",
+                filename, e
+            ));
+            // Don't continue - the file was copied, just couldn't delete source
+        }
+
+        // Handle hidden status - preserve it in the target folder
+        if source_hidden_images.contains(filename) {
+            source_hidden_images.retain(|f| f != filename);
+            if !target_hidden_images.contains(filename) {
+                target_hidden_images.push(filename.clone());
+            }
+        }
+
+        moved_count += 1;
+    }
+
+    // Update source folder's hidden_images if changed
+    if source_metadata.is_some() {
+        let original_hidden = source_metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.clone())
+            .unwrap_or_default();
+        if source_hidden_images != original_hidden {
+            update_folder_hidden_images(&gallery_obj, &source_folder, &source_hidden_images)
+                .await?;
+        }
+    }
+
+    // Update target folder's hidden_images if changed
+    if !target_hidden_images.is_empty() {
+        let original_hidden = target_metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.clone())
+            .unwrap_or_default();
+        if target_hidden_images != original_hidden {
+            update_folder_hidden_images(&gallery_obj, &target_folder, &target_hidden_images)
+                .await?;
+        }
+    }
+
+    // Refresh folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+    Ok(Json(MoveImagesResponse {
+        success: errors.is_empty(),
+        moved_count,
+        errors,
+    }))
+}
+
+/// Move images (site-resolved version)
+pub async fn move_gallery_images_resolved(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery, source_folder)): Path<(String, String)>,
+    Json(request): Json<MoveImagesRequest>,
+) -> Result<Json<MoveImagesResponse>, AdminError> {
+    let site = app_state.site.name.clone();
+    move_gallery_images(
+        ResolvedState(app_state),
+        admin,
+        Path((site, gallery, source_folder)),
+        Json(request),
+    )
+    .await
+}
+
+/// Copy images from one folder to another
+pub async fn copy_gallery_images(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, source_folder)): Path<(String, String, String)>,
+    Json(request): Json<CopyImagesRequest>,
+) -> Result<Json<CopyImagesResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to check site: {}", e)))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // Decode folder paths
+    let source_folder = urlencoding::decode(&source_folder)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid source folder encoding: {}", e)))?
+        .to_string();
+
+    let source_folder = if source_folder == "_root" {
+        String::new()
+    } else {
+        source_folder
+    };
+
+    let target_folder = if request.target_folder == "_root" {
+        String::new()
+    } else {
+        request.target_folder.clone()
+    };
+
+    // Can't copy to same folder
+    if source_folder == target_folder {
+        return Err(AdminError::BadRequest(
+            "Cannot copy images to the same folder".into(),
+        ));
+    }
+
+    // URL decode and resolve paths to actual filenames via indexer
+    let filenames: Vec<(String, String)> = {
+        let indexer = gallery_obj.image_indexer.read().await;
+        request
+            .paths
+            .iter()
+            .filter_map(|p| {
+                // URL decode the path first
+                let decoded_path = urlencoding::decode(p).ok()?.to_string();
+                let url_id = decoded_path.rsplit('/').next()?.to_string();
+                if let Some(resolved) = indexer.get_path(&decoded_path) {
+                    let filename = resolved.rsplit('/').next()?.to_string();
+                    Some((decoded_path, filename))
+                } else {
+                    // Fallback for filename indexing mode
+                    Some((decoded_path, url_id))
+                }
+            })
+            .collect()
+    };
+
+    let mut copied_count = 0;
+    let mut errors = Vec::new();
+
+    for (_url_path, filename) in &filenames {
+        // Build source and destination paths
+        let source_path = if source_folder.is_empty() {
+            filename.clone()
+        } else {
+            format!("{}/{}", source_folder, filename)
+        };
+
+        let dest_path = if target_folder.is_empty() {
+            filename.clone()
+        } else {
+            format!("{}/{}", target_folder, filename)
+        };
+
+        // Check if destination already has this file
+        if gallery_obj
+            .source_storage()
+            .exists(&dest_path)
+            .await
+            .unwrap_or(false)
+        {
+            errors.push(format!("File already exists at destination: {}", filename));
+            continue;
+        }
+
+        // Read source file
+        let data = match gallery_obj.source_storage().read(&source_path).await {
+            Ok(data) => data,
+            Err(e) => {
+                errors.push(format!("Failed to read {}: {}", filename, e));
+                continue;
+            }
+        };
+
+        // Write to destination
+        if let Err(e) = gallery_obj.source_storage().write(&dest_path, data).await {
+            errors.push(format!("Failed to write {}: {}", filename, e));
+            continue;
+        }
+
+        copied_count += 1;
+    }
+
+    // Refresh folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+    Ok(Json(CopyImagesResponse {
+        success: errors.is_empty(),
+        copied_count,
+        errors,
+    }))
+}
+
+/// Copy images (site-resolved version)
+pub async fn copy_gallery_images_resolved(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery, source_folder)): Path<(String, String)>,
+    Json(request): Json<CopyImagesRequest>,
+) -> Result<Json<CopyImagesResponse>, AdminError> {
+    let site = app_state.site.name.clone();
+    copy_gallery_images(
+        ResolvedState(app_state),
+        admin,
+        Path((site, gallery, source_folder)),
+        Json(request),
+    )
+    .await
+}
+
+/// Helper to update a folder's hidden_images list
+async fn update_folder_hidden_images(
+    gallery: &crate::gallery::SharedGallery,
+    folder_path: &str,
+    hidden_images: &[String],
+) -> Result<(), AdminError> {
+    // Read current metadata
+    let current_metadata = gallery.read_folder_metadata_full(folder_path).await;
+
+    let (hidden, permissions, description) = match &current_metadata {
+        Some(meta) => {
+            let perms = &meta.config.permissions;
+            (
+                meta.config.hidden,
+                PermissionConfigDto {
+                    public_role: perms.public_role.clone(),
+                    default_authenticated_role: perms.default_authenticated_role.clone(),
+                    roles: perms
+                        .roles
+                        .iter()
+                        .map(|(name, role)| {
+                            (
+                                name.clone(),
+                                RoleDto {
+                                    name: name.clone(),
+                                    permissions: RolePermissionsDto::from(&role.permissions),
+                                    inherits: role.inherits.clone(),
+                                    is_builtin: false,
+                                },
+                            )
+                        })
+                        .collect(),
+                    user_roles: perms
+                        .user_roles
+                        .iter()
+                        .map(|ur| UserRoleAssignment {
+                            username: ur.username.clone(),
+                            roles: ur.roles.clone(),
+                        })
+                        .collect(),
+                },
+                meta.description_markdown.clone(),
+            )
+        }
+        None => (
+            false,
+            PermissionConfigDto {
+                public_role: None,
+                default_authenticated_role: None,
+                roles: std::collections::HashMap::new(),
+                user_roles: vec![],
+            },
+            String::new(),
+        ),
+    };
+
+    // Build TOML content
+    let mut toml_content = toml_edit::DocumentMut::new();
+    toml_content["hidden"] = toml_edit::value(hidden);
+
+    // Add hidden_images array
+    if !hidden_images.is_empty() {
+        let hidden_images_array: toml_edit::Array = hidden_images
+            .iter()
+            .map(|img| toml_edit::Value::from(img.clone()))
+            .collect();
+        toml_content["hidden_images"] = toml_edit::value(hidden_images_array);
+    }
+
+    // Add permissions section if non-empty
+    let mut permissions_table = toml_edit::Table::new();
+    if let Some(ref public_role) = permissions.public_role {
+        permissions_table["public_role"] = toml_edit::value(public_role.clone());
+    }
+    if let Some(ref default_authenticated_role) = permissions.default_authenticated_role {
+        permissions_table["default_authenticated_role"] =
+            toml_edit::value(default_authenticated_role.clone());
+    }
+    if !permissions_table.is_empty() {
+        toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
+    }
+
+    // Build full content
+    let toml_str = toml_content.to_string();
+    let content = if toml_str.trim().is_empty() && description.is_empty() {
+        String::new()
+    } else if toml_str.trim().is_empty() {
+        description
+    } else {
+        format!("+++\n{}+++\n{}", toml_str, description)
+    };
+
+    // Determine file path
+    let folder_md_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    // Write file
+    gallery
+        .source_storage()
+        .write(&folder_md_path, bytes::Bytes::from(content))
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to write _folder.md: {}", e)))?;
+
+    Ok(())
 }

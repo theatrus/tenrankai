@@ -41,6 +41,10 @@ pub struct RequireMetadata(pub UserPermissions);
 #[derive(Debug, Clone)]
 pub struct RequireOwner(pub UserPermissions);
 
+/// Required manage images permission - returns 403 if user cannot manage images
+#[derive(Debug, Clone)]
+pub struct RequireManageImages(pub UserPermissions);
+
 // Helper to extract gallery name and path from request
 async fn extract_gallery_and_path(parts: &Parts) -> Option<(String, String)> {
     // Try to extract from matched path
@@ -217,6 +221,34 @@ where
             }
 
             Ok(RequireOwner(user_perms))
+        }
+    }
+}
+
+// Implement extraction for RequireManageImages
+impl<S> FromRequestParts<S> for RequireManageImages
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        async move {
+            let app_state = AppState::from_ref(state);
+            let user_perms = resolve_permissions(parts, &app_state).await?;
+
+            if !user_perms.permissions.can_manage_images {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    "Image management permission required",
+                ));
+            }
+
+            Ok(RequireManageImages(user_perms))
         }
     }
 }

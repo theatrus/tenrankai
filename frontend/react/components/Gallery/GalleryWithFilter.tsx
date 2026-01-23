@@ -19,6 +19,8 @@ interface GalleryWithFilterProps {
   onToggleSelect: (path: string) => void;
   onHideSuccess: (hiddenImages: string[]) => void;
   onDeleteSuccess: (deletedPaths: string[]) => void;
+  onMoveSuccess: (movedCount: number) => void;
+  onCopySuccess: (copiedCount: number) => void;
   onCancelManage: () => void;
   toolbarMount?: HTMLElement | null;
 }
@@ -36,6 +38,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   onToggleSelect,
   onHideSuccess,
   onDeleteSuccess,
+  onMoveSuccess,
+  onCopySuccess,
   onCancelManage,
   toolbarMount,
 }) => {
@@ -182,6 +186,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
           selectedImages={selectedImages}
           onHideSuccess={onHideSuccess}
           onDeleteSuccess={onDeleteSuccess}
+          onMoveSuccess={onMoveSuccess}
+          onCopySuccess={onCopySuccess}
           onCancel={onCancelManage}
         />,
         toolbarMount

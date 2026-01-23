@@ -38,6 +38,7 @@ export interface RolePermissions {
   can_delete_own_comments: boolean;
   can_edit_any_comments: boolean;
   can_delete_any_comments: boolean;
+  can_manage_images: boolean;
   can_set_picks: boolean;
   can_add_tags: boolean;
   can_use_zoom: boolean;
@@ -168,6 +169,59 @@ export interface DeleteImagesResponse {
   errors: string[];
 }
 
+export interface HideImagesRequest {
+  paths: string[];
+  hide: boolean;
+}
+
+export interface HideImagesResponse {
+  success: boolean;
+  hidden_images: string[];
+}
+
+export interface CreateFolderRequest {
+  name: string;
+  description?: string;
+}
+
+export interface CreateFolderResponse {
+  success: boolean;
+  folder_path: string;
+}
+
+export interface MoveImagesRequest {
+  paths: string[];
+  target_folder: string;
+}
+
+export interface MoveImagesResponse {
+  success: boolean;
+  moved_count: number;
+  errors: string[];
+}
+
+export interface CopyImagesRequest {
+  paths: string[];
+  target_folder: string;
+}
+
+export interface CopyImagesResponse {
+  success: boolean;
+  copied_count: number;
+  errors: string[];
+}
+
+export interface FolderImageInfo {
+  url_id: string;
+  filename: string;
+  thumbnail_url: string;
+  is_hidden: boolean;
+}
+
+export interface FolderImagesResponse {
+  images: FolderImageInfo[];
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -264,7 +318,25 @@ export const api = {
   shareFolder: (site: string, gallery: string, folderPath: string, data: ShareFolderRequest) =>
     request<ShareFolderResponse>('POST', `/sites/${site}/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/share`, data),
 
+  // Folder Images
+  listFolderImages: (site: string, gallery: string, folderPath: string) =>
+    request<FolderImagesResponse>('GET', `/sites/${site}/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/images`),
+
   // Image Management
   deleteGalleryImages: (site: string, gallery: string, paths: string[]) =>
     request<DeleteImagesResponse>('DELETE', `/sites/${site}/galleries/${gallery}/images`, { paths }),
+
+  // Image Management (resolved - site determined from host)
+  hideImages: (gallery: string, folderPath: string, data: HideImagesRequest) =>
+    request<HideImagesResponse>('POST', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/images/hide`, data),
+
+  moveImages: (gallery: string, folderPath: string, data: MoveImagesRequest) =>
+    request<MoveImagesResponse>('POST', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/images/move`, data),
+
+  copyImages: (gallery: string, folderPath: string, data: CopyImagesRequest) =>
+    request<CopyImagesResponse>('POST', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}/images/copy`, data),
+
+  // Folder Management (resolved - site determined from host)
+  createFolder: (gallery: string, parentPath: string, data: CreateFolderRequest) =>
+    request<CreateFolderResponse>('POST', `/galleries/${gallery}/folders/${encodeURIComponent(parentPath || '_root')}/create`, data),
 };

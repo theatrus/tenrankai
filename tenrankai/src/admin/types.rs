@@ -67,6 +67,8 @@ pub struct RolePermissionsDto {
     #[serde(default)]
     pub can_delete_any_comments: bool,
     #[serde(default)]
+    pub can_manage_images: bool,
+    #[serde(default)]
     pub can_set_picks: bool,
     #[serde(default)]
     pub can_add_tags: bool,
@@ -105,6 +107,7 @@ impl From<&RolePermissions> for RolePermissionsDto {
             can_delete_own_comments: perms.can_delete_own_comments,
             can_edit_any_comments: perms.can_edit_any_comments,
             can_delete_any_comments: perms.can_delete_any_comments,
+            can_manage_images: perms.can_manage_images,
             can_set_picks: perms.can_set_picks,
             can_add_tags: perms.can_add_tags,
             can_use_zoom: perms.can_use_zoom,
@@ -356,4 +359,55 @@ pub struct HideImagesRequest {
 pub struct HideImagesResponse {
     pub success: bool,
     pub hidden_images: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateFolderRequest {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateFolderResponse {
+    pub success: bool,
+    pub folder_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MoveImagesRequest {
+    pub paths: Vec<String>,
+    pub target_folder: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MoveImagesResponse {
+    pub success: bool,
+    pub moved_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CopyImagesRequest {
+    pub paths: Vec<String>,
+    pub target_folder: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CopyImagesResponse {
+    pub success: bool,
+    pub copied_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderImageInfo {
+    pub url_id: String,
+    pub filename: String,
+    pub thumbnail_url: String,
+    pub is_hidden: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderImagesResponse {
+    pub images: Vec<FolderImageInfo>,
 }

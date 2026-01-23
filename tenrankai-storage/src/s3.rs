@@ -83,15 +83,35 @@ impl S3Storage {
         })
     }
 
+    /// Validate a path for security.
+    ///
+    /// Rejects paths containing directory traversal sequences or null bytes.
+    fn validate_path(path: &str) -> Result<(), StorageError> {
+        if path.contains("..") {
+            return Err(StorageError::PermissionDenied(format!(
+                "Path contains directory traversal: {}",
+                path
+            )));
+        }
+        if path.contains('\0') {
+            return Err(StorageError::PermissionDenied(format!(
+                "Path contains null byte: {}",
+                path
+            )));
+        }
+        Ok(())
+    }
+
     /// Build the full S3 key from a relative path.
-    fn build_key(&self, path: &str) -> String {
+    fn build_key(&self, path: &str) -> Result<String, StorageError> {
+        Self::validate_path(path)?;
         let path = path.trim_matches('/');
         if self.prefix.is_empty() {
-            path.to_string()
+            Ok(path.to_string())
         } else if path.is_empty() {
-            self.prefix.clone()
+            Ok(self.prefix.clone())
         } else {
-            format!("{}/{}", self.prefix, path)
+            Ok(format!("{}/{}", self.prefix, path))
         }
     }
 
@@ -111,7 +131,7 @@ impl S3Storage {
 #[async_trait]
 impl Storage for S3Storage {
     async fn read(&self, path: &str) -> Result<Bytes, StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!("S3 read: bucket={}, key={}", self.bucket, key);
 
         let result = self
@@ -145,7 +165,7 @@ impl Storage for S3Storage {
     }
 
     async fn write(&self, path: &str, data: Bytes) -> Result<(), StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!(
             "S3 write: bucket={}, key={}, size={}",
             self.bucket,
@@ -166,7 +186,7 @@ impl Storage for S3Storage {
     }
 
     async fn exists(&self, path: &str) -> Result<bool, StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!("S3 exists: bucket={}, key={}", self.bucket, key);
 
         let result = self
@@ -194,7 +214,7 @@ impl Storage for S3Storage {
     }
 
     async fn metadata(&self, path: &str) -> Result<ObjectMetadata, StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!("S3 metadata: bucket={}, key={}", self.bucket, key);
 
         let result = self
@@ -227,7 +247,7 @@ impl Storage for S3Storage {
     }
 
     async fn delete(&self, path: &str) -> Result<(), StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!("S3 delete: bucket={}, key={}", self.bucket, key);
 
         // Note: S3 DeleteObject doesn't return an error if the object doesn't exist
@@ -244,7 +264,7 @@ impl Storage for S3Storage {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<StorageEntry>, StorageError> {
-        let full_prefix = self.build_key(prefix);
+        let full_prefix = self.build_key(prefix)?;
         let full_prefix = if full_prefix.is_empty() {
             String::new()
         } else {
@@ -336,7 +356,7 @@ impl Storage for S3Storage {
     }
 
     async fn list_recursive(&self, prefix: &str) -> Result<Vec<StorageEntry>, StorageError> {
-        let full_prefix = self.build_key(prefix);
+        let full_prefix = self.build_key(prefix)?;
         let full_prefix = if full_prefix.is_empty() {
             String::new()
         } else {
@@ -421,7 +441,7 @@ impl Storage for S3Storage {
     }
 
     async fn read_stream(&self, path: &str) -> Result<ByteStream, StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!("S3 read_stream: bucket={}, key={}", self.bucket, key);
 
         let result = self
@@ -461,7 +481,7 @@ impl Storage for S3Storage {
         offset: u64,
         length: u64,
     ) -> Result<Bytes, StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         // S3 Range header format: bytes=start-end (inclusive)
         let end = offset.saturating_add(length).saturating_sub(1);
         let range = format!("bytes={}-{}", offset, end);
@@ -520,7 +540,7 @@ impl Storage for S3Storage {
     }
 
     async fn signed_url(&self, path: &str, expiry: Duration) -> Option<String> {
-        let key = self.build_key(path);
+        let key = self.build_key(path).ok()?;
         debug!(
             "S3 signed_url: bucket={}, key={}, expiry={:?}",
             self.bucket, key, expiry
@@ -553,7 +573,7 @@ impl Storage for S3Storage {
         data: Bytes,
         expected_etag: Option<&str>,
     ) -> Result<String, StorageError> {
-        let key = self.build_key(path);
+        let key = self.build_key(path)?;
         debug!(
             "S3 write_if_match: bucket={}, key={}, expected_etag={:?}",
             self.bucket, key, expected_etag
