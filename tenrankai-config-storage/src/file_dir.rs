@@ -156,6 +156,9 @@ impl FileDirConfigStorage {
                 // writer drops here, ensuring all data is written
             }
 
+            // Ensure data is synced to disk (important on Windows)
+            file.sync_all()?;
+
             file.unlock()?;
             Ok::<_, ConfigStorageError>(())
         })
@@ -216,6 +219,9 @@ impl FileDirConfigStorage {
                 writer.write_all(content.as_bytes())?;
                 writer.flush()?;
             }
+
+            // Ensure data is synced to disk (important on Windows)
+            file.sync_all()?;
 
             file.unlock()?;
             Ok::<_, ConfigStorageError>(())
