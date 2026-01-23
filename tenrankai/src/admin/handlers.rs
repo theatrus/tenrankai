@@ -2318,31 +2318,42 @@ pub async fn delete_gallery_images(
     let mut deleted_count = 0;
     let mut errors = Vec::new();
 
-    // Delete each image from source storage
-    for path in &request.paths {
-        // URL decode the path
-        let decoded_path = match urlencoding::decode(path) {
-            Ok(p) => p.to_string(),
-            Err(e) => {
-                errors.push(format!("Invalid path encoding {}: {}", path, e));
-                continue;
-            }
-        };
+    // Resolve URL paths to actual file paths via indexer
+    let resolved_paths: Vec<String> = {
+        let indexer = gallery_obj.image_indexer.read().await;
+        request
+            .paths
+            .iter()
+            .filter_map(|p| {
+                // URL decode the path first
+                let decoded_path = urlencoding::decode(p).ok()?.to_string();
 
-        // Basic path validation - no traversal
-        if decoded_path.contains("..") || decoded_path.starts_with('/') {
-            errors.push(format!("Invalid path: {}", decoded_path));
-            continue;
-        }
+                // Basic path validation - no traversal
+                if decoded_path.contains("..") || decoded_path.starts_with('/') {
+                    return None;
+                }
 
-        match gallery_obj.source_storage().delete(&decoded_path).await {
+                // Try to resolve through indexer (handles unique_id/sequence modes)
+                if let Some(resolved) = indexer.get_path(&decoded_path) {
+                    Some(resolved.to_string())
+                } else {
+                    // Fallback for filename indexing mode - use path as-is
+                    Some(decoded_path)
+                }
+            })
+            .collect()
+    };
+
+    // Delete each resolved image from source storage
+    for file_path in &resolved_paths {
+        match gallery_obj.source_storage().delete(file_path).await {
             Ok(()) => {
                 deleted_count += 1;
-                tracing::info!("Deleted image: {} from gallery {}", decoded_path, gallery);
+                tracing::info!("Deleted image: {} from gallery {}", file_path, gallery);
             }
             Err(e) => {
-                errors.push(format!("Failed to delete {}: {}", decoded_path, e));
-                tracing::error!("Failed to delete image {}: {}", decoded_path, e);
+                errors.push(format!("Failed to delete {}: {}", file_path, e));
+                tracing::error!("Failed to delete image {}: {}", file_path, e);
             }
         }
     }
