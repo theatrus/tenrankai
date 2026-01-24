@@ -3,11 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run build:legacy && vite build",
-    "build:prod": "npm run build:legacy && vite build --mode production",
+    "build": "npm run build:legacy && vite build && npm run build:admin",
+    "build:prod": "npm run build:legacy && vite build --mode production && npm run build:admin",
     "build:legacy": "tsc -p tsconfig.legacy.json",
     "build:admin": "cd admin && npm run build",
-    "build:all": "npm run build && npm run build:admin",
     "watch:legacy": "tsc -p tsconfig.legacy.json --watch",
     "dev": "vite",
     "dev:admin": "cd admin && npm run dev",

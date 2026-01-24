@@ -31,33 +31,13 @@ where
                 .await
                 .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-            // Get the app state
+            // Check if user is an admin (site-level or gallery-level)
             let app_state = AppState::from_ref(state);
-
-            // Check if user has owner_access in any gallery
-            for (_, gallery) in app_state.galleries().iter() {
-                let permissions = &gallery.get_config().permissions;
-
-                // Check user_roles for this user
-                for user_role in &permissions.user_roles {
-                    if user_role.username.eq_ignore_ascii_case(&auth_user.username) {
-                        // Check each role for owner_access
-                        for role_name in &user_role.roles {
-                            if let Some(role) = permissions.roles.get(role_name)
-                                && role.permissions.owner_access
-                            {
-                                return Ok(RequireAdmin(auth_user));
-                            }
-                            // Check built-in admin role
-                            if role_name == "admin" {
-                                return Ok(RequireAdmin(auth_user));
-                            }
-                        }
-                    }
-                }
+            if app_state.is_admin(&auth_user.username) {
+                Ok(RequireAdmin(auth_user))
+            } else {
+                Err(StatusCode::FORBIDDEN)
             }
-
-            Err(StatusCode::FORBIDDEN)
         }
     }
 }

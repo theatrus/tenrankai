@@ -435,6 +435,7 @@ pub async fn list_galleries(
             name: name.clone(),
             url_prefix: config.url_prefix.clone(),
             permissions: PermissionConfigDto {
+                site_admins: permissions.site_admins.clone(),
                 public_role: permissions.public_role.clone(),
                 default_authenticated_role: permissions.default_authenticated_role.clone(),
                 roles: permissions
@@ -496,6 +497,7 @@ pub async fn get_gallery(
         name,
         url_prefix: config.url_prefix.clone(),
         permissions: PermissionConfigDto {
+            site_admins: permissions.site_admins.clone(),
             public_role: permissions.public_role.clone(),
             default_authenticated_role: permissions.default_authenticated_role.clone(),
             roles: permissions
@@ -803,6 +805,7 @@ pub async fn update_gallery_permissions(
         name: gallery_name,
         url_prefix: gallery_config.url_prefix.clone(),
         permissions: PermissionConfigDto {
+            site_admins: permissions.site_admins.clone(),
             public_role: permissions.public_role.clone(),
             default_authenticated_role: permissions.default_authenticated_role.clone(),
             roles: permissions
@@ -1303,6 +1306,7 @@ pub async fn get_site_permissions(
     // Convert to DTO
     let dto = match permissions {
         Some(perms) => PermissionConfigDto {
+            site_admins: perms.site_admins,
             public_role: perms.public_role,
             default_authenticated_role: perms.default_authenticated_role,
             roles: perms
@@ -1359,6 +1363,7 @@ pub async fn get_site_permissions(
                 .collect(),
         },
         None => PermissionConfigDto {
+            site_admins: Vec::new(),
             public_role: Some("viewer".to_string()),
             default_authenticated_role: Some("viewer".to_string()),
             roles: std::collections::HashMap::new(),
@@ -1393,6 +1398,7 @@ pub async fn update_site_permissions(
 
     // Convert DTO to storage format
     let permission_config = tenrankai_config_storage::GalleryPermissionConfig {
+        site_admins: request.site_admins.clone(),
         public_role: request.public_role.clone(),
         default_authenticated_role: request.default_authenticated_role.clone(),
         roles: request
@@ -1456,6 +1462,7 @@ pub async fn update_site_permissions(
 
     // Return the saved permissions
     Ok(Json(PermissionConfigDto {
+        site_admins: request.site_admins,
         public_role: request.public_role,
         default_authenticated_role: request.default_authenticated_role,
         roles: request.roles,
@@ -1582,6 +1589,7 @@ pub async fn get_folder_permissions(
                 meta.config.hidden,
                 meta.config.hidden_images.clone(),
                 PermissionConfigDto {
+                    site_admins: perms.site_admins.clone(),
                     public_role: perms.public_role.clone(),
                     default_authenticated_role: perms.default_authenticated_role.clone(),
                     roles: perms
@@ -1625,6 +1633,7 @@ pub async fn get_folder_permissions(
                 false,
                 vec![],
                 PermissionConfigDto {
+                    site_admins: Vec::new(),
                     public_role: None,
                     default_authenticated_role: None,
                     roles: std::collections::HashMap::new(),
@@ -2099,6 +2108,7 @@ pub async fn share_folder(
                 meta.config.hidden,
                 meta.config.hidden_images.clone(),
                 PermissionConfigDto {
+                    site_admins: perms.site_admins.clone(),
                     public_role: perms.public_role.clone(),
                     default_authenticated_role: perms.default_authenticated_role.clone(),
                     roles: perms
@@ -2132,6 +2142,7 @@ pub async fn share_folder(
             false,
             vec![],
             PermissionConfigDto {
+                site_admins: Vec::new(),
                 public_role: None,
                 default_authenticated_role: None,
                 roles: std::collections::HashMap::new(),
@@ -2618,6 +2629,7 @@ pub async fn hide_gallery_images(
             (
                 meta.config.hidden,
                 PermissionConfigDto {
+                    site_admins: perms.site_admins.clone(),
                     public_role: perms.public_role.clone(),
                     default_authenticated_role: perms.default_authenticated_role.clone(),
                     roles: perms
@@ -2650,6 +2662,7 @@ pub async fn hide_gallery_images(
         None => (
             false,
             PermissionConfigDto {
+                site_admins: Vec::new(),
                 public_role: None,
                 default_authenticated_role: None,
                 roles: std::collections::HashMap::new(),
@@ -3732,6 +3745,7 @@ async fn update_folder_hidden_images(
             (
                 meta.config.hidden,
                 PermissionConfigDto {
+                    site_admins: perms.site_admins.clone(),
                     public_role: perms.public_role.clone(),
                     default_authenticated_role: perms.default_authenticated_role.clone(),
                     roles: perms
@@ -3764,6 +3778,7 @@ async fn update_folder_hidden_images(
         None => (
             false,
             PermissionConfigDto {
+                site_admins: Vec::new(),
                 public_role: None,
                 default_authenticated_role: None,
                 roles: std::collections::HashMap::new(),

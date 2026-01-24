@@ -119,6 +119,10 @@ enum Commands {
     /// Manage ConfigStorage (sites, galleries, posts)
     #[command(subcommand)]
     Config(ConfigCommands),
+
+    /// Manage site administrators
+    #[command(subcommand)]
+    Admin(AdminCommands),
 }
 
 #[derive(Subcommand, Debug)]
@@ -311,6 +315,32 @@ enum ConfigCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum AdminCommands {
+    /// Add a site administrator
+    Add {
+        /// Username to add as admin
+        username: String,
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// Remove a site administrator
+    Remove {
+        /// Username to remove as admin
+        username: String,
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// List site administrators
+    List {
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -391,6 +421,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
         }
         Some(Commands::Config(config_cmd)) => handle_config_command(config_cmd, config).await,
+        Some(Commands::Admin(admin_cmd)) => handle_admin_command(admin_cmd, config).await,
         Some(Commands::Serve {
             port,
             host,
@@ -811,6 +842,88 @@ async fn handle_config_command(
             commands::config::handle_add_posts_command(&url, &site, &name, source, url_prefix).await
         }
     }
+}
+
+async fn handle_admin_command(
+    cmd: AdminCommands,
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let get_config_storage_url = || -> Result<String, Box<dyn std::error::Error>> {
+        config.app.config_storage.clone().ok_or_else(|| {
+            "config_storage is required. Add 'config_storage = \"config.d\"' to [app] section of config.toml.".into()
+        })
+    };
+
+    let url_str = get_config_storage_url()?;
+    let url = ConfigStorageUrl::parse(&url_str)
+        .map_err(|e| format!("Invalid config_storage URL: {}", e))?;
+    let storage = create_config_storage(&url)
+        .await
+        .map_err(|e| format!("Failed to create config storage: {}", e))?;
+
+    match cmd {
+        AdminCommands::Add { username, site } => {
+            let username = username.trim().to_lowercase();
+
+            // Get current permissions (or create default)
+            let mut permissions = storage
+                .get_site_permissions(&site)
+                .await
+                .map_err(|e| format!("Failed to get site permissions: {}", e))?
+                .unwrap_or_default();
+
+            if permissions.site_admins.iter().any(|a| a.eq_ignore_ascii_case(&username)) {
+                println!("User '{}' is already a site admin for '{}'", username, site);
+            } else {
+                permissions.site_admins.push(username.clone());
+                storage
+                    .set_site_permissions(&site, &permissions, "cli")
+                    .await
+                    .map_err(|e| format!("Failed to save site permissions: {}", e))?;
+                println!("Added '{}' as site admin for '{}'", username, site);
+            }
+        }
+        AdminCommands::Remove { username, site } => {
+            let username = username.trim().to_lowercase();
+
+            let mut permissions = storage
+                .get_site_permissions(&site)
+                .await
+                .map_err(|e| format!("Failed to get site permissions: {}", e))?
+                .unwrap_or_default();
+
+            let original_len = permissions.site_admins.len();
+            permissions.site_admins.retain(|a| !a.eq_ignore_ascii_case(&username));
+
+            if permissions.site_admins.len() < original_len {
+                storage
+                    .set_site_permissions(&site, &permissions, "cli")
+                    .await
+                    .map_err(|e| format!("Failed to save site permissions: {}", e))?;
+                println!("Removed '{}' from site admins for '{}'", username, site);
+            } else {
+                println!("User '{}' is not a site admin for '{}'", username, site);
+            }
+        }
+        AdminCommands::List { site } => {
+            let permissions = storage
+                .get_site_permissions(&site)
+                .await
+                .map_err(|e| format!("Failed to get site permissions: {}", e))?
+                .unwrap_or_default();
+
+            if permissions.site_admins.is_empty() {
+                println!("No site admins configured for '{}'", site);
+            } else {
+                println!("Site admins for '{}':", site);
+                for admin in &permissions.site_admins {
+                    println!("  - {}", admin);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_server(

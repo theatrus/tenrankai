@@ -223,6 +223,10 @@ impl UserRole {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionConfig {
+    /// Site-level administrators (bypass gallery permission checks for admin access)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub site_admins: Vec<String>,
+
     /// Role assigned to unauthenticated users
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_role: Option<String>,

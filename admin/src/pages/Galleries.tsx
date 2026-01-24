@@ -177,6 +177,8 @@ export function Galleries() {
                 <th>Name</th>
                 <th>URL Prefix</th>
                 {hasConfigStorage && <th>Source Directory</th>}
+                <th>Images</th>
+                <th>Size</th>
                 <th>Public Role</th>
                 <th>Actions</th>
               </tr>
@@ -195,6 +197,8 @@ export function Galleries() {
                         <code>{siteGallery?.source_directory || '-'}</code>
                       </td>
                     )}
+                    <td>{gallery.image_count.toLocaleString()}</td>
+                    <td>{gallery.total_size_formatted}</td>
                     <td>
                       <span className={`badge ${gallery.permissions.public_role ? 'badge-success' : 'badge-warning'}`}>
                         {gallery.permissions.public_role || 'none (private)'}
@@ -229,7 +233,7 @@ export function Galleries() {
               })}
               {runtimeData?.galleries.length === 0 && (
                 <tr>
-                  <td colSpan={hasConfigStorage ? 5 : 4} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                  <td colSpan={hasConfigStorage ? 7 : 6} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
                     No galleries configured
                   </td>
                 </tr>
@@ -692,6 +696,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
               <tr>
                 <th>Folder</th>
                 <th>Images</th>
+                <th>Size</th>
                 <th>Custom Permissions</th>
                 <th>Actions</th>
               </tr>
@@ -707,7 +712,8 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                       </small>
                     )}
                   </td>
-                  <td>{folder.image_count}</td>
+                  <td>{folder.image_count.toLocaleString()}</td>
+                  <td>{folder.size_formatted}</td>
                   <td>
                     {folder.has_custom_permissions ? (
                       <span className="badge badge-warning">Custom</span>
@@ -929,6 +935,7 @@ function FolderPermissionsModal({
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState(false);
   const [permissions, setPermissions] = useState<PermissionConfig>({
+    site_admins: [],
     public_role: null,
     default_authenticated_role: null,
     roles: {},

@@ -79,7 +79,13 @@ impl ConfigStorageLoader {
             .await?;
         let posts = self.load_posts(name, storage_prefix).await?;
 
-        let site_config = self.convert_site_config(name, stored_config, galleries, posts)?;
+        let site_admins = site_permissions
+            .as_ref()
+            .map(|p| p.site_admins.clone())
+            .unwrap_or_default();
+
+        let site_config =
+            self.convert_site_config(name, stored_config, galleries, posts, site_admins)?;
 
         Ok(Some(site_config))
     }
@@ -144,6 +150,7 @@ impl ConfigStorageLoader {
         stored: StoredSiteConfig,
         galleries: Vec<GallerySystemConfig>,
         posts: Vec<PostsSystemConfig>,
+        site_admins: Vec<String>,
     ) -> Result<SiteConfig> {
         let email = stored.email.map(|e| SiteEmailConfig {
             from_address: e.from_address,
@@ -173,6 +180,7 @@ impl ConfigStorageLoader {
             user_database: stored.user_database,
             email,
             config_storage: None, // Will be set by the startup code
+            site_admins,
         })
     }
 
@@ -355,6 +363,7 @@ impl ConfigStorageLoader {
             .collect();
 
         PermissionConfig {
+            site_admins: stored.site_admins.clone(),
             public_role: stored.public_role.clone(),
             default_authenticated_role: stored.default_authenticated_role.clone(),
             roles,

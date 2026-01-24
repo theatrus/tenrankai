@@ -2413,6 +2413,7 @@ roles = ["viewer"]
             email_config: None,
             config_storage: None,
             config_storage_url: None,
+            site_admins: Vec::new(),
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);

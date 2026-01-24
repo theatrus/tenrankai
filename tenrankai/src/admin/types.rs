@@ -162,6 +162,8 @@ pub struct UserRoleAssignment {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionConfigDto {
+    #[serde(default)]
+    pub site_admins: Vec<String>,
     pub public_role: Option<String>,
     pub default_authenticated_role: Option<String>,
     pub roles: HashMap<String, RoleDto>,
@@ -214,6 +216,8 @@ pub struct UpdateRoleRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateGalleryPermissionsRequest {
+    #[serde(default)]
+    pub site_admins: Vec<String>,
     pub public_role: Option<String>,
     pub default_authenticated_role: Option<String>,
     #[serde(default)]

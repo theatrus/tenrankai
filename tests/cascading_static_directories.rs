@@ -58,6 +58,7 @@ async fn test_cascading_static_directories() {
         user_database: None,
         email: None,
         config_storage: None,
+        site_admins: Vec::new(),
     };
 
     // Create the app
@@ -139,6 +140,7 @@ async fn test_favicon_cascading_directories() {
         user_database: None,
         email: None,
         config_storage: None,
+        site_admins: Vec::new(),
     };
 
     // Create the app

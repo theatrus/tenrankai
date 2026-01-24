@@ -21,6 +21,7 @@ pub struct SiteConfig {
     pub user_database: Option<String>,
     pub email: Option<SiteEmailConfig>,
     pub config_storage: Option<String>,
+    pub site_admins: Vec<String>,
 }
 
 /// Resources for a single site - encapsulates all site-specific components
@@ -37,6 +38,7 @@ pub struct SiteResources {
     pub email_config: Option<SiteEmailConfig>,
     pub config_storage: Option<DynConfigStorage>,
     pub config_storage_url: Option<String>,
+    pub site_admins: Vec<String>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -104,6 +106,17 @@ impl Site {
     pub fn config_storage_url(&self) -> Option<&str> {
         self.resources.config_storage_url.as_deref()
     }
+
+    pub fn site_admins(&self) -> &[String] {
+        &self.resources.site_admins
+    }
+
+    pub fn is_site_admin(&self, username: &str) -> bool {
+        self.resources
+            .site_admins
+            .iter()
+            .any(|admin| admin.eq_ignore_ascii_case(username))
+    }
 }
 
 #[cfg(test)]
@@ -125,6 +138,7 @@ mod tests {
             email_config: None,
             config_storage: None,
             config_storage_url: None,
+            site_admins: Vec::new(),
         };
         Site::new(name.to_string(), resources)
     }

@@ -125,6 +125,42 @@ impl AppState {
     pub fn config_storage_url(&self) -> Option<&str> {
         self.site.config_storage_url()
     }
+
+    pub fn site_admins(&self) -> &[String] {
+        self.site.site_admins()
+    }
+
+    pub fn is_site_admin(&self, username: &str) -> bool {
+        self.site.is_site_admin(username)
+    }
+
+    pub fn is_admin(&self, username: &str) -> bool {
+        // Check site-level admins first
+        if self.is_site_admin(username) {
+            return true;
+        }
+
+        // Check gallery-level permissions
+        for gallery in self.galleries().values() {
+            let permissions = &gallery.get_config().permissions;
+
+            for user_role in &permissions.user_roles {
+                if user_role.username.eq_ignore_ascii_case(username) {
+                    for role_name in &user_role.roles {
+                        if let Some(role) = permissions.roles.get(role_name)
+                            && role.permissions.owner_access
+                        {
+                            return true;
+                        }
+                        if role_name == "admin" {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 // Accessor methods for site-specific config values

@@ -57,7 +57,7 @@ export class UserMenu {
       const data = await response.json();
       
       if (data.authorized && data.username) {
-        const adminLink = data.is_admin ? '<a href="/_admin/">Admin</a>' : '';
+        const adminLink = data.is_admin ? '<a href="/_admin">Admin</a>' : '';
         contentDiv.innerHTML = `
           <div class="user-info">
             Signed in as

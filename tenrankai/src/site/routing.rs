@@ -136,6 +136,7 @@ mod tests {
             email_config: None,
             config_storage: None,
             config_storage_url: None,
+            site_admins: Vec::new(),
         };
         Arc::new(Site::new(name.to_string(), resources))
     }

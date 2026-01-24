@@ -313,25 +313,7 @@ pub struct AuthStatusResponse {
 }
 
 fn check_user_is_admin(app_state: &crate::AppState, username: &str) -> bool {
-    for (_, gallery) in app_state.galleries().iter() {
-        let permissions = &gallery.get_config().permissions;
-
-        for user_role in &permissions.user_roles {
-            if user_role.username.eq_ignore_ascii_case(username) {
-                for role_name in &user_role.roles {
-                    if let Some(role) = permissions.roles.get(role_name)
-                        && role.permissions.owner_access
-                    {
-                        return true;
-                    }
-                    if role_name == "admin" {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
+    app_state.is_admin(username)
 }
 
 pub async fn check_auth_status(

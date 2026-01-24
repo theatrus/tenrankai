@@ -18,6 +18,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../vite.config.js");
     println!("cargo:rerun-if-changed=../frontend/legacy");
     println!("cargo:rerun-if-changed=../frontend/react");
+    println!("cargo:rerun-if-changed=../admin/src");
     println!("cargo:rerun-if-changed=../src/css");
     println!("cargo:rerun-if-changed=../src/assets");
     println!("cargo:rerun-if-changed=../static");
@@ -44,10 +45,11 @@ fn main() {
 /// Check if frontend rebuild is needed by comparing source and output timestamps
 fn needs_rebuild() -> bool {
     // Paths relative to workspace root (parent of this crate)
-    let output_dirs = ["../static/dist", "../static/js"];
+    let output_dirs = ["../static/dist", "../static/js", "../static/admin"];
     let source_dirs = [
         "../frontend/legacy",
         "../frontend/react",
+        "../admin/src",
         "../src/css",
         "../src/assets",
     ];
@@ -246,6 +248,9 @@ fn build_frontend() {
     }
 
     build_with_vite(frontend_dir);
+
+    // Build admin frontend
+    build_admin_frontend(frontend_dir);
 }
 
 fn build_legacy_typescript(frontend_dir: &Path) {
@@ -323,6 +328,49 @@ fn run_frontend_linting(frontend_dir: &Path) {
     }
 
     println!("cargo:warning=Frontend linting passed.");
+}
+
+fn build_admin_frontend(frontend_dir: &Path) {
+    let admin_dir = frontend_dir.join("admin");
+    if !admin_dir.exists() {
+        println!("cargo:warning=No admin directory found. Skipping admin build.");
+        return;
+    }
+
+    // Install admin dependencies if needed
+    if !admin_dir.join("node_modules").exists() {
+        println!("cargo:warning=Installing admin frontend dependencies...");
+        let output = Command::new(npm_command())
+            .arg("install")
+            .current_dir(&admin_dir)
+            .output()
+            .expect("Failed to run npm install for admin");
+
+        if !output.status.success() {
+            panic!(
+                "Admin dependency installation failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    println!("cargo:warning=Building admin frontend...");
+
+    let output = Command::new(npm_command())
+        .arg("run")
+        .arg("build")
+        .current_dir(&admin_dir)
+        .output()
+        .expect("Failed to run admin build");
+
+    if !output.status.success() {
+        panic!(
+            "Admin build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    println!("cargo:warning=Admin frontend build completed successfully.");
 }
 
 fn check_node_available() -> bool {

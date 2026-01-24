@@ -38,6 +38,7 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
             new_threshold_days: Some(7),
             image_indexing: ImageIndexingMode::Filename,
             permissions: tenrankai::permissions::PermissionConfig {
+                site_admins: Vec::new(),
                 public_role: Some("viewer".to_string()),
                 default_authenticated_role: Some("viewer".to_string()),
                 roles: {
@@ -123,6 +124,7 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
         user_database: None,
         email: None,
         config_storage: None,
+        site_admins: Vec::new(),
     }
 }
 
@@ -1130,6 +1132,7 @@ fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> SiteConfig {
         images_per_page: 20,
         image_indexing: ImageIndexingMode::Filename,
         permissions: tenrankai::permissions::PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("raw_viewer".to_string()),
             default_authenticated_role: Some("raw_viewer".to_string()),
             roles: {
@@ -1173,6 +1176,7 @@ fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> SiteConfig {
         user_database: None,
         email: None,
         config_storage: None,
+        site_admins: Vec::new(),
     }
 }
 

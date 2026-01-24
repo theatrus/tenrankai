@@ -17,9 +17,42 @@ const ALLOWED_FILE_TYPES = [
   '.jpg', '.jpeg', '.png', '.webp', '.avif', '.heic', '.heif', '.gif',
   // RAW formats
   '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.raf', '.pef',
-  // Documents
-  '.md', '.markdown',
+  // Sidecar files
+  '.md', '.xmp',
 ];
+
+// Primary image extensions that should upload first
+const PRIMARY_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif', 'gif',
+]);
+
+// Sidecar/RAW extensions that require a primary image
+const SIDECAR_EXTENSIONS = new Set([
+  'raw', 'cr2', 'cr3', 'nef', 'arw', 'dng', 'orf', 'rw2', 'raf', 'pef',
+  'md', 'xmp',
+]);
+
+// Get file extension in lowercase
+function getExtension(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return ext || '';
+}
+
+// Get base name without extension
+function getBaseName(filename: string): string {
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot > 0 ? filename.substring(0, lastDot) : filename;
+}
+
+// Check if file is a primary image
+function isPrimaryImage(filename: string): boolean {
+  return PRIMARY_EXTENSIONS.has(getExtension(filename));
+}
+
+// Check if file is a sidecar that needs a primary
+function isSidecarFile(filename: string): boolean {
+  return SIDECAR_EXTENSIONS.has(getExtension(filename));
+}
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 
@@ -33,6 +66,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [uploadComplete, setUploadComplete] = useState(false);
   const [successCount, setSuccessCount] = useState(0);
+
+  // Track files with missing primaries for warning display
+  const [sidecarWarnings, setSidecarWarnings] = useState<string[]>([]);
 
   const uppy = useMemo(() => {
     const instance = new Uppy({
@@ -48,6 +84,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       endpoint: `/_upload/${galleryName}`,
       chunkSize: 5 * 1024 * 1024, // 5MB chunks
       retryDelays: [0, 1000, 3000, 5000],
+      limit: 1, // Upload one file at a time to ensure primaries complete before sidecars
       headers: {},
       onBeforeRequest: (req, file) => {
         // Build metadata string with filename and folder path
@@ -111,10 +148,39 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       setError(`Upload failed for ${file?.name || 'file'}: ${errorMsg}`);
     };
 
+    // Validate sidecars have matching primaries when files are added
+    const handleFilesAdded = () => {
+      const files = uppy.getFiles();
+      const warnings: string[] = [];
+
+      // Get all base names that have primaries
+      const primaryBaseNames = new Set(
+        files
+          .filter(f => isPrimaryImage(f.name))
+          .map(f => getBaseName(f.name).toLowerCase())
+      );
+
+      // Check each sidecar has a matching primary
+      for (const file of files) {
+        if (isSidecarFile(file.name)) {
+          const baseName = getBaseName(file.name).toLowerCase();
+          if (!primaryBaseNames.has(baseName)) {
+            warnings.push(file.name);
+          }
+        }
+      }
+
+      setSidecarWarnings(warnings);
+    };
+
+    uppy.on('file-added', handleFilesAdded);
+    uppy.on('file-removed', handleFilesAdded);
     uppy.on('complete', handleComplete);
     uppy.on('upload-error', handleUploadError);
 
     return () => {
+      uppy.off('file-added', handleFilesAdded);
+      uppy.off('file-removed', handleFilesAdded);
       uppy.off('complete', handleComplete);
       uppy.off('upload-error', handleUploadError);
       uppy.destroy();
@@ -164,6 +230,29 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           </button>
         </div>
         <div ref={dashboardRef} />
+        {sidecarWarnings.length > 0 && (
+          <div
+            style={{
+              marginTop: '1rem',
+              padding: '12px',
+              backgroundColor: '#fef3c7',
+              border: '1px solid #fcd34d',
+              borderRadius: '4px',
+              color: '#92400e',
+              fontSize: '0.9em',
+            }}
+          >
+            <strong>Warning:</strong> The following sidecar/RAW files have no matching primary image in this batch:
+            <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
+              {sidecarWarnings.map(name => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+            <div style={{ marginTop: '0.5rem', fontSize: '0.85em' }}>
+              Upload will proceed, but these files will be orphaned unless a matching image already exists on the server.
+            </div>
+          </div>
+        )}
         {error && (
           <div
             style={{

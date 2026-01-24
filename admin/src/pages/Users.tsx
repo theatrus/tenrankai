@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, UserInfo, CreateUserRequest } from '@api/client';
+import { api, UserInfo, CreateUserRequest, PermissionConfig } from '@api/client';
 
 export function Users() {
   const queryClient = useQueryClient();
@@ -15,6 +15,50 @@ export function Users() {
     queryKey: ['users'],
     queryFn: api.listUsers,
   });
+
+  const { data: sites } = useQuery({
+    queryKey: ['sites'],
+    queryFn: api.listSites,
+  });
+
+  const siteName = sites?.sites[0]?.name ?? 'default';
+
+  const { data: sitePermissions } = useQuery({
+    queryKey: ['sitePermissions', siteName],
+    queryFn: () => api.getSitePermissions(siteName),
+    enabled: !!siteName,
+  });
+
+  const updatePermissionsMutation = useMutation({
+    mutationFn: (permissions: PermissionConfig) =>
+      api.updateSitePermissions(siteName, permissions),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sitePermissions', siteName] });
+    },
+  });
+
+  const isSiteAdmin = (username: string) =>
+    sitePermissions?.site_admins.some(a => a.toLowerCase() === username.toLowerCase()) ?? false;
+
+  const toggleSiteAdmin = (username: string) => {
+    if (!sitePermissions) return;
+
+    const isCurrentlyAdmin = isSiteAdmin(username);
+    const message = isCurrentlyAdmin
+      ? `Remove "${username}" as a site admin? They will lose admin access unless they have owner permissions on a gallery.`
+      : `Make "${username}" a site admin? They will have full access to the admin interface.`;
+
+    if (!confirm(message)) return;
+
+    const newAdmins = isCurrentlyAdmin
+      ? sitePermissions.site_admins.filter(a => a.toLowerCase() !== username.toLowerCase())
+      : [...sitePermissions.site_admins, username];
+
+    updatePermissionsMutation.mutate({
+      ...sitePermissions,
+      site_admins: newAdmins,
+    });
+  };
 
   const createMutation = useMutation({
     mutationFn: api.createUser,
@@ -91,6 +135,7 @@ export function Users() {
                 <th>Username</th>
                 <th>Email</th>
                 <th>Passkeys</th>
+                <th>Site Admin</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -103,6 +148,16 @@ export function Users() {
                     <span className={`badge ${user.passkey_count > 0 ? 'badge-success' : 'badge-warning'}`}>
                       {user.passkey_count} passkey{user.passkey_count !== 1 ? 's' : ''}
                     </span>
+                  </td>
+                  <td>
+                    <button
+                      className={`btn btn-sm ${isSiteAdmin(user.username) ? 'btn-success' : 'btn-secondary'}`}
+                      onClick={() => toggleSiteAdmin(user.username)}
+                      disabled={updatePermissionsMutation.isPending}
+                      title={isSiteAdmin(user.username) ? 'Click to remove site admin' : 'Click to make site admin'}
+                    >
+                      {isSiteAdmin(user.username) ? 'Yes' : 'No'}
+                    </button>
                   </td>
                   <td>
                     <div className="actions">
@@ -126,7 +181,7 @@ export function Users() {
               ))}
               {data?.users.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                  <td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
                     No users found
                   </td>
                 </tr>

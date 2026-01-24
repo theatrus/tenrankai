@@ -66,6 +66,7 @@ export interface UserRoleAssignment {
 }
 
 export interface PermissionConfig {
+  site_admins: string[];
   public_role: string | null;
   default_authenticated_role: string | null;
   roles: Record<string, RoleInfo>;
@@ -76,6 +77,9 @@ export interface GalleryInfo {
   name: string;
   url_prefix: string;
   permissions: PermissionConfig;
+  image_count: number;
+  total_size: number;
+  total_size_formatted: string;
 }
 
 export interface GalleryListResponse {
@@ -130,6 +134,8 @@ export interface FolderInfo {
   name: string;
   has_custom_permissions: boolean;
   image_count: number;
+  size: number;
+  size_formatted: string;
 }
 
 export interface FolderListResponse {

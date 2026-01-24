@@ -30,6 +30,7 @@ fn create_admin_test_config(temp_dir: &TempDir, indexing_mode: ImageIndexingMode
         images_per_page: 20,
         image_indexing: indexing_mode,
         permissions: tenrankai::permissions::PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("viewer".to_string()),
             default_authenticated_role: Some("viewer".to_string()),
             roles: {
@@ -88,6 +89,7 @@ fn create_admin_test_config(temp_dir: &TempDir, indexing_mode: ImageIndexingMode
         user_database: None,
         email: None,
         config_storage: None,
+        site_admins: Vec::new(),
     }
 }
 

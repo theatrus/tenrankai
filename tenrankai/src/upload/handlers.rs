@@ -20,9 +20,11 @@ const TUS_MAX_SIZE: u64 = 500 * 1024 * 1024; // 500MB
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
     // Images
-    "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif", // RAW formats
-    "raw", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "pef", // Documents
-    "md", "markdown",
+    "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif",
+    // RAW formats
+    "raw", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "pef",
+    // Sidecar files
+    "md", "xmp",
 ];
 
 fn sanitize_filename(filename: &str) -> Result<String, UploadError> {
