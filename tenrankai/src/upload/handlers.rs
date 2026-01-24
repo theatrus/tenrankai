@@ -18,6 +18,55 @@ const TUS_VERSION: &str = "1.0.0";
 const TUS_EXTENSION: &str = "creation,termination";
 const TUS_MAX_SIZE: u64 = 500 * 1024 * 1024; // 500MB
 
+const ALLOWED_EXTENSIONS: &[&str] = &[
+    // Images
+    "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif", // RAW formats
+    "raw", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "pef", // Documents
+    "md", "markdown",
+];
+
+fn sanitize_filename(filename: &str) -> Result<String, UploadError> {
+    // Extract just the filename part, removing any path components
+    let name = std::path::Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or(UploadError::InvalidFilename("Invalid filename"))?;
+
+    // Reject if empty or contains suspicious patterns
+    if name.is_empty() || name == "." || name == ".." {
+        return Err(UploadError::InvalidFilename("Invalid filename"));
+    }
+
+    // Reject any remaining path separators (shouldn't happen after file_name(), but be safe)
+    if name.contains('/') || name.contains('\\') {
+        return Err(UploadError::InvalidFilename(
+            "Filename cannot contain path separators",
+        ));
+    }
+
+    // Reject null bytes
+    if name.contains('\0') {
+        return Err(UploadError::InvalidFilename(
+            "Filename cannot contain null bytes",
+        ));
+    }
+
+    Ok(name.to_string())
+}
+
+fn validate_file_extension(filename: &str) -> Result<(), UploadError> {
+    let extension = std::path::Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+
+    match extension {
+        Some(ext) if ALLOWED_EXTENSIONS.contains(&ext.as_str()) => Ok(()),
+        Some(ext) => Err(UploadError::InvalidFileType(ext)),
+        None => Err(UploadError::InvalidFileType("no extension".to_string())),
+    }
+}
+
 fn tus_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("Tus-Resumable", HeaderValue::from_static(TUS_VERSION));
@@ -82,24 +131,7 @@ async fn resolve_permissions(
 }
 
 pub async fn options_handler() -> impl IntoResponse {
-    let mut headers = tus_headers();
-    headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-    headers.insert(
-        "Access-Control-Allow-Methods",
-        HeaderValue::from_static("POST, HEAD, PATCH, DELETE, OPTIONS"),
-    );
-    headers.insert(
-        "Access-Control-Allow-Headers",
-        HeaderValue::from_static(
-            "Content-Type, Upload-Length, Upload-Metadata, Upload-Offset, Tus-Resumable",
-        ),
-    );
-    headers.insert(
-        "Access-Control-Expose-Headers",
-        HeaderValue::from_static(
-            "Upload-Offset, Upload-Length, Tus-Version, Tus-Resumable, Tus-Max-Size, Tus-Extension, Location",
-        ),
-    );
+    let headers = tus_headers();
     (StatusCode::NO_CONTENT, headers)
 }
 
@@ -133,10 +165,16 @@ pub async fn create_upload(
 
     let parsed_metadata = parse_tus_metadata(&upload_metadata);
 
-    let filename = parsed_metadata
+    let raw_filename = parsed_metadata
         .as_ref()
         .and_then(|m| m.get("filename").cloned())
         .ok_or(UploadError::MissingHeader("Upload-Metadata filename"))?;
+
+    // Sanitize filename to prevent path traversal attacks
+    let filename = sanitize_filename(&raw_filename)?;
+
+    // Validate file extension
+    validate_file_extension(&filename)?;
 
     let folder_path = parsed_metadata
         .as_ref()

@@ -594,12 +594,12 @@ impl ChunkedUpload for FilesystemStorage {
 
         while let Some(entry) = read_dir.next_entry().await? {
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "json") {
-                if let Some(stem) = path.file_stem() {
-                    let upload_id = stem.to_string_lossy().to_string();
-                    if let Ok(info) = self.load_upload_info(&upload_id).await {
-                        uploads.push(info);
-                    }
+            if path.extension().is_some_and(|ext| ext == "json")
+                && let Some(stem) = path.file_stem()
+            {
+                let upload_id = stem.to_string_lossy().to_string();
+                if let Ok(info) = self.load_upload_info(&upload_id).await {
+                    uploads.push(info);
                 }
             }
         }
@@ -617,10 +617,8 @@ impl ChunkedUpload for FilesystemStorage {
                 .duration_since(upload.created_at)
                 .unwrap_or(Duration::ZERO);
 
-            if age > max_age {
-                if self.terminate_upload(&upload.upload_id).await.is_ok() {
-                    cleaned += 1;
-                }
+            if age > max_age && self.terminate_upload(&upload.upload_id).await.is_ok() {
+                cleaned += 1;
             }
         }
 

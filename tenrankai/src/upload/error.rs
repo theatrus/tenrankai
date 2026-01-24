@@ -16,6 +16,8 @@ pub enum UploadError {
     UnsupportedVersion,
     UnsupportedMethod,
     FileTooLarge { size: u64, max: u64 },
+    InvalidFilename(&'static str),
+    InvalidFileType(String),
 }
 
 impl std::fmt::Display for UploadError {
@@ -36,6 +38,8 @@ impl std::fmt::Display for UploadError {
             UploadError::FileTooLarge { size, max } => {
                 write!(f, "File too large: {} bytes (max: {} bytes)", size, max)
             }
+            UploadError::InvalidFilename(msg) => write!(f, "Invalid filename: {}", msg),
+            UploadError::InvalidFileType(ext) => write!(f, "File type not allowed: {}", ext),
         }
     }
 }
@@ -56,6 +60,8 @@ impl IntoResponse for UploadError {
             UploadError::UnsupportedVersion => StatusCode::PRECONDITION_FAILED,
             UploadError::UnsupportedMethod => StatusCode::METHOD_NOT_ALLOWED,
             UploadError::FileTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+            UploadError::InvalidFilename(_) => StatusCode::BAD_REQUEST,
+            UploadError::InvalidFileType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
         };
 
         (status, self.to_string()).into_response()

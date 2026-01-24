@@ -1085,15 +1085,15 @@ impl ChunkedUpload for S3Storage {
                 .map_err(|e| StorageError::Other(format!("S3 ListObjectsV2 error: {}", e)))?;
 
             for obj in result.contents() {
-                if let Some(key) = obj.key() {
-                    if key.ends_with(".json") {
-                        // Extract upload ID from key
-                        let filename = key.rsplit('/').next().unwrap_or("");
-                        if let Some(upload_id) = filename.strip_suffix(".json") {
-                            if let Ok(state) = self.load_upload_state(upload_id).await {
-                                uploads.push(state.info);
-                            }
-                        }
+                if let Some(key) = obj.key()
+                    && key.ends_with(".json")
+                {
+                    // Extract upload ID from key
+                    let filename = key.rsplit('/').next().unwrap_or("");
+                    if let Some(upload_id) = filename.strip_suffix(".json")
+                        && let Ok(state) = self.load_upload_state(upload_id).await
+                    {
+                        uploads.push(state.info);
                     }
                 }
             }
@@ -1118,10 +1118,8 @@ impl ChunkedUpload for S3Storage {
                 .duration_since(upload.created_at)
                 .unwrap_or(Duration::ZERO);
 
-            if age > max_age {
-                if self.terminate_upload(&upload.upload_id).await.is_ok() {
-                    cleaned += 1;
-                }
+            if age > max_age && self.terminate_upload(&upload.upload_id).await.is_ok() {
+                cleaned += 1;
             }
         }
 
