@@ -65,6 +65,9 @@ jobs:
     - name: Install npm dependencies
       run: npm ci
 
+    - name: Install admin npm dependencies
+      run: cd admin && npm ci
+
     - name: Run frontend linting (TypeScript, CSS, CSS variables)
       run: npm run lint
 
