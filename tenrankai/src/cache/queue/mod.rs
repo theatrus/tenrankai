@@ -17,6 +17,8 @@ use thiserror::Error;
 /// A request to generate cache files for an image.
 #[derive(Debug, Clone)]
 pub struct CacheGenerationRequest {
+    /// Site name (for multi-site routing)
+    pub site_name: String,
     /// Gallery name (for routing to correct gallery)
     pub gallery_name: String,
     /// Relative path to the image
@@ -26,8 +28,13 @@ pub struct CacheGenerationRequest {
 }
 
 impl CacheGenerationRequest {
-    pub fn new(gallery_name: impl Into<String>, image_path: impl Into<String>) -> Self {
+    pub fn new(
+        site_name: impl Into<String>,
+        gallery_name: impl Into<String>,
+        image_path: impl Into<String>,
+    ) -> Self {
         Self {
+            site_name: site_name.into(),
             gallery_name: gallery_name.into(),
             image_path: image_path.into(),
             priority: 5,
@@ -38,11 +45,17 @@ impl CacheGenerationRequest {
         self.priority = priority;
         self
     }
+
+    pub fn queue_key(&self) -> String {
+        format!("{}:{}", self.site_name, self.gallery_name)
+    }
 }
 
 /// A request to delete cache files for an image that was moved/deleted.
 #[derive(Debug, Clone)]
 pub struct CacheCleanupRequest {
+    /// Site name (for multi-site routing)
+    pub site_name: String,
     /// Gallery name
     pub gallery_name: String,
     /// Relative path to the image that was moved/deleted
@@ -50,11 +63,20 @@ pub struct CacheCleanupRequest {
 }
 
 impl CacheCleanupRequest {
-    pub fn new(gallery_name: impl Into<String>, old_path: impl Into<String>) -> Self {
+    pub fn new(
+        site_name: impl Into<String>,
+        gallery_name: impl Into<String>,
+        old_path: impl Into<String>,
+    ) -> Self {
         Self {
+            site_name: site_name.into(),
             gallery_name: gallery_name.into(),
             old_path: old_path.into(),
         }
+    }
+
+    pub fn queue_key(&self) -> String {
+        format!("{}:{}", self.site_name, self.gallery_name)
     }
 }
 

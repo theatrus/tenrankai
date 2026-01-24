@@ -149,9 +149,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     };
 
     // Validate sidecars have matching primaries when files are added
+    // Remove any sidecar/RAW files that don't have a matching primary image
     const handleFilesAdded = () => {
       const files = uppy.getFiles();
-      const warnings: string[] = [];
+      const rejected: string[] = [];
 
       // Get all base names that have primaries
       const primaryBaseNames = new Set(
@@ -160,17 +161,18 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           .map(f => getBaseName(f.name).toLowerCase())
       );
 
-      // Check each sidecar has a matching primary
+      // Remove sidecars without matching primaries
       for (const file of files) {
         if (isSidecarFile(file.name)) {
           const baseName = getBaseName(file.name).toLowerCase();
           if (!primaryBaseNames.has(baseName)) {
-            warnings.push(file.name);
+            rejected.push(file.name);
+            uppy.removeFile(file.id);
           }
         }
       }
 
-      setSidecarWarnings(warnings);
+      setSidecarWarnings(rejected);
     };
 
     uppy.on('file-added', handleFilesAdded);
@@ -235,21 +237,21 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             style={{
               marginTop: '1rem',
               padding: '12px',
-              backgroundColor: '#fef3c7',
-              border: '1px solid #fcd34d',
+              backgroundColor: 'var(--message-warning-bg)',
+              border: '1px solid var(--message-warning-border)',
               borderRadius: '4px',
-              color: '#92400e',
+              color: 'var(--message-warning-color)',
               fontSize: '0.9em',
             }}
           >
-            <strong>Warning:</strong> The following sidecar/RAW files have no matching primary image in this batch:
+            <strong>Removed:</strong> The following sidecar/RAW files were removed because they have no matching primary image:
             <ul style={{ margin: '0.5rem 0 0 1rem', padding: 0 }}>
               {sidecarWarnings.map(name => (
                 <li key={name}>{name}</li>
               ))}
             </ul>
             <div style={{ marginTop: '0.5rem', fontSize: '0.85em' }}>
-              Upload will proceed, but these files will be orphaned unless a matching image already exists on the server.
+              Add a matching image file (same name, different extension) to upload these files.
             </div>
           </div>
         )}
@@ -258,10 +260,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             style={{
               marginTop: '1rem',
               padding: '12px',
-              backgroundColor: '#fee2e2',
-              border: '1px solid #fecaca',
+              backgroundColor: 'var(--message-error-bg)',
+              border: '1px solid var(--message-error-border)',
               borderRadius: '4px',
-              color: '#dc2626',
+              color: 'var(--message-error-color)',
               fontSize: '0.9em',
               whiteSpace: 'pre-wrap',
             }}
@@ -274,10 +276,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             style={{
               marginTop: '1rem',
               padding: '12px',
-              backgroundColor: '#dcfce7',
-              border: '1px solid #bbf7d0',
+              backgroundColor: 'var(--message-success-bg)',
+              border: '1px solid var(--message-success-border)',
               borderRadius: '4px',
-              color: '#16a34a',
+              color: 'var(--message-success-color)',
               fontSize: '0.9em',
             }}
           >

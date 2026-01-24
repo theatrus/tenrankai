@@ -92,12 +92,13 @@ impl CacheQueueWorker {
         request: CacheGenerationRequest,
         galleries: &HashMap<String, SharedGallery>,
     ) {
-        let gallery = match galleries.get(&request.gallery_name) {
+        let key = request.queue_key();
+        let gallery = match galleries.get(&key) {
             Some(g) => g,
             None => {
                 warn!(
-                    "Gallery not found for cache generation: {}",
-                    request.gallery_name
+                    "Gallery not found for cache generation: {} (key: {})",
+                    request.gallery_name, key
                 );
                 return;
             }
@@ -126,12 +127,13 @@ impl CacheQueueWorker {
         request: CacheCleanupRequest,
         galleries: &HashMap<String, SharedGallery>,
     ) {
-        let gallery = match galleries.get(&request.gallery_name) {
+        let key = request.queue_key();
+        let gallery = match galleries.get(&key) {
             Some(g) => g,
             None => {
                 warn!(
-                    "Gallery not found for cache cleanup: {}",
-                    request.gallery_name
+                    "Gallery not found for cache cleanup: {} (key: {})",
+                    request.gallery_name, key
                 );
                 return;
             }

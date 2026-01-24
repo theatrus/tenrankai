@@ -872,7 +872,11 @@ async fn handle_admin_command(
                 .map_err(|e| format!("Failed to get site permissions: {}", e))?
                 .unwrap_or_default();
 
-            if permissions.site_admins.iter().any(|a| a.eq_ignore_ascii_case(&username)) {
+            if permissions
+                .site_admins
+                .iter()
+                .any(|a| a.eq_ignore_ascii_case(&username))
+            {
                 println!("User '{}' is already a site admin for '{}'", username, site);
             } else {
                 permissions.site_admins.push(username.clone());
@@ -893,7 +897,9 @@ async fn handle_admin_command(
                 .unwrap_or_default();
 
             let original_len = permissions.site_admins.len();
-            permissions.site_admins.retain(|a| !a.eq_ignore_ascii_case(&username));
+            permissions
+                .site_admins
+                .retain(|a| !a.eq_ignore_ascii_case(&username));
 
             if permissions.site_admins.len() < original_len {
                 storage

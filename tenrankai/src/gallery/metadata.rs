@@ -28,7 +28,15 @@ struct FolderEntryClassification {
 impl Gallery {
     /// Classify a folder's entries into subdirectories, images, and groupable files.
     /// This shared logic is used by both single-folder and full refresh operations.
-    fn classify_folder_entries(&self, entries: &[StorageEntry]) -> FolderEntryClassification {
+    ///
+    /// The `folder_path` parameter is the path of the folder being listed. Entry paths
+    /// returned by storage are just filenames, so we prepend the folder path to build
+    /// full relative paths for indexer lookups.
+    fn classify_folder_entries(
+        &self,
+        folder_path: &str,
+        entries: &[StorageEntry],
+    ) -> FolderEntryClassification {
         let mut subdirectories = Vec::new();
         let mut images = Vec::new();
         let mut groupable_files = Vec::new();
@@ -41,6 +49,13 @@ impl Gallery {
             if name.starts_with('.') || name.ends_with(".md") {
                 continue;
             }
+
+            // Build full relative path by prepending folder_path
+            let full_path = if folder_path.is_empty() {
+                entry.path.clone()
+            } else {
+                format!("{}/{}", folder_path, entry.path)
+            };
 
             if entry.is_dir {
                 // Skip __ prefixed directories from visible list
@@ -58,13 +73,13 @@ impl Gallery {
                     .is_some_and(|e| super::grouping::is_raw_extension(e));
 
                 if is_displayable_image {
-                    images.push(entry.path.clone());
+                    images.push(full_path.clone());
                 }
 
                 if is_displayable_image || is_raw {
                     let mod_time = entry.metadata.as_ref().and_then(|m| m.last_modified);
                     let file_size = entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
-                    groupable_files.push((entry.path.clone(), mod_time, file_size));
+                    groupable_files.push((full_path, mod_time, file_size));
                 }
             }
         }
@@ -489,7 +504,7 @@ impl Gallery {
 
         // List and classify this folder's contents
         let entries = self.source_storage.list(folder_path).await?;
-        let mut classified = self.classify_folder_entries(&entries);
+        let mut classified = self.classify_folder_entries(folder_path, &entries);
 
         // Also collect groupable files from __versions subfolder if it exists
         let versions_path = if folder_path.is_empty() {
@@ -498,7 +513,7 @@ impl Gallery {
             format!("{}/__versions", folder_path)
         };
         if let Ok(version_entries) = self.source_storage.list(&versions_path).await {
-            let version_classified = self.classify_folder_entries(&version_entries);
+            let version_classified = self.classify_folder_entries(&versions_path, &version_entries);
             classified
                 .groupable_files
                 .extend(version_classified.groupable_files);

@@ -3171,8 +3171,6 @@ pub async fn rename_gallery_folder(
 
     // Queue cache cleanup for old paths and generation for new paths
     if let Some(cache_queue) = app_state.cache_queue() {
-        let gallery_key = format!("{}:{}", site, gallery);
-
         for entry in &all_files {
             if !entry.is_dir
                 && crate::gallery::grouping::is_image_extension(
@@ -3195,19 +3193,12 @@ pub async fn rename_gallery_folder(
 
                 // Cleanup old cache
                 let _ = cache_queue
-                    .submit_cleanup(CacheCleanupRequest {
-                        gallery_name: gallery_key.clone(),
-                        old_path: entry.path.clone(),
-                    })
+                    .submit_cleanup(CacheCleanupRequest::new(&site, &gallery, &entry.path))
                     .await;
 
                 // Generate new cache
                 let _ = cache_queue
-                    .submit(CacheGenerationRequest {
-                        gallery_name: gallery_key.clone(),
-                        image_path: dest_path,
-                        priority: 5,
-                    })
+                    .submit(CacheGenerationRequest::new(&site, &gallery, &dest_path))
                     .await;
             }
         }
@@ -3418,19 +3409,19 @@ pub async fn move_gallery_images(
 
                 // Queue cache cleanup/generation for version files
                 if let Some(cache_queue) = app_state.cache_queue() {
-                    let gallery_key = format!("{}:{}", site, gallery);
                     let _ = cache_queue
-                        .submit_cleanup(CacheCleanupRequest {
-                            gallery_name: gallery_key.clone(),
-                            old_path: version_src.clone(),
-                        })
+                        .submit_cleanup(CacheCleanupRequest::new(
+                            &site,
+                            &gallery,
+                            version_src.clone(),
+                        ))
                         .await;
                     let _ = cache_queue
-                        .submit(CacheGenerationRequest {
-                            gallery_name: gallery_key,
-                            image_path: version_dest.clone(),
-                            priority: 5,
-                        })
+                        .submit(CacheGenerationRequest::new(
+                            &site,
+                            &gallery,
+                            version_dest.clone(),
+                        ))
                         .await;
                 }
             }
@@ -3446,23 +3437,14 @@ pub async fn move_gallery_images(
 
         // Queue cache cleanup for old path and generation for new path
         if let Some(cache_queue) = app_state.cache_queue() {
-            let gallery_key = format!("{}:{}", site, gallery);
-
             // Cleanup old cache files
             let _ = cache_queue
-                .submit_cleanup(CacheCleanupRequest {
-                    gallery_name: gallery_key.clone(),
-                    old_path: source_path.clone(),
-                })
+                .submit_cleanup(CacheCleanupRequest::new(&site, &gallery, &source_path))
                 .await;
 
             // Generate cache for new path
             let _ = cache_queue
-                .submit(CacheGenerationRequest {
-                    gallery_name: gallery_key,
-                    image_path: dest_path.clone(),
-                    priority: 5,
-                })
+                .submit(CacheGenerationRequest::new(&site, &gallery, &dest_path))
                 .await;
         }
 
@@ -3672,13 +3654,8 @@ pub async fn copy_gallery_images(
 
                 // Queue cache generation for version files
                 if let Some(cache_queue) = app_state.cache_queue() {
-                    let gallery_key = format!("{}:{}", site, gallery);
                     let _ = cache_queue
-                        .submit(CacheGenerationRequest {
-                            gallery_name: gallery_key,
-                            image_path: version_dest.clone(),
-                            priority: 5,
-                        })
+                        .submit(CacheGenerationRequest::new(&site, &gallery, &version_dest))
                         .await;
                 }
             }
@@ -3686,14 +3663,8 @@ pub async fn copy_gallery_images(
 
         // Queue cache generation for new path
         if let Some(cache_queue) = app_state.cache_queue() {
-            let gallery_key = format!("{}:{}", site, gallery);
-
             let _ = cache_queue
-                .submit(CacheGenerationRequest {
-                    gallery_name: gallery_key,
-                    image_path: dest_path.clone(),
-                    priority: 5,
-                })
+                .submit(CacheGenerationRequest::new(&site, &gallery, &dest_path))
                 .await;
         }
 

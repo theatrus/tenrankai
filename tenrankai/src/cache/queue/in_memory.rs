@@ -99,6 +99,7 @@ mod tests {
         // Submit a generation request
         queue
             .submit(CacheGenerationRequest::new(
+                "test-site",
                 "test-gallery",
                 "path/to/image.jpg",
             ))
@@ -111,8 +112,10 @@ mod tests {
         let msg = queue.receive().await.unwrap();
         match msg {
             QueueMessage::Generate(req) => {
+                assert_eq!(req.site_name, "test-site");
                 assert_eq!(req.gallery_name, "test-gallery");
                 assert_eq!(req.image_path, "path/to/image.jpg");
+                assert_eq!(req.queue_key(), "test-site:test-gallery");
             }
             _ => panic!("Expected Generate message"),
         }
@@ -125,15 +128,21 @@ mod tests {
         let queue = InMemoryQueue::new(10);
 
         queue
-            .submit_cleanup(CacheCleanupRequest::new("test-gallery", "old/path.jpg"))
+            .submit_cleanup(CacheCleanupRequest::new(
+                "test-site",
+                "test-gallery",
+                "old/path.jpg",
+            ))
             .await
             .unwrap();
 
         let msg = queue.receive().await.unwrap();
         match msg {
             QueueMessage::Cleanup(req) => {
+                assert_eq!(req.site_name, "test-site");
                 assert_eq!(req.gallery_name, "test-gallery");
                 assert_eq!(req.old_path, "old/path.jpg");
+                assert_eq!(req.queue_key(), "test-site:test-gallery");
             }
             _ => panic!("Expected Cleanup message"),
         }
@@ -145,12 +154,14 @@ mod tests {
 
         // First should succeed
         queue
-            .submit(CacheGenerationRequest::new("g", "p1"))
+            .submit(CacheGenerationRequest::new("s", "g", "p1"))
             .await
             .unwrap();
 
         // Second should fail with QueueFull
-        let result = queue.submit(CacheGenerationRequest::new("g", "p2")).await;
+        let result = queue
+            .submit(CacheGenerationRequest::new("s", "g", "p2"))
+            .await;
         assert!(matches!(result, Err(QueueError::QueueFull)));
     }
 
@@ -159,7 +170,9 @@ mod tests {
         let queue = InMemoryQueue::new(10);
         queue.close().await;
 
-        let result = queue.submit(CacheGenerationRequest::new("g", "p")).await;
+        let result = queue
+            .submit(CacheGenerationRequest::new("s", "g", "p"))
+            .await;
         assert!(matches!(result, Err(QueueError::QueueClosed)));
     }
 }

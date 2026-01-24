@@ -20,8 +20,7 @@ const TUS_MAX_SIZE: u64 = 500 * 1024 * 1024; // 500MB
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
     // Images
-    "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif",
-    // RAW formats
+    "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif", // RAW formats
     "raw", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "pef",
     // Sidecar files
     "md", "xmp",
@@ -361,9 +360,12 @@ pub async fn patch_upload(
 
         // Queue cache generation in background (thumbnails, etc.)
         if let Some(queue) = app_state.cache_queue() {
-            let request = CacheGenerationRequest::new(&gallery_name, &info.path).with_priority(8);
+            let site_name = app_state.site.name.clone();
+            let request =
+                CacheGenerationRequest::new(&site_name, &gallery_name, &info.path).with_priority(8);
             if let Err(e) = queue.submit(request).await {
                 warn!(
+                    site = %site_name,
                     gallery = %gallery_name,
                     path = %info.path,
                     error = %e,
