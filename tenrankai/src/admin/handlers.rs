@@ -417,46 +417,55 @@ pub async fn list_galleries(
     ResolvedState(app_state): ResolvedState,
     _admin: RequireAdmin,
 ) -> Result<Json<GalleryListResponse>, AdminError> {
-    let galleries: Vec<GalleryInfo> = app_state
-        .galleries()
-        .iter()
-        .map(|(name, gallery)| {
-            let config = gallery.get_config();
-            let permissions = &config.permissions;
+    let mut galleries = Vec::new();
 
-            GalleryInfo {
-                name: name.clone(),
-                url_prefix: config.url_prefix.clone(),
-                permissions: PermissionConfigDto {
-                    public_role: permissions.public_role.clone(),
-                    default_authenticated_role: permissions.default_authenticated_role.clone(),
-                    roles: permissions
-                        .roles
-                        .iter()
-                        .map(|(role_name, role)| {
-                            (
-                                role_name.clone(),
-                                RoleDto {
-                                    name: role_name.clone(),
-                                    permissions: RolePermissionsDto::from(&role.permissions),
-                                    inherits: role.inherits.clone(),
-                                    is_builtin: false,
-                                },
-                            )
-                        })
-                        .collect(),
-                    user_roles: permissions
-                        .user_roles
-                        .iter()
-                        .map(|user_role| UserRoleAssignment {
-                            username: user_role.username.clone(),
-                            roles: user_role.roles.clone(),
-                        })
-                        .collect(),
-                },
-            }
-        })
-        .collect();
+    for (name, gallery) in app_state.galleries().iter() {
+        let config = gallery.get_config();
+        let permissions = &config.permissions;
+
+        // Get size and count from root folder cache
+        let (image_count, total_size) = gallery
+            .folder_cache
+            .get("")
+            .await
+            .map(|cache| (cache.recursive_image_count, cache.recursive_size))
+            .unwrap_or((0, 0));
+
+        galleries.push(GalleryInfo {
+            name: name.clone(),
+            url_prefix: config.url_prefix.clone(),
+            permissions: PermissionConfigDto {
+                public_role: permissions.public_role.clone(),
+                default_authenticated_role: permissions.default_authenticated_role.clone(),
+                roles: permissions
+                    .roles
+                    .iter()
+                    .map(|(role_name, role)| {
+                        (
+                            role_name.clone(),
+                            RoleDto {
+                                name: role_name.clone(),
+                                permissions: RolePermissionsDto::from(&role.permissions),
+                                inherits: role.inherits.clone(),
+                                is_builtin: false,
+                            },
+                        )
+                    })
+                    .collect(),
+                user_roles: permissions
+                    .user_roles
+                    .iter()
+                    .map(|user_role| UserRoleAssignment {
+                        username: user_role.username.clone(),
+                        roles: user_role.roles.clone(),
+                    })
+                    .collect(),
+            },
+            image_count,
+            total_size,
+            total_size_formatted: format_size(total_size),
+        });
+    }
 
     Ok(Json(GalleryListResponse { galleries }))
 }
@@ -474,6 +483,14 @@ pub async fn get_gallery(
 
     let config = gallery.get_config();
     let permissions = &config.permissions;
+
+    // Get size and count from root folder cache
+    let (image_count, total_size) = gallery
+        .folder_cache
+        .get("")
+        .await
+        .map(|cache| (cache.recursive_image_count, cache.recursive_size))
+        .unwrap_or((0, 0));
 
     Ok(Json(GalleryInfo {
         name,
@@ -505,6 +522,9 @@ pub async fn get_gallery(
                 })
                 .collect(),
         },
+        image_count,
+        total_size,
+        total_size_formatted: format_size(total_size),
     }))
 }
 
@@ -771,6 +791,14 @@ pub async fn update_gallery_permissions(
     let gallery_config = gallery.get_config();
     let permissions = &gallery_config.permissions;
 
+    // Get size and count from root folder cache
+    let (image_count, total_size) = gallery
+        .folder_cache
+        .get("")
+        .await
+        .map(|cache| (cache.recursive_image_count, cache.recursive_size))
+        .unwrap_or((0, 0));
+
     Ok(Json(GalleryInfo {
         name: gallery_name,
         url_prefix: gallery_config.url_prefix.clone(),
@@ -801,6 +829,9 @@ pub async fn update_gallery_permissions(
                 })
                 .collect(),
         },
+        image_count,
+        total_size,
+        total_size_formatted: format_size(total_size),
     }))
 }
 
@@ -1488,6 +1519,8 @@ pub async fn list_gallery_folders(
                 },
                 has_custom_permissions,
                 image_count: cached.images.len(),
+                size: cached.recursive_size,
+                size_formatted: format_size(cached.recursive_size),
             }
         })
         .collect();

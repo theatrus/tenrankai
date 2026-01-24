@@ -21,6 +21,8 @@ struct FolderEntryClassification {
     images: Vec<String>,
     /// Files for grouping algorithm: (path, modification_time, size)
     groupable_files: Vec<(String, Option<SystemTime>, u64)>,
+    /// Total size of all files in this folder (bytes)
+    total_size: u64,
 }
 
 impl Gallery {
@@ -30,6 +32,7 @@ impl Gallery {
         let mut subdirectories = Vec::new();
         let mut images = Vec::new();
         let mut groupable_files = Vec::new();
+        let mut total_size: u64 = 0;
 
         for entry in entries {
             let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
@@ -45,6 +48,9 @@ impl Gallery {
                     subdirectories.push(name.to_string());
                 }
             } else {
+                // Count file size for all non-hidden files
+                total_size += entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
+
                 let ext = super::grouping::get_extension(name).map(|e| e.to_lowercase());
                 let is_displayable_image = self.is_image(name);
                 let is_raw = ext
@@ -67,6 +73,7 @@ impl Gallery {
             subdirectories,
             images,
             groupable_files,
+            total_size,
         }
     }
 
@@ -536,12 +543,14 @@ impl Gallery {
                 (folder_meta, None)
             };
 
-        // Calculate direct image count for this folder
+        // Calculate direct counts and sizes for this folder
         let direct_count = classified.images.len();
+        let direct_size = classified.total_size;
 
-        // Calculate recursive count: direct images + counts from cached subdirectories
-        let recursive_image_count = {
+        // Calculate recursive values: direct + all subdirectories
+        let (recursive_image_count, recursive_size) = {
             let mut count = direct_count;
+            let mut size = direct_size;
             for subdir_name in &classified.subdirectories {
                 let subdir_path = if folder_path.is_empty() {
                     subdir_name.clone()
@@ -550,9 +559,10 @@ impl Gallery {
                 };
                 if let Some(subdir_cache) = self.folder_cache.get(&subdir_path).await {
                     count += subdir_cache.recursive_image_count;
+                    size += subdir_cache.recursive_size;
                 }
             }
-            count
+            (count, size)
         };
 
         // Insert updated folder cache entry
@@ -565,22 +575,22 @@ impl Gallery {
                     subdirectories: classified.subdirectories,
                     images: classified.images,
                     recursive_image_count,
+                    direct_size,
+                    recursive_size,
                     preview_items,
                     image_groups,
                 },
             )
             .await;
 
-        // Bubble up the count change to parent folders
+        // Bubble up count and size changes to parent folders
         let mut current = folder_path.to_string();
         while let Some(last_slash) = current.rfind('/') {
             let parent = &current[..last_slash];
             if let Some(mut parent_cache) = self.folder_cache.get(parent).await {
-                // Recalculate parent's recursive count from its subdirectories
-                let mut new_count = 0;
-                // Direct images in parent
-                new_count += parent_cache.images.len();
-                // Add counts from all subdirectories
+                // Recalculate parent's recursive values from its subdirectories
+                let mut new_count = parent_cache.images.len();
+                let mut new_size = parent_cache.direct_size;
                 for subdir_name in &parent_cache.subdirectories {
                     let subdir_path = if parent.is_empty() {
                         subdir_name.clone()
@@ -589,9 +599,11 @@ impl Gallery {
                     };
                     if let Some(subdir_cache) = self.folder_cache.get(&subdir_path).await {
                         new_count += subdir_cache.recursive_image_count;
+                        new_size += subdir_cache.recursive_size;
                     }
                 }
                 parent_cache.recursive_image_count = new_count;
+                parent_cache.recursive_size = new_size;
                 self.folder_cache
                     .insert(parent.to_string(), parent_cache)
                     .await;
@@ -604,12 +616,15 @@ impl Gallery {
             && let Some(mut root_cache) = self.folder_cache.get("").await
         {
             let mut new_count = root_cache.images.len();
+            let mut new_size = root_cache.direct_size;
             for subdir_name in &root_cache.subdirectories {
                 if let Some(subdir_cache) = self.folder_cache.get(subdir_name).await {
                     new_count += subdir_cache.recursive_image_count;
+                    new_size += subdir_cache.recursive_size;
                 }
             }
             root_cache.recursive_image_count = new_count;
+            root_cache.recursive_size = new_size;
             self.folder_cache.insert(String::new(), root_cache).await;
         }
 
@@ -934,6 +949,8 @@ impl Gallery {
             String,
             Vec<(String, Option<std::time::SystemTime>, u64)>,
         > = HashMap::new();
+        // Track direct size per folder (sum of all non-hidden files)
+        let mut folder_direct_sizes: HashMap<String, u64> = HashMap::new();
 
         for entry in &all_entries {
             // Get parent folder path
@@ -962,8 +979,14 @@ impl Gallery {
             let children = folder_children.entry(parent.clone()).or_default();
             if entry.is_dir {
                 children.0.push(name.to_string()); // subdirectory name
-            } else if is_displayable_image {
-                children.1.push(entry.path.clone()); // full image path
+            } else {
+                // Track file size for all non-hidden files
+                let file_size = entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
+                *folder_direct_sizes.entry(parent.clone()).or_default() += file_size;
+
+                if is_displayable_image {
+                    children.1.push(entry.path.clone()); // full image path
+                }
             }
 
             // Collect groupable files (images + RAW) for the grouping algorithm
@@ -1030,16 +1053,18 @@ impl Gallery {
             hidden_folders.contains("")
         };
 
-        // 6. Compute recursive image counts (bottom-up)
+        // 6. Compute recursive image counts and sizes (bottom-up)
         // First, sort folders by depth (deepest first) for bottom-up processing
         let mut folders_by_depth: Vec<&String> = folder_paths.iter().collect();
         folders_by_depth.sort_by_key(|p| std::cmp::Reverse(p.matches('/').count()));
 
         let mut recursive_counts: HashMap<String, usize> = HashMap::new();
+        let mut recursive_sizes: HashMap<String, u64> = HashMap::new();
 
         for folder_path in &folders_by_depth {
             if is_effectively_hidden(folder_path) {
                 recursive_counts.insert((*folder_path).clone(), 0);
+                recursive_sizes.insert((*folder_path).clone(), 0);
                 continue;
             }
 
@@ -1048,11 +1073,12 @@ impl Gallery {
                 .cloned()
                 .unwrap_or_default();
 
-            // Count images directly in this folder
+            // Direct values for this folder
             let direct_count = images.len();
+            let direct_size = folder_direct_sizes.get(*folder_path).copied().unwrap_or(0);
 
-            // Add counts from visible subdirectories
-            let subdir_count: usize = subdirs
+            // Add values from visible subdirectories
+            let (subdir_count, subdir_size): (usize, u64) = subdirs
                 .iter()
                 .filter_map(|subdir_name| {
                     let subdir_path = if folder_path.is_empty() {
@@ -1061,14 +1087,20 @@ impl Gallery {
                         format!("{}/{}", folder_path, subdir_name)
                     };
                     if !is_effectively_hidden(&subdir_path) {
-                        recursive_counts.get(&subdir_path).copied()
+                        Some((
+                            recursive_counts.get(&subdir_path).copied().unwrap_or(0),
+                            recursive_sizes.get(&subdir_path).copied().unwrap_or(0),
+                        ))
                     } else {
                         None
                     }
                 })
-                .sum();
+                .fold((0, 0), |(acc_count, acc_size), (count, size)| {
+                    (acc_count + count, acc_size + size)
+                });
 
             recursive_counts.insert((*folder_path).clone(), direct_count + subdir_count);
+            recursive_sizes.insert((*folder_path).clone(), direct_size + subdir_size);
         }
 
         // 7. Select preview images for each folder (BFS with depth limit)
@@ -1190,6 +1222,8 @@ impl Gallery {
                 .collect();
 
             let recursive_count = recursive_counts.get(folder_path).copied().unwrap_or(0);
+            let direct_size = folder_direct_sizes.get(folder_path).copied().unwrap_or(0);
+            let recursive_size = recursive_sizes.get(folder_path).copied().unwrap_or(0);
             let preview_items = select_preview_items(folder_path);
 
             // Build image groups for this folder
@@ -1231,6 +1265,8 @@ impl Gallery {
                     subdirectories: visible_subdirs,
                     images,
                     recursive_image_count: recursive_count,
+                    direct_size,
+                    recursive_size,
                     preview_items,
                     image_groups,
                 },

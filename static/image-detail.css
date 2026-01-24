@@ -19,26 +19,16 @@ body {
 }
 
 .image-detail-container .gallery-nav {
-    font-size: 0.8rem;
     margin-bottom: 0;
-    margin-top: 0;
-    padding: 0.5rem var(--spacing-xl);  /* Add more top padding */
-    padding-top: 1rem;  /* More top padding */
+    padding: 0.5rem var(--spacing-xl);
+    padding-top: 1rem;
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 10;  /* Below mobile navigation (150) */
-    background-color: var(--bg-primary);  /* Ensure background to prevent transparency issues */
-    border-top: none;  /* Remove top border */
-    border-bottom: 1px solid var(--border-color);  /* Subtle bottom border */
+    z-index: 10;
     width: 100%;
     box-sizing: border-box;
-}
-
-.image-detail-container .nav-current {
-    font-weight: 600;
-    font-size: 0.85rem;
 }
 
 .image-detail-content {

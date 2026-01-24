@@ -3,6 +3,26 @@ use std::collections::HashMap;
 
 use crate::permissions::types::RolePermissions;
 
+/// Format bytes as human-readable size (KiB, MiB, GiB, TiB)
+pub fn format_size(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    const TIB: u64 = GIB * 1024;
+
+    if bytes >= TIB {
+        format!("{:.2} TiB", bytes as f64 / TIB as f64)
+    } else if bytes >= GIB {
+        format!("{:.2} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.2} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.2} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct UserInfo {
     pub username: String,
@@ -153,6 +173,9 @@ pub struct GalleryInfo {
     pub name: String,
     pub url_prefix: String,
     pub permissions: PermissionConfigDto,
+    pub image_count: usize,
+    pub total_size: u64,
+    pub total_size_formatted: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -291,6 +314,8 @@ pub struct FolderInfo {
     pub name: String,
     pub has_custom_permissions: bool,
     pub image_count: usize,
+    pub size: u64,
+    pub size_formatted: String,
 }
 
 #[derive(Debug, Serialize)]

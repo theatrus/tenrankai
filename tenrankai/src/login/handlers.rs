@@ -309,6 +309,29 @@ pub async fn login_success(
 pub struct AuthStatusResponse {
     pub authorized: bool,
     pub username: Option<String>,
+    pub is_admin: bool,
+}
+
+fn check_user_is_admin(app_state: &crate::AppState, username: &str) -> bool {
+    for (_, gallery) in app_state.galleries().iter() {
+        let permissions = &gallery.get_config().permissions;
+
+        for user_role in &permissions.user_roles {
+            if user_role.username.eq_ignore_ascii_case(username) {
+                for role_name in &user_role.roles {
+                    if let Some(role) = permissions.roles.get(role_name)
+                        && role.permissions.owner_access
+                    {
+                        return true;
+                    }
+                    if role_name == "admin" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 pub async fn check_auth_status(
@@ -316,15 +339,20 @@ pub async fn check_auth_status(
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     let response = if app_state.user_storage().is_none() {
-        // If no user database is configured, return not authorized
         AuthStatusResponse {
             authorized: false,
             username: None,
+            is_admin: false,
         }
     } else {
+        let is_admin = auth
+            .username()
+            .map(|u| check_user_is_admin(&app_state, u))
+            .unwrap_or(false);
         AuthStatusResponse {
             authorized: auth.is_authenticated(),
             username: auth.username().map(|s| s.to_string()),
+            is_admin,
         }
     };
 
