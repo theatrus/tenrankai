@@ -399,23 +399,6 @@ footer p {
     font-weight: 500;
 }
 
-.nav-edit-link {
-    margin-left: auto;
-    padding: 0.25rem 0.75rem;
-    font-size: 0.85rem;
-    color: var(--text-tertiary);
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    text-decoration: none;
-    transition: all 0.2s ease;
-}
-
-.nav-edit-link:hover {
-    color: var(--text-primary);
-    border-color: var(--link-color);
-}
-
 .folder-description {
     margin-bottom: 2rem;
     padding: 1.5rem;
