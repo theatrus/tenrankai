@@ -524,14 +524,10 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
         // Need larger body limit for chunk uploads (default is 2MB, we use 5MB chunks)
         use axum::extract::DefaultBodyLimit;
         router = router
-            .route(
-                "/_upload",
-                axum::routing::options(upload::options_handler),
-            )
+            .route("/_upload", axum::routing::options(upload::options_handler))
             .route(
                 "/_upload/{gallery}",
-                axum::routing::options(upload::options_handler)
-                    .post(upload::create_upload),
+                axum::routing::options(upload::options_handler).post(upload::create_upload),
             )
             .route(
                 "/_upload/{gallery}/{upload_id}",

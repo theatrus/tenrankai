@@ -144,7 +144,8 @@ pub async fn create_upload(
         .unwrap_or_default();
 
     let username = auth.as_ref().map(|a| a.username.as_str());
-    let permissions = resolve_permissions(&app_state, &gallery_name, &folder_path, username).await?;
+    let permissions =
+        resolve_permissions(&app_state, &gallery_name, &folder_path, username).await?;
     check_manage_images_permission(auth.as_ref(), &permissions)?;
 
     let file_path = if folder_path.is_empty() {
@@ -268,7 +269,9 @@ pub async fn patch_upload(
         .unwrap_or("");
 
     if content_type != "application/offset+octet-stream" {
-        return Err(UploadError::InvalidHeader("Content-Type must be application/offset+octet-stream"));
+        return Err(UploadError::InvalidHeader(
+            "Content-Type must be application/offset+octet-stream",
+        ));
     }
 
     let upload_offset = headers
@@ -377,7 +380,9 @@ pub async fn delete_upload(
     Ok((StatusCode::NO_CONTENT, tus_headers()).into_response())
 }
 
-fn parse_tus_metadata(metadata: &Option<String>) -> Option<std::collections::HashMap<String, String>> {
+fn parse_tus_metadata(
+    metadata: &Option<String>,
+) -> Option<std::collections::HashMap<String, String>> {
     let metadata = metadata.as_ref()?;
     let mut result = std::collections::HashMap::new();
 

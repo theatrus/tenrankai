@@ -60,18 +60,18 @@ impl From<StorageError> for std::io::Error {
             StorageError::PreconditionFailed(msg) => {
                 std::io::Error::new(std::io::ErrorKind::AlreadyExists, msg)
             }
-            StorageError::UploadNotFound(id) => {
-                std::io::Error::new(std::io::ErrorKind::NotFound, format!("Upload not found: {}", id))
-            }
-            StorageError::OffsetMismatch { expected, actual } => {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("Offset mismatch: expected {}, got {}", expected, actual),
-                )
-            }
-            StorageError::UploadExpired(id) => {
-                std::io::Error::new(std::io::ErrorKind::TimedOut, format!("Upload expired: {}", id))
-            }
+            StorageError::UploadNotFound(id) => std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Upload not found: {}", id),
+            ),
+            StorageError::OffsetMismatch { expected, actual } => std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Offset mismatch: expected {}, got {}", expected, actual),
+            ),
+            StorageError::UploadExpired(id) => std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("Upload expired: {}", id),
+            ),
             StorageError::InvalidUrl(msg) | StorageError::Other(msg) => std::io::Error::other(msg),
         }
     }

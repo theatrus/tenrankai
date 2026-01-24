@@ -1,6 +1,8 @@
 //! Filesystem storage backend implementation.
 
-use super::{ByteStream, ChunkedUpload, ObjectMetadata, Storage, StorageEntry, StorageError, UploadInfo};
+use super::{
+    ByteStream, ChunkedUpload, ObjectMetadata, Storage, StorageEntry, StorageError, UploadInfo,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
@@ -428,15 +430,13 @@ impl FilesystemStorage {
     /// Load upload info from disk.
     async fn load_upload_info(&self, upload_id: &str) -> Result<UploadInfo, StorageError> {
         let meta_path = self.upload_meta_path(upload_id);
-        let content = tokio::fs::read_to_string(&meta_path)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    StorageError::UploadNotFound(upload_id.to_string())
-                } else {
-                    StorageError::Io(e)
-                }
-            })?;
+        let content = tokio::fs::read_to_string(&meta_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                StorageError::UploadNotFound(upload_id.to_string())
+            } else {
+                StorageError::Io(e)
+            }
+        })?;
         serde_json::from_str(&content)
             .map_err(|e| StorageError::Other(format!("Failed to parse upload info: {}", e)))
     }

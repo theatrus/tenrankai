@@ -503,7 +503,9 @@ pub async fn create_storage_from_url(url_str: &str) -> Result<DynStorage, Storag
 /// let storage = create_chunked_storage_from_url("photos").await?;
 /// let storage = create_chunked_storage_from_url("s3://bucket/prefix?region=us-west-2").await?;
 /// ```
-pub async fn create_chunked_storage_from_url(url_str: &str) -> Result<DynChunkedStorage, StorageError> {
+pub async fn create_chunked_storage_from_url(
+    url_str: &str,
+) -> Result<DynChunkedStorage, StorageError> {
     let url = StorageUrl::parse(url_str)?;
     url.into_chunked_storage().await
 }

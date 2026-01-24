@@ -1,6 +1,8 @@
 //! Amazon S3 storage backend implementation.
 
-use super::{ByteStream, ChunkedUpload, ObjectMetadata, Storage, StorageEntry, StorageError, UploadInfo};
+use super::{
+    ByteStream, ChunkedUpload, ObjectMetadata, Storage, StorageEntry, StorageError, UploadInfo,
+};
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{
@@ -720,8 +722,10 @@ impl S3Storage {
                 let data = output.body.collect().await.map_err(|e| {
                     StorageError::Other(format!("Failed to read upload state: {}", e))
                 })?;
-                let state: S3UploadState = serde_json::from_slice(&data.into_bytes())
-                    .map_err(|e| StorageError::Other(format!("Failed to parse upload state: {}", e)))?;
+                let state: S3UploadState =
+                    serde_json::from_slice(&data.into_bytes()).map_err(|e| {
+                        StorageError::Other(format!("Failed to parse upload state: {}", e))
+                    })?;
                 Ok(state)
             }
             Err(e) => {
@@ -729,7 +733,10 @@ impl S3Storage {
                 if service_error.is_no_such_key() {
                     Err(StorageError::UploadNotFound(upload_id.to_string()))
                 } else {
-                    Err(StorageError::Other(format!("S3 GetObject error: {}", service_error)))
+                    Err(StorageError::Other(format!(
+                        "S3 GetObject error: {}",
+                        service_error
+                    )))
                 }
             }
         }
@@ -767,9 +774,10 @@ impl S3Storage {
 
         match result {
             Ok(output) => {
-                let data = output.body.collect().await.map_err(|e| {
-                    StorageError::Other(format!("Failed to read buffer: {}", e))
-                })?;
+                let data =
+                    output.body.collect().await.map_err(|e| {
+                        StorageError::Other(format!("Failed to read buffer: {}", e))
+                    })?;
                 Ok(data.into_bytes())
             }
             Err(e) => {
@@ -778,7 +786,10 @@ impl S3Storage {
                     // No buffer yet, return empty
                     Ok(Bytes::new())
                 } else {
-                    Err(StorageError::Other(format!("S3 GetObject error: {}", service_error)))
+                    Err(StorageError::Other(format!(
+                        "S3 GetObject error: {}",
+                        service_error
+                    )))
                 }
             }
         }
@@ -803,7 +814,8 @@ impl S3Storage {
     /// Delete buffer data.
     async fn delete_buffer(&self, upload_id: &str) -> Result<(), StorageError> {
         let key = self.upload_buffer_key(upload_id);
-        let _ = self.client
+        let _ = self
+            .client
             .delete_object()
             .bucket(&self.bucket)
             .key(&key)
@@ -1004,7 +1016,8 @@ impl ChunkedUpload for S3Storage {
 
         // Delete metadata
         let meta_key = self.upload_meta_key(upload_id);
-        let _ = self.client
+        let _ = self
+            .client
             .delete_object()
             .bucket(&self.bucket)
             .key(&meta_key)
@@ -1019,7 +1032,8 @@ impl ChunkedUpload for S3Storage {
         if let Ok(state) = self.load_upload_state(upload_id).await {
             // Abort the multipart upload
             let key = self.build_key(&state.info.path)?;
-            let _ = self.client
+            let _ = self
+                .client
                 .abort_multipart_upload()
                 .bucket(&self.bucket)
                 .key(&key)
@@ -1033,7 +1047,8 @@ impl ChunkedUpload for S3Storage {
 
         // Delete metadata
         let meta_key = self.upload_meta_key(upload_id);
-        let _ = self.client
+        let _ = self
+            .client
             .delete_object()
             .bucket(&self.bucket)
             .key(&meta_key)
