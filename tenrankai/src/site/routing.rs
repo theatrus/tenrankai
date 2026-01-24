@@ -134,36 +134,11 @@ mod tests {
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_storage: None,
             email_config: None,
+            config_storage: None,
+            config_storage_url: None,
+            site_admins: Vec::new(),
         };
         Arc::new(Site::new(name.to_string(), resources))
-    }
-
-    fn create_test_config() -> crate::Config {
-        crate::Config {
-            app: crate::AppConfig {
-                name: "Test".to_string(),
-                log_level: crate::LogLevel::Info,
-                aws_log_level: crate::LogLevel::Warn,
-                cookie_secret: "test-secret".to_string(),
-                base_url: None,
-                user_database: None,
-            },
-            server: crate::ServerConfig {
-                host: "127.0.0.1".to_string(),
-                port: 3000,
-            },
-            static_files: crate::StaticConfig {
-                directories: vec!["static".into()],
-                use_redirects: false,
-            },
-            templates: crate::TemplateConfig {
-                directories: vec!["templates".into()],
-            },
-            galleries: None,
-            posts: None,
-            email: None,
-            openai: None,
-        }
     }
 
     async fn test_handler(ResolvedState(state): ResolvedState) -> String {
@@ -192,7 +167,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config: create_test_config(),
+            cache_queue: None,
         };
 
         // Create router with middleware
@@ -235,7 +210,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config: create_test_config(),
+            cache_queue: None,
         };
 
         let app = Router::new()
@@ -281,7 +256,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config: create_test_config(),
+            cache_queue: None,
         };
 
         let app = Router::new()
@@ -314,7 +289,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config: create_test_config(),
+            cache_queue: None,
         };
 
         let app = Router::new()

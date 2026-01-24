@@ -1,0 +1,68 @@
+# Main Gallery Configuration
+#
+# Paths are relative to the site's storage_prefix
+
+name = "main"
+url_prefix = "/gallery"
+
+# Paths relative to storage_prefix (/data/sites/default)
+# Resolved to: /data/sites/default/photos
+source_directory = "photos"
+# Resolved to: /data/sites/default/cache/main
+cache_directory = "cache/main"
+
+# Templates
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+
+# Image quality
+jpeg_quality = 85
+webp_quality = 85.0
+
+# Image sizes
+[thumbnail]
+width = 300
+height = 300
+
+[gallery_size]
+width = 800
+height = 800
+
+[medium]
+width = 1200
+height = 1200
+
+[large]
+width = 1600
+height = 1600
+
+# Preview images shown in folder navigation
+[preview]
+max_images = 6
+max_depth = 3
+max_per_folder = 3
+
+# Optional: Tile configuration for high-res zoom
+# [tiles]
+# tile_size = 1024
+
+# Optional: Pre-generation configuration
+# [pregenerate]
+# formats = { jpeg = true, webp = true, avif = false }
+# sizes = { thumbnail = true, gallery = true, medium = true, large = false }
+# tiles = false
+
+# Optional: Cache refresh interval (minutes)
+# cache_refresh_interval_minutes = 60
+
+# Optional: New image threshold (days since modification)
+# new_threshold_days = 7
+
+# Optional: Copyright holder for watermarks
+# copyright_holder = "Your Name"
+
+# Image indexing mode: "filename", "sequence", or "unique_id"
+image_indexing = "filename"
+
+# Metadata cache size
+metadata_cache_size = 1000

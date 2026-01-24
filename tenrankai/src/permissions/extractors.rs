@@ -41,6 +41,10 @@ pub struct RequireMetadata(pub UserPermissions);
 #[derive(Debug, Clone)]
 pub struct RequireOwner(pub UserPermissions);
 
+/// Required manage images permission - returns 403 if user cannot manage images
+#[derive(Debug, Clone)]
+pub struct RequireManageImages(pub UserPermissions);
+
 // Helper to extract gallery name and path from request
 async fn extract_gallery_and_path(parts: &Parts) -> Option<(String, String)> {
     // Try to extract from matched path
@@ -92,7 +96,7 @@ async fn resolve_permissions(
         None
     };
 
-    // Create resolver
+    // Use gallery's permission config directly (no per-request merging)
     let resolver = PermissionResolver::new(
         &gallery.config.permissions,
         folder_config.as_ref().map(|fc| &fc.permissions),
@@ -217,6 +221,34 @@ where
             }
 
             Ok(RequireOwner(user_perms))
+        }
+    }
+}
+
+// Implement extraction for RequireManageImages
+impl<S> FromRequestParts<S> for RequireManageImages
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        async move {
+            let app_state = AppState::from_ref(state);
+            let user_perms = resolve_permissions(parts, &app_state).await?;
+
+            if !user_perms.permissions.can_manage_images {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    "Image management permission required",
+                ));
+            }
+
+            Ok(RequireManageImages(user_perms))
         }
     }
 }
@@ -351,7 +383,7 @@ pub async fn resolve_permissions_for_path(
         None
     };
 
-    // Create resolver
+    // Use gallery's permission config directly (no per-request merging)
     let resolver = PermissionResolver::new(
         &gallery.config.permissions,
         folder_config.as_ref().map(|fc| &fc.permissions),
@@ -380,7 +412,6 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_permissions_for_path_public() {
         // Create minimal app state for testing
-        let config = crate::Config::default();
         let mut gallery_config = crate::GallerySystemConfig::default();
         gallery_config.name = "test".to_string();
         gallery_config.source_directory = ".".to_string();
@@ -410,6 +441,9 @@ mod tests {
             )),
             user_storage: None,
             email_config: None,
+            config_storage: None,
+            config_storage_url: None,
+            site_admins: Vec::new(),
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);
@@ -420,7 +454,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config,
+            cache_queue: None,
         };
 
         // Test public user permissions

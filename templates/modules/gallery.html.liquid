@@ -4,7 +4,7 @@
     {% assign page_title = "Gallery" %}
 {% endif %}
 {% assign meta_description = folder_description | default: "Browse the photo gallery on theatr.us" | strip_html | truncate: 160 %}
-{% assign page_css = "gallery-filters.css,editor.css" | split: "," %}
+{% assign page_css = "gallery-filters.css,editor.css,gallery-manage.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container gallery-container">
@@ -45,9 +45,32 @@
             <div id="gallery-filter-mount"></div>
 
             {% if permissions.can_download_gallery %}
-                <a href="{{ gallery_url }}/_download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-download" title="Download all images as ZIP">
-                    Download All
+                <a href="{{ gallery_url }}/_download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-secondary" title="Download all images as ZIP">
+                    Download
                 </a>
+            {% endif %}
+
+            {% if permissions.can_manage_images %}
+                <div id="new-dropdown-mount" style="display: inline-block;"></div>
+                <button id="manage-images-btn" class="btn btn-secondary" title="Edit images">
+                    Edit
+                </button>
+            {% endif %}
+
+            {% if permissions.owner_access %}
+                <a href="/_admin/galleries/{{ gallery_name }}/folders/{% if gallery_path != '' %}{{ gallery_path | url_encode }}{% else %}_root{% endif %}" class="btn btn-secondary" title="Share folder and manage permissions">
+                    Share
+                </a>
+            {% endif %}
+
+            {% assign directories = items | where: "is_directory", true %}
+            {% if permissions.can_manage_images and gallery_path != '' and images.size == 0 and directories.size == 0 %}
+                <button id="delete-folder-btn" class="btn btn-danger" title="Delete this empty folder"
+                        data-gallery-name="{{ gallery_name }}"
+                        data-folder-path="{{ gallery_path }}"
+                        data-folder-name="{{ folder_title | default: gallery_path | split: '/' | last }}">
+                    Delete Folder
+                </button>
             {% endif %}
         </div>
     </div>
@@ -95,34 +118,16 @@
 {{ gallery_data_json }}
         </script>
 
-        <!-- Image Gallery -->
+        <!-- Image Gallery (React renders into this container) -->
         {% if images.size > 0 %}
             <div class="gallery-images">
-                <div class="image-grid" id="gallery-grid">
-                    <div class="masonry-column" data-column="0"></div>
-                    <div class="masonry-column" data-column="1"></div>
-                </div>
-
-                <!-- Hidden template for images (legacy) -->
-                <script type="application/json" id="gallery-images">
-{{ images_json }}
-                </script>
-
-                <!-- Pagination -->
-                {% if total_pages > 1 %}
-                    <div class="gallery-pagination">
-                        {% if has_prev %}
-                            <a href="?page={{ prev_page }}" class="page-link">← Previous</a>
-                        {% endif %}
-                        
-                        <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
-                        
-                        {% if has_next %}
-                            <a href="?page={{ next_page }}" class="page-link">Next →</a>
-                        {% endif %}
-                    </div>
-                {% endif %}
+                <!-- React will render the masonry grid here -->
             </div>
+
+            <!-- Image data for React -->
+            <script type="application/json" id="gallery-images">
+{{ images_json }}
+            </script>
         {% endif %}
     {% else %}
         <p class="empty-gallery">No images found in this directory.</p>

@@ -1,5 +1,6 @@
 {
   "extends": ["stylelint-config-standard"],
+  "ignoreFiles": ["static/admin/assets/**/*.css", "static/dist/**/*"],
   "rules": {
     "no-descending-specificity": null,
     "no-duplicate-selectors": null,

@@ -1,0 +1,27 @@
+[package]
+name = "tenrankai-config-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pluggable configuration storage for Tenrankai admin"
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+
+# For Storage trait adapter
+tenrankai-storage.workspace = true
+
+# For file locking
+fs2 = "0.4"
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util", "macros"] }

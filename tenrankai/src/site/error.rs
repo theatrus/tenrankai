@@ -16,4 +16,7 @@ pub enum SiteBuilderError {
 
     #[error("Template error: {0}")]
     Template(String),
+
+    #[error("Config storage error: {0}")]
+    ConfigStorage(String),
 }

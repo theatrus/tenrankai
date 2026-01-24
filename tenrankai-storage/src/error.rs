@@ -28,6 +28,18 @@ pub enum StorageError {
     /// Generic storage error for backend-specific issues.
     #[error("Storage error: {0}")]
     Other(String),
+
+    /// Upload not found (for resumable uploads).
+    #[error("Upload not found: {0}")]
+    UploadNotFound(String),
+
+    /// Offset mismatch in chunked upload.
+    #[error("Offset mismatch: expected {expected}, got {actual}")]
+    OffsetMismatch { expected: u64, actual: u64 },
+
+    /// Upload has expired.
+    #[error("Upload expired: {0}")]
+    UploadExpired(String),
 }
 
 impl StorageError {
@@ -48,6 +60,18 @@ impl From<StorageError> for std::io::Error {
             StorageError::PreconditionFailed(msg) => {
                 std::io::Error::new(std::io::ErrorKind::AlreadyExists, msg)
             }
+            StorageError::UploadNotFound(id) => std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Upload not found: {}", id),
+            ),
+            StorageError::OffsetMismatch { expected, actual } => std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Offset mismatch: expected {}, got {}", expected, actual),
+            ),
+            StorageError::UploadExpired(id) => std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("Upload expired: {}", id),
+            ),
             StorageError::InvalidUrl(msg) | StorageError::Other(msg) => std::io::Error::other(msg),
         }
     }

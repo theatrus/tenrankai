@@ -1,11 +1,14 @@
 //! Filesystem storage backend implementation.
 
-use super::{ByteStream, ObjectMetadata, Storage, StorageEntry, StorageError};
+use super::{
+    ByteStream, ChunkedUpload, ObjectMetadata, Storage, StorageEntry, StorageError, UploadInfo,
+};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::StreamExt;
 use std::path::{Component, Path, PathBuf};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use std::time::{Duration, SystemTime};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::io::ReaderStream;
 
 /// Local filesystem storage backend.
@@ -169,6 +172,25 @@ impl Storage for FilesystemStorage {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(StorageError::NotFound(path.to_string()))
+            }
+            Err(e) => Err(StorageError::Io(e)),
+        }
+    }
+
+    async fn delete_directory(&self, path: &str) -> Result<(), StorageError> {
+        let full_path = self.resolve_path(path)?;
+        match tokio::fs::remove_dir(&full_path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Directory doesn't exist, that's fine
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                // Directory not empty, can't delete
+                Err(StorageError::Other(format!(
+                    "Directory not empty: {}",
+                    path
+                )))
             }
             Err(e) => Err(StorageError::Io(e)),
         }
@@ -369,5 +391,237 @@ impl Storage for FilesystemStorage {
         // Get the new ETag after write
         let new_meta = tokio::fs::metadata(&full_path).await?;
         Ok(Self::generate_etag(&new_meta))
+    }
+}
+
+// ============================================================================
+// Chunked Upload Implementation
+// ============================================================================
+
+const UPLOADS_DIR: &str = "__uploads";
+
+impl FilesystemStorage {
+    /// Get the uploads directory path.
+    fn uploads_dir(&self) -> PathBuf {
+        self.base_path.join(UPLOADS_DIR)
+    }
+
+    /// Get the metadata file path for an upload.
+    fn upload_meta_path(&self, upload_id: &str) -> PathBuf {
+        self.uploads_dir().join(format!("{}.json", upload_id))
+    }
+
+    /// Get the data file path for an upload.
+    fn upload_data_path(&self, upload_id: &str) -> PathBuf {
+        self.uploads_dir().join(format!("{}.data", upload_id))
+    }
+
+    /// Generate a unique upload ID.
+    fn generate_upload_id() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let random: u64 = rand_id();
+        format!("{:x}{:016x}", timestamp, random)
+    }
+
+    /// Load upload info from disk.
+    async fn load_upload_info(&self, upload_id: &str) -> Result<UploadInfo, StorageError> {
+        let meta_path = self.upload_meta_path(upload_id);
+        let content = tokio::fs::read_to_string(&meta_path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                StorageError::UploadNotFound(upload_id.to_string())
+            } else {
+                StorageError::Io(e)
+            }
+        })?;
+        serde_json::from_str(&content)
+            .map_err(|e| StorageError::Other(format!("Failed to parse upload info: {}", e)))
+    }
+
+    /// Save upload info to disk.
+    async fn save_upload_info(&self, info: &UploadInfo) -> Result<(), StorageError> {
+        let meta_path = self.upload_meta_path(&info.upload_id);
+        let content = serde_json::to_string_pretty(info)
+            .map_err(|e| StorageError::Other(format!("Failed to serialize upload info: {}", e)))?;
+        tokio::fs::write(&meta_path, content).await?;
+        Ok(())
+    }
+}
+
+/// Simple random ID generator (no external dependency).
+fn rand_id() -> u64 {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    RandomState::new().build_hasher().finish()
+}
+
+#[async_trait]
+impl ChunkedUpload for FilesystemStorage {
+    async fn create_upload(
+        &self,
+        path: &str,
+        total_size: u64,
+        metadata: Option<&str>,
+    ) -> Result<String, StorageError> {
+        // Ensure uploads directory exists
+        let uploads_dir = self.uploads_dir();
+        tokio::fs::create_dir_all(&uploads_dir).await?;
+
+        // Generate unique upload ID
+        let upload_id = Self::generate_upload_id();
+
+        // Create upload info
+        let info = UploadInfo {
+            upload_id: upload_id.clone(),
+            path: path.to_string(),
+            total_size,
+            current_offset: 0,
+            metadata: metadata.map(String::from),
+            created_at: SystemTime::now(),
+        };
+
+        // Save metadata
+        self.save_upload_info(&info).await?;
+
+        // Create empty data file
+        let data_path = self.upload_data_path(&upload_id);
+        tokio::fs::File::create(&data_path).await?;
+
+        Ok(upload_id)
+    }
+
+    async fn append_chunk(
+        &self,
+        upload_id: &str,
+        offset: u64,
+        data: Bytes,
+    ) -> Result<u64, StorageError> {
+        // Load current state
+        let mut info = self.load_upload_info(upload_id).await?;
+
+        // Verify offset matches
+        if offset != info.current_offset {
+            return Err(StorageError::OffsetMismatch {
+                expected: info.current_offset,
+                actual: offset,
+            });
+        }
+
+        // Append data to file
+        let data_path = self.upload_data_path(upload_id);
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(&data_path)
+            .await
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    StorageError::UploadNotFound(upload_id.to_string())
+                } else {
+                    StorageError::Io(e)
+                }
+            })?;
+
+        file.write_all(&data).await?;
+        file.flush().await?;
+
+        // Update offset
+        info.current_offset += data.len() as u64;
+        self.save_upload_info(&info).await?;
+
+        Ok(info.current_offset)
+    }
+
+    async fn get_upload_info(&self, upload_id: &str) -> Result<UploadInfo, StorageError> {
+        self.load_upload_info(upload_id).await
+    }
+
+    async fn complete_upload(&self, upload_id: &str) -> Result<(), StorageError> {
+        let info = self.load_upload_info(upload_id).await?;
+
+        // Verify upload is complete
+        if info.current_offset != info.total_size {
+            return Err(StorageError::Other(format!(
+                "Upload incomplete: {} of {} bytes",
+                info.current_offset, info.total_size
+            )));
+        }
+
+        // Move data file to final destination
+        let data_path = self.upload_data_path(upload_id);
+        let final_path = self.resolve_path(&info.path)?;
+
+        // Create parent directories if needed
+        if let Some(parent) = final_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        // Move the file
+        tokio::fs::rename(&data_path, &final_path).await?;
+
+        // Remove metadata file
+        let meta_path = self.upload_meta_path(upload_id);
+        let _ = tokio::fs::remove_file(&meta_path).await;
+
+        Ok(())
+    }
+
+    async fn terminate_upload(&self, upload_id: &str) -> Result<(), StorageError> {
+        // Remove data file
+        let data_path = self.upload_data_path(upload_id);
+        let _ = tokio::fs::remove_file(&data_path).await;
+
+        // Remove metadata file
+        let meta_path = self.upload_meta_path(upload_id);
+        let _ = tokio::fs::remove_file(&meta_path).await;
+
+        Ok(())
+    }
+
+    async fn list_uploads(&self) -> Result<Vec<UploadInfo>, StorageError> {
+        let uploads_dir = self.uploads_dir();
+
+        // If uploads dir doesn't exist, return empty list
+        if !uploads_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut uploads = Vec::new();
+        let mut read_dir = tokio::fs::read_dir(&uploads_dir).await?;
+
+        while let Some(entry) = read_dir.next_entry().await? {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json")
+                && let Some(stem) = path.file_stem()
+            {
+                let upload_id = stem.to_string_lossy().to_string();
+                if let Ok(info) = self.load_upload_info(&upload_id).await {
+                    uploads.push(info);
+                }
+            }
+        }
+
+        Ok(uploads)
+    }
+
+    async fn cleanup_expired_uploads(&self, max_age: Duration) -> Result<usize, StorageError> {
+        let uploads = self.list_uploads().await?;
+        let now = SystemTime::now();
+        let mut cleaned = 0;
+
+        for upload in uploads {
+            let age = now
+                .duration_since(upload.created_at)
+                .unwrap_or(Duration::ZERO);
+
+            if age > max_age && self.terminate_upload(&upload.upload_id).await.is_ok() {
+                cleaned += 1;
+            }
+        }
+
+        Ok(cleaned)
     }
 }

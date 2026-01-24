@@ -120,6 +120,7 @@ export interface BreadcrumbItem {
 
 export interface RolePermissions {
   can_view: boolean;
+  can_see_hidden: boolean;
   can_see_technical_details: boolean;
   can_see_exact_dates: boolean;
   can_see_location: boolean;
@@ -138,6 +139,7 @@ export interface RolePermissions {
   can_add_tags: boolean;
   can_edit_any_comments: boolean;
   can_delete_any_comments: boolean;
+  can_manage_images: boolean;
   can_use_zoom: boolean;
   can_use_tile_zoom: boolean;
   can_analyze_images: boolean;
@@ -166,6 +168,8 @@ export interface ImageDetailData {
   next_images: NavigationImage[];
   permissions: RolePermissions;
   tile_config?: TileConfig;
+  /** Whether this image is hidden (only set for users who can see hidden images) */
+  is_hidden?: boolean;
 }
 
 export interface GalleryItem {
@@ -185,6 +189,7 @@ export interface GalleryItem {
 }
 
 export interface GalleryData {
+  site_name: string;
   gallery_name: string;
   gallery_path: string;
   is_root: boolean;
@@ -198,6 +203,8 @@ export interface GalleryData {
   /** Raw markdown for folder description (for editing) */
   folder_description_markdown?: string;
   permissions: RolePermissions;
+  /** List of hidden image filenames in this folder */
+  hidden_images?: string[];
 }
 
 export interface ApiError {

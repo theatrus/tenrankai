@@ -9,6 +9,8 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_view: bool,
     #[serde(default)]
+    pub can_see_hidden: bool,
+    #[serde(default)]
     pub can_see_technical_details: bool,
     #[serde(default)]
     pub can_see_exact_dates: bool,
@@ -53,6 +55,10 @@ pub struct RolePermissions {
     #[serde(default)]
     pub can_delete_any_comments: bool,
 
+    // Image management permissions
+    #[serde(default)]
+    pub can_manage_images: bool, // Move, copy, hide, delete images
+
     // Interactive permissions
     #[serde(default)]
     pub can_use_zoom: bool,
@@ -90,6 +96,7 @@ impl RolePermissions {
     /// Most permissive wins
     pub fn merge(&mut self, other: &RolePermissions) {
         self.can_view |= other.can_view;
+        self.can_see_hidden |= other.can_see_hidden;
         self.can_see_technical_details |= other.can_see_technical_details;
         self.can_see_exact_dates |= other.can_see_exact_dates;
         self.can_see_location |= other.can_see_location;
@@ -113,6 +120,8 @@ impl RolePermissions {
         self.can_edit_any_comments |= other.can_edit_any_comments;
         self.can_delete_any_comments |= other.can_delete_any_comments;
 
+        self.can_manage_images |= other.can_manage_images;
+
         self.can_use_zoom |= other.can_use_zoom;
         self.can_use_tile_zoom |= other.can_use_tile_zoom;
 
@@ -132,6 +141,7 @@ impl RolePermissions {
     pub fn apply_owner_override(&mut self) {
         if self.owner_access {
             self.can_view = true;
+            self.can_see_hidden = true;
             self.can_see_technical_details = true;
             self.can_see_exact_dates = true;
             self.can_see_location = true;
@@ -154,6 +164,8 @@ impl RolePermissions {
 
             self.can_edit_any_comments = true;
             self.can_delete_any_comments = true;
+
+            self.can_manage_images = true;
 
             self.can_use_zoom = true;
             self.can_use_tile_zoom = true;
@@ -211,6 +223,10 @@ impl UserRole {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionConfig {
+    /// Site-level administrators (bypass gallery permission checks for admin access)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub site_admins: Vec<String>,
+
     /// Role assigned to unauthenticated users
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_role: Option<String>,

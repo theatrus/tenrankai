@@ -39,6 +39,7 @@ WORKDIR /app
 # Copy workspace manifests and all crate Cargo.toml files first (for caching)
 COPY Cargo.toml Cargo.lock ./
 COPY tenrankai/Cargo.toml ./tenrankai/
+COPY tenrankai-config-storage/Cargo.toml ./tenrankai-config-storage/
 COPY tenrankai-email/Cargo.toml ./tenrankai-email/
 COPY tenrankai-image/Cargo.toml ./tenrankai-image/
 COPY tenrankai-metadata/Cargo.toml ./tenrankai-metadata/
@@ -48,6 +49,7 @@ COPY tenrankai-users/Cargo.toml ./tenrankai-users/
 # Copy all Rust source files
 COPY tenrankai/src ./tenrankai/src
 COPY tenrankai/build.rs ./tenrankai/
+COPY tenrankai-config-storage/src ./tenrankai-config-storage/src
 COPY tenrankai-email/src ./tenrankai-email/src
 COPY tenrankai-image/src ./tenrankai-image/src
 COPY tenrankai-metadata/src ./tenrankai-metadata/src

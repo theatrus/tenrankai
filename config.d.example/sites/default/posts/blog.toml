@@ -1,0 +1,20 @@
+# Blog Posts Configuration
+#
+# Paths are relative to the site's storage_prefix
+
+name = "blog"
+url_prefix = "/blog"
+
+# Path relative to storage_prefix (/data/sites/default)
+# Resolved to: /data/sites/default/posts/blog
+source_directory = "posts/blog"
+
+# Templates
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+
+# Display settings
+posts_per_page = 20
+
+# Optional: Refresh interval (minutes)
+# refresh_interval_minutes = 15

@@ -1,0 +1,451 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use crate::permissions::types::RolePermissions;
+
+/// Format bytes as human-readable size (KiB, MiB, GiB, TiB)
+pub fn format_size(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    const TIB: u64 = GIB * 1024;
+
+    if bytes >= TIB {
+        format!("{:.2} TiB", bytes as f64 / TIB as f64)
+    } else if bytes >= GIB {
+        format!("{:.2} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.2} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.2} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserInfo {
+    pub username: String,
+    pub email: String,
+    pub passkey_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserListResponse {
+    pub users: Vec<UserInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub email: String,
+    #[serde(default)]
+    pub send_invite: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RolePermissionsDto {
+    #[serde(default)]
+    pub can_view: bool,
+    #[serde(default)]
+    pub can_see_hidden: bool,
+    #[serde(default)]
+    pub can_see_technical_details: bool,
+    #[serde(default)]
+    pub can_see_exact_dates: bool,
+    #[serde(default)]
+    pub can_see_location: bool,
+    #[serde(default)]
+    pub can_download_medium: bool,
+    #[serde(default)]
+    pub can_download_large: bool,
+    #[serde(default)]
+    pub can_download_original: bool,
+    #[serde(default)]
+    pub can_download_gallery: bool,
+    #[serde(default)]
+    pub can_download_raw: bool,
+    #[serde(default)]
+    pub can_see_versions: bool,
+    #[serde(default)]
+    pub can_read_metadata: bool,
+    #[serde(default)]
+    pub can_edit_content: bool,
+    #[serde(default)]
+    pub can_add_comments: bool,
+    #[serde(default)]
+    pub can_edit_own_comments: bool,
+    #[serde(default)]
+    pub can_delete_own_comments: bool,
+    #[serde(default)]
+    pub can_edit_any_comments: bool,
+    #[serde(default)]
+    pub can_delete_any_comments: bool,
+    #[serde(default)]
+    pub can_manage_images: bool,
+    #[serde(default)]
+    pub can_set_picks: bool,
+    #[serde(default)]
+    pub can_add_tags: bool,
+    #[serde(default)]
+    pub can_use_zoom: bool,
+    #[serde(default)]
+    pub can_use_tile_zoom: bool,
+    #[serde(default)]
+    pub can_analyze_images: bool,
+    #[serde(default)]
+    pub can_see_ai_analysis: bool,
+    #[serde(default)]
+    pub can_see_ai_alt_text: bool,
+    #[serde(default)]
+    pub owner_access: bool,
+}
+
+impl From<&RolePermissions> for RolePermissionsDto {
+    fn from(perms: &RolePermissions) -> Self {
+        Self {
+            can_view: perms.can_view,
+            can_see_hidden: perms.can_see_hidden,
+            can_see_technical_details: perms.can_see_technical_details,
+            can_see_exact_dates: perms.can_see_exact_dates,
+            can_see_location: perms.can_see_location,
+            can_download_medium: perms.can_download_medium,
+            can_download_large: perms.can_download_large,
+            can_download_original: perms.can_download_original,
+            can_download_gallery: perms.can_download_gallery,
+            can_download_raw: perms.can_download_raw,
+            can_see_versions: perms.can_see_versions,
+            can_read_metadata: perms.can_read_metadata,
+            can_edit_content: perms.can_edit_content,
+            can_add_comments: perms.can_add_comments,
+            can_edit_own_comments: perms.can_edit_own_comments,
+            can_delete_own_comments: perms.can_delete_own_comments,
+            can_edit_any_comments: perms.can_edit_any_comments,
+            can_delete_any_comments: perms.can_delete_any_comments,
+            can_manage_images: perms.can_manage_images,
+            can_set_picks: perms.can_set_picks,
+            can_add_tags: perms.can_add_tags,
+            can_use_zoom: perms.can_use_zoom,
+            can_use_tile_zoom: perms.can_use_tile_zoom,
+            can_analyze_images: perms.can_analyze_images,
+            can_see_ai_analysis: perms.can_see_ai_analysis,
+            can_see_ai_alt_text: perms.can_see_ai_alt_text,
+            owner_access: perms.owner_access,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleDto {
+    pub name: String,
+    pub permissions: RolePermissionsDto,
+    pub inherits: Option<String>,
+    #[serde(default)]
+    pub is_builtin: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RoleListResponse {
+    pub roles: Vec<RoleDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserRoleAssignment {
+    pub username: String,
+    pub roles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionConfigDto {
+    #[serde(default)]
+    pub site_admins: Vec<String>,
+    pub public_role: Option<String>,
+    pub default_authenticated_role: Option<String>,
+    pub roles: HashMap<String, RoleDto>,
+    pub user_roles: Vec<UserRoleAssignment>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GalleryInfo {
+    pub name: String,
+    pub url_prefix: String,
+    pub permissions: PermissionConfigDto,
+    pub image_count: usize,
+    pub total_size: u64,
+    pub total_size_formatted: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GalleryListResponse {
+    pub galleries: Vec<GalleryInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PermissionGroup {
+    pub name: String,
+    pub description: String,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PermissionGroupsResponse {
+    pub groups: Vec<PermissionGroup>,
+}
+
+// ============================================================================
+// Request Types for Config Storage Operations
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRoleRequest {
+    pub name: String,
+    pub permissions: RolePermissionsDto,
+    pub inherits: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRoleRequest {
+    pub permissions: RolePermissionsDto,
+    pub inherits: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateGalleryPermissionsRequest {
+    #[serde(default)]
+    pub site_admins: Vec<String>,
+    pub public_role: Option<String>,
+    pub default_authenticated_role: Option<String>,
+    #[serde(default)]
+    pub roles: HashMap<String, RoleDto>,
+    #[serde(default)]
+    pub user_roles: Vec<UserRoleAssignment>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignUserRolesRequest {
+    pub roles: Vec<String>,
+}
+
+// ============================================================================
+// Site Management Types
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct SiteInfo {
+    pub name: String,
+    pub hostnames: Vec<String>,
+    pub base_url: Option<String>,
+    pub templates: Vec<String>,
+    pub static_files: Vec<String>,
+    pub static_use_redirects: bool,
+    pub user_database: Option<String>,
+    pub storage_prefix: Option<String>,
+    pub cache_prefix: Option<String>,
+    pub gallery_count: usize,
+    pub posts_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SiteListResponse {
+    pub sites: Vec<SiteInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSiteRequest {
+    pub hostnames: Option<Vec<String>>,
+    pub base_url: Option<String>,
+    pub templates: Option<Vec<String>>,
+    pub static_files: Option<Vec<String>>,
+    pub static_use_redirects: Option<bool>,
+    pub user_database: Option<String>,
+    // NOTE: storage_prefix is intentionally NOT included - cannot be edited via API
+}
+
+#[derive(Debug, Serialize)]
+pub struct SiteGalleryInfo {
+    pub name: String,
+    pub url_prefix: String,
+    pub source_directory: String,
+    pub cache_directory: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SiteGalleryListResponse {
+    pub galleries: Vec<SiteGalleryInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGalleryRequest {
+    pub name: String,
+    pub url_prefix: String,
+    pub source_directory: String,
+    pub cache_directory: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateGalleryRequest {
+    pub url_prefix: Option<String>,
+    pub source_directory: Option<String>,
+    pub cache_directory: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReloadSiteResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+// ============================================================================
+// Folder Management Types
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct FolderInfo {
+    pub path: String,
+    pub name: String,
+    pub has_custom_permissions: bool,
+    pub image_count: usize,
+    pub size: u64,
+    pub size_formatted: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderListResponse {
+    pub folders: Vec<FolderInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FolderPermissionsResponse {
+    pub hidden: bool,
+    #[serde(default)]
+    pub hidden_images: Vec<String>,
+    pub permissions: PermissionConfigDto,
+    pub description: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFolderPermissionsRequest {
+    pub hidden: bool,
+    #[serde(default)]
+    pub hidden_images: Vec<String>,
+    pub permissions: PermissionConfigDto,
+    pub description: String,
+}
+
+// ============================================================================
+// Folder Sharing Types
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct ShareFolderRequest {
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShareFolderResponse {
+    pub success: bool,
+    pub message: String,
+    pub user_created: bool,
+}
+
+// ============================================================================
+// Image Management Types
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteImagesRequest {
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteImagesResponse {
+    pub success: bool,
+    pub deleted_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HideImagesRequest {
+    pub paths: Vec<String>,
+    pub hide: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HideImagesResponse {
+    pub success: bool,
+    pub hidden_images: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateFolderRequest {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateFolderResponse {
+    pub success: bool,
+    pub folder_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MoveImagesRequest {
+    pub paths: Vec<String>,
+    pub target_folder: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MoveImagesResponse {
+    pub success: bool,
+    pub moved_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CopyImagesRequest {
+    pub paths: Vec<String>,
+    pub target_folder: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CopyImagesResponse {
+    pub success: bool,
+    pub copied_count: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderImageInfo {
+    pub url_id: String,
+    pub filename: String,
+    pub thumbnail_url: String,
+    pub is_hidden: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderImagesResponse {
+    pub images: Vec<FolderImageInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameFolderRequest {
+    pub new_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RenameFolderResponse {
+    pub success: bool,
+    pub new_path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteFolderResponse {
+    pub success: bool,
+    pub message: String,
+}

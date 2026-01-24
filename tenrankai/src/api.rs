@@ -105,9 +105,9 @@ pub fn is_https_request(headers: &HeaderMap) -> bool {
         return false;
     }
 
-    // Default to HTTPS when no proxy headers present
-    // Most production deployments use HTTPS behind a reverse proxy
-    true
+    // Default to HTTP when no proxy headers present
+    // Production deployments behind HTTPS reverse proxies should set X-Forwarded-Proto
+    false
 }
 
 #[derive(Deserialize)]
@@ -122,19 +122,20 @@ pub struct GalleryPreviewResponse {
 
 #[derive(Serialize, Debug)]
 pub struct GalleryApiResponse {
+    pub site_name: String,
     pub gallery_name: String,
     pub gallery_path: String,
     pub is_root: bool,
     pub breadcrumbs: Vec<crate::gallery::BreadcrumbItem>,
     pub directories: Vec<crate::gallery::GalleryItem>,
     pub images: Vec<crate::gallery::GalleryItem>,
-    pub page: usize,
-    pub total_pages: usize,
     pub folder_title: Option<String>,
     pub folder_description: Option<String>,
     /// Raw markdown for folder description (for editing)
     pub folder_description_markdown: Option<String>,
     pub permissions: crate::permissions::RolePermissions,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hidden_images: Vec<String>,
 }
 
 /// Maximum number of navigation images to include in each direction
@@ -153,6 +154,9 @@ pub struct ImageDetailApiResponse {
     pub next_images: Vec<crate::gallery::NavigationImage>,
     pub permissions: crate::permissions::RolePermissions,
     pub tile_config: Option<TileConfigInfo>,
+    /// Whether this image is hidden (only set for users who can see hidden images)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_hidden: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -217,13 +221,10 @@ pub async fn gallery_composite_preview_handler_for_named(
 
     // Not in cache, need to generate it
     // List directory to get images
-    let (_, images, _) = gallery
-        .list_directory(&gallery_path, 0)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to list directory: {}", e);
-            StatusCode::NOT_FOUND
-        })?;
+    let (_, images) = gallery.list_directory(&gallery_path).await.map_err(|e| {
+        tracing::error!("Failed to list directory: {}", e);
+        StatusCode::NOT_FOUND
+    })?;
 
     // Take up to 4 images for a 2x2 grid
     let preview_images: Vec<_> = images.into_iter().take(4).collect();
@@ -286,7 +287,7 @@ pub async fn refresh_static_versions(
 pub async fn gallery_api_handler_for_named(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
-    Query(query): Query<crate::gallery::GalleryQuery>,
+    Query(_query): Query<crate::gallery::GalleryQuery>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Json<GalleryApiResponse>, StatusCode> {
     let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
@@ -314,9 +315,8 @@ pub async fn gallery_api_handler_for_named(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let page = query.page.unwrap_or(0);
-    let (directories, images, total_pages) = gallery
-        .list_directory_with_user(&path, page, auth.username())
+    let (directories, images) = gallery
+        .list_directory_with_user(&path, auth.username())
         .await
         .map_err(|e| {
             error!("Failed to list directory: {}", e);
@@ -348,19 +348,49 @@ pub async fn gallery_api_handler_for_named(
         }
     };
 
+    // Get hidden_images from folder metadata (only include if user has can_see_hidden permission)
+    // Translate filenames to URL IDs so frontend can match them against image URLs
+    let hidden_images = if user_permissions.permissions.can_see_hidden {
+        let filenames = gallery
+            .read_folder_metadata_full(&path)
+            .await
+            .map(|m| m.config.hidden_images)
+            .unwrap_or_default();
+
+        // Translate filenames to URL IDs
+        let indexer = gallery.image_indexer.read().await;
+        filenames
+            .into_iter()
+            .filter_map(|filename| {
+                // Construct full path
+                let full_path = if path.is_empty() {
+                    filename.clone()
+                } else {
+                    format!("{}/{}", path, filename)
+                };
+                // Get URL ID from indexer and extract just the ID part
+                indexer
+                    .get_index(&full_path)
+                    .map(|url_path| url_path.rsplit('/').next().unwrap_or(url_path).to_string())
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     Ok(Json(GalleryApiResponse {
+        site_name: app_state.site.name.clone(),
         gallery_name,
         gallery_path: path,
         is_root,
         breadcrumbs,
         directories,
         images,
-        page,
-        total_pages,
         folder_title,
         folder_description,
         folder_description_markdown,
         permissions: user_permissions.permissions,
+        hidden_images,
     }))
 }
 
@@ -431,6 +461,20 @@ pub async fn image_detail_api_handler_for_named(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    // Check if this is a hidden image that the user can't see
+    if !user_permissions.permissions.can_see_hidden {
+        let folder_metadata = gallery.read_folder_metadata_full(parent_path).await;
+        if let Some(meta) = folder_metadata {
+            let hidden_images = &meta.config.hidden_images;
+            if !hidden_images.is_empty() {
+                let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+                if hidden_images.contains(&filename.to_string()) {
+                    return Err(StatusCode::NOT_FOUND);
+                }
+            }
+        }
+    }
+
     // Get image info (this function already handles authentication logic internally)
     let mut image_info = gallery
         .get_image_info_with_user(&resolved_path, auth.username())
@@ -484,8 +528,9 @@ pub async fn image_detail_api_handler_for_named(
     }
 
     // Get all images in the parent directory for navigation
-    let (_, images, _) = gallery
-        .list_directory(parent_path, 0)
+    // Use list_directory_with_user to filter hidden images based on user permissions
+    let (_, images) = gallery
+        .list_directory_with_user(parent_path, auth.username())
         .await
         .unwrap_or_default();
 
@@ -625,6 +670,19 @@ pub async fn image_detail_api_handler_for_named(
         None
     };
 
+    // Check if image is hidden (only relevant for users who can see hidden)
+    let is_hidden = if user_permissions.permissions.can_see_hidden {
+        let folder_metadata = gallery.read_folder_metadata_full(parent_path).await;
+        folder_metadata
+            .map(|meta| {
+                let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+                meta.config.hidden_images.contains(&filename.to_string())
+            })
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
     Ok(Json(ImageDetailApiResponse {
         gallery_name,
         image: image_info,
@@ -635,6 +693,7 @@ pub async fn image_detail_api_handler_for_named(
         next_images,
         permissions: user_permissions.permissions,
         tile_config,
+        is_hidden,
     }))
 }
 
@@ -1671,7 +1730,7 @@ pub async fn analyze_folder_handler(
     }
 
     // List images in the folder
-    let (_, images, _) = match gallery.list_directory(&folder_path, 0).await {
+    let (_, images) = match gallery.list_directory(&folder_path).await {
         Ok(result) => result,
         Err(e) => {
             error!("Failed to list directory: {}", e);
@@ -1962,6 +2021,11 @@ pub async fn update_folder_description_handler(
                     .as_ref()
                     .map(|m| m.config.hidden)
                     .unwrap_or(false),
+                hidden_images: cached_entry
+                    .metadata
+                    .as_ref()
+                    .map(|m| m.config.hidden_images.clone())
+                    .unwrap_or_default(),
                 permissions: cached_entry
                     .metadata
                     .as_ref()
@@ -2142,7 +2206,7 @@ mod tests {
     use super::*;
     use crate::storage::FilesystemStorage;
     use crate::user_storage::UserStorage;
-    use crate::{AppState, Config, GallerySystemConfig, api_response::short_cache_headers};
+    use crate::{AppState, GallerySystemConfig, api_response::short_cache_headers};
     use axum::http::{HeaderMap, HeaderValue};
     use std::{collections::HashMap, sync::Arc};
     use tempfile::TempDir;
@@ -2251,7 +2315,6 @@ roles = ["viewer"]
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "test.html".to_string(),
             image_detail_template: "test.html".to_string(),
-            images_per_page: 50,
             jpeg_quality: Some(85),
             webp_quality: Some(85.0),
             new_threshold_days: Some(7),
@@ -2297,45 +2360,12 @@ roles = ["viewer"]
         let mut galleries = HashMap::new();
         galleries.insert("test".to_string(), gallery);
 
-        let config = Config {
-            app: crate::AppConfig {
-                name: "Test".to_string(),
-                base_url: Some("http://test.com".to_string()),
-                user_database: Some("users.toml".into()),
-                cookie_secret: "test-secret".to_string(),
-                log_level: crate::LogLevel::Info,
-                aws_log_level: crate::LogLevel::Warn,
-            },
-            server: crate::ServerConfig {
-                host: "127.0.0.1".to_string(),
-                port: 3000,
-            },
-            static_files: crate::StaticConfig {
-                directories: vec!["static".into()],
-                use_redirects: false,
-            },
-            templates: crate::TemplateConfig {
-                directories: vec!["templates".into()],
-            },
-            galleries: Some(vec![]),
-            posts: None,
-            email: None,
-            openai: None,
-        };
-
-        // Convert static directory strings to PathBufs for testing
-        let static_paths: Vec<std::path::PathBuf> = config
-            .static_files
-            .directories
-            .iter()
-            .map(std::path::PathBuf::from)
-            .collect();
+        // Create static handler for testing
+        let static_paths: Vec<std::path::PathBuf> = vec!["static".into()];
         let static_handler = crate::static_files::StaticFileHandler::from_paths(static_paths);
 
         // Convert template directories to storage backends
-        let template_storages: Vec<crate::storage::DynStorage> = config
-            .templates
-            .directories
+        let template_storages: Vec<crate::storage::DynStorage> = vec!["templates"]
             .iter()
             .map(|dir| {
                 Arc::new(crate::storage::FilesystemStorage::new(
@@ -2372,6 +2402,9 @@ roles = ["viewer"]
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_storage,
             email_config: None,
+            config_storage: None,
+            config_storage_url: None,
+            site_admins: Vec::new(),
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);
@@ -2382,7 +2415,7 @@ roles = ["viewer"]
             email_provider: None,
             webauthn: None,
             openai_client: None,
-            config,
+            cache_queue: None,
         };
 
         (app_state, temp_dir)

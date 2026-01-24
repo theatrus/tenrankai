@@ -107,6 +107,40 @@ impl Gallery {
             cached.images.iter().map(|s| s.as_str()).collect()
         };
 
+        // Get hidden images list and check user permissions
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
+
+        let can_see_hidden = if !hidden_images.is_empty() {
+            // Only resolve permissions if there are hidden images
+            let folder_metadata = cached.metadata.as_ref();
+            let resolver = crate::permissions::PermissionResolver::new(
+                &self.config.permissions,
+                folder_metadata.map(|m| &m.config.permissions),
+            );
+            let permissions = resolver.resolve_user_permissions(user).unwrap_or_default();
+            permissions.can_see_hidden
+        } else {
+            false // No hidden images, permission doesn't matter
+        };
+
+        // Filter out hidden images if user doesn't have permission
+        let image_paths: Vec<&str> = if !hidden_images.is_empty() && !can_see_hidden {
+            image_paths
+                .into_iter()
+                .filter(|path| {
+                    // Extract just the filename from the path
+                    let filename = path.rsplit('/').next().unwrap_or(path);
+                    !hidden_images.contains(&filename.to_string())
+                })
+                .collect()
+        } else {
+            image_paths
+        };
+
         for image_path in image_paths {
             // Get the indexed identifier for this image
             let url_identifier = self.build_url_identifier(image_path).await;
@@ -217,17 +251,15 @@ impl Gallery {
     pub async fn list_directory(
         &self,
         path: &str,
-        page: usize,
-    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
-        self.list_directory_with_user(path, page, None).await
+    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>), GalleryError> {
+        self.list_directory_with_user(path, None).await
     }
 
     pub async fn list_directory_with_user(
         &self,
         path: &str,
-        page: usize,
         user: Option<&str>,
-    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
+    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>), GalleryError> {
         let items = self.scan_directory_with_user(path, user).await?;
 
         // Separate directories and images
@@ -241,31 +273,7 @@ impl Gallery {
             path
         );
 
-        // Calculate pagination for images
-        let total_images = images.len();
-        let total_pages = total_images.div_ceil(self.config.images_per_page);
-        let total_pages = total_pages.max(1); // At least 1 page
-
-        let start = page * self.config.images_per_page;
-        let end = ((page + 1) * self.config.images_per_page).min(total_images);
-
-        let paginated_images = if start < total_images {
-            images[start..end].to_vec()
-        } else {
-            Vec::new()
-        };
-
-        debug!(
-            "Pagination: page={}, start={}, end={}, total_images={}, returning {} paginated images",
-            page,
-            start,
-            end,
-            total_images,
-            paginated_images.len()
-        );
-
-        // Return all directories and paginated images
-        Ok((directories, paginated_images, total_pages))
+        Ok((directories, images))
     }
 
     pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, GalleryError> {
@@ -432,6 +440,7 @@ impl Gallery {
                 // On error, use most restrictive permissions
                 crate::permissions::RolePermissions {
                     can_view: true, // They can view if they got this far
+                    can_see_hidden: false,
                     can_see_location: false,
                     can_see_technical_details: false,
                     can_see_exact_dates: false,
@@ -450,6 +459,7 @@ impl Gallery {
                     can_add_tags: false,
                     can_edit_any_comments: false,
                     can_delete_any_comments: false,
+                    can_manage_images: false,
                     can_use_zoom: false,
                     can_use_tile_zoom: false,
                     can_analyze_images: false,
@@ -730,6 +740,7 @@ impl Gallery {
                 Some(super::FolderMetadata {
                     config: super::FolderConfig {
                         hidden: false,
+                        hidden_images: vec![],
                         permissions: Default::default(),
                     },
                     description_markdown: content,

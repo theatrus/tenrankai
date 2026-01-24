@@ -1,9 +1,142 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GalleryWithFilter } from '@components/Gallery/GalleryWithFilter';
 import { EditModal } from '../components/Editor/index.ts';
+import { UploadModal, NewDropdown } from '../components/Upload/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
-import type { GalleryData } from '../types/index.ts';
+import { galleryManageApi } from '../api/gallery-manage.ts';
+import type { GalleryData, GalleryItem } from '../types/index.ts';
+
+interface GalleryPageProps {
+  galleryData: GalleryData;
+  images: GalleryItem[];
+  galleryUrl: string;
+  filterMount: HTMLElement | null;
+  toolbarMount: HTMLElement | null;
+  manageButton: HTMLElement | null;
+}
+
+const GalleryPage: React.FC<GalleryPageProps> = ({
+  galleryData,
+  images: initialImages,
+  galleryUrl,
+  filterMount,
+  toolbarMount,
+  manageButton,
+}) => {
+  const [images, setImages] = useState(initialImages);
+  const [hiddenImages, setHiddenImages] = useState<string[]>(galleryData.hidden_images || []);
+  const [isManageMode, setIsManageMode] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+
+  const canManageImages = galleryData.permissions?.can_manage_images;
+
+  // Wire up the manage button click
+  useEffect(() => {
+    if (!manageButton || !canManageImages) return;
+
+    const handleClick = () => {
+      if (isManageMode) {
+        setIsManageMode(false);
+        setSelectedImages(new Set());
+        manageButton.textContent = 'Edit';
+        manageButton.classList.remove('active');
+      } else {
+        setIsManageMode(true);
+        manageButton.textContent = 'Cancel';
+        manageButton.classList.add('active');
+      }
+    };
+
+    manageButton.addEventListener('click', handleClick);
+    return () => manageButton.removeEventListener('click', handleClick);
+  }, [manageButton, canManageImages, isManageMode]);
+
+  const handleToggleSelect = useCallback((path: string) => {
+    setSelectedImages((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleHideSuccess = useCallback((newHiddenImages: string[]) => {
+    setHiddenImages(newHiddenImages);
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Edit';
+      manageButton.classList.remove('active');
+    }
+  }, [manageButton]);
+
+  const handleDeleteSuccess = useCallback((deletedPaths: string[]) => {
+    setImages((prev) => prev.filter((img) => !deletedPaths.includes(img.path)));
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Edit';
+      manageButton.classList.remove('active');
+    }
+  }, [manageButton]);
+
+  const handleCancelManage = useCallback(() => {
+    setIsManageMode(false);
+    setSelectedImages(new Set());
+    if (manageButton) {
+      manageButton.textContent = 'Edit';
+      manageButton.classList.remove('active');
+    }
+  }, [manageButton]);
+
+  const handleMoveSuccess = useCallback((movedCount: number) => {
+    // Remove moved images from the current view
+    setImages((prev) => prev.filter((img) => !selectedImages.has(img.path)));
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Edit';
+      manageButton.classList.remove('active');
+    }
+    alert(`Successfully moved ${movedCount} image(s)`);
+  }, [manageButton, selectedImages]);
+
+  const handleCopySuccess = useCallback((copiedCount: number) => {
+    // Images stay in current view after copy
+    setSelectedImages(new Set());
+    setIsManageMode(false);
+    if (manageButton) {
+      manageButton.textContent = 'Edit';
+      manageButton.classList.remove('active');
+    }
+    alert(`Successfully copied ${copiedCount} image(s)`);
+  }, [manageButton]);
+
+  return (
+    <GalleryWithFilter
+      images={images}
+      galleryUrl={galleryUrl}
+      permissions={galleryData.permissions}
+      filterMount={filterMount}
+      galleryName={galleryData.gallery_name}
+      galleryPath={galleryData.gallery_path}
+      hiddenImages={hiddenImages}
+      isManageMode={isManageMode}
+      selectedImages={selectedImages}
+      onToggleSelect={handleToggleSelect}
+      onHideSuccess={handleHideSuccess}
+      onDeleteSuccess={handleDeleteSuccess}
+      onMoveSuccess={handleMoveSuccess}
+      onCopySuccess={handleCopySuccess}
+      onCancelManage={handleCancelManage}
+      toolbarMount={toolbarMount}
+    />
+  );
+};
 
 // Mount React masonry gallery on server-rendered page
 document.addEventListener('DOMContentLoaded', () => {
@@ -12,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const imagesDataElement = document.getElementById('gallery-images');
 
   let galleryData: GalleryData | null = null;
-  let images: any[] = [];
+  let images: GalleryItem[] = [];
 
   // Try to parse the full gallery data
   if (galleryDataElement) {
@@ -38,6 +171,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Always mount folder description editor (works even without images)
   mountFolderDescriptionEditor(galleryData);
 
+  // Always set up the "+ New" dropdown (replaces old "+ Folder" button)
+  mountNewDropdown(galleryData);
+
+  // Always set up delete folder button (only shows for empty folders)
+  mountDeleteFolderButton();
+
   // Only mount gallery grid if there are images
   if (!images.length) {
     return;
@@ -56,8 +195,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // Find the filter mount point
+  // Find mount points
   const filterMount = document.getElementById('gallery-filter-mount');
+  const manageButton = document.getElementById('manage-images-btn');
+
+  // Create toolbar mount point if owner access
+  let toolbarMount: HTMLElement | null = null;
+  if (galleryData?.permissions?.owner_access) {
+    toolbarMount = document.getElementById('manage-toolbar-mount');
+    if (!toolbarMount) {
+      toolbarMount = document.createElement('div');
+      toolbarMount.id = 'manage-toolbar-mount';
+      document.body.appendChild(toolbarMount);
+    }
+  }
 
   // Clear existing content (remove the static grid)
   galleryImages.innerHTML = '';
@@ -65,14 +216,148 @@ document.addEventListener('DOMContentLoaded', () => {
   // Mount React component
   const root = createRoot(galleryImages);
   root.render(
-    <GalleryWithFilter
+    <GalleryPage
+      galleryData={galleryData!}
       images={images}
       galleryUrl={galleryUrl}
-      permissions={galleryData?.permissions}
       filterMount={filterMount}
+      toolbarMount={toolbarMount}
+      manageButton={manageButton}
     />
   );
 });
+
+interface CreateFolderModalProps {
+  galleryName: string;
+  parentFolder: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
+  galleryName,
+  parentFolder,
+  onSuccess,
+  onClose,
+}) => {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setIsCreating(true);
+    setError(null);
+    try {
+      await galleryManageApi.createFolder(galleryName, parentFolder, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create folder');
+      setIsCreating(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ textAlign: 'left', maxWidth: '400px' }}>
+        <h3 style={{ marginBottom: '1rem' }}>Create Folder</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Parent Folder
+            </label>
+            <input
+              type="text"
+              value={parentFolder || '(root)'}
+              disabled
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                background: '#f5f5f5',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Folder Name *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="new-folder"
+              pattern="[a-zA-Z0-9_\- ]+"
+              title="Only letters, numbers, hyphens, underscores, and spaces"
+              required
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <small style={{ color: '#666', fontSize: '12px' }}>
+              Letters, numbers, hyphens, underscores, and spaces only
+            </small>
+          </div>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Description (optional)
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Optional description for this folder..."
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                resize: 'vertical',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+          {error && (
+            <div style={{
+              color: '#dc3545',
+              background: '#ffe0e0',
+              padding: '8px',
+              borderRadius: '4px',
+              marginBottom: '1rem'
+            }}>
+              {error}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isCreating || !name.trim()}
+            >
+              {isCreating ? 'Creating...' : 'Create Folder'}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 interface FolderEditorProps {
   galleryName: string;
@@ -209,4 +494,185 @@ function mountFolderDescriptionEditor(galleryData: GalleryData | null) {
       canEdit={canEdit}
     />
   );
+}
+
+/**
+ * Mount the "New" dropdown with Upload and New Folder options
+ * This replaces the old "+ Folder" button with a dropdown
+ */
+function mountNewDropdown(galleryData: GalleryData | null) {
+  // Look for either the new mount point or fall back to old button
+  let dropdownMount = document.getElementById('new-dropdown-mount');
+  const legacyButton = document.getElementById('create-folder-btn');
+
+  if (!galleryData) return;
+
+  // If there's no mount point but there's a legacy button, replace it
+  if (!dropdownMount && legacyButton) {
+    dropdownMount = document.createElement('div');
+    dropdownMount.id = 'new-dropdown-mount';
+    dropdownMount.style.display = 'inline-block';
+    legacyButton.parentNode?.replaceChild(dropdownMount, legacyButton);
+  }
+
+  if (!dropdownMount) return;
+
+  const galleryName = galleryData.gallery_name;
+  const galleryPath = galleryData.gallery_path;
+
+  // Create a stateful wrapper component
+  const NewDropdownWrapper: React.FC = () => {
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [showFolderModal, setShowFolderModal] = useState(false);
+
+    const handleUploadSuccess = useCallback(() => {
+      setShowUploadModal(false);
+      window.location.reload();
+    }, []);
+
+    const handleFolderSuccess = useCallback(() => {
+      setShowFolderModal(false);
+      window.location.reload();
+    }, []);
+
+    return (
+      <>
+        <NewDropdown
+          onUpload={() => setShowUploadModal(true)}
+          onNewFolder={() => setShowFolderModal(true)}
+        />
+        {showUploadModal && (
+          <UploadModal
+            galleryName={galleryName}
+            folderPath={galleryPath}
+            onClose={() => setShowUploadModal(false)}
+            onSuccess={handleUploadSuccess}
+          />
+        )}
+        {showFolderModal && (
+          <CreateFolderModal
+            galleryName={galleryName}
+            parentFolder={galleryPath}
+            onSuccess={handleFolderSuccess}
+            onClose={() => setShowFolderModal(false)}
+          />
+        )}
+      </>
+    );
+  };
+
+  // Mount the wrapper
+  const root = createRoot(dropdownMount);
+  root.render(<NewDropdownWrapper />);
+}
+
+/**
+ * Mount the delete folder button handler
+ * This works for empty folders where GalleryPage isn't mounted
+ */
+function mountDeleteFolderButton() {
+  const deleteFolderButton = document.getElementById('delete-folder-btn');
+  if (!deleteFolderButton) return;
+
+  const galleryName = deleteFolderButton.getAttribute('data-gallery-name') || '';
+  const folderPath = deleteFolderButton.getAttribute('data-folder-path') || '';
+  const folderName = deleteFolderButton.getAttribute('data-folder-name') || folderPath;
+
+  // Create a mount point for the modal
+  let modalMount = document.getElementById('delete-folder-modal-mount');
+  if (!modalMount) {
+    modalMount = document.createElement('div');
+    modalMount.id = 'delete-folder-modal-mount';
+    document.body.appendChild(modalMount);
+  }
+
+  // Store reference to allow triggering modal from button click
+  let showDeleteModal: (() => void) | null = null;
+
+  // Create a stateful wrapper component
+  const DeleteFolderWrapper: React.FC = () => {
+    const [showModal, setShowModal] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Expose the trigger function
+    useEffect(() => {
+      showDeleteModal = () => setShowModal(true);
+      return () => {
+        showDeleteModal = null;
+      };
+    }, []);
+
+    const handleDelete = async () => {
+      setIsDeleting(true);
+      setError(null);
+      try {
+        await galleryManageApi.deleteFolder(galleryName, folderPath);
+        // Navigate to parent folder
+        const parentPath = folderPath.includes('/')
+          ? folderPath.substring(0, folderPath.lastIndexOf('/'))
+          : '';
+        const galleryUrlEl = document.querySelector('[data-gallery-url]');
+        const galleryUrl = galleryUrlEl?.getAttribute('data-gallery-url') || '/gallery';
+        window.location.href = parentPath ? `${galleryUrl}/${parentPath}` : galleryUrl;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete folder');
+        setIsDeleting(false);
+      }
+    };
+
+    if (!showModal) return null;
+
+    return (
+      <div className="modal-overlay" onClick={() => !isDeleting && setShowModal(false)}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ textAlign: 'left', maxWidth: '400px' }}>
+          <h3 style={{ marginBottom: '1rem', color: '#333' }}>Delete Folder</h3>
+          <p style={{ marginBottom: '1rem', color: '#333' }}>
+            Are you sure you want to delete <strong>{folderName}</strong>?
+          </p>
+          <p style={{ color: '#dc3545', fontSize: '14px', marginBottom: '1rem' }}>
+            This action cannot be undone.
+          </p>
+          {error && (
+            <div style={{
+              color: '#dc3545',
+              background: '#ffe0e0',
+              padding: '8px',
+              borderRadius: '4px',
+              marginBottom: '1rem'
+            }}>
+              {error}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowModal(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Mount the wrapper
+  const root = createRoot(modalMount);
+  root.render(<DeleteFolderWrapper />);
+
+  // Wire up the button click
+  deleteFolderButton.addEventListener('click', () => {
+    if (showDeleteModal) {
+      showDeleteModal();
+    }
+  });
 }

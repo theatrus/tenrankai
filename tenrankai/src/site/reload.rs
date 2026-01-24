@@ -1,12 +1,12 @@
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
-use crate::config::MultiSiteConfig;
+use crate::config::ConfigStorageLoader;
 use crate::gallery::Gallery;
 use crate::site::{SiteBuilder, SiteManager};
+use tenrankai_config_storage::DynConfigStorage;
 
 /// Result of a config reload operation
 #[derive(Debug)]
@@ -64,27 +64,37 @@ impl Default for ReloadResult {
     }
 }
 
-/// Handles hot reloading of site configurations
+/// Handles hot reloading of site configurations from ConfigStorage
 pub struct ConfigReloader {
     /// Lock to prevent concurrent reloads
     reload_lock: Mutex<()>,
-    /// Path to the config file
-    config_path: std::path::PathBuf,
+    /// ConfigStorage backend
+    storage: DynConfigStorage,
+    /// Cookie secret for sites (shared across all sites)
+    cookie_secret: String,
+    /// ConfigStorage URL for sites to use when writing permissions
+    config_storage_url: String,
 }
 
 impl ConfigReloader {
-    pub fn new<P: AsRef<Path>>(config_path: P) -> Self {
+    pub fn new(
+        storage: DynConfigStorage,
+        cookie_secret: String,
+        config_storage_url: String,
+    ) -> Self {
         Self {
             reload_lock: Mutex::new(()),
-            config_path: config_path.as_ref().to_path_buf(),
+            storage,
+            cookie_secret,
+            config_storage_url,
         }
     }
 
-    /// Reload configuration and update the SiteManager
+    /// Reload configuration from ConfigStorage and update the SiteManager
     ///
     /// This method:
     /// 1. Acquires the reload lock (prevents concurrent reloads)
-    /// 2. Parses the new configuration file
+    /// 2. Loads sites from ConfigStorage
     /// 3. Determines which sites need to be added, updated, or removed
     /// 4. Rebuilds sites one at a time, keeping old sites on failure
     /// 5. Returns a summary of what changed
@@ -92,47 +102,26 @@ impl ConfigReloader {
         // Acquire reload lock to prevent concurrent reloads
         let _lock = self.reload_lock.lock().await;
 
-        info!("Starting configuration reload from {:?}", self.config_path);
+        info!("Starting configuration reload from ConfigStorage");
 
         let mut result = ReloadResult::new();
 
-        // Step 1: Parse new configuration
-        let config_content = match std::fs::read_to_string(&self.config_path) {
-            Ok(content) => content,
+        // Step 1: Load sites from ConfigStorage
+        let loader = ConfigStorageLoader::new(self.storage.clone(), self.cookie_secret.clone());
+        let loaded_sites = match loader.load_all_sites().await {
+            Ok(sites) => sites,
             Err(e) => {
-                error!("Failed to read config file: {}", e);
+                error!("Failed to load sites from ConfigStorage: {}", e);
                 result
                     .failed
-                    .push(("*".to_string(), format!("Failed to read config: {}", e)));
+                    .push(("*".to_string(), format!("Failed to load sites: {}", e)));
                 return result;
             }
         };
-
-        let multi_config: MultiSiteConfig = match toml_edit::de::from_str(&config_content) {
-            Ok(config) => config,
-            Err(e) => {
-                error!("Failed to parse config file: {}", e);
-                result
-                    .failed
-                    .push(("*".to_string(), format!("Failed to parse config: {}", e)));
-                return result;
-            }
-        };
-
-        // Check if this is multi-site mode
-        if !multi_config.is_multi_site() {
-            warn!("Config reload only supported in multi-site mode");
-            result.failed.push((
-                "*".to_string(),
-                "Config reload only supported in multi-site mode".to_string(),
-            ));
-            return result;
-        }
 
         // Step 2: Get current and new site configurations
         let current_sites: HashSet<String> = site_manager.site_names().await.into_iter().collect();
-        let new_site_configs = multi_config.get_site_configs();
-        let new_sites: HashSet<String> = new_site_configs.keys().cloned().collect();
+        let new_sites: HashSet<String> = loaded_sites.keys().cloned().collect();
 
         // Determine what changed
         let sites_to_add: Vec<_> = new_sites.difference(&current_sites).cloned().collect();
@@ -155,18 +144,28 @@ impl ConfigReloader {
 
         // Step 4: Add new sites
         for site_name in sites_to_add {
-            let site_section = match new_site_configs.get(&site_name) {
-                Some(s) => s,
+            let mut site_config = match loaded_sites.get(&site_name) {
+                Some(c) => c.clone(),
                 None => continue,
             };
 
             info!("Adding new site '{}'", site_name);
 
-            match Self::build_site_with_galleries(&site_name, site_section, &multi_config).await {
+            // Set config_storage URL for permission writes
+            site_config.config_storage = Some(self.config_storage_url.clone());
+
+            // Get hostnames from storage
+            let hostnames = match self.storage.get_site_config(&site_name).await {
+                Ok(Some(stored)) => stored.hostnames,
+                _ => vec!["*".to_string()],
+            };
+
+            match self
+                .build_site_with_galleries(&site_name, site_config)
+                .await
+            {
                 Ok(site) => {
-                    site_manager
-                        .add_site(site, site_section.hostnames.clone())
-                        .await;
+                    site_manager.add_site(site, hostnames.clone()).await;
                     result.added.push(site_name);
                 }
                 Err(e) => {
@@ -177,20 +176,30 @@ impl ConfigReloader {
         }
 
         // Step 5: Update existing sites (rebuild if config changed)
-        // For now, we always rebuild sites that exist in both old and new config
-        // A more sophisticated implementation could compare configs and skip unchanged sites
         for site_name in sites_to_check {
-            let site_section = match new_site_configs.get(&site_name) {
-                Some(s) => s,
+            let mut site_config = match loaded_sites.get(&site_name) {
+                Some(c) => c.clone(),
                 None => continue,
             };
 
             info!("Updating site '{}'", site_name);
 
-            match Self::build_site_with_galleries(&site_name, site_section, &multi_config).await {
+            // Set config_storage URL for permission writes
+            site_config.config_storage = Some(self.config_storage_url.clone());
+
+            // Get hostnames from storage
+            let hostnames = match self.storage.get_site_config(&site_name).await {
+                Ok(Some(stored)) => stored.hostnames,
+                _ => vec!["*".to_string()],
+            };
+
+            match self
+                .build_site_with_galleries(&site_name, site_config)
+                .await
+            {
                 Ok(new_site) => {
                     site_manager
-                        .replace_site(&site_name, new_site, site_section.hostnames.clone())
+                        .replace_site(&site_name, new_site, hostnames.clone())
                         .await;
                     result.updated.push(site_name);
                 }
@@ -200,7 +209,6 @@ impl ConfigReloader {
                         site_name, e
                     );
                     result.failed.push((site_name, e));
-                    // Old site remains in place - this is the resilient behavior
                 }
             }
         }
@@ -211,12 +219,10 @@ impl ConfigReloader {
 
     /// Build a site and initialize its galleries
     async fn build_site_with_galleries(
+        &self,
         site_name: &str,
-        site_section: &crate::config::multi_site::SiteConfigSection,
-        multi_config: &MultiSiteConfig,
+        site_config: crate::site::SiteConfig,
     ) -> Result<Arc<crate::site::Site>, String> {
-        let site_config =
-            site_section.to_site_config(site_name, &multi_config.app, multi_config.email.as_ref());
         let site_builder = SiteBuilder::new(site_config);
 
         let site = site_builder.build().await.map_err(|e| e.to_string())?;

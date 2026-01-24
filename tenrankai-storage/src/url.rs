@@ -8,7 +8,7 @@
 //! - `s3://bucket/prefix?region=us-east-1` - S3 with region
 //! - `s3://bucket/prefix?endpoint=http://minio:9000` - S3 with custom endpoint
 
-use super::{FilesystemStorage, S3Storage, Storage, StorageError};
+use super::{ChunkedUpload, FilesystemStorage, S3Storage, Storage, StorageError};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -121,6 +121,30 @@ impl StorageUrl {
     /// Returns an error if the storage backend cannot be initialized
     /// (e.g., invalid AWS credentials for S3).
     pub async fn into_storage(self) -> Result<Arc<dyn Storage>, StorageError> {
+        match self {
+            StorageUrl::Filesystem { path } => Ok(Arc::new(FilesystemStorage::new(path))),
+            StorageUrl::S3 {
+                bucket,
+                prefix,
+                region,
+                endpoint,
+            } => {
+                let storage = S3Storage::new(bucket, prefix, region, endpoint).await?;
+                Ok(Arc::new(storage))
+            }
+        }
+    }
+
+    /// Convert this URL into a chunked upload storage backend.
+    ///
+    /// Similar to `into_storage`, but returns a storage backend that supports
+    /// chunked/resumable uploads via the Tus protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage backend cannot be initialized
+    /// (e.g., invalid AWS credentials for S3).
+    pub async fn into_chunked_storage(self) -> Result<Arc<dyn ChunkedUpload>, StorageError> {
         match self {
             StorageUrl::Filesystem { path } => Ok(Arc::new(FilesystemStorage::new(path))),
             StorageUrl::S3 {

@@ -7,15 +7,17 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
-    Config, GallerySystemConfig, LogLevel, commands,
-    config::MultiSiteConfig,
-    create_app, create_app_with_site_manager,
+    Config, GallerySystemConfig, LogLevel,
+    cache::queue::{CacheQueueWorker, DynCacheQueue, InMemoryQueue},
+    commands,
+    config::{ConfigStorageLoader, MultiSiteConfig},
+    create_app_with_site_manager,
     gallery::Gallery,
     openai, posts,
     site::{SiteBuilder, SiteManager},
-    startup_checks, storage,
     user_storage::{User, create_user_storage},
 };
+use tenrankai_config_storage::{ConfigStorageUrl, create_config_storage};
 
 #[cfg(unix)]
 use tenrankai::site::ConfigReloader;
@@ -74,6 +76,10 @@ enum Commands {
         #[arg(short, long)]
         gallery: String,
 
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
+
         /// Specific folder within the gallery (optional)
         #[arg(short, long)]
         folder: Option<String>,
@@ -97,6 +103,10 @@ enum Commands {
         #[arg(short, long)]
         gallery: String,
 
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
+
         /// Specific folder within the gallery (optional)
         #[arg(short, long)]
         folder: Option<String>,
@@ -105,6 +115,14 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Manage ConfigStorage (sites, galleries, posts)
+    #[command(subcommand)]
+    Config(ConfigCommands),
+
+    /// Manage site administrators
+    #[command(subcommand)]
+    Admin(AdminCommands),
 }
 
 #[derive(Subcommand, Debug)]
@@ -237,24 +255,105 @@ enum CacheCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum ConfigCommands {
+    /// Initialize a new ConfigStorage directory structure
+    Init {
+        /// Path for the ConfigStorage directory
+        #[arg(default_value = "config.d")]
+        path: String,
+    },
+    /// List all sites in ConfigStorage
+    ListSites,
+    /// Add a new site
+    AddSite {
+        /// Site name (identifier)
+        name: String,
+        /// Hostnames for this site (can specify multiple)
+        #[arg(short = 'H', long)]
+        hostname: Vec<String>,
+    },
+    /// List galleries for a site
+    ListGalleries {
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// Add a gallery to a site
+    AddGallery {
+        /// Gallery name
+        name: String,
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+        /// Source directory (defaults to gallery name)
+        #[arg(long)]
+        source: Option<String>,
+        /// URL prefix (defaults to /<name>)
+        #[arg(long)]
+        url_prefix: Option<String>,
+    },
+    /// List posts configurations for a site
+    ListPosts {
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// Add a posts configuration to a site
+    AddPosts {
+        /// Posts name
+        name: String,
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+        /// Source directory (defaults to posts/<name>)
+        #[arg(long)]
+        source: Option<String>,
+        /// URL prefix (defaults to /<name>)
+        #[arg(long)]
+        url_prefix: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AdminCommands {
+    /// Add a site administrator
+    Add {
+        /// Username to add as admin
+        username: String,
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// Remove a site administrator
+    Remove {
+        /// Username to remove as admin
+        username: String,
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+    /// List site administrators
+    List {
+        /// Site name
+        #[arg(short, long, default_value = "default")]
+        site: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Load config to get default log level, but allow CLI to override
-    // Parse as MultiSiteConfig which supports both legacy and multi-site formats
-    let (mut config, multi_site_config) = if cli.config.exists() {
+    let mut config = if cli.config.exists() {
         let config_content = std::fs::read_to_string(&cli.config)?;
 
-        // Parse as MultiSiteConfig (supports both legacy and multi-site formats)
+        // Parse config - MultiSiteConfig handles legacy and modern formats
         let multi_site_config: MultiSiteConfig = toml_edit::de::from_str(&config_content)?;
-
-        // Convert to legacy Config for global settings, routes, etc.
-        let config: Config = multi_site_config.clone().into();
-
-        (config, Some(multi_site_config))
+        Config::from(multi_site_config)
     } else {
-        (Config::default(), None)
+        Config::default()
     };
 
     // Override config log level with CLI arg (CLI takes precedence)
@@ -291,9 +390,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle commands
     match cli.command {
         Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
-        Some(Commands::Cache(cache_cmd)) => {
-            handle_cache_command(cache_cmd, config, multi_site_config).await
-        }
+        Some(Commands::Cache(cache_cmd)) => handle_cache_command(cache_cmd, config).await,
         #[cfg(feature = "avif")]
         Some(Commands::AvifDebug {
             image_path,
@@ -301,52 +398,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }) => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
         Some(Commands::AnalyzeImages {
             gallery,
+            site,
             folder,
             limit,
             force,
             dry_run,
         }) => {
             commands::analyze::handle_analyze_command(
-                config, gallery, folder, limit, force, dry_run,
+                config, site, gallery, folder, limit, force, dry_run,
             )
             .await
         }
         Some(Commands::ClearAnalysis {
             gallery,
+            site,
             folder,
             dry_run,
         }) => {
             commands::clear_analysis::handle_clear_analysis_command(
-                config, gallery, folder, dry_run,
+                config, site, gallery, folder, dry_run,
             )
             .await
         }
+        Some(Commands::Config(config_cmd)) => handle_config_command(config_cmd, config).await,
+        Some(Commands::Admin(admin_cmd)) => handle_admin_command(admin_cmd, config).await,
         Some(Commands::Serve {
             port,
             host,
             quit_after,
-        }) => {
-            run_server(
-                config,
-                multi_site_config,
-                cli.config.clone(),
-                port,
-                host,
-                quit_after,
-            )
-            .await
-        }
+        }) => run_server(config, port, host, quit_after).await,
         None => {
             // Default to serve command if no subcommand specified
-            run_server(
-                config,
-                multi_site_config,
-                cli.config.clone(),
-                None,
-                None,
-                None,
-            )
-            .await
+            run_server(config, None, None, None).await
         }
     }
 }
@@ -614,83 +697,70 @@ struct ExportedPasskey {
 async fn handle_cache_command(
     cmd: CacheCommands,
     config: Config,
-    multi_site_config: Option<MultiSiteConfig>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Helper to find gallery config from either multi-site or legacy config
-    let find_gallery =
-        |site_name: &str, gallery_name: &str| -> Result<GallerySystemConfig, String> {
-            // First, try multi-site config
-            if let Some(ref multi_config) = multi_site_config
-                && multi_config.is_multi_site()
-            {
-                // Look up the site
-                let site_configs = multi_config.get_site_configs();
-                if let Some((_, site_section)) =
-                    site_configs.iter().find(|(name, _)| *name == site_name)
-                {
-                    // Look up the gallery within the site's galleries list
-                    if let Some(ref galleries) = site_section.galleries {
-                        if let Some(gallery) = galleries.iter().find(|g| g.name == gallery_name) {
-                            return Ok(gallery.clone());
-                        }
-                        let available = galleries
-                            .iter()
-                            .map(|g| g.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return Err(format!(
-                            "Gallery '{}' not found in site '{}'. Available galleries: {}",
-                            gallery_name, site_name, available
-                        ));
-                    }
-                    return Err(format!("Site '{}' has no galleries configured.", site_name));
-                }
-                return Err(format!(
-                    "Site '{}' not found. Available sites: {}",
-                    site_name,
-                    site_configs
-                        .keys()
-                        .map(|n| n.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
+    // Load gallery config from ConfigStorage
+    let find_gallery = |site_name: &str,
+                        gallery_name: &str|
+     -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<GallerySystemConfig, String>> + Send>,
+    > {
+        let config_storage_url = config.app.config_storage.clone();
+        let site = site_name.to_string();
+        let gallery = gallery_name.to_string();
 
-            // Fall back to legacy config.galleries
-            if let Some(ref gallery_configs) = config.galleries {
-                gallery_configs
-                    .iter()
-                    .find(|g| g.name == gallery_name)
-                    .cloned()
-                    .ok_or_else(|| format!("Gallery '{}' not found in configuration", gallery_name))
-            } else {
-                Err("No galleries configured".to_string())
-            }
-        };
+        Box::pin(async move {
+            let url = config_storage_url.ok_or_else(|| {
+                "config_storage is required. Add 'config_storage = \"config.d\"' to [app] section of config.toml.".to_string()
+            })?;
+
+            let storage_url = ConfigStorageUrl::parse(&url)
+                .map_err(|e| format!("Invalid config_storage URL: {}", e))?;
+
+            let storage = create_config_storage(&storage_url)
+                .await
+                .map_err(|e| format!("Failed to create config storage: {}", e))?;
+
+            let loader = ConfigStorageLoader::new(storage, config.app.cookie_secret.clone());
+
+            // Load site config to get storage_prefix
+            let site_config = loader
+                .load_site(&site)
+                .await
+                .map_err(|e| format!("Failed to load site '{}': {}", site, e))?
+                .ok_or_else(|| format!("Site '{}' not found", site))?;
+
+            // Find the gallery in the site config
+            site_config
+                .galleries
+                .as_ref()
+                .and_then(|galleries| galleries.iter().find(|g| g.name == gallery).cloned())
+                .ok_or_else(|| format!("Gallery '{}' not found in site '{}'", gallery, site))
+        })
+    };
 
     match cmd {
         CacheCommands::Report {
             gallery: gallery_name,
-            site: site_name,
+            site,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&site, &gallery_name).await?;
             commands::cache::report(&gallery_config).await?;
         }
         CacheCommands::Cleanup {
             gallery: gallery_name,
-            site: site_name,
+            site,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&site, &gallery_name).await?;
             commands::cache::cleanup(&gallery_config).await?;
         }
         CacheCommands::Invalidate {
             gallery: gallery_name,
-            site: site_name,
+            site,
             cache_type,
             path,
             dry_run,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&site, &gallery_name).await?;
 
             match cache_type.as_str() {
                 "composite" => {
@@ -713,10 +783,149 @@ async fn handle_cache_command(
         }
         CacheCommands::ListComposites {
             gallery: gallery_name,
-            site: site_name,
+            site,
         } => {
-            let gallery_config = find_gallery(&site_name, &gallery_name)?;
+            let gallery_config = find_gallery(&site, &gallery_name).await?;
             commands::cache::list_composites(&gallery_config).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_config_command(
+    cmd: ConfigCommands,
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Get config_storage URL from config, or use default for init command
+    let get_config_storage_url = || -> Result<String, Box<dyn std::error::Error>> {
+        config.app.config_storage.clone().ok_or_else(|| {
+            "config_storage is required. Add 'config_storage = \"config.d\"' to [app] section of config.toml.".into()
+        })
+    };
+
+    match cmd {
+        ConfigCommands::Init { path } => commands::config::handle_init_command(&path).await,
+        ConfigCommands::ListSites => {
+            let url = get_config_storage_url()?;
+            commands::config::handle_list_sites_command(&url).await
+        }
+        ConfigCommands::AddSite { name, hostname } => {
+            let url = get_config_storage_url()?;
+            commands::config::handle_add_site_command(&url, &name, hostname).await
+        }
+        ConfigCommands::ListGalleries { site } => {
+            let url = get_config_storage_url()?;
+            commands::config::handle_list_galleries_command(&url, &site).await
+        }
+        ConfigCommands::AddGallery {
+            name,
+            site,
+            source,
+            url_prefix,
+        } => {
+            let url = get_config_storage_url()?;
+            commands::config::handle_add_gallery_command(&url, &site, &name, source, url_prefix)
+                .await
+        }
+        ConfigCommands::ListPosts { site } => {
+            let url = get_config_storage_url()?;
+            commands::config::handle_list_posts_command(&url, &site).await
+        }
+        ConfigCommands::AddPosts {
+            name,
+            site,
+            source,
+            url_prefix,
+        } => {
+            let url = get_config_storage_url()?;
+            commands::config::handle_add_posts_command(&url, &site, &name, source, url_prefix).await
+        }
+    }
+}
+
+async fn handle_admin_command(
+    cmd: AdminCommands,
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let get_config_storage_url = || -> Result<String, Box<dyn std::error::Error>> {
+        config.app.config_storage.clone().ok_or_else(|| {
+            "config_storage is required. Add 'config_storage = \"config.d\"' to [app] section of config.toml.".into()
+        })
+    };
+
+    let url_str = get_config_storage_url()?;
+    let url = ConfigStorageUrl::parse(&url_str)
+        .map_err(|e| format!("Invalid config_storage URL: {}", e))?;
+    let storage = create_config_storage(&url)
+        .await
+        .map_err(|e| format!("Failed to create config storage: {}", e))?;
+
+    match cmd {
+        AdminCommands::Add { username, site } => {
+            let username = username.trim().to_lowercase();
+
+            // Get current permissions (or create default)
+            let mut permissions = storage
+                .get_site_permissions(&site)
+                .await
+                .map_err(|e| format!("Failed to get site permissions: {}", e))?
+                .unwrap_or_default();
+
+            if permissions
+                .site_admins
+                .iter()
+                .any(|a| a.eq_ignore_ascii_case(&username))
+            {
+                println!("User '{}' is already a site admin for '{}'", username, site);
+            } else {
+                permissions.site_admins.push(username.clone());
+                storage
+                    .set_site_permissions(&site, &permissions, "cli")
+                    .await
+                    .map_err(|e| format!("Failed to save site permissions: {}", e))?;
+                println!("Added '{}' as site admin for '{}'", username, site);
+            }
+        }
+        AdminCommands::Remove { username, site } => {
+            let username = username.trim().to_lowercase();
+
+            let mut permissions = storage
+                .get_site_permissions(&site)
+                .await
+                .map_err(|e| format!("Failed to get site permissions: {}", e))?
+                .unwrap_or_default();
+
+            let original_len = permissions.site_admins.len();
+            permissions
+                .site_admins
+                .retain(|a| !a.eq_ignore_ascii_case(&username));
+
+            if permissions.site_admins.len() < original_len {
+                storage
+                    .set_site_permissions(&site, &permissions, "cli")
+                    .await
+                    .map_err(|e| format!("Failed to save site permissions: {}", e))?;
+                println!("Removed '{}' from site admins for '{}'", username, site);
+            } else {
+                println!("User '{}' is not a site admin for '{}'", username, site);
+            }
+        }
+        AdminCommands::List { site } => {
+            let permissions = storage
+                .get_site_permissions(&site)
+                .await
+                .map_err(|e| format!("Failed to get site permissions: {}", e))?
+                .unwrap_or_default();
+
+            if permissions.site_admins.is_empty() {
+                println!("No site admins configured for '{}'", site);
+            } else {
+                println!("Site admins for '{}':", site);
+                for admin in &permissions.site_admins {
+                    println!("  - {}", admin);
+                }
+            }
         }
     }
 
@@ -725,361 +934,230 @@ async fn handle_cache_command(
 
 async fn run_server(
     config: Config,
-    multi_site_config: Option<MultiSiteConfig>,
-    config_path: PathBuf,
     port: Option<u16>,
     host: Option<String>,
     quit_after: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // config_path is only used on Unix for SIGHUP reload
-    #[cfg(not(unix))]
-    let _ = &config_path;
-
     let host = host.unwrap_or(config.server.host.clone());
     let port = port.unwrap_or(config.server.port);
 
     info!("Starting {} server", config.app.name);
     info!("Log level: {}", config.app.log_level);
 
-    // Check if we're in multi-site mode
-    let is_multi_site = multi_site_config
-        .as_ref()
-        .is_some_and(|m| m.is_multi_site());
+    // ConfigStorage is required
+    let config_storage_url = config.app.config_storage.as_ref().ok_or(
+        "config_storage is required. Add 'config_storage = \"config.d\"' to [app] section of config.toml.\n\
+         Use 'tenrankai config init' to create initial site configuration."
+    )?;
 
-    if is_multi_site {
-        info!("Running in multi-site mode");
-    } else {
-        info!("Template directories: {:?}", config.templates.directories);
-        info!(
-            "Static files directories: {:?}",
-            config.static_files.directories
-        );
-        if let Some(galleries) = &config.galleries {
-            for gallery in galleries {
-                info!(
-                    "Gallery '{}' source directory: {:?}",
-                    gallery.name, gallery.source_directory
-                );
-                info!(
-                    "Gallery '{}' cache directory: {:?}",
-                    gallery.name, gallery.cache_directory
-                );
-            }
-        }
-    }
-
-    // Perform startup checks (only for legacy mode, multi-site does checks per-site)
-    if !is_multi_site {
-        match startup_checks::perform_startup_checks(&config).await {
-            Ok(()) => info!("All startup checks passed"),
-            Err(errors) => {
-                for error in &errors {
-                    tracing::error!("Startup check failed: {}", error);
-                }
-                let critical_error = errors.iter().any(|e| {
-                    matches!(
-                        e,
-                        startup_checks::StartupCheckError::GallerySourceDirectoryMissing(_)
-                            | startup_checks::StartupCheckError::CacheDirectoryCreationFailed(_)
-                    )
-                });
-
-                if critical_error {
-                    tracing::error!("Critical startup check failed, exiting");
-                    return Err("Critical startup check failed".into());
-                } else {
-                    tracing::warn!("Non-critical startup checks failed, continuing");
-                }
-            }
-        }
-    }
+    info!(
+        "Loading site configuration from ConfigStorage: {}",
+        config_storage_url
+    );
 
     // Track all galleries for shutdown across all sites
     let mut galleries_for_shutdown: Vec<Arc<Gallery>> = Vec::new();
     // Track all galleries for background analysis (combined from all sites)
     let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
 
-    // Build the app differently based on mode
-    let (app, site_manager) = if is_multi_site {
-        // Multi-site mode: Build sites using SiteBuilder and create SiteManager
-        let multi_config = multi_site_config.as_ref().unwrap();
-        let site_manager = Arc::new(SiteManager::new());
+    // ConfigStorage for SIGHUP reload (captured after storage creation)
+    #[cfg(unix)]
+    let config_storage_for_reload: (tenrankai_config_storage::DynConfigStorage, String);
 
-        for (site_name, site_section) in multi_config.get_site_configs() {
-            info!("Building site '{}'...", site_name);
+    // Parse and create ConfigStorage
+    let url = match ConfigStorageUrl::parse(config_storage_url) {
+        Ok(u) => u,
+        Err(e) => {
+            return Err(format!("Invalid config_storage URL: {}", e).into());
+        }
+    };
 
-            // Convert site section to SiteConfig
-            let site_config = site_section.to_site_config(
-                &site_name,
-                &multi_config.app,
-                multi_config.email.as_ref(),
-            );
+    let storage = match create_config_storage(&url).await {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(format!("Failed to create config storage: {}", e).into());
+        }
+    };
 
-            // Build the site
-            let site_builder = SiteBuilder::new(site_config);
-            let site = match site_builder.build().await {
-                Ok(s) => Arc::new(s),
-                Err(e) => {
-                    tracing::error!("Failed to build site '{}': {}", site_name, e);
-                    continue;
-                }
-            };
+    info!(
+        "ConfigStorage initialized (backend: {})",
+        storage.backend_name()
+    );
 
-            // Initialize galleries for this site (additional setup not done by SiteBuilder)
-            for (gallery_name, gallery) in site.galleries().iter() {
-                let gallery_config = gallery.get_config();
+    // Capture for SIGHUP reload
+    #[cfg(unix)]
+    {
+        config_storage_for_reload = (storage.clone(), config_storage_url.clone());
+    }
 
-                // Initialize gallery and check for version changes
-                if let Err(e) = gallery.initialize_and_check_version().await {
-                    tracing::warn!(
-                        "Failed to initialize gallery '{}' metadata cache: {}",
-                        gallery_name,
-                        e
-                    );
-                }
+    let loader = ConfigStorageLoader::new(storage.clone(), config.app.cookie_secret.clone());
+    let loaded_sites = match loader.load_all_sites().await {
+        Ok(sites) => sites,
+        Err(e) => {
+            return Err(format!("Failed to load sites from ConfigStorage: {}", e).into());
+        }
+    };
 
-                // Trigger refresh and/or pre-generation on startup
-                let metadata_empty = gallery.is_metadata_cache_empty().await;
-                let pregenerate = gallery_config.pregenerate.is_some();
+    info!("Loaded {} site(s) from ConfigStorage", loaded_sites.len());
 
-                if metadata_empty {
+    let site_manager = Arc::new(SiteManager::new());
+
+    for (site_name, mut site_config) in loaded_sites {
+        info!("Building site '{}'...", site_name);
+
+        // Set the config_storage URL so the site can use it for permission writes
+        site_config.config_storage = Some(config_storage_url.clone());
+
+        // Get hostnames from storage
+        let hostnames = match storage.get_site_config(&site_name).await {
+            Ok(Some(stored)) => stored.hostnames,
+            _ => vec!["*".to_string()], // Default to catch-all
+        };
+
+        // Build the site
+        let site_builder = SiteBuilder::new(site_config);
+        let site = match site_builder.build().await {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                tracing::error!("Failed to build site '{}': {}", site_name, e);
+                continue;
+            }
+        };
+
+        // Initialize galleries for this site
+        for (gallery_name, gallery) in site.galleries().iter() {
+            let gallery_config = gallery.get_config();
+
+            if let Err(e) = gallery.initialize_and_check_version().await {
+                tracing::warn!(
+                    "Failed to initialize gallery '{}' metadata cache: {}",
+                    gallery_name,
+                    e
+                );
+            }
+
+            let metadata_empty = gallery.is_metadata_cache_empty().await;
+            let pregenerate = gallery_config.pregenerate.is_some();
+
+            if metadata_empty {
+                info!(
+                    "Metadata cache for gallery '{}' (site '{}') is empty, triggering initial refresh",
+                    gallery_name, site_name
+                );
+            }
+
+            if metadata_empty || pregenerate {
+                if pregenerate {
                     info!(
-                        "Metadata cache for gallery '{}' (site '{}') is empty, triggering initial refresh",
+                        "Cache pre-generation enabled for gallery '{}' (site '{}')",
                         gallery_name, site_name
                     );
                 }
-
-                if metadata_empty || pregenerate {
-                    if pregenerate {
-                        info!(
-                            "Cache pre-generation enabled for gallery '{}' (site '{}')",
-                            gallery_name, site_name
-                        );
-                    }
-                    if let Err(e) = gallery
-                        .clone()
-                        .refresh_metadata_and_pregenerate_cache(pregenerate)
-                        .await
-                    {
-                        tracing::error!(
-                            "Failed to refresh metadata for gallery '{}' (site '{}'): {}",
-                            gallery_name,
-                            site_name,
-                            e
-                        );
-                    }
-                }
-
-                // Start background cache refresh if configured
-                if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
-                    && interval_minutes > 0
+                if let Err(e) = gallery
+                    .clone()
+                    .refresh_metadata_and_pregenerate_cache(pregenerate)
+                    .await
                 {
-                    info!(
-                        "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
-                        gallery_name, site_name, interval_minutes
-                    );
-                    Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
-                }
-
-                // Start periodic cache save (every 5 minutes)
-                info!(
-                    "Starting periodic cache save for gallery '{}' (site '{}')",
-                    gallery_name, site_name
-                );
-                Gallery::start_periodic_cache_save(gallery.clone(), 5);
-
-                // Track gallery for shutdown
-                galleries_for_shutdown.push(gallery.clone());
-
-                // Add to combined galleries map (use site_name prefix for uniqueness)
-                all_galleries_map
-                    .insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
-            }
-
-            // Add site to manager with its hostnames
-            site_manager
-                .add_site(site, site_section.hostnames.clone())
-                .await;
-            info!(
-                "Site '{}' ready with hostnames: {:?}",
-                site_name, site_section.hostnames
-            );
-        }
-
-        // Create app with site manager
-        let app = create_app_with_site_manager(config.clone(), site_manager.clone()).await;
-        (app, Some(site_manager))
-    } else {
-        // Legacy single-site mode: Initialize galleries manually
-        let mut galleries_map = HashMap::new();
-
-        if let Some(gallery_configs) = &config.galleries {
-            for gallery_config in gallery_configs {
-                // Create source storage backend from source_directory URL
-                let source_storage = match storage::create_storage_from_url(
-                    &gallery_config.source_directory,
-                )
-                .await
-                {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to create source storage for gallery '{}': {}",
-                            gallery_config.name,
-                            e
-                        );
-                        continue;
-                    }
-                };
-
-                // Create cache storage backend from cache_directory URL
-                let cache_storage =
-                    match storage::create_storage_from_url(&gallery_config.cache_directory).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to create cache storage for gallery '{}': {}",
-                                gallery_config.name,
-                                e
-                            );
-                            continue;
-                        }
-                    };
-
-                let gallery = std::sync::Arc::new(Gallery::new(
-                    gallery_config.clone(),
-                    source_storage,
-                    cache_storage,
-                ));
-
-                // Initialize gallery and check for version changes
-                if let Err(e) = gallery.initialize_and_check_version().await {
-                    tracing::warn!(
-                        "Failed to initialize gallery '{}' metadata cache: {}",
-                        gallery_config.name,
+                    tracing::error!(
+                        "Failed to refresh metadata for gallery '{}' (site '{}'): {}",
+                        gallery_name,
+                        site_name,
                         e
                     );
                 }
+            }
 
-                // Trigger refresh and/or pre-generation on startup
-                let metadata_empty = gallery.is_metadata_cache_empty().await;
-                let pregenerate = gallery_config.pregenerate.is_some();
-
-                if metadata_empty {
-                    info!(
-                        "Metadata cache for gallery '{}' is empty, triggering initial refresh",
-                        gallery_config.name
-                    );
-                }
-
-                // Run refresh if metadata is empty, or pregenerate if configured
-                if metadata_empty || pregenerate {
-                    if pregenerate {
-                        info!(
-                            "Cache pre-generation enabled for gallery '{}', will generate missing cache entries",
-                            gallery_config.name
-                        );
-                    }
-                    if let Err(e) = gallery
-                        .clone()
-                        .refresh_metadata_and_pregenerate_cache(pregenerate)
-                        .await
-                    {
-                        tracing::error!(
-                            "Failed to refresh metadata and pre-generate cache for gallery '{}': {}",
-                            gallery_config.name,
-                            e
-                        );
-                    }
-                }
-
-                // Start background cache refresh if configured
-                if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
-                    && interval_minutes > 0
-                {
-                    info!(
-                        "Starting background metadata cache refresh for gallery '{}' every {} minutes",
-                        gallery_config.name, interval_minutes
-                    );
-                    Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
-                }
-
-                // Start periodic cache save (every 5 minutes)
+            if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
+                && interval_minutes > 0
+            {
                 info!(
-                    "Starting periodic metadata cache save for gallery '{}' every 5 minutes",
-                    gallery_config.name
+                    "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
+                    gallery_name, site_name, interval_minutes
                 );
-                Gallery::start_periodic_cache_save(gallery.clone(), 5);
+                Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+            }
 
-                // Store gallery in map and for shutdown handler
-                galleries_map.insert(gallery_config.name.clone(), gallery.clone());
-                galleries_for_shutdown.push(gallery.clone());
-                all_galleries_map.insert(gallery_config.name.clone(), gallery);
+            info!(
+                "Starting periodic cache save for gallery '{}' (site '{}')",
+                gallery_name, site_name
+            );
+            Gallery::start_periodic_cache_save(gallery.clone(), 5);
+
+            galleries_for_shutdown.push(gallery.clone());
+            all_galleries_map.insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
+        }
+
+        // Initialize posts managers for this site
+        for (posts_name, posts_manager) in site.posts_managers().iter() {
+            let posts_config = posts_manager.get_config();
+
+            // Initial refresh
+            if let Err(e) = posts_manager.refresh_posts().await {
+                tracing::error!(
+                    "Failed to refresh posts '{}' (site '{}'): {}",
+                    posts_name,
+                    site_name,
+                    e
+                );
+            }
+
+            // Start background refresh if configured
+            if let Some(interval_minutes) = posts_config.refresh_interval_minutes
+                && interval_minutes > 0
+            {
+                info!(
+                    "Starting background posts refresh for '{}' (site '{}') every {} minutes",
+                    posts_name, site_name, interval_minutes
+                );
+                posts::PostsManager::start_background_refresh(
+                    posts_manager.clone(),
+                    interval_minutes,
+                );
             }
         }
 
-        // Create Arc for galleries - used by both app and background analysis
-        let galleries_arc = Arc::new(galleries_map);
+        site_manager.add_site(site, hostnames.clone()).await;
+        info!("Site '{}' ready with hostnames: {:?}", site_name, hostnames);
+    }
 
-        // Create the app with the initialized galleries
-        let app = create_app(config.clone(), Some(galleries_arc)).await;
-        (app, None)
+    // Create cache generation queue if configured
+    let cache_queue: Option<DynCacheQueue> = if let Some(ref queue_config) = config.cache_queue
+        && queue_config.enabled
+    {
+        let buffer_size = queue_config.buffer_size.unwrap_or(1000);
+        info!(
+            "Cache generation queue enabled (buffer_size={})",
+            buffer_size
+        );
+        Some(Arc::new(InMemoryQueue::new(buffer_size)))
+    } else {
+        None
     };
 
-    // site_manager is only used on Unix for SIGHUP reload
-    #[cfg(not(unix))]
-    let _ = &site_manager;
+    let app =
+        create_app_with_site_manager(config.clone(), site_manager.clone(), cache_queue.clone())
+            .await;
 
     // Convert all_galleries_map to Arc for background analysis
     let galleries_arc = Arc::new(all_galleries_map);
 
-    // Initialize posts background refresh
-    // We need to recreate posts managers here for background tasks
-    // This is not ideal but avoids circular dependencies
-    if let Some(posts_configs) = &config.posts {
-        for posts_config in posts_configs {
-            if let Some(interval_minutes) = posts_config.refresh_interval_minutes
-                && interval_minutes > 0
-            {
-                // Create storage backend from source_directory URL
-                let posts_storage =
-                    match storage::create_storage_from_url(&posts_config.source_directory).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to create posts storage for '{}': {}",
-                                posts_config.name,
-                                e
-                            );
-                            continue;
-                        }
-                    };
+    // Start cache queue worker if queue is enabled
+    let cache_queue_shutdown_token = tokio_util::sync::CancellationToken::new();
+    if let Some(ref queue) = cache_queue {
+        let concurrency = config
+            .cache_queue
+            .as_ref()
+            .and_then(|c| c.concurrency)
+            .unwrap_or_else(num_cpus::get);
 
-                info!(
-                    "Starting background posts refresh for '{}' every {} minutes (storage: {})",
-                    posts_config.name,
-                    interval_minutes,
-                    posts_storage.storage_type()
-                );
-
-                // Create a new posts manager for background refresh
-                let posts_manager = std::sync::Arc::new(posts::PostsManager::new(
-                    posts::PostsConfig::from(posts_config),
-                    posts_storage,
-                ));
-
-                // Initial refresh
-                if let Err(e) = posts_manager.refresh_posts().await {
-                    tracing::error!(
-                        "Failed to initialize posts for '{}': {}",
-                        posts_config.name,
-                        e
-                    );
-                }
-
-                posts::PostsManager::start_background_refresh(posts_manager, interval_minutes);
-            }
-        }
+        let worker = Arc::new(CacheQueueWorker::new(
+            queue.clone(),
+            (*galleries_arc).clone(),
+            cache_queue_shutdown_token.clone(),
+            concurrency,
+        ));
+        worker.start();
+        info!("Cache queue worker started (concurrency={})", concurrency);
     }
 
     // Start background image analysis if configured
@@ -1107,13 +1185,18 @@ async fn run_server(
         }
     }
 
-    // Set up SIGHUP handler for config reload (Unix only, multi-site mode only)
+    // Set up SIGHUP handler for config reload (Unix only)
     #[cfg(unix)]
     let reload_token = tokio_util::sync::CancellationToken::new();
     #[cfg(unix)]
-    if let Some(ref manager) = site_manager {
-        let config_reloader = Arc::new(ConfigReloader::new(&config_path));
-        let manager_clone = manager.clone();
+    {
+        let (storage, storage_url) = config_storage_for_reload;
+        let config_reloader = Arc::new(ConfigReloader::new(
+            storage,
+            config.app.cookie_secret.clone(),
+            storage_url,
+        ));
+        let manager_clone = site_manager.clone();
         let reload_token_clone = reload_token.clone();
 
         tokio::spawn(async move {
@@ -1171,6 +1254,12 @@ async fn run_server(
 
     // Cancel background image analysis
     background_analysis_token.cancel();
+
+    // Cancel cache queue worker and close queue
+    cache_queue_shutdown_token.cancel();
+    if let Some(ref queue) = cache_queue {
+        queue.close().await;
+    }
 
     // Cancel SIGHUP handler
     #[cfg(unix)]

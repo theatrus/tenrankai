@@ -83,6 +83,7 @@ mod scenario_tests {
         });
 
         gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("public_viewer".to_string()),
             default_authenticated_role: Some("public_viewer".to_string()),
             roles,
@@ -189,6 +190,7 @@ mod scenario_tests {
         });
 
         gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("none".to_string()), // Explicitly deny public access
             default_authenticated_role: Some("extended_family".to_string()),
             roles,
@@ -312,6 +314,7 @@ mod scenario_tests {
         });
 
         gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("viewer".to_string()),
             default_authenticated_role: Some("team_member".to_string()),
             roles,
@@ -371,6 +374,7 @@ mod scenario_tests {
         );
 
         gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("viewer".to_string()),
             default_authenticated_role: Some("viewer".to_string()),
             roles,
@@ -380,6 +384,7 @@ mod scenario_tests {
         // Folder level permissions - private folder
         let mut folder_config = FolderConfig {
             hidden: false,
+            hidden_images: vec![],
             permissions: Default::default(),
         };
 
@@ -426,6 +431,7 @@ mod scenario_tests {
         });
 
         folder_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("viewer".to_string()), // Still allow public viewing
             default_authenticated_role: Some("viewer".to_string()),
             roles: folder_roles,
@@ -525,6 +531,7 @@ mod scenario_tests {
         });
 
         gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: None,
             default_authenticated_role: None,
             roles,
@@ -554,6 +561,7 @@ mod scenario_tests {
 
         // Gallery has no public access by default
         gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("none".to_string()),
             default_authenticated_role: None,
             roles: HashMap::new(),
@@ -563,6 +571,7 @@ mod scenario_tests {
         // Wedding folder - guests can view and download
         let mut wedding_folder = FolderConfig {
             hidden: false,
+            hidden_images: vec![],
             permissions: Default::default(),
         };
 
@@ -608,6 +617,7 @@ mod scenario_tests {
         // All wedding guests would be added here
 
         wedding_folder.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("wedding_guest".to_string()), // Anyone with link can view
             default_authenticated_role: Some("wedding_guest".to_string()),
             roles: wedding_roles,
@@ -617,6 +627,7 @@ mod scenario_tests {
         // Corporate event folder - restricted access
         let mut corporate_folder = FolderConfig {
             hidden: true, // Hidden from gallery listings
+            hidden_images: vec![],
             permissions: Default::default(),
         };
 
@@ -655,6 +666,7 @@ mod scenario_tests {
         });
 
         corporate_folder.permissions = PermissionConfig {
+            site_admins: Vec::new(),
             public_role: Some("none".to_string()), // No public access
             default_authenticated_role: Some("attendee".to_string()),
             roles: corp_roles,

@@ -1,6 +1,6 @@
 use axum::{
     extract::Path,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header::SET_COOKIE},
     response::Json,
 };
 use tracing::{error, info};
@@ -352,7 +352,7 @@ pub async fn finish_passkey_authentication(
     let cookie = AuthScope::Session.format_cookie(&signed_value, is_https);
 
     let mut headers = HeaderMap::new();
-    headers.insert("Set-Cookie", cookie.parse().unwrap());
+    headers.insert(SET_COOKIE, cookie.parse().unwrap());
 
     info!("User {} authenticated via passkey", username);
 

@@ -23,6 +23,10 @@ Thumbs.db
 .env.local
 config.toml
 
+# ConfigStorage directory (contains site configs)
+# Example config.d.example/ is allowed for documentation
+config.d/
+
 # User data
 users.toml
 node_modules/
@@ -33,3 +37,4 @@ TODO.md
 # Compiled JavaScript output
 /static/js/
 /static/dist/
+static/admin/

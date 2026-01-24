@@ -81,9 +81,8 @@ pub async fn gallery_handler_for_named(
         }
     }
 
-    let page = query.page.unwrap_or(0);
-    let (directories, images, total_pages) = match gallery
-        .list_directory_with_user(&path, page, auth.username())
+    let (directories, images) = match gallery
+        .list_directory_with_user(&path, auth.username())
         .await
     {
         Ok(result) => {
@@ -158,12 +157,7 @@ pub async fn gallery_handler_for_named(
         let composite_path = if path.is_empty() { "_root" } else { &path };
         let og_image_url = format!(
             "{}/api/gallery/{}/composite/{}",
-            app_state
-                .config
-                .app
-                .base_url
-                .as_ref()
-                .unwrap_or(&String::new()),
+            app_state.base_url().unwrap_or(""),
             gallery_name,
             composite_path
         );
@@ -172,12 +166,7 @@ pub async fn gallery_handler_for_named(
         // Use the first image if we only have one
         let og_image_url = format!(
             "{}{}",
-            app_state
-                .config
-                .app
-                .base_url
-                .as_ref()
-                .unwrap_or(&String::new()),
+            app_state.base_url().unwrap_or(""),
             first_image.gallery_url.as_ref().unwrap_or(&String::new())
         );
         (
@@ -190,6 +179,7 @@ pub async fn gallery_handler_for_named(
     };
 
     let liquid_context = liquid::object!({
+        "site_name": app_state.site.name.clone(),
         "gallery_name": gallery_name,
         "gallery_url": gallery_config.url_prefix,
         "gallery_path": path,
@@ -198,8 +188,6 @@ pub async fn gallery_handler_for_named(
         "items": items,
         "images_json": images_json,
         "gallery_data_json": gallery_data_json,
-        "current_page": page,
-        "total_pages": total_pages,
         "folder_title": folder_title,
         "folder_description": folder_description,
         "folder_description_markdown": folder_description_markdown,
@@ -271,6 +259,31 @@ pub async fn gallery_handler_for_named(
         "is_authenticated": auth.is_authenticated(),
         "current_user": auth.username().unwrap_or_default().to_string(),
         "permissions": serde_json::to_value(&user_permissions.permissions).unwrap_or_else(|_| serde_json::json!({})),
+        "hidden_images_json": if user_permissions.permissions.owner_access {
+            // For owners, provide the list of hidden images so they can be marked in the UI
+            // Translate filenames to URL IDs so frontend can match them against image URLs
+            let folder_metadata = gallery.read_folder_metadata_full(&path).await;
+            let filenames: Vec<String> = folder_metadata
+                .map(|m| m.config.hidden_images)
+                .unwrap_or_default();
+            let indexer = gallery.image_indexer.read().await;
+            let hidden_images: Vec<String> = filenames
+                .into_iter()
+                .filter_map(|filename| {
+                    let full_path = if path.is_empty() {
+                        filename.clone()
+                    } else {
+                        format!("{}/{}", path, filename)
+                    };
+                    indexer.get_index(&full_path).map(|url_path| {
+                        url_path.rsplit('/').next().unwrap_or(url_path).to_string()
+                    })
+                })
+                .collect();
+            serde_json::to_string(&hidden_images).unwrap_or_else(|_| "[]".to_string())
+        } else {
+            "[]".to_string()
+        },
     });
 
     match template_engine
@@ -342,6 +355,24 @@ pub async fn image_detail_handler_for_named(
         } else {
             // User is authenticated but doesn't have access, return 403
             return ApiResponse::AccessDenied.into_response();
+        }
+    }
+
+    // Check if image is hidden and user doesn't have can_see_hidden permission
+    if !user_permissions.permissions.can_see_hidden
+        && let Some(cached) = gallery.get_cached_folder_data(parent_path).await
+    {
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
+
+        if !hidden_images.is_empty() {
+            let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+            if hidden_images.contains(&filename.to_string()) {
+                return ApiResponse::NotFound.into_response(); // Hide existence
+            }
         }
     }
 
@@ -493,21 +524,40 @@ pub async fn image_handler_for_named(
         return ApiResponse::NotFound.into_response(); // Hide existence
     }
 
+    // Check if image is hidden and user doesn't have can_see_hidden permission
+    if !user_permissions.permissions.can_see_hidden
+        && let Some(cached) = gallery.get_cached_folder_data(&parent_path).await
+    {
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
+
+        if !hidden_images.is_empty() {
+            let filename = resolved_path.rsplit('/').next().unwrap_or(&resolved_path);
+            if hidden_images.contains(&filename.to_string()) {
+                return ApiResponse::NotFound.into_response(); // Hide existence
+            }
+        }
+    }
+
     // Validate size parameter and check permissions
     if let Some(ref size_str) = query.size {
         match ImageSize::parse(size_str) {
             Some(size) => {
                 // Map size to required permission
+                // Note: thumbnail, gallery, and medium are display sizes (require can_view)
+                // Large sizes are for high-res downloads (require can_download_large)
                 let has_permission = match size {
                     ImageSize::Thumbnail
                     | ImageSize::ThumbnailRetina
                     | ImageSize::Gallery
-                    | ImageSize::GalleryRetina => {
-                        // These sizes only require view permission
+                    | ImageSize::GalleryRetina
+                    | ImageSize::Medium
+                    | ImageSize::MediumRetina => {
+                        // These sizes are for viewing, only require view permission
                         user_permissions.permissions.can_view
-                    }
-                    ImageSize::Medium | ImageSize::MediumRetina => {
-                        user_permissions.permissions.can_download_medium
                     }
                     ImageSize::Large | ImageSize::LargeRetina => {
                         user_permissions.permissions.can_download_large
@@ -605,7 +655,6 @@ pub async fn image_handler_for_named_v2(
 
     // Create a query struct with the size parameter
     let query = GalleryQuery {
-        page: None,
         size: size_param.map(String::from),
     };
 
@@ -693,6 +742,7 @@ pub async fn download_folder_handler(
     // Tuple: (file_path, display_name, capture_date)
     let mut all_images: Vec<(String, String, Option<SystemTime>)> = Vec::new();
     let include_versions = query.include_versions;
+    let can_see_hidden = user_permissions.permissions.can_see_hidden;
 
     // Helper to recursively collect images with their capture dates
     async fn collect_images_recursive(
@@ -700,14 +750,36 @@ pub async fn download_folder_handler(
         folder_path: &str,
         images: &mut Vec<(String, String, Option<SystemTime>)>,
         include_versions: bool,
+        can_see_hidden: bool,
     ) {
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
             // Read the image metadata cache once for this folder's images
             let metadata_cache = gallery.image_cache.read_all().await;
 
+            // Get hidden images list for this folder
+            let hidden_images: Vec<String> = cached
+                .metadata
+                .as_ref()
+                .map(|m| m.config.hidden_images.clone())
+                .unwrap_or_default();
+
+            // Helper to check if an image is hidden
+            let is_hidden = |image_path: &str| -> bool {
+                if hidden_images.is_empty() {
+                    return false;
+                }
+                let filename = image_path.rsplit('/').next().unwrap_or(image_path);
+                hidden_images.contains(&filename.to_string())
+            };
+
             if include_versions {
                 // Include all images (primary + versions)
                 for image_path in &cached.images {
+                    // Skip hidden images if user doesn't have permission
+                    if !can_see_hidden && is_hidden(image_path) {
+                        continue;
+                    }
+
                     // Get base display name and append version suffix if present
                     let display_name = {
                         let indexer = gallery.image_indexer.read().await;
@@ -728,6 +800,11 @@ pub async fn download_folder_handler(
                 // Only include primary images from each group
                 if !cached.image_groups.is_empty() {
                     for group in &cached.image_groups {
+                        // Skip hidden images if user doesn't have permission
+                        if !can_see_hidden && is_hidden(&group.primary_path) {
+                            continue;
+                        }
+
                         let display_name = {
                             let indexer = gallery.image_indexer.read().await;
                             indexer.get_display_name(&group.primary_path)
@@ -740,6 +817,11 @@ pub async fn download_folder_handler(
                 } else {
                     // Fallback: filter out version files manually
                     for image_path in &cached.images {
+                        // Skip hidden images if user doesn't have permission
+                        if !can_see_hidden && is_hidden(image_path) {
+                            continue;
+                        }
+
                         if !super::grouping::is_version_file(image_path) {
                             let display_name = {
                                 let indexer = gallery.image_indexer.read().await;
@@ -765,13 +847,21 @@ pub async fn download_folder_handler(
                     &subdir_path,
                     images,
                     include_versions,
+                    can_see_hidden,
                 ))
                 .await;
             }
         }
     }
 
-    collect_images_recursive(gallery, &path, &mut all_images, include_versions).await;
+    collect_images_recursive(
+        gallery,
+        &path,
+        &mut all_images,
+        include_versions,
+        can_see_hidden,
+    )
+    .await;
 
     if all_images.is_empty() {
         return (StatusCode::NOT_FOUND, "No images in this folder").into_response();
@@ -947,6 +1037,40 @@ pub async fn raw_download_handler(
     // Check if user can download RAW files
     if !user_permissions.permissions.can_download_raw {
         return (StatusCode::FORBIDDEN, "RAW download permission required").into_response();
+    }
+
+    // Check if the associated image is hidden
+    // RAW files share the base name with their associated image
+    if !user_permissions.permissions.can_see_hidden
+        && let Some(cached) = gallery.get_cached_folder_data(&parent_path).await
+    {
+        let hidden_images: &[String] = cached
+            .metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.as_slice())
+            .unwrap_or(&[]);
+
+        if !hidden_images.is_empty() {
+            // Get the base name of the RAW file (without extension)
+            let raw_filename = path.rsplit('/').next().unwrap_or(&path);
+            let raw_base = if let Some(dot_pos) = raw_filename.rfind('.') {
+                &raw_filename[..dot_pos]
+            } else {
+                raw_filename
+            };
+
+            // Check if any hidden image has the same base name
+            for hidden in hidden_images {
+                let hidden_base = if let Some(dot_pos) = hidden.rfind('.') {
+                    &hidden[..dot_pos]
+                } else {
+                    hidden.as_str()
+                };
+                if raw_base == hidden_base {
+                    return ApiResponse::NotFound.into_response(); // Hide existence
+                }
+            }
+        }
     }
 
     // Verify the file exists before serving

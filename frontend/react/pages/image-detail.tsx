@@ -30,31 +30,30 @@ interface Breadcrumb {
   is_current: boolean;
 }
 
-function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle }: { 
-  breadcrumbs: Breadcrumb[] | any; 
-  galleryUrl: string; 
-  currentImageTitle: string; 
+function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle, imagePath }: {
+  breadcrumbs: Breadcrumb[] | any;
+  galleryUrl: string;
+  currentImageTitle: string;
+  imagePath: string;
 }) {
   // Handle case where breadcrumbs might not be an array
   const safeBreadcrumbs = Array.isArray(breadcrumbs) ? breadcrumbs : [];
-  
+
   return (
     <nav className="gallery-nav">
-      {safeBreadcrumbs.map((crumb, index) => (
-        <React.Fragment key={index}>
-          {index > 0 && <span className="nav-separator">→</span>}
-          {crumb.is_current ? (
-            <span className="nav-current">{crumb.display_name}</span>
-          ) : (
-            <a 
-              href={`${galleryUrl}${crumb.path ? `/${crumb.path}` : ''}`} 
-              className="nav-link"
-            >
-              {crumb.display_name}
-            </a>
-          )}
-        </React.Fragment>
-      ))}
+      {safeBreadcrumbs.map((crumb, index) => {
+        const isLast = index === safeBreadcrumbs.length - 1;
+        // Add anchor to the last breadcrumb (current folder) to scroll to this image
+        const anchor = isLast ? `#${imagePath}` : '';
+        const href = `${galleryUrl}${crumb.path ? `/${crumb.path}` : ''}${anchor}`;
+
+        return (
+          <React.Fragment key={index}>
+            {index > 0 && <span className="nav-separator">→</span>}
+            <a href={href} className="nav-link">{crumb.display_name}</a>
+          </React.Fragment>
+        );
+      })}
       <span className="nav-separator">→</span>
       <span className="nav-current">{currentImageTitle}</span>
     </nav>
@@ -135,10 +134,12 @@ export function ImageDetailPage({
     imagePath: currentData?.image.path || '',
     onNavigate: (direction) => {
       if (direction === 'back') {
-        // Navigate back to gallery - extract folder from image path
-        const pathParts = currentData?.image.path.split('/') || [];
+        // Navigate back to gallery with anchor to scroll to this image
+        const imagePath = currentData?.image.path || '';
+        const pathParts = imagePath.split('/');
         const folderPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
-        window.location.href = folderPath ? `${galleryUrl}/${folderPath}` : galleryUrl;
+        const anchor = `#${imagePath}`;
+        window.location.href = folderPath ? `${galleryUrl}/${folderPath}${anchor}` : `${galleryUrl}${anchor}`;
       } else {
         handleNavigation(direction);
       }
@@ -182,10 +183,11 @@ export function ImageDetailPage({
 
   return (
     <>
-      <Breadcrumbs 
-        breadcrumbs={currentData.breadcrumbs} 
+      <Breadcrumbs
+        breadcrumbs={currentData.breadcrumbs}
         galleryUrl={galleryUrl}
         currentImageTitle={currentData.image.title || currentData.image.name}
+        imagePath={currentData.image.path}
       />
       
       <div className="image-detail-content">
@@ -260,6 +262,13 @@ export function ImageDetailPage({
         
         {/* Info section - below the image viewer */}
         <div className="image-info-section">
+          {/* Hidden image indicator */}
+          {currentData.is_hidden && (
+            <div className="image-hidden-badge" title="This image is hidden from users without permission">
+              <span className="hidden-icon">HIDDEN</span>
+            </div>
+          )}
+
           {/* Image title and description */}
           <div className="image-header-mobile">
             {/* Title with edit icon */}

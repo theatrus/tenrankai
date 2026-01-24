@@ -363,7 +363,6 @@ Regular markdown image (not a gallery reference):
                 .join("cache/portfolio")
                 .to_string_lossy()
                 .to_string(),
-            images_per_page: 20,
             jpeg_quality: Some(90),
             webp_quality: Some(90.0),
             ..Default::default()

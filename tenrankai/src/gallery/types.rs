@@ -290,7 +290,6 @@ pub struct NavigationImage {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GalleryQuery {
-    pub page: Option<usize>,
     pub size: Option<String>,
 }
 
@@ -316,6 +315,10 @@ pub(crate) struct ImageMetadata {
 pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
+
+    /// List of hidden image filenames (relative to this folder)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_images: Vec<String>,
 
     /// Folder-specific permission overrides
     #[serde(default)]
@@ -347,6 +350,12 @@ pub(crate) struct CachedFolderMetadata {
     // === Pre-computed data ===
     /// Total image count including all subdirectories (recursive)
     pub recursive_image_count: usize,
+    /// Total size of files directly in this folder (bytes)
+    #[serde(default)]
+    pub direct_size: u64,
+    /// Total size including all subdirectories (bytes, recursive)
+    #[serde(default)]
+    pub recursive_size: u64,
     /// Pre-computed preview items for fast gallery preview API
     pub preview_items: Vec<CachedPreviewItem>,
     /// Image groups (primary + versions + RAW files)

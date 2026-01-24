@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use axum_test::TestServer;
 use std::fs;
 use tempfile::TempDir;
-use tenrankai::{Config, create_app};
+use tenrankai::{StaticConfig, TemplateConfig, create_app, site::SiteConfig};
 
 async fn setup_test_server() -> (TempDir, TestServer) {
     // Create temporary directories
@@ -62,23 +62,14 @@ async fn setup_test_server() -> (TempDir, TestServer) {
     fs::write(modules_dir.join("gallery.html.liquid"), gallery_content).unwrap();
 
     // Create test config
-    let config = Config {
-        server: tenrankai::ServerConfig {
-            host: "127.0.0.1".to_string(),
-            port: 0, // Let OS assign port
-        },
-        app: tenrankai::AppConfig {
-            name: "TestServer".to_string(),
-            log_level: tenrankai::LogLevel::Error,
-            aws_log_level: tenrankai::LogLevel::Error,
-            cookie_secret: "test-cookie-secret".to_string(),
-            base_url: Some("http://localhost:3000".to_string()),
-            user_database: None,
-        },
-        templates: tenrankai::TemplateConfig {
+    let config = SiteConfig {
+        name: "TestServer".to_string(),
+        base_url: Some("http://localhost:3000".to_string()),
+        cookie_secret: "test-cookie-secret".to_string(),
+        templates: TemplateConfig {
             directories: vec![templates_dir.to_string_lossy().to_string()],
         },
-        static_files: tenrankai::StaticConfig {
+        static_files: StaticConfig {
             directories: vec![static_dir.to_string_lossy().to_string()],
             use_redirects: false,
         },
@@ -86,12 +77,13 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             name: "test".to_string(),
             source_directory: gallery_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
-            images_per_page: 20,
             ..Default::default()
         }]),
         posts: None,
+        user_database: None,
         email: None,
-        openai: None,
+        config_storage: None,
+        site_admins: Vec::new(),
     };
 
     let app = create_app(config, None).await;

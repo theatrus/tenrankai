@@ -51,11 +51,6 @@ pub fn default_image_detail_template() -> String {
     "modules/image_detail.html.liquid".to_string()
 }
 
-/// Default number of images per page in gallery
-pub fn default_images_per_page() -> usize {
-    50
-}
-
 /// Default thumbnail size configuration
 pub fn default_thumbnail_size() -> ImageSizeConfig {
     ImageSizeConfig {
@@ -130,7 +125,6 @@ impl Default for GallerySystemConfig {
             cache_directory: "cache".to_string(),
             gallery_template: default_gallery_template(),
             image_detail_template: default_image_detail_template(),
-            images_per_page: default_images_per_page(),
             thumbnail: default_thumbnail_size(),
             gallery_size: default_gallery_size(),
             medium: default_medium_size(),
@@ -164,41 +158,11 @@ impl Default for Config {
                 cookie_secret: "change-me-in-production-use-a-long-random-string".to_string(),
                 base_url: None,
                 user_database: None,
+                config_storage: None,
             },
-            templates: TemplateConfig {
-                directories: vec!["templates".to_string()],
-            },
-            static_files: StaticConfig {
-                directories: vec!["static".to_string()],
-                use_redirects: false,
-            },
-            galleries: Some(vec![GallerySystemConfig {
-                name: "default".to_string(),
-                url_prefix: "/gallery".to_string(),
-                source_directory: "photos".to_string(),
-                cache_directory: "cache".to_string(),
-                gallery_template: default_gallery_template(),
-                image_detail_template: default_image_detail_template(),
-                images_per_page: default_images_per_page(),
-                thumbnail: default_thumbnail_size(),
-                gallery_size: default_gallery_size(),
-                medium: default_medium_size(),
-                large: default_large_size(),
-                preview: default_preview_config(),
-                cache_refresh_interval_minutes: Some(60),
-                jpeg_quality: Some(85),
-                webp_quality: Some(85.0),
-                pregenerate: None,
-                new_threshold_days: None,
-                copyright_holder: None,
-                image_indexing: default_image_indexing(),
-                permissions: Default::default(),
-                tiles: None,
-                metadata_cache_size: default_metadata_cache_size(),
-            }]),
-            posts: None,
             email: None,
             openai: None,
+            cache_queue: None,
         }
     }
 }

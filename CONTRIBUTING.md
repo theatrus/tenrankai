@@ -42,38 +42,47 @@ Place these files in a `static/` directory for full functionality:
 ## Project Structure
 
 ```
-src/
-├── main.rs              # Application entry point and CLI
-├── lib.rs               # Core configuration and app creation
-├── api/                 # API endpoint handlers
-├── composite/           # Image composite generation
-├── copyright/           # Copyright watermarking
-├── email/               # Email provider system
-│   └── providers/       # Email provider implementations (SES, null)
-├── favicon/             # Favicon generation from SVG
-├── gallery/             # Gallery system (core functionality)
-├── login/               # Authentication system
-│   ├── types.rs         # User database and types
-│   └── webauthn/        # WebAuthn/Passkey implementation
-├── posts/               # Blog/posts system
-├── robots/              # robots.txt generation
-├── startup_checks/      # Application startup validation
-├── static_files/        # Static file serving with cascading directories
-├── templating/          # Liquid template engine and filters
-└── webp_encoder/        # WebP image encoding with ICC profiles
+tenrankai/                    # Main application crate
+├── src/
+│   ├── main.rs              # Application entry point and CLI
+│   ├── lib.rs               # Core configuration and app creation
+│   ├── admin/               # Admin API handlers
+│   ├── api/                 # API endpoint handlers
+│   ├── commands/            # CLI command handlers
+│   │   ├── config.rs        # Config management commands
+│   │   └── ...
+│   ├── config/              # Configuration loading
+│   │   ├── multi_site.rs    # Multi-site configuration
+│   │   └── storage_loader.rs # ConfigStorage loader
+│   ├── email/               # Email provider system
+│   ├── gallery/             # Gallery system (core functionality)
+│   ├── login/               # Authentication system
+│   ├── posts/               # Blog/posts system
+│   ├── site/                # Site management and routing
+│   │   ├── builder.rs       # Site building from config
+│   │   ├── manager.rs       # Site lifecycle management
+│   │   └── routing.rs       # Per-site routing
+│   ├── storage/             # Pluggable storage (filesystem, S3)
+│   └── ...
 
-templates/               # Liquid templates
-├── pages/              # Static page templates
-├── modules/            # Feature-specific templates
-└── partials/           # Reusable template components
+tenrankai-config-storage/    # ConfigStorage crate
+├── src/
+│   ├── lib.rs               # ConfigStorage trait
+│   ├── file_dir.rs          # File-based ConfigStorage
+│   ├── storage.rs           # S3-based ConfigStorage
+│   └── types.rs             # Stored config types
 
-static/                 # Static assets
-├── style.css          # Main CSS with theme variables
-├── login.css          # Login-specific styles
-├── login.js           # Login JavaScript utilities
-└── DejaVuSans.ttf     # Font for watermarking
+config.d/                    # ConfigStorage directory (example)
+├── sites/
+│   └── default/
+│       ├── site.toml        # Site configuration
+│       ├── galleries/       # Gallery configs
+│       ├── posts/           # Posts configs
+│       └── permissions.toml # Roles and permissions
 
-tests/                  # Integration tests
+templates/                   # Liquid templates
+static/                      # Static assets
+tests/                       # Integration tests
 ```
 
 ## Code Organization
@@ -108,9 +117,19 @@ tests/                  # Integration tests
 
 ### Configuration
 
-- `Config` struct in `src/lib.rs` defines all application settings
-- TOML-based configuration with serde support
-- Custom deserializers for backward compatibility (e.g., static directories)
+Tenrankai uses a two-tier configuration system:
+
+1. **Bootstrap Config** (`config.toml`): Server settings, email, OpenAI
+   - Defined in `src/config/types.rs` as `RootConfig`
+   - Static settings loaded once at startup
+
+2. **ConfigStorage** (`config.d/` or S3): Site-specific configuration
+   - Defined in `tenrankai-config-storage/src/types.rs`
+   - Managed via CLI commands or admin API
+   - Hot-reloadable via SIGHUP or API
+
+The `ConfigStorageLoader` in `src/config/storage_loader.rs` converts stored configs
+to runtime `SiteConfig` objects with path validation and security checks.
 
 ### Database Operations
 

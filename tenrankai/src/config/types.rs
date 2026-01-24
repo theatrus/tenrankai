@@ -3,22 +3,35 @@ use std::path::PathBuf;
 
 use crate::{LogLevel, email, openai};
 
-/// Main application configuration
+/// Main application configuration (from config.toml)
+///
+/// This is the bootstrap configuration that specifies server settings and
+/// points to ConfigStorage for site-specific configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub server: ServerConfig,
     pub app: AppConfig,
-    pub templates: TemplateConfig,
-    pub static_files: StaticConfig,
-    #[serde(default)]
-    pub galleries: Option<Vec<GallerySystemConfig>>,
-    #[serde(default)]
-    pub posts: Option<Vec<PostsSystemConfig>>,
     #[serde(default)]
     pub email: Option<email::EmailConfig>,
     #[serde(default)]
     pub openai: Option<openai::OpenAIConfig>,
+    #[serde(default)]
+    pub cache_queue: Option<CacheQueueConfig>,
+}
+
+/// Configuration for the cache generation queue.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct CacheQueueConfig {
+    /// Enable the cache generation queue (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Buffer size for in-memory queue (default: 1000)
+    #[serde(default)]
+    pub buffer_size: Option<usize>,
+    /// Number of concurrent workers (default: num_cpus)
+    #[serde(default)]
+    pub concurrency: Option<usize>,
 }
 
 /// Server configuration for host and port settings
@@ -45,6 +58,13 @@ pub struct AppConfig {
     pub base_url: Option<String>,
     #[serde(default)]
     pub user_database: Option<PathBuf>,
+    /// Config storage backend for admin UI changes
+    /// Supports file directories or S3 URLs:
+    /// - `"config.d"` - relative directory path
+    /// - `"/var/lib/tenrankai/config.d"` - absolute directory path
+    /// - `"s3://bucket/config"` - S3 storage
+    #[serde(default)]
+    pub config_storage: Option<String>,
 }
 
 /// Template directory configuration with custom serialization
@@ -106,8 +126,6 @@ pub struct GallerySystemConfig {
     pub gallery_template: String,
     #[serde(default = "super::defaults::default_image_detail_template")]
     pub image_detail_template: String,
-    #[serde(default = "super::defaults::default_images_per_page")]
-    pub images_per_page: usize,
     #[serde(default = "super::defaults::default_thumbnail_size")]
     pub thumbnail: ImageSizeConfig,
     #[serde(default = "super::defaults::default_gallery_size")]

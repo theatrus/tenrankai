@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
-use super::Site;
+use super::{Site, SiteBuilder};
+use crate::config::ConfigStorageLoader;
+use crate::gallery::Gallery;
 
 /// SiteManager holds all active sites and handles routing dispatch by hostname
 pub struct SiteManager {
@@ -227,6 +229,126 @@ impl SiteManager {
         let sites = self.sites.read().await;
         sites.len()
     }
+
+    /// Reload a single site from ConfigStorage
+    ///
+    /// This method:
+    /// 1. Loads the site configuration from ConfigStorage
+    /// 2. Builds a new Site instance
+    /// 3. Initializes galleries (version check, metadata refresh, background tasks)
+    /// 4. Replaces the old site with the new one
+    ///
+    /// If the site doesn't exist in ConfigStorage, it will be removed from the manager.
+    /// If building fails, the old site remains in place.
+    pub async fn reload_site(
+        &self,
+        name: &str,
+        loader: &ConfigStorageLoader,
+        config_storage_url: &str,
+    ) -> Result<(), String> {
+        info!("Reloading site '{}' from ConfigStorage", name);
+
+        // Load site config from ConfigStorage
+        let mut site_config = match loader.load_site(name).await {
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                // Site was removed from ConfigStorage, remove from manager
+                info!(
+                    "Site '{}' not found in ConfigStorage, removing from manager",
+                    name
+                );
+                self.remove_site(name).await;
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Failed to load site '{}' from ConfigStorage: {}",
+                    name, e
+                ));
+            }
+        };
+
+        // Set config_storage URL so the site can use it
+        site_config.config_storage = Some(config_storage_url.to_string());
+
+        // Get hostnames from StoredSiteConfig (need to re-fetch)
+        let hostnames = match loader
+            .storage()
+            .get_site_config(name)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            Some(stored) => stored.hostnames,
+            None => vec!["*".to_string()],
+        };
+
+        // Build the site
+        let site_builder = SiteBuilder::new(site_config);
+        let site = site_builder.build().await.map_err(|e| e.to_string())?;
+        let site = Arc::new(site);
+
+        // Initialize galleries
+        for (gallery_name, gallery) in site.galleries().iter() {
+            if let Err(e) = Self::initialize_gallery(gallery).await {
+                warn!(
+                    "Failed to initialize gallery '{}' for site '{}': {}",
+                    gallery_name, name, e
+                );
+            }
+        }
+
+        // Replace the old site
+        self.replace_site(name, site, hostnames).await;
+
+        info!("Site '{}' reloaded successfully", name);
+        Ok(())
+    }
+
+    /// Initialize a gallery (version check, metadata refresh, background tasks)
+    async fn initialize_gallery(gallery: &Arc<Gallery>) -> Result<(), String> {
+        let gallery_config = gallery.get_config();
+        let gallery_name = &gallery_config.name;
+
+        // Initialize gallery and check for version changes
+        if let Err(e) = gallery.initialize_and_check_version().await {
+            warn!(
+                "Failed to initialize gallery '{}' metadata cache: {}",
+                gallery_name, e
+            );
+        }
+
+        // Trigger refresh and/or pre-generation on startup
+        let metadata_empty = gallery.is_metadata_cache_empty().await;
+        let pregenerate = gallery_config.pregenerate.is_some();
+
+        if (metadata_empty || pregenerate)
+            && let Err(e) = gallery
+                .clone()
+                .refresh_metadata_and_pregenerate_cache(pregenerate)
+                .await
+        {
+            return Err(format!(
+                "Failed to refresh metadata for gallery '{}': {}",
+                gallery_name, e
+            ));
+        }
+
+        // Start background cache refresh if configured
+        if let Some(interval_minutes) = gallery_config.cache_refresh_interval_minutes
+            && interval_minutes > 0
+        {
+            info!(
+                "Starting background cache refresh for gallery '{}' every {} minutes",
+                gallery_name, interval_minutes
+            );
+            Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+        }
+
+        // Start periodic cache save (every 5 minutes)
+        Gallery::start_periodic_cache_save(gallery.clone(), 5);
+
+        Ok(())
+    }
 }
 
 impl Default for SiteManager {
@@ -277,6 +399,9 @@ mod tests {
             login_state: Arc::new(tokio::sync::RwLock::new(crate::login::LoginState::new())),
             user_storage: None,
             email_config: None,
+            config_storage: None,
+            config_storage_url: None,
+            site_admins: Vec::new(),
         };
         Arc::new(Site::new(name.to_string(), resources))
     }

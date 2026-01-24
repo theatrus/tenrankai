@@ -22,6 +22,10 @@ interface MasonryGridProps {
   images: GalleryImage[];
   galleryUrl: string;
   permissions?: any;
+  isManageMode?: boolean;
+  selectedImages?: Set<string>;
+  hiddenImages?: string[];
+  onToggleSelect?: (path: string) => void;
 }
 
 interface DisplayDimensions {
@@ -29,7 +33,15 @@ interface DisplayDimensions {
   height: number;
 }
 
-export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, permissions }) => {
+export const MasonryGrid: React.FC<MasonryGridProps> = ({
+  images,
+  galleryUrl,
+  permissions,
+  isManageMode = false,
+  selectedImages = new Set(),
+  hiddenImages = [],
+  onToggleSelect,
+}) => {
   const [columnWidth, setColumnWidth] = useState(400);
   const [numColumns, setNumColumns] = useState(2);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -219,25 +231,51 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({ images, galleryUrl, pe
             const width = image.dimensions?.[0] || 800;
             const height = image.dimensions?.[1] || 600;
             const displayDimensions = calculateDisplayDimensions(width, height, columnWidth);
+            const filename = image.path.split('/').pop() || '';
+            const isHidden = hiddenImages.includes(filename);
+            const isSelected = selectedImages.has(image.path);
+
+            const handleClick = (e: React.MouseEvent) => {
+              if (isManageMode && onToggleSelect) {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleSelect(image.path);
+              }
+            };
+
+            const classNames = [
+              'image-item',
+              image.is_new ? 'is-new' : '',
+              isHidden ? 'is-hidden' : '',
+              isManageMode ? 'select-mode' : '',
+              isSelected ? 'selected' : '',
+            ].filter(Boolean).join(' ');
 
             return (
               <div
                 key={image.path}
-                className={`image-item ${image.is_new ? 'is-new' : ''}`}
+                className={classNames}
                 id={image.path}
                 data-id={image.path}
                 style={{
                   width: `${displayDimensions.width}px`,
                   height: `${displayDimensions.height}px`
                 }}
+                onClick={handleClick}
               >
-                <a 
-                  href={`${galleryUrl}/detail/${image.path}`} 
+                {isManageMode && (
+                  <div className="selection-checkbox">
+                    {isSelected ? '✓' : ''}
+                  </div>
+                )}
+                <a
+                  href={`${galleryUrl}/detail/${image.path}`}
                   className="image-link"
                   onContextMenu={(e) => e.preventDefault()}
                   onDragStart={(e) => e.preventDefault()}
+                  onClick={isManageMode ? (e) => e.preventDefault() : undefined}
                 >
-                  <div 
+                  <div
                     className="gallery-image-container"
                     style={{
                       position: 'absolute',

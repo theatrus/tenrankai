@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod api;
 pub mod api_response;
 pub mod cache;
@@ -20,6 +21,7 @@ pub mod startup_checks;
 pub mod static_files;
 pub mod template_system;
 pub mod templating;
+pub mod upload;
 pub mod webp_encoder;
 
 // Re-export extracted crates for backward compatibility
@@ -59,9 +61,7 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
-    // Config is pub(crate) to discourage direct access - use accessor methods instead
-    // Direct access to config.app.user_database caused multi-site bugs (see PR #121)
-    pub(crate) config: Config,
+    pub cache_queue: Option<cache::queue::DynCacheQueue>,
 }
 
 impl AppState {
@@ -73,13 +73,13 @@ impl AppState {
             email_provider: self.email_provider.clone(),
             webauthn: self.webauthn.clone(),
             openai_client: self.openai_client.clone(),
-            config: self.config.clone(),
+            cache_queue: self.cache_queue.clone(),
         }
     }
 
-    /// Check if this is multi-site mode
-    pub fn is_multi_site(&self) -> bool {
-        self.site_manager.is_some()
+    /// Get the cache generation queue (if enabled)
+    pub fn cache_queue(&self) -> Option<&cache::queue::DynCacheQueue> {
+        self.cache_queue.as_ref()
     }
 }
 
@@ -116,6 +116,50 @@ impl AppState {
 
     pub fn email_config(&self) -> Option<&email::SiteEmailConfig> {
         self.site.email_config()
+    }
+
+    pub fn config_storage(&self) -> &Option<tenrankai_config_storage::DynConfigStorage> {
+        self.site.config_storage()
+    }
+
+    pub fn config_storage_url(&self) -> Option<&str> {
+        self.site.config_storage_url()
+    }
+
+    pub fn site_admins(&self) -> &[String] {
+        self.site.site_admins()
+    }
+
+    pub fn is_site_admin(&self, username: &str) -> bool {
+        self.site.is_site_admin(username)
+    }
+
+    pub fn is_admin(&self, username: &str) -> bool {
+        // Check site-level admins first
+        if self.is_site_admin(username) {
+            return true;
+        }
+
+        // Check gallery-level permissions
+        for gallery in self.galleries().values() {
+            let permissions = &gallery.get_config().permissions;
+
+            for user_role in &permissions.user_roles {
+                if user_role.username.eq_ignore_ascii_case(username) {
+                    for role_name in &user_role.roles {
+                        if let Some(role) = permissions.roles.get(role_name)
+                            && role.permissions.owner_access
+                        {
+                            return true;
+                        }
+                        if role_name == "admin" {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
@@ -166,70 +210,68 @@ async fn server_header_middleware(
     response
 }
 
+/// Create an app for testing with a SiteConfig
+/// Note: This does not initialize email, webauthn, or openai - use for testing only
 pub async fn create_app(
-    config: Config,
+    site_config: site::SiteConfig,
     galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
 ) -> axum::Router {
-    create_app_internal(config, galleries, None).await
+    // Build site from provided SiteConfig
+    let mut site_builder = site::SiteBuilder::new(site_config);
+
+    // Inject provided galleries if any (for testing)
+    if let Some(provided_galleries) = galleries {
+        site_builder = site_builder.with_galleries(provided_galleries);
+    }
+
+    let built_site = match site_builder.build().await {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            error!("Failed to build site: {}", e);
+            panic!("Cannot start without a valid site configuration: {}", e);
+        }
+    };
+
+    // Start periodic cleanup for login if user database is configured
+    if built_site.user_storage().is_some() {
+        login::start_periodic_cleanup(built_site.login_state().clone());
+    }
+
+    // Create minimal AppState for testing (no email, webauthn, openai, cache_queue)
+    let app_state = AppState {
+        site: built_site.clone(),
+        site_manager: None,
+        email_provider: None,
+        webauthn: None,
+        openai_client: None,
+        cache_queue: None,
+    };
+
+    create_router(app_state, built_site)
 }
 
 /// Create an app with multi-site support using SiteManager
 pub async fn create_app_with_site_manager(
     config: Config,
     site_manager: Arc<site::SiteManager>,
+    cache_queue: Option<cache::queue::DynCacheQueue>,
 ) -> axum::Router {
-    create_app_internal(config, None, Some(site_manager)).await
-}
-
-async fn create_app_internal(
-    config: Config,
-    galleries: Option<Arc<HashMap<String, gallery::SharedGallery>>>,
-    site_manager: Option<Arc<site::SiteManager>>,
-) -> axum::Router {
-    // Get or build the site
-    let built_site = if let Some(ref manager) = site_manager {
-        // In multi-site mode, get the default site from SiteManager
-        // The site_resolution_middleware will swap in the correct site per-request
-        match manager.get_default_site().await {
-            Some(site) => {
-                info!("Using default site '{}' from SiteManager", site.name);
-                // Start periodic login cleanup for all sites with user databases
-                for site in manager.sites().await {
-                    if site.user_storage().is_some() {
-                        login::start_periodic_cleanup(site.login_state().clone());
-                    }
+    // In multi-site mode, get the default site from SiteManager
+    // The site_resolution_middleware will swap in the correct site per-request
+    let built_site = match site_manager.get_default_site().await {
+        Some(site) => {
+            info!("Using default site '{}' from SiteManager", site.name);
+            // Start periodic login cleanup for all sites with user databases
+            for site in site_manager.sites().await {
+                if site.user_storage().is_some() {
+                    login::start_periodic_cleanup(site.login_state().clone());
                 }
-                // Return the Arc<Site> directly, we'll handle conversion below
-                site
             }
-            None => {
-                panic!("SiteManager has no default site configured");
-            }
+            site
         }
-    } else {
-        // Single-site mode: build the site from config
-        let site_config = site::SiteConfig::from_legacy_config(&config, config.email.as_ref());
-        let mut site_builder = site::SiteBuilder::new(site_config);
-
-        // Inject provided galleries if any (for testing)
-        if let Some(provided_galleries) = galleries {
-            site_builder = site_builder.with_galleries(provided_galleries);
+        None => {
+            panic!("SiteManager has no default site configured");
         }
-
-        let site = match site_builder.build().await {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Failed to build site: {}", e);
-                panic!("Cannot start without a valid site configuration: {}", e);
-            }
-        };
-
-        // Start periodic cleanup for login if user database is configured
-        if site.user_storage().is_some() {
-            login::start_periodic_cleanup(site.login_state().clone());
-        }
-
-        Arc::new(site)
     };
 
     // Initialize global resources (shared across all sites)
@@ -284,13 +326,17 @@ async fn create_app_internal(
 
     let app_state = AppState {
         site: built_site.clone(),
-        site_manager: site_manager.clone(),
+        site_manager: Some(site_manager.clone()),
         email_provider,
         webauthn,
         openai_client,
-        config: config.clone(),
+        cache_queue,
     };
 
+    create_router(app_state, built_site)
+}
+
+fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Router {
     let mut router = Router::new()
         .route(
             "/",
@@ -377,6 +423,156 @@ async fn create_app_internal(
                     axum::routing::put(login::webauthn::update_passkey_name),
                 );
         }
+
+        // Admin routes (require owner_access permission)
+        router = router
+            // User management
+            .route("/_admin/api/users", axum::routing::get(admin::list_users))
+            .route("/_admin/api/users", axum::routing::post(admin::create_user))
+            .route(
+                "/_admin/api/users/{username}",
+                axum::routing::get(admin::get_user),
+            )
+            .route(
+                "/_admin/api/users/{username}",
+                axum::routing::put(admin::update_user),
+            )
+            .route(
+                "/_admin/api/users/{username}",
+                axum::routing::delete(admin::delete_user),
+            )
+            .route(
+                "/_admin/api/users/{username}/invite",
+                axum::routing::post(admin::send_invite),
+            )
+            // Gallery management
+            .route(
+                "/_admin/api/galleries",
+                axum::routing::get(admin::list_galleries),
+            )
+            .route(
+                "/_admin/api/galleries/{name}",
+                axum::routing::get(admin::get_gallery),
+            )
+            .route(
+                "/_admin/api/galleries/{name}/permissions",
+                axum::routing::put(admin::update_gallery_permissions),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/users/{username}/roles",
+                axum::routing::get(admin::get_user_gallery_roles).put(admin::assign_user_roles),
+            )
+            // Role management
+            .route(
+                "/_admin/api/roles",
+                axum::routing::get(admin::list_roles).post(admin::create_role),
+            )
+            .route(
+                "/_admin/api/roles/{name}",
+                axum::routing::get(admin::get_role)
+                    .put(admin::update_role)
+                    .delete(admin::delete_role),
+            )
+            // Permission groups (for UI organization)
+            .route(
+                "/_admin/api/permission-groups",
+                axum::routing::get(admin::list_permission_groups),
+            )
+            // Site management (ConfigStorage mode)
+            .route("/_admin/api/sites", axum::routing::get(admin::list_sites))
+            .route(
+                "/_admin/api/sites/{name}",
+                axum::routing::get(admin::get_site).put(admin::update_site),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries",
+                axum::routing::get(admin::list_site_galleries),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{name}",
+                axum::routing::get(admin::get_site_gallery)
+                    .put(admin::upsert_site_gallery)
+                    .delete(admin::delete_site_gallery),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders",
+                axum::routing::get(admin::list_gallery_folders),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders/{folder_path}",
+                axum::routing::get(admin::get_folder_permissions)
+                    .put(admin::update_folder_permissions),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders/{folder_path}/share",
+                axum::routing::post(admin::share_folder),
+            )
+            .route(
+                "/_admin/api/sites/{site}/galleries/{gallery}/folders/{folder_path}/images",
+                axum::routing::get(admin::list_folder_images),
+            )
+            // Image management (site determined from host)
+            .route(
+                "/_admin/api/galleries/{gallery}/images",
+                axum::routing::delete(admin::delete_gallery_images_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/images/hide",
+                axum::routing::post(admin::hide_gallery_images_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/create",
+                axum::routing::post(admin::create_gallery_folder_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}",
+                axum::routing::delete(admin::delete_gallery_folder_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/rename",
+                axum::routing::post(admin::rename_gallery_folder_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/images/move",
+                axum::routing::post(admin::move_gallery_images_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/images/copy",
+                axum::routing::post(admin::copy_gallery_images_resolved),
+            )
+            .route(
+                "/_admin/api/sites/{site}/permissions",
+                axum::routing::get(admin::get_site_permissions).put(admin::update_site_permissions),
+            )
+            .route(
+                "/_admin/api/sites/{site}/reload",
+                axum::routing::post(admin::reload_site),
+            )
+            // Admin SPA catch-all (must be last)
+            .route("/_admin", axum::routing::get(admin::admin_spa_handler))
+            .route(
+                "/_admin/{*path}",
+                axum::routing::get(admin::admin_spa_handler),
+            );
+
+        // Upload routes (Tus protocol for resumable uploads)
+        // Note: Folder path is passed in Upload-Metadata header (key: folderPath), not in URL
+        // Need larger body limit for chunk uploads (default is 2MB, we use 5MB chunks)
+        use axum::extract::DefaultBodyLimit;
+        router = router
+            .route("/_upload", axum::routing::options(upload::options_handler))
+            .route(
+                "/_upload/{gallery}",
+                axum::routing::options(upload::options_handler).post(upload::create_upload),
+            )
+            .route(
+                "/_upload/{gallery}/{upload_id}",
+                axum::routing::options(upload::options_handler)
+                    .head(upload::head_upload)
+                    .patch(upload::patch_upload)
+                    .delete(upload::delete_upload)
+                    .layer(DefaultBodyLimit::max(10 * 1024 * 1024)), // 10MB to accommodate 5MB chunks with headers
+            );
     }
 
     // Add gallery routes dynamically based on site's galleries
@@ -769,7 +965,7 @@ async fn create_app_internal(
     );
 
     // Add site resolution middleware if in multi-site mode
-    let router = if site_manager.is_some() {
+    let router = if app_state.site_manager.is_some() {
         router.layer(middleware::from_fn_with_state(
             app_state.clone(),
             site::site_resolution_middleware,

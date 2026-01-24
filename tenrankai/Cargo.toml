@@ -28,6 +28,7 @@ users-dynamodb = ["tenrankai-users/dynamodb"]
 
 [dependencies]
 # Internal crates
+tenrankai-config-storage.workspace = true
 tenrankai-email.workspace = true
 tenrankai-image.workspace = true
 tenrankai-metadata.workspace = true
@@ -166,3 +167,7 @@ path = "../tests/s3_storage_integration.rs"
 name = "avif_gain_map"
 path = "../tests/avif_gain_map.rs"
 required-features = ["avif"]
+
+[[test]]
+name = "admin_and_hidden_images_tests"
+path = "../tests/admin_and_hidden_images_tests.rs"

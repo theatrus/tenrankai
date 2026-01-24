@@ -135,12 +135,7 @@ pub async fn login_request(
         };
 
         // Build login URL
-        let base_url = app_state
-            .config
-            .app
-            .base_url
-            .as_deref()
-            .unwrap_or("http://localhost:8080");
+        let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
         let login_url = format!("{}/_login/verify?token={}", base_url, token);
 
         // Send email if provider is configured, otherwise log the URL
@@ -314,6 +309,11 @@ pub async fn login_success(
 pub struct AuthStatusResponse {
     pub authorized: bool,
     pub username: Option<String>,
+    pub is_admin: bool,
+}
+
+fn check_user_is_admin(app_state: &crate::AppState, username: &str) -> bool {
+    app_state.is_admin(username)
 }
 
 pub async fn check_auth_status(
@@ -321,15 +321,20 @@ pub async fn check_auth_status(
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
     let response = if app_state.user_storage().is_none() {
-        // If no user database is configured, return not authorized
         AuthStatusResponse {
             authorized: false,
             username: None,
+            is_admin: false,
         }
     } else {
+        let is_admin = auth
+            .username()
+            .map(|u| check_user_is_admin(&app_state, u))
+            .unwrap_or(false);
         AuthStatusResponse {
             authorized: auth.is_authenticated(),
             username: auth.username().map(|s| s.to_string()),
+            is_admin,
         }
     };
 

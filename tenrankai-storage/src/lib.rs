@@ -159,6 +159,22 @@ pub trait Storage: Send + Sync + 'static {
     /// Ok if deleted successfully, or `NotFound` if the object doesn't exist.
     async fn delete(&self, path: &str) -> Result<(), StorageError>;
 
+    /// Delete an empty directory.
+    ///
+    /// For filesystem storage, this removes the directory.
+    /// For object stores like S3, this is a no-op since directories don't exist.
+    ///
+    /// # Arguments
+    /// * `path` - Relative path to the directory
+    ///
+    /// # Returns
+    /// Ok if deleted successfully or not applicable.
+    async fn delete_directory(&self, path: &str) -> Result<(), StorageError> {
+        // Default implementation is a no-op (for S3 and similar object stores)
+        let _ = path;
+        Ok(())
+    }
+
     /// List objects with a prefix (non-recursive).
     ///
     /// Lists only immediate children of the given prefix.
@@ -318,6 +334,139 @@ pub trait Storage: Send + Sync + 'static {
 /// Type alias for a thread-safe storage backend.
 pub type DynStorage = Arc<dyn Storage>;
 
+// ============================================================================
+// Chunked/Resumable Upload Support
+// ============================================================================
+
+/// Information about an in-progress upload.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UploadInfo {
+    /// Unique identifier for this upload.
+    pub upload_id: String,
+    /// Final destination path for the file.
+    pub path: String,
+    /// Total expected size of the file in bytes.
+    pub total_size: u64,
+    /// Current upload offset (bytes received so far).
+    pub current_offset: u64,
+    /// Optional metadata (base64-encoded key-value pairs from Tus).
+    pub metadata: Option<String>,
+    /// When the upload was created.
+    #[serde(with = "system_time_serde")]
+    pub created_at: SystemTime,
+}
+
+mod system_time_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    pub fn serialize<S>(time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let duration = time.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+        duration.as_secs().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = u64::deserialize(deserializer)?;
+        Ok(UNIX_EPOCH + Duration::from_secs(secs))
+    }
+}
+
+/// Trait for storage backends that support chunked/resumable uploads.
+///
+/// This trait extends the base `Storage` trait with support for the Tus protocol,
+/// enabling resumable uploads for large files.
+#[async_trait]
+pub trait ChunkedUpload: Storage {
+    /// Create a new upload session.
+    ///
+    /// # Arguments
+    /// * `path` - Final destination path for the file
+    /// * `total_size` - Total expected file size in bytes
+    /// * `metadata` - Optional Tus metadata (base64-encoded key-value pairs)
+    ///
+    /// # Returns
+    /// A unique upload ID that can be used for subsequent operations.
+    async fn create_upload(
+        &self,
+        path: &str,
+        total_size: u64,
+        metadata: Option<&str>,
+    ) -> Result<String, StorageError>;
+
+    /// Append data to an existing upload.
+    ///
+    /// # Arguments
+    /// * `upload_id` - The upload ID from `create_upload`
+    /// * `offset` - Expected current offset (must match server state)
+    /// * `data` - Chunk data to append
+    ///
+    /// # Returns
+    /// The new offset after appending the data.
+    ///
+    /// # Errors
+    /// * `OffsetMismatch` - If the provided offset doesn't match the current state
+    /// * `UploadNotFound` - If the upload ID doesn't exist
+    async fn append_chunk(
+        &self,
+        upload_id: &str,
+        offset: u64,
+        data: Bytes,
+    ) -> Result<u64, StorageError>;
+
+    /// Get information about an upload.
+    ///
+    /// # Arguments
+    /// * `upload_id` - The upload ID to query
+    ///
+    /// # Returns
+    /// Current state of the upload.
+    async fn get_upload_info(&self, upload_id: &str) -> Result<UploadInfo, StorageError>;
+
+    /// Complete an upload, moving it to its final destination.
+    ///
+    /// This should be called when `current_offset == total_size`.
+    ///
+    /// # Arguments
+    /// * `upload_id` - The upload ID to complete
+    ///
+    /// # Errors
+    /// * `UploadNotFound` - If the upload ID doesn't exist
+    /// * `Other` - If the upload is incomplete
+    async fn complete_upload(&self, upload_id: &str) -> Result<(), StorageError>;
+
+    /// Terminate/abort an incomplete upload.
+    ///
+    /// Cleans up any partial data associated with the upload.
+    ///
+    /// # Arguments
+    /// * `upload_id` - The upload ID to terminate
+    async fn terminate_upload(&self, upload_id: &str) -> Result<(), StorageError>;
+
+    /// List all active uploads (for cleanup purposes).
+    ///
+    /// # Returns
+    /// Vector of all active upload IDs with their info.
+    async fn list_uploads(&self) -> Result<Vec<UploadInfo>, StorageError>;
+
+    /// Clean up expired uploads.
+    ///
+    /// # Arguments
+    /// * `max_age` - Maximum age for uploads before expiration
+    ///
+    /// # Returns
+    /// Number of uploads cleaned up.
+    async fn cleanup_expired_uploads(&self, max_age: Duration) -> Result<usize, StorageError>;
+}
+
+/// Type alias for a thread-safe chunked upload storage backend.
+pub type DynChunkedStorage = Arc<dyn ChunkedUpload>;
+
 /// Create a storage backend from a URL string.
 ///
 /// Parses the URL and creates the appropriate storage backend (filesystem or S3).
@@ -336,6 +485,29 @@ pub type DynStorage = Arc<dyn Storage>;
 pub async fn create_storage_from_url(url_str: &str) -> Result<DynStorage, StorageError> {
     let url = StorageUrl::parse(url_str)?;
     url.into_storage().await
+}
+
+/// Create a chunked upload storage backend from a URL string.
+///
+/// Similar to `create_storage_from_url`, but returns a storage backend that
+/// supports chunked/resumable uploads via the Tus protocol.
+///
+/// # Arguments
+/// * `url_str` - Storage URL string (filesystem path or s3://...)
+///
+/// # Returns
+/// A chunked upload storage backend, or an error if the URL fails to parse or initialize.
+///
+/// # Example
+/// ```ignore
+/// let storage = create_chunked_storage_from_url("photos").await?;
+/// let storage = create_chunked_storage_from_url("s3://bucket/prefix?region=us-west-2").await?;
+/// ```
+pub async fn create_chunked_storage_from_url(
+    url_str: &str,
+) -> Result<DynChunkedStorage, StorageError> {
+    let url = StorageUrl::parse(url_str)?;
+    url.into_chunked_storage().await
 }
 
 /// Create storage backends from a list of URL strings.

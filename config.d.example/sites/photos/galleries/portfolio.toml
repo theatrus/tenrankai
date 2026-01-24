@@ -1,0 +1,48 @@
+# Portfolio Gallery Configuration
+#
+# A high-quality photography portfolio with larger image sizes
+
+name = "portfolio"
+url_prefix = "/"  # Gallery at root of the photos site
+
+# Paths relative to storage_prefix (/data/sites/photos)
+source_directory = "portfolio"
+cache_directory = "cache/portfolio"
+
+# Templates
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+
+# Higher quality for portfolio
+jpeg_quality = 90
+webp_quality = 90.0
+
+# Larger image sizes for portfolio
+[thumbnail]
+width = 400
+height = 400
+
+[gallery_size]
+width = 1000
+height = 1000
+
+[medium]
+width = 1600
+height = 1600
+
+[large]
+width = 2400
+height = 2400
+
+[preview]
+max_images = 8
+max_depth = 2
+max_per_folder = 4
+
+# Use unique IDs for clean, privacy-friendly URLs
+image_indexing = "unique_id"
+
+# Copyright holder for watermarks
+copyright_holder = "Photography Portfolio"
+
+metadata_cache_size = 500
