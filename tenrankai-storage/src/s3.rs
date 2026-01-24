@@ -1,6 +1,6 @@
 //! Amazon S3 storage backend implementation.
 
-use super::{ByteStream, ObjectMetadata, Storage, StorageEntry, StorageError};
+use super::{ByteStream, ChunkedUpload, ObjectMetadata, Storage, StorageEntry, StorageError, UploadInfo};
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{
@@ -8,6 +8,8 @@ use aws_sdk_s3::{
     config::Region,
     presigning::PresigningConfig,
     primitives::{ByteStream as AwsByteStream, DateTime as AwsDateTime},
+    types::CompletedMultipartUpload,
+    types::CompletedPart,
 };
 use bytes::Bytes;
 use futures::StreamExt;
@@ -638,5 +640,476 @@ impl std::fmt::Debug for S3Storage {
             .field("bucket", &self.bucket)
             .field("prefix", &self.prefix)
             .finish()
+    }
+}
+
+// ============================================================================
+// Chunked Upload Implementation for S3
+// ============================================================================
+
+const S3_UPLOADS_PREFIX: &str = "__uploads";
+const S3_MIN_PART_SIZE: u64 = 5 * 1024 * 1024; // 5MB minimum for S3 parts
+
+/// Internal state for S3 multipart uploads.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct S3UploadState {
+    /// Basic upload info (shared with filesystem implementation)
+    #[serde(flatten)]
+    info: UploadInfo,
+    /// S3 multipart upload ID
+    multipart_upload_id: String,
+    /// Completed parts with their ETags
+    completed_parts: Vec<S3CompletedPart>,
+    /// Size of data buffered but not yet uploaded as a part
+    buffered_size: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct S3CompletedPart {
+    part_number: i32,
+    e_tag: String,
+}
+
+impl S3Storage {
+    /// Get the key for upload metadata.
+    fn upload_meta_key(&self, upload_id: &str) -> String {
+        if self.prefix.is_empty() {
+            format!("{}/{}.json", S3_UPLOADS_PREFIX, upload_id)
+        } else {
+            format!("{}/{}/{}.json", self.prefix, S3_UPLOADS_PREFIX, upload_id)
+        }
+    }
+
+    /// Get the key for upload buffer data.
+    fn upload_buffer_key(&self, upload_id: &str) -> String {
+        if self.prefix.is_empty() {
+            format!("{}/{}.buffer", S3_UPLOADS_PREFIX, upload_id)
+        } else {
+            format!("{}/{}/{}.buffer", self.prefix, S3_UPLOADS_PREFIX, upload_id)
+        }
+    }
+
+    /// Generate a unique upload ID.
+    fn generate_upload_id() -> String {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+        use std::time::UNIX_EPOCH;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let random: u64 = RandomState::new().build_hasher().finish();
+        format!("{:x}{:016x}", timestamp, random)
+    }
+
+    /// Load upload state from S3.
+    async fn load_upload_state(&self, upload_id: &str) -> Result<S3UploadState, StorageError> {
+        let key = self.upload_meta_key(upload_id);
+
+        let result = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await;
+
+        match result {
+            Ok(output) => {
+                let data = output.body.collect().await.map_err(|e| {
+                    StorageError::Other(format!("Failed to read upload state: {}", e))
+                })?;
+                let state: S3UploadState = serde_json::from_slice(&data.into_bytes())
+                    .map_err(|e| StorageError::Other(format!("Failed to parse upload state: {}", e)))?;
+                Ok(state)
+            }
+            Err(e) => {
+                let service_error = e.into_service_error();
+                if service_error.is_no_such_key() {
+                    Err(StorageError::UploadNotFound(upload_id.to_string()))
+                } else {
+                    Err(StorageError::Other(format!("S3 GetObject error: {}", service_error)))
+                }
+            }
+        }
+    }
+
+    /// Save upload state to S3.
+    async fn save_upload_state(&self, state: &S3UploadState) -> Result<(), StorageError> {
+        let key = self.upload_meta_key(&state.info.upload_id);
+        let data = serde_json::to_vec(state)
+            .map_err(|e| StorageError::Other(format!("Failed to serialize upload state: {}", e)))?;
+
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .body(AwsByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| StorageError::Other(format!("S3 PutObject error: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Read the current buffer for an upload.
+    async fn read_buffer(&self, upload_id: &str) -> Result<Bytes, StorageError> {
+        let key = self.upload_buffer_key(upload_id);
+
+        let result = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await;
+
+        match result {
+            Ok(output) => {
+                let data = output.body.collect().await.map_err(|e| {
+                    StorageError::Other(format!("Failed to read buffer: {}", e))
+                })?;
+                Ok(data.into_bytes())
+            }
+            Err(e) => {
+                let service_error = e.into_service_error();
+                if service_error.is_no_such_key() {
+                    // No buffer yet, return empty
+                    Ok(Bytes::new())
+                } else {
+                    Err(StorageError::Other(format!("S3 GetObject error: {}", service_error)))
+                }
+            }
+        }
+    }
+
+    /// Write buffer data.
+    async fn write_buffer(&self, upload_id: &str, data: Bytes) -> Result<(), StorageError> {
+        let key = self.upload_buffer_key(upload_id);
+
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .body(AwsByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| StorageError::Other(format!("S3 PutObject error: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Delete buffer data.
+    async fn delete_buffer(&self, upload_id: &str) -> Result<(), StorageError> {
+        let key = self.upload_buffer_key(upload_id);
+        let _ = self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await;
+        Ok(())
+    }
+
+    /// Upload a part to S3 multipart upload.
+    async fn upload_part(
+        &self,
+        state: &S3UploadState,
+        part_number: i32,
+        data: Bytes,
+    ) -> Result<String, StorageError> {
+        let key = self.build_key(&state.info.path)?;
+
+        let result = self
+            .client
+            .upload_part()
+            .bucket(&self.bucket)
+            .key(&key)
+            .upload_id(&state.multipart_upload_id)
+            .part_number(part_number)
+            .body(AwsByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| StorageError::Other(format!("S3 UploadPart error: {}", e)))?;
+
+        let etag = result.e_tag().unwrap_or("").to_string();
+        Ok(etag)
+    }
+}
+
+#[async_trait]
+impl ChunkedUpload for S3Storage {
+    async fn create_upload(
+        &self,
+        path: &str,
+        total_size: u64,
+        metadata: Option<&str>,
+    ) -> Result<String, StorageError> {
+        let key = self.build_key(path)?;
+
+        // Create S3 multipart upload
+        let result = self
+            .client
+            .create_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+            .map_err(|e| StorageError::Other(format!("S3 CreateMultipartUpload error: {}", e)))?;
+
+        let multipart_upload_id = result
+            .upload_id()
+            .ok_or_else(|| StorageError::Other("No upload ID returned".to_string()))?
+            .to_string();
+
+        // Generate our own upload ID for tracking
+        let upload_id = Self::generate_upload_id();
+
+        // Create upload state
+        let state = S3UploadState {
+            info: UploadInfo {
+                upload_id: upload_id.clone(),
+                path: path.to_string(),
+                total_size,
+                current_offset: 0,
+                metadata: metadata.map(String::from),
+                created_at: SystemTime::now(),
+            },
+            multipart_upload_id,
+            completed_parts: Vec::new(),
+            buffered_size: 0,
+        };
+
+        // Save state
+        self.save_upload_state(&state).await?;
+
+        Ok(upload_id)
+    }
+
+    async fn append_chunk(
+        &self,
+        upload_id: &str,
+        offset: u64,
+        data: Bytes,
+    ) -> Result<u64, StorageError> {
+        let mut state = self.load_upload_state(upload_id).await?;
+
+        // Verify offset matches
+        if offset != state.info.current_offset {
+            return Err(StorageError::OffsetMismatch {
+                expected: state.info.current_offset,
+                actual: offset,
+            });
+        }
+
+        // Read existing buffer and append new data
+        let existing_buffer = self.read_buffer(upload_id).await?;
+        let mut buffer = existing_buffer.to_vec();
+        buffer.extend_from_slice(&data);
+
+        let data_len = data.len() as u64;
+        state.info.current_offset += data_len;
+        state.buffered_size = buffer.len() as u64;
+
+        // Check if we have enough for a part (5MB minimum, except for final part)
+        while state.buffered_size >= S3_MIN_PART_SIZE {
+            let part_number = (state.completed_parts.len() + 1) as i32;
+
+            // Take 5MB for this part
+            let part_data: Vec<u8> = buffer.drain(..S3_MIN_PART_SIZE as usize).collect();
+            let part_bytes = Bytes::from(part_data);
+
+            // Upload part
+            let etag = self.upload_part(&state, part_number, part_bytes).await?;
+
+            state.completed_parts.push(S3CompletedPart {
+                part_number,
+                e_tag: etag,
+            });
+
+            state.buffered_size = buffer.len() as u64;
+        }
+
+        // Save remaining buffer
+        if !buffer.is_empty() {
+            self.write_buffer(upload_id, Bytes::from(buffer)).await?;
+        } else {
+            self.delete_buffer(upload_id).await?;
+        }
+
+        // Save state
+        self.save_upload_state(&state).await?;
+
+        Ok(state.info.current_offset)
+    }
+
+    async fn get_upload_info(&self, upload_id: &str) -> Result<UploadInfo, StorageError> {
+        let state = self.load_upload_state(upload_id).await?;
+        Ok(state.info)
+    }
+
+    async fn complete_upload(&self, upload_id: &str) -> Result<(), StorageError> {
+        let mut state = self.load_upload_state(upload_id).await?;
+
+        // Verify upload is complete
+        if state.info.current_offset != state.info.total_size {
+            return Err(StorageError::Other(format!(
+                "Upload incomplete: {} of {} bytes",
+                state.info.current_offset, state.info.total_size
+            )));
+        }
+
+        // Upload any remaining buffer as the final part
+        if state.buffered_size > 0 {
+            let buffer = self.read_buffer(upload_id).await?;
+            if !buffer.is_empty() {
+                let part_number = (state.completed_parts.len() + 1) as i32;
+                let etag = self.upload_part(&state, part_number, buffer).await?;
+                state.completed_parts.push(S3CompletedPart {
+                    part_number,
+                    e_tag: etag,
+                });
+            }
+            self.delete_buffer(upload_id).await?;
+        }
+
+        // Complete the multipart upload
+        let key = self.build_key(&state.info.path)?;
+
+        let completed_parts: Vec<CompletedPart> = state
+            .completed_parts
+            .iter()
+            .map(|p| {
+                CompletedPart::builder()
+                    .part_number(p.part_number)
+                    .e_tag(&p.e_tag)
+                    .build()
+            })
+            .collect();
+
+        let completed_upload = CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+
+        self.client
+            .complete_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&key)
+            .upload_id(&state.multipart_upload_id)
+            .multipart_upload(completed_upload)
+            .send()
+            .await
+            .map_err(|e| StorageError::Other(format!("S3 CompleteMultipartUpload error: {}", e)))?;
+
+        // Delete metadata
+        let meta_key = self.upload_meta_key(upload_id);
+        let _ = self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(&meta_key)
+            .send()
+            .await;
+
+        Ok(())
+    }
+
+    async fn terminate_upload(&self, upload_id: &str) -> Result<(), StorageError> {
+        // Try to load state to get multipart upload ID
+        if let Ok(state) = self.load_upload_state(upload_id).await {
+            // Abort the multipart upload
+            let key = self.build_key(&state.info.path)?;
+            let _ = self.client
+                .abort_multipart_upload()
+                .bucket(&self.bucket)
+                .key(&key)
+                .upload_id(&state.multipart_upload_id)
+                .send()
+                .await;
+        }
+
+        // Delete buffer
+        self.delete_buffer(upload_id).await?;
+
+        // Delete metadata
+        let meta_key = self.upload_meta_key(upload_id);
+        let _ = self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(&meta_key)
+            .send()
+            .await;
+
+        Ok(())
+    }
+
+    async fn list_uploads(&self) -> Result<Vec<UploadInfo>, StorageError> {
+        let prefix = if self.prefix.is_empty() {
+            format!("{}/", S3_UPLOADS_PREFIX)
+        } else {
+            format!("{}/{}/", self.prefix, S3_UPLOADS_PREFIX)
+        };
+
+        let mut uploads = Vec::new();
+        let mut continuation_token: Option<String> = None;
+
+        loop {
+            let mut request = self
+                .client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(&prefix);
+
+            if let Some(token) = continuation_token {
+                request = request.continuation_token(token);
+            }
+
+            let result = request
+                .send()
+                .await
+                .map_err(|e| StorageError::Other(format!("S3 ListObjectsV2 error: {}", e)))?;
+
+            for obj in result.contents() {
+                if let Some(key) = obj.key() {
+                    if key.ends_with(".json") {
+                        // Extract upload ID from key
+                        let filename = key.rsplit('/').next().unwrap_or("");
+                        if let Some(upload_id) = filename.strip_suffix(".json") {
+                            if let Ok(state) = self.load_upload_state(upload_id).await {
+                                uploads.push(state.info);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if result.is_truncated() == Some(true) {
+                continuation_token = result.next_continuation_token().map(|s| s.to_string());
+            } else {
+                break;
+            }
+        }
+
+        Ok(uploads)
+    }
+
+    async fn cleanup_expired_uploads(&self, max_age: Duration) -> Result<usize, StorageError> {
+        let uploads = self.list_uploads().await?;
+        let now = SystemTime::now();
+        let mut cleaned = 0;
+
+        for upload in uploads {
+            let age = now
+                .duration_since(upload.created_at)
+                .unwrap_or(Duration::ZERO);
+
+            if age > max_age {
+                if self.terminate_upload(&upload.upload_id).await.is_ok() {
+                    cleaned += 1;
+                }
+            }
+        }
+
+        Ok(cleaned)
     }
 }

@@ -21,6 +21,7 @@ pub mod startup_checks;
 pub mod static_files;
 pub mod template_system;
 pub mod templating;
+pub mod upload;
 pub mod webp_encoder;
 
 // Re-export extracted crates for backward compatibility
@@ -516,6 +517,29 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             .route(
                 "/_admin/{*path}",
                 axum::routing::get(admin::admin_spa_handler),
+            );
+
+        // Upload routes (Tus protocol for resumable uploads)
+        // Note: Folder path is passed in Upload-Metadata header (key: folderPath), not in URL
+        // Need larger body limit for chunk uploads (default is 2MB, we use 5MB chunks)
+        use axum::extract::DefaultBodyLimit;
+        router = router
+            .route(
+                "/_upload",
+                axum::routing::options(upload::options_handler),
+            )
+            .route(
+                "/_upload/{gallery}",
+                axum::routing::options(upload::options_handler)
+                    .post(upload::create_upload),
+            )
+            .route(
+                "/_upload/{gallery}/{upload_id}",
+                axum::routing::options(upload::options_handler)
+                    .head(upload::head_upload)
+                    .patch(upload::patch_upload)
+                    .delete(upload::delete_upload)
+                    .layer(DefaultBodyLimit::max(10 * 1024 * 1024)), // 10MB to accommodate 5MB chunks with headers
             );
     }
 

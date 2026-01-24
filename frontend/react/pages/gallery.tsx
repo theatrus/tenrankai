@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GalleryWithFilter } from '@components/Gallery/GalleryWithFilter';
 import { EditModal } from '../components/Editor/index.ts';
+import { UploadModal, NewDropdown } from '../components/Upload/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
 import { galleryManageApi } from '../api/gallery-manage.ts';
 import type { GalleryData, GalleryItem } from '../types/index.ts';
@@ -170,8 +171,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Always mount folder description editor (works even without images)
   mountFolderDescriptionEditor(galleryData);
 
-  // Always set up create folder button (works even without images)
-  mountCreateFolderButton(galleryData);
+  // Always set up the "+ New" dropdown (replaces old "+ Folder" button)
+  mountNewDropdown(galleryData);
 
   // Always set up delete folder button (only shows for empty folders)
   mountDeleteFolderButton();
@@ -495,65 +496,74 @@ function mountFolderDescriptionEditor(galleryData: GalleryData | null) {
   );
 }
 
-// Store reference to allow triggering modal from button click
-let createFolderTrigger: (() => void) | null = null;
-
 /**
- * Mount the create folder button handler
- * This works even when there are no images in the gallery
+ * Mount the "New" dropdown with Upload and New Folder options
+ * This replaces the old "+ Folder" button with a dropdown
  */
-function mountCreateFolderButton(galleryData: GalleryData | null) {
-  const createFolderButton = document.getElementById('create-folder-btn');
-  if (!createFolderButton || !galleryData) return;
+function mountNewDropdown(galleryData: GalleryData | null) {
+  // Look for either the new mount point or fall back to old button
+  let dropdownMount = document.getElementById('new-dropdown-mount');
+  const legacyButton = document.getElementById('create-folder-btn');
+
+  if (!galleryData) return;
+
+  // If there's no mount point but there's a legacy button, replace it
+  if (!dropdownMount && legacyButton) {
+    dropdownMount = document.createElement('div');
+    dropdownMount.id = 'new-dropdown-mount';
+    dropdownMount.style.display = 'inline-block';
+    legacyButton.parentNode?.replaceChild(dropdownMount, legacyButton);
+  }
+
+  if (!dropdownMount) return;
 
   const galleryName = galleryData.gallery_name;
   const galleryPath = galleryData.gallery_path;
 
-  // Create a mount point for the modal
-  let modalMount = document.getElementById('create-folder-modal-mount');
-  if (!modalMount) {
-    modalMount = document.createElement('div');
-    modalMount.id = 'create-folder-modal-mount';
-    document.body.appendChild(modalMount);
-  }
-
   // Create a stateful wrapper component
-  const CreateFolderWrapper: React.FC = () => {
-    const [showModal, setShowModal] = useState(false);
+  const NewDropdownWrapper: React.FC = () => {
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [showFolderModal, setShowFolderModal] = useState(false);
 
-    // Expose the trigger function
-    useEffect(() => {
-      createFolderTrigger = () => setShowModal(true);
-      return () => {
-        createFolderTrigger = null;
-      };
-    }, []);
-
-    const handleSuccess = useCallback(() => {
-      setShowModal(false);
+    const handleUploadSuccess = useCallback(() => {
+      setShowUploadModal(false);
       window.location.reload();
     }, []);
 
-    return showModal ? (
-      <CreateFolderModal
-        galleryName={galleryName}
-        parentFolder={galleryPath}
-        onSuccess={handleSuccess}
-        onClose={() => setShowModal(false)}
-      />
-    ) : null;
+    const handleFolderSuccess = useCallback(() => {
+      setShowFolderModal(false);
+      window.location.reload();
+    }, []);
+
+    return (
+      <>
+        <NewDropdown
+          onUpload={() => setShowUploadModal(true)}
+          onNewFolder={() => setShowFolderModal(true)}
+        />
+        {showUploadModal && (
+          <UploadModal
+            galleryName={galleryName}
+            folderPath={galleryPath}
+            onClose={() => setShowUploadModal(false)}
+            onSuccess={handleUploadSuccess}
+          />
+        )}
+        {showFolderModal && (
+          <CreateFolderModal
+            galleryName={galleryName}
+            parentFolder={galleryPath}
+            onSuccess={handleFolderSuccess}
+            onClose={() => setShowFolderModal(false)}
+          />
+        )}
+      </>
+    );
   };
 
   // Mount the wrapper
-  const root = createRoot(modalMount);
-  root.render(<CreateFolderWrapper />);
-
-  // Wire up the button click
-  createFolderButton.addEventListener('click', () => {
-    if (createFolderTrigger) {
-      createFolderTrigger();
-    }
-  });
+  const root = createRoot(dropdownMount);
+  root.render(<NewDropdownWrapper />);
 }
 
 /**
