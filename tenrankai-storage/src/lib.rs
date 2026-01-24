@@ -159,6 +159,22 @@ pub trait Storage: Send + Sync + 'static {
     /// Ok if deleted successfully, or `NotFound` if the object doesn't exist.
     async fn delete(&self, path: &str) -> Result<(), StorageError>;
 
+    /// Delete an empty directory.
+    ///
+    /// For filesystem storage, this removes the directory.
+    /// For object stores like S3, this is a no-op since directories don't exist.
+    ///
+    /// # Arguments
+    /// * `path` - Relative path to the directory
+    ///
+    /// # Returns
+    /// Ok if deleted successfully or not applicable.
+    async fn delete_directory(&self, path: &str) -> Result<(), StorageError> {
+        // Default implementation is a no-op (for S3 and similar object stores)
+        let _ = path;
+        Ok(())
+    }
+
     /// List objects with a prefix (non-recursive).
     ///
     /// Lists only immediate children of the given prefix.

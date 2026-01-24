@@ -28,6 +28,21 @@ export interface FolderInfo {
   image_count: number;
 }
 
+export interface CreateFolderRequest {
+  name: string;
+  description?: string;
+}
+
+export interface CreateFolderResponse {
+  success: boolean;
+  folder_path: string;
+}
+
+export interface DeleteFolderResponse {
+  success: boolean;
+  message: string;
+}
+
 class ApiError extends Error {
   constructor(public message: string, public status: number) {
     super(message);
@@ -92,5 +107,18 @@ export const galleryManageApi = {
     adminRequest<{ folders: FolderInfo[] }>(
       'GET',
       `/sites/${encodeURIComponent(site)}/galleries/${encodeURIComponent(galleryName)}/folders`
+    ),
+
+  createFolder: (galleryName: string, parentFolder: string, request: CreateFolderRequest) =>
+    adminRequest<CreateFolderResponse>(
+      'POST',
+      `/galleries/${encodeURIComponent(galleryName)}/folders/${encodeURIComponent(parentFolder || '_root')}/create`,
+      request
+    ),
+
+  deleteFolder: (galleryName: string, folderPath: string) =>
+    adminRequest<DeleteFolderResponse>(
+      'DELETE',
+      `/galleries/${encodeURIComponent(galleryName)}/folders/${encodeURIComponent(folderPath || '_root')}`
     ),
 };

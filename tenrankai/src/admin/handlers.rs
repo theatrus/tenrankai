@@ -9,8 +9,110 @@ use super::error::AdminError;
 use super::extractors::RequireAdmin;
 use super::types::*;
 use crate::cache::queue::{CacheCleanupRequest, CacheGenerationRequest};
+use crate::gallery::path_utils::{self, SidecarPaths};
 use crate::permissions::types::RolePermissions;
 use crate::site::ResolvedState;
+use crate::storage::DynStorage;
+
+// ============================================================================
+// Helper Functions for File Operations
+// ============================================================================
+
+/// Find all sidecar files that exist for a given image path.
+/// Returns paths that actually exist in storage.
+async fn find_existing_sidecars(storage: &DynStorage, image_path: &str) -> Vec<String> {
+    let sidecars = SidecarPaths::for_image(image_path);
+    let mut existing = Vec::new();
+
+    // Check XMP sidecar
+    if storage.exists(&sidecars.xmp).await.unwrap_or(false) {
+        existing.push(sidecars.xmp);
+    }
+
+    // Check markdown sidecars
+    if storage
+        .exists(&sidecars.markdown_full)
+        .await
+        .unwrap_or(false)
+    {
+        existing.push(sidecars.markdown_full);
+    }
+    if storage
+        .exists(&sidecars.markdown_replaced)
+        .await
+        .unwrap_or(false)
+    {
+        existing.push(sidecars.markdown_replaced);
+    }
+
+    existing
+}
+
+/// Generate destination sidecar paths from source sidecars.
+/// Transforms source paths to destination folder while preserving sidecar type.
+fn transform_sidecar_paths(
+    source_sidecars: &[String],
+    source_image: &str,
+    dest_image: &str,
+) -> Vec<(String, String)> {
+    let source_sidecars_template = SidecarPaths::for_image(source_image);
+    let dest_sidecars_template = SidecarPaths::for_image(dest_image);
+
+    source_sidecars
+        .iter()
+        .filter_map(|src| {
+            if *src == source_sidecars_template.xmp {
+                Some((src.clone(), dest_sidecars_template.xmp.clone()))
+            } else if *src == source_sidecars_template.markdown_full {
+                Some((src.clone(), dest_sidecars_template.markdown_full.clone()))
+            } else if *src == source_sidecars_template.markdown_replaced {
+                Some((
+                    src.clone(),
+                    dest_sidecars_template.markdown_replaced.clone(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Find version files for an image in the __versions folder.
+/// Returns list of (source_path, filename) tuples.
+async fn find_version_files(
+    storage: &DynStorage,
+    folder_path: &str,
+    filename: &str,
+) -> Vec<(String, String)> {
+    let stem = path_utils::filename(filename);
+    let base_name = crate::gallery::grouping::extract_base_name(stem);
+
+    // Check __versions folder
+    let versions_folder = if folder_path.is_empty() {
+        "__versions".to_string()
+    } else {
+        format!("{}/__versions", folder_path)
+    };
+
+    let mut version_files = Vec::new();
+
+    // List files in __versions folder
+    if let Ok(entries) = storage.list(&versions_folder).await {
+        for entry in entries {
+            if !entry.is_dir {
+                let entry_filename = path_utils::filename(&entry.path);
+                let entry_base = crate::gallery::grouping::extract_base_name(entry_filename);
+
+                // Check if this file belongs to the same image group
+                if entry_base == base_name {
+                    version_files.push((entry.path.clone(), entry_filename.to_string()));
+                }
+            }
+        }
+    }
+
+    version_files
+}
 
 /// Serve the admin SPA HTML
 pub async fn admin_spa_handler(ResolvedState(app_state): ResolvedState) -> Response {
@@ -2803,6 +2905,297 @@ pub async fn create_gallery_folder_resolved(
     .await
 }
 
+/// Delete an empty folder from a gallery
+pub async fn delete_gallery_folder(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+) -> Result<Json<DeleteFolderResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to check site: {}", e)))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // Decode folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    let folder_path = if folder_path == "_root" {
+        return Err(AdminError::BadRequest("Cannot delete root folder".into()));
+    } else {
+        folder_path
+    };
+
+    let storage = gallery_obj.source_storage();
+
+    // Check if folder exists by looking for _folder.md or any content
+    let folder_metadata_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    // List contents of the folder to check if empty
+    let contents = storage
+        .list(&folder_path)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to list folder: {}", e)))?;
+
+    // Filter out _folder.md from the count
+    let non_metadata_contents: Vec<_> = contents
+        .iter()
+        .filter(|entry| {
+            let name = path_utils::filename(&entry.path);
+            name != "_folder.md"
+        })
+        .collect();
+
+    if !non_metadata_contents.is_empty() {
+        return Err(AdminError::BadRequest(format!(
+            "Folder is not empty. Contains {} items. Delete all images first.",
+            non_metadata_contents.len()
+        )));
+    }
+
+    // Delete _folder.md if it exists
+    if storage.exists(&folder_metadata_path).await.unwrap_or(false) {
+        storage.delete(&folder_metadata_path).await.map_err(|e| {
+            AdminError::Internal(format!("Failed to delete folder metadata: {}", e))
+        })?;
+    }
+
+    // Try to delete the empty directory itself (for filesystem storage)
+    // This is a no-op for S3 since directories don't really exist there
+    let _ = storage.delete_directory(&folder_path).await;
+
+    // Refresh folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+    Ok(Json(DeleteFolderResponse {
+        success: true,
+        message: format!("Folder '{}' deleted", folder_path),
+    }))
+}
+
+/// Delete an empty folder (site-resolved version)
+pub async fn delete_gallery_folder_resolved(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery, folder_path)): Path<(String, String)>,
+) -> Result<Json<DeleteFolderResponse>, AdminError> {
+    let site = app_state.site.name.clone();
+    delete_gallery_folder(
+        ResolvedState(app_state),
+        admin,
+        Path((site, gallery, folder_path)),
+    )
+    .await
+}
+
+/// Rename a folder in a gallery
+pub async fn rename_gallery_folder(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((site, gallery, folder_path)): Path<(String, String, String)>,
+    Json(request): Json<RenameFolderRequest>,
+) -> Result<Json<RenameFolderResponse>, AdminError> {
+    // Verify site exists
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    if config_storage
+        .get_site_config(&site)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to check site: {}", e)))?
+        .is_none()
+    {
+        return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    // Decode folder path
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    if folder_path == "_root" || folder_path.is_empty() {
+        return Err(AdminError::BadRequest("Cannot rename root folder".into()));
+    }
+
+    // Validate new name
+    let new_name = request.new_name.trim();
+    if new_name.is_empty() {
+        return Err(AdminError::BadRequest("Folder name cannot be empty".into()));
+    }
+
+    // Check for invalid characters
+    if !new_name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
+    {
+        return Err(AdminError::BadRequest(
+            "Folder name can only contain letters, numbers, hyphens, underscores, and spaces"
+                .into(),
+        ));
+    }
+
+    // Cannot use reserved names
+    if new_name.starts_with("__") || new_name == "_folder.md" {
+        return Err(AdminError::BadRequest(
+            "Folder name cannot start with '__' or be '_folder.md'".into(),
+        ));
+    }
+
+    let storage = gallery_obj.source_storage();
+
+    // Calculate new path
+    let new_path = if let Some(parent) = path_utils::parent(&folder_path) {
+        format!("{}/{}", parent, new_name)
+    } else {
+        new_name.to_string()
+    };
+
+    // Check if destination already exists
+    let new_folder_metadata = format!("{}/_folder.md", new_path);
+    if storage.exists(&new_folder_metadata).await.unwrap_or(false) {
+        return Err(AdminError::BadRequest(format!(
+            "A folder named '{}' already exists",
+            new_name
+        )));
+    }
+
+    // List all files in the source folder recursively
+    let all_files = storage
+        .list_recursive(&folder_path)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to list folder contents: {}", e)))?;
+
+    // Move each file
+    for entry in &all_files {
+        if !entry.is_dir {
+            // Calculate new path by replacing the folder prefix
+            let relative_path = entry
+                .path
+                .strip_prefix(&folder_path)
+                .unwrap_or(&entry.path)
+                .trim_start_matches('/');
+            let dest_path = if relative_path.is_empty() {
+                new_path.clone()
+            } else {
+                format!("{}/{}", new_path, relative_path)
+            };
+
+            // Move the file
+            if let Ok(data) = storage.read(&entry.path).await
+                && storage.write(&dest_path, data).await.is_ok()
+            {
+                let _ = storage.delete(&entry.path).await;
+            }
+        }
+    }
+
+    // Queue cache cleanup for old paths and generation for new paths
+    if let Some(cache_queue) = app_state.cache_queue() {
+        let gallery_key = format!("{}:{}", site, gallery);
+
+        for entry in &all_files {
+            if !entry.is_dir
+                && crate::gallery::grouping::is_image_extension(
+                    path_utils::filename(&entry.path)
+                        .rsplit('.')
+                        .next()
+                        .unwrap_or(""),
+                )
+            {
+                let relative_path = entry
+                    .path
+                    .strip_prefix(&folder_path)
+                    .unwrap_or(&entry.path)
+                    .trim_start_matches('/');
+                let dest_path = if relative_path.is_empty() {
+                    new_path.clone()
+                } else {
+                    format!("{}/{}", new_path, relative_path)
+                };
+
+                // Cleanup old cache
+                let _ = cache_queue
+                    .submit_cleanup(CacheCleanupRequest {
+                        gallery_name: gallery_key.clone(),
+                        old_path: entry.path.clone(),
+                    })
+                    .await;
+
+                // Generate new cache
+                let _ = cache_queue
+                    .submit(CacheGenerationRequest {
+                        gallery_name: gallery_key.clone(),
+                        image_path: dest_path,
+                        priority: 5,
+                    })
+                    .await;
+            }
+        }
+    }
+
+    // Refresh folder cache
+    gallery_obj
+        .refresh_folder_cache()
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+    Ok(Json(RenameFolderResponse {
+        success: true,
+        new_path,
+    }))
+}
+
+/// Rename a folder (site-resolved version)
+pub async fn rename_gallery_folder_resolved(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery, folder_path)): Path<(String, String)>,
+    Json(request): Json<RenameFolderRequest>,
+) -> Result<Json<RenameFolderResponse>, AdminError> {
+    let site = app_state.site.name.clone();
+    rename_gallery_folder(
+        ResolvedState(app_state),
+        admin,
+        Path((site, gallery, folder_path)),
+        Json(request),
+    )
+    .await
+}
+
 /// Move images from one folder to another
 pub async fn move_gallery_images(
     ResolvedState(app_state): ResolvedState,
@@ -2893,6 +3286,7 @@ pub async fn move_gallery_images(
 
     let mut moved_count = 0;
     let mut errors = Vec::new();
+    let storage = gallery_obj.source_storage();
 
     for (_url_path, filename) in &filenames {
         // Build source and destination paths
@@ -2909,18 +3303,13 @@ pub async fn move_gallery_images(
         };
 
         // Check if destination already has this file
-        if gallery_obj
-            .source_storage()
-            .exists(&dest_path)
-            .await
-            .unwrap_or(false)
-        {
+        if storage.exists(&dest_path).await.unwrap_or(false) {
             errors.push(format!("File already exists at destination: {}", filename));
             continue;
         }
 
-        // Read source file
-        let data = match gallery_obj.source_storage().read(&source_path).await {
+        // Move main image file
+        let data = match storage.read(&source_path).await {
             Ok(data) => data,
             Err(e) => {
                 errors.push(format!("Failed to read {}: {}", filename, e));
@@ -2928,19 +3317,77 @@ pub async fn move_gallery_images(
             }
         };
 
-        // Write to destination
-        if let Err(e) = gallery_obj.source_storage().write(&dest_path, data).await {
+        if let Err(e) = storage.write(&dest_path, data).await {
             errors.push(format!("Failed to write {}: {}", filename, e));
             continue;
         }
 
-        // Delete source
-        if let Err(e) = gallery_obj.source_storage().delete(&source_path).await {
+        if let Err(e) = storage.delete(&source_path).await {
             errors.push(format!(
                 "Failed to delete source {}: {} (file was copied)",
                 filename, e
             ));
-            // Don't continue - the file was copied, just couldn't delete source
+        }
+
+        // Move sidecar files (XMP, MD)
+        let source_sidecars = find_existing_sidecars(storage, &source_path).await;
+        let sidecar_transforms =
+            transform_sidecar_paths(&source_sidecars, &source_path, &dest_path);
+
+        for (src_sidecar, dest_sidecar) in sidecar_transforms {
+            if let Ok(sidecar_data) = storage.read(&src_sidecar).await
+                && storage.write(&dest_sidecar, sidecar_data).await.is_ok()
+            {
+                let _ = storage.delete(&src_sidecar).await;
+            }
+        }
+
+        // Move version files from __versions folder
+        let version_files = find_version_files(storage, &source_folder, filename).await;
+        let dest_versions_folder = if target_folder.is_empty() {
+            "__versions".to_string()
+        } else {
+            format!("{}/__versions", target_folder)
+        };
+
+        for (version_src, version_filename) in &version_files {
+            let version_dest = format!("{}/{}", dest_versions_folder, version_filename);
+
+            if let Ok(version_data) = storage.read(version_src).await
+                && storage.write(&version_dest, version_data).await.is_ok()
+            {
+                let _ = storage.delete(version_src).await;
+
+                // Also move sidecars for version files
+                let version_sidecars = find_existing_sidecars(storage, version_src).await;
+                let version_sidecar_transforms =
+                    transform_sidecar_paths(&version_sidecars, version_src, &version_dest);
+                for (src_sc, dest_sc) in version_sidecar_transforms {
+                    if let Ok(sc_data) = storage.read(&src_sc).await
+                        && storage.write(&dest_sc, sc_data).await.is_ok()
+                    {
+                        let _ = storage.delete(&src_sc).await;
+                    }
+                }
+
+                // Queue cache cleanup/generation for version files
+                if let Some(cache_queue) = app_state.cache_queue() {
+                    let gallery_key = format!("{}:{}", site, gallery);
+                    let _ = cache_queue
+                        .submit_cleanup(CacheCleanupRequest {
+                            gallery_name: gallery_key.clone(),
+                            old_path: version_src.clone(),
+                        })
+                        .await;
+                    let _ = cache_queue
+                        .submit(CacheGenerationRequest {
+                            gallery_name: gallery_key,
+                            image_path: version_dest.clone(),
+                            priority: 5,
+                        })
+                        .await;
+                }
+            }
         }
 
         // Handle hidden status - preserve it in the target folder
@@ -3106,6 +3553,7 @@ pub async fn copy_gallery_images(
 
     let mut copied_count = 0;
     let mut errors = Vec::new();
+    let storage = gallery_obj.source_storage();
 
     for (_url_path, filename) in &filenames {
         // Build source and destination paths
@@ -3122,18 +3570,13 @@ pub async fn copy_gallery_images(
         };
 
         // Check if destination already has this file
-        if gallery_obj
-            .source_storage()
-            .exists(&dest_path)
-            .await
-            .unwrap_or(false)
-        {
+        if storage.exists(&dest_path).await.unwrap_or(false) {
             errors.push(format!("File already exists at destination: {}", filename));
             continue;
         }
 
-        // Read source file
-        let data = match gallery_obj.source_storage().read(&source_path).await {
+        // Copy main image file
+        let data = match storage.read(&source_path).await {
             Ok(data) => data,
             Err(e) => {
                 errors.push(format!("Failed to read {}: {}", filename, e));
@@ -3141,10 +3584,58 @@ pub async fn copy_gallery_images(
             }
         };
 
-        // Write to destination
-        if let Err(e) = gallery_obj.source_storage().write(&dest_path, data).await {
+        if let Err(e) = storage.write(&dest_path, data).await {
             errors.push(format!("Failed to write {}: {}", filename, e));
             continue;
+        }
+
+        // Copy sidecar files (XMP, MD)
+        let source_sidecars = find_existing_sidecars(storage, &source_path).await;
+        let sidecar_transforms =
+            transform_sidecar_paths(&source_sidecars, &source_path, &dest_path);
+
+        for (src_sidecar, dest_sidecar) in sidecar_transforms {
+            if let Ok(sidecar_data) = storage.read(&src_sidecar).await {
+                let _ = storage.write(&dest_sidecar, sidecar_data).await;
+            }
+        }
+
+        // Copy version files from __versions folder
+        let version_files = find_version_files(storage, &source_folder, filename).await;
+        let dest_versions_folder = if target_folder.is_empty() {
+            "__versions".to_string()
+        } else {
+            format!("{}/__versions", target_folder)
+        };
+
+        for (version_src, version_filename) in &version_files {
+            let version_dest = format!("{}/{}", dest_versions_folder, version_filename);
+
+            if let Ok(version_data) = storage.read(version_src).await
+                && storage.write(&version_dest, version_data).await.is_ok()
+            {
+                // Also copy sidecars for version files
+                let version_sidecars = find_existing_sidecars(storage, version_src).await;
+                let version_sidecar_transforms =
+                    transform_sidecar_paths(&version_sidecars, version_src, &version_dest);
+                for (src_sc, dest_sc) in version_sidecar_transforms {
+                    if let Ok(sc_data) = storage.read(&src_sc).await {
+                        let _ = storage.write(&dest_sc, sc_data).await;
+                    }
+                }
+
+                // Queue cache generation for version files
+                if let Some(cache_queue) = app_state.cache_queue() {
+                    let gallery_key = format!("{}:{}", site, gallery);
+                    let _ = cache_queue
+                        .submit(CacheGenerationRequest {
+                            gallery_name: gallery_key,
+                            image_path: version_dest.clone(),
+                            priority: 5,
+                        })
+                        .await;
+                }
+            }
         }
 
         // Queue cache generation for new path

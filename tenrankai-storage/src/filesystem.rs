@@ -174,6 +174,25 @@ impl Storage for FilesystemStorage {
         }
     }
 
+    async fn delete_directory(&self, path: &str) -> Result<(), StorageError> {
+        let full_path = self.resolve_path(path)?;
+        match tokio::fs::remove_dir(&full_path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Directory doesn't exist, that's fine
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                // Directory not empty, can't delete
+                Err(StorageError::Other(format!(
+                    "Directory not empty: {}",
+                    path
+                )))
+            }
+            Err(e) => Err(StorageError::Io(e)),
+        }
+    }
+
     async fn list(&self, prefix: &str) -> Result<Vec<StorageEntry>, StorageError> {
         let full_path = self.resolve_path(prefix)?;
         let mut entries = Vec::new();

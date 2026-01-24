@@ -411,3 +411,20 @@ pub struct FolderImageInfo {
 pub struct FolderImagesResponse {
     pub images: Vec<FolderImageInfo>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct RenameFolderRequest {
+    pub new_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RenameFolderResponse {
+    pub success: bool,
+    pub new_path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteFolderResponse {
+    pub success: bool,
+    pub message: String,
+}

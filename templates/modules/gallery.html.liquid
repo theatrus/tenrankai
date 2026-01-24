@@ -20,9 +20,6 @@
                 <a href="{{ gallery_url }}{% if crumb.path != "" %}/{{ crumb.path }}{% endif %}" class="nav-link">{{ crumb.display_name }}</a>
             {% endif %}
         {% endfor %}
-        {% if permissions.owner_access %}
-            <a href="/_admin/galleries/{{ gallery_name }}/folders/{% if gallery_path != '' %}{{ gallery_path | url_encode }}{% else %}_root{% endif %}" class="nav-edit-link" title="Edit folder permissions">Edit</a>
-        {% endif %}
     </nav>
 
     <div class="gallery-header">
@@ -48,14 +45,33 @@
             <div id="gallery-filter-mount"></div>
 
             {% if permissions.can_download_gallery %}
-                <a href="{{ gallery_url }}/_download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-download" title="Download all images as ZIP">
-                    Download All
+                <a href="{{ gallery_url }}/_download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-secondary" title="Download all images as ZIP">
+                    Download
                 </a>
             {% endif %}
 
             {% if permissions.can_manage_images %}
-                <button id="manage-images-btn" class="btn btn-manage" title="Manage images">
-                    Manage
+                <button id="create-folder-btn" class="btn btn-secondary" title="Create new folder">
+                    + Folder
+                </button>
+                <button id="manage-images-btn" class="btn btn-secondary" title="Edit images">
+                    Edit
+                </button>
+            {% endif %}
+
+            {% if permissions.owner_access %}
+                <a href="/_admin/galleries/{{ gallery_name }}/folders/{% if gallery_path != '' %}{{ gallery_path | url_encode }}{% else %}_root{% endif %}" class="btn btn-secondary" title="Share folder and manage permissions">
+                    Share
+                </a>
+            {% endif %}
+
+            {% assign directories = items | where: "is_directory", true %}
+            {% if permissions.can_manage_images and gallery_path != '' and images.size == 0 and directories.size == 0 %}
+                <button id="delete-folder-btn" class="btn btn-danger" title="Delete this empty folder"
+                        data-gallery-name="{{ gallery_name }}"
+                        data-folder-path="{{ gallery_path }}"
+                        data-folder-name="{{ folder_title | default: gallery_path | split: '/' | last }}">
+                    Delete Folder
                 </button>
             {% endif %}
         </div>
@@ -141,21 +157,6 @@
 
 {% if permissions.owner_access %}
 <style>
-.btn-manage {
-    background: var(--link-color, #007bff);
-    color: white;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-}
-.btn-manage:hover {
-    opacity: 0.9;
-}
-.btn-manage.active {
-    background: #dc3545;
-}
 .manage-toolbar {
     position: fixed;
     bottom: 0;
@@ -210,13 +211,32 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
-.btn-secondary {
+/* Gallery action buttons - consistent styling */
+.gallery-actions .btn {
     background: #6c757d;
-    color: white;
+    color: white !important;
     padding: 8px 16px;
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    display: inline-block;
+    line-height: 1.2;
+    box-sizing: border-box;
+}
+.gallery-actions .btn:hover {
+    opacity: 0.9;
+    background: #5a6268;
+}
+.gallery-actions .btn.active {
+    background: #dc3545;
+}
+.gallery-actions .btn-danger {
+    background: #dc3545;
+}
+.gallery-actions .btn-danger:hover {
+    background: #c82333;
 }
 .image-item.is-hidden {
     opacity: 0.5;

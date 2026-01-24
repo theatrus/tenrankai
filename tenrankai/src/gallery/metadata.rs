@@ -1006,13 +1006,32 @@ impl Gallery {
             );
         }
 
+        // Drop the read lock before replacing cache (we're done with indexer now)
+        drop(indexer);
+
         // Replace entire folder cache
         self.folder_cache.replace_all(new_cache.clone()).await;
 
+        // Rebuild image index from the collected image paths
+        let all_image_paths: Vec<String> = folder_children
+            .values()
+            .flat_map(|(_, images)| images.iter().cloned())
+            .collect();
+
+        {
+            let mut indexer = self.image_indexer.write().await;
+            indexer.build_index(&all_image_paths);
+            debug!(
+                "Rebuilt image index with {} images during folder cache refresh",
+                all_image_paths.len()
+            );
+        }
+
         info!(
-            "Folder cache refresh completed in {:.2}s: {} folders cached",
+            "Folder cache refresh completed in {:.2}s: {} folders cached, {} images indexed",
             start_time.elapsed().as_secs_f64(),
-            new_cache.len()
+            new_cache.len(),
+            all_image_paths.len()
         );
 
         Ok(())

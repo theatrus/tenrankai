@@ -488,6 +488,14 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
                 axum::routing::post(admin::create_gallery_folder_resolved),
             )
             .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}",
+                axum::routing::delete(admin::delete_gallery_folder_resolved),
+            )
+            .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/rename",
+                axum::routing::post(admin::rename_gallery_folder_resolved),
+            )
+            .route(
                 "/_admin/api/galleries/{gallery}/folders/{folder_path}/images/move",
                 axum::routing::post(admin::move_gallery_images_resolved),
             )

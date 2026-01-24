@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -12,27 +12,6 @@ import {
 } from '@api/client';
 
 const DEFAULT_SITE = 'default';
-
-function formatFolderHierarchy(folders: FolderInfo[], excludePath?: string): { path: string; label: string }[] {
-  const filtered = folders.filter((f) => f.path !== excludePath);
-  const sorted = [...filtered].sort((a, b) => a.path.localeCompare(b.path));
-
-  return sorted.map((folder) => {
-    if (!folder.path) {
-      return { path: '', label: '(root)' };
-    }
-
-    const segments = folder.path.split('/');
-    const depth = segments.length - 1;
-    const name = segments[segments.length - 1];
-    const indent = depth > 0 ? '\u00A0\u00A0'.repeat(depth) + '└ ' : '';
-
-    return {
-      path: folder.path,
-      label: `${indent}${name}`,
-    };
-  });
-}
 
 export function Galleries() {
   const { name, '*': folderPath } = useParams<{ name: string; '*': string }>();
@@ -811,7 +790,6 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
           galleryName={name}
           folder={editFolder}
           availableRoles={availableRoles}
-          allFolders={foldersData?.folders || []}
           fullScreen={!!initialFolderPath}
           onClose={handleFolderModalClose}
           onSaved={() => {
@@ -936,7 +914,6 @@ function FolderPermissionsModal({
   galleryName,
   folder,
   availableRoles,
-  allFolders,
   fullScreen = false,
   onClose,
   onSaved,
@@ -944,7 +921,6 @@ function FolderPermissionsModal({
   galleryName: string;
   folder: FolderInfo;
   availableRoles: string[];
-  allFolders: FolderInfo[];
   fullScreen?: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -973,22 +949,17 @@ function FolderPermissionsModal({
   const [newUsername, setNewUsername] = useState('');
   const [newUserRole, setNewUserRole] = useState('viewer');
 
-  // Image management state
-  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
-  const [showFolderPicker, setShowFolderPicker] = useState<'move' | 'copy' | null>(null);
-  const [bulkActionPending, setBulkActionPending] = useState(false);
-  const [bulkActionMessage, setBulkActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Create subfolder state
+  const [showCreateSubfolder, setShowCreateSubfolder] = useState(false);
+
+  // Delete folder state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Fetch users for dropdown
   const { data: usersData } = useQuery({
     queryKey: ['users'],
     queryFn: api.listUsers,
-  });
-
-  // Fetch images in this folder
-  const { data: imagesData, refetch: refetchImages } = useQuery({
-    queryKey: ['folderImages', DEFAULT_SITE, galleryName, folder.path],
-    queryFn: () => api.listFolderImages(DEFAULT_SITE, galleryName, folder.path),
   });
 
   // Load current folder permissions
@@ -1007,82 +978,6 @@ function FolderPermissionsModal({
       });
   });
 
-  const toggleImageSelection = (urlId: string) => {
-    setSelectedImages((prev) => {
-      const next = new Set(prev);
-      if (next.has(urlId)) {
-        next.delete(urlId);
-      } else {
-        next.add(urlId);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (!imagesData) return;
-    if (selectedImages.size === imagesData.images.length) {
-      setSelectedImages(new Set());
-    } else {
-      setSelectedImages(new Set(imagesData.images.map((img) => img.url_id)));
-    }
-  };
-
-  const handleBulkHide = async (hide: boolean) => {
-    if (selectedImages.size === 0) return;
-    setBulkActionPending(true);
-    setBulkActionMessage(null);
-    try {
-      await api.hideImages(galleryName, folder.path, {
-        paths: Array.from(selectedImages),
-        hide,
-      });
-      setBulkActionMessage({ type: 'success', text: `${hide ? 'Hidden' : 'Unhidden'} ${selectedImages.size} image(s)` });
-      setSelectedImages(new Set());
-      refetchImages();
-      queryClient.invalidateQueries({ queryKey: ['galleryFolders'] });
-    } catch (err) {
-      setBulkActionMessage({ type: 'error', text: String(err) });
-    } finally {
-      setBulkActionPending(false);
-    }
-  };
-
-  const handleMoveOrCopy = async (targetFolder: string, action: 'move' | 'copy') => {
-    if (selectedImages.size === 0) return;
-    setBulkActionPending(true);
-    setBulkActionMessage(null);
-    try {
-      const data = { paths: Array.from(selectedImages), target_folder: targetFolder };
-      let count = 0;
-      let errors: string[] = [];
-
-      if (action === 'move') {
-        const result = await api.moveImages(galleryName, folder.path, data);
-        count = result.moved_count;
-        errors = result.errors;
-      } else {
-        const result = await api.copyImages(galleryName, folder.path, data);
-        count = result.copied_count;
-        errors = result.errors;
-      }
-
-      if (errors.length > 0) {
-        setBulkActionMessage({ type: 'error', text: `${action === 'move' ? 'Moved' : 'Copied'} ${count}, errors: ${errors.join(', ')}` });
-      } else {
-        setBulkActionMessage({ type: 'success', text: `${action === 'move' ? 'Moved' : 'Copied'} ${count} image(s)` });
-      }
-      setSelectedImages(new Set());
-      setShowFolderPicker(null);
-      refetchImages();
-      queryClient.invalidateQueries({ queryKey: ['galleryFolders'] });
-    } catch (err) {
-      setBulkActionMessage({ type: 'error', text: String(err) });
-    } finally {
-      setBulkActionPending(false);
-    }
-  };
-
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -1098,6 +993,22 @@ function FolderPermissionsModal({
       setSaving(false);
     }
   };
+
+  const handleDeleteFolder = async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteFolder(galleryName, folder.path);
+      queryClient.invalidateQueries({ queryKey: ['galleryFolders'] });
+      onClose();
+    } catch (err) {
+      setError(String(err));
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const canDeleteFolder = folder.image_count === 0 && folder.path !== '';
 
   const handleShare = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1130,10 +1041,21 @@ function FolderPermissionsModal({
     <div className="modal-overlay" onClick={onClose} style={fullScreen ? { padding: 0 } : undefined}>
       <div className="modal" style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header" style={fullScreen ? { position: 'sticky', top: 0, background: 'var(--color-bg-primary)', zIndex: 10, borderBottom: '1px solid var(--color-border)' } : undefined}>
-          Folder: {folder.name}
-          <small style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 'normal' }}>
-            {folder.path || '(root)'}
-          </small>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              Folder: {folder.name}
+              <small style={{ display: 'block', color: 'var(--color-text-muted)', fontWeight: 'normal' }}>
+                {folder.path || '(root)'}
+              </small>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowCreateSubfolder(true)}
+              style={{ marginLeft: '1rem' }}
+            >
+              + Create Subfolder
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -1394,130 +1316,32 @@ function FolderPermissionsModal({
               />
             </div>
 
-            {/* Image Management Section */}
-            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem', marginTop: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <label className="form-label" style={{ margin: 0 }}>Images ({imagesData?.images.length || 0})</label>
-                {imagesData && imagesData.images.length > 0 && (
-                  <button className="btn btn-secondary btn-sm" onClick={toggleSelectAll}>
-                    {selectedImages.size === imagesData.images.length ? 'Deselect All' : 'Select All'}
-                  </button>
-                )}
-              </div>
-
-              {/* Bulk Action Bar */}
-              {selectedImages.size > 0 && (
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--color-bg-secondary)', borderRadius: '4px', marginBottom: '0.5rem' }}>
-                  <span style={{ marginRight: 'auto' }}>{selectedImages.size} selected</span>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={bulkActionPending}
-                    onClick={() => setShowFolderPicker('move')}
-                  >
-                    Move
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={bulkActionPending}
-                    onClick={() => setShowFolderPicker('copy')}
-                  >
-                    Copy
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={bulkActionPending}
-                    onClick={() => handleBulkHide(true)}
-                  >
-                    Hide
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={bulkActionPending}
-                    onClick={() => handleBulkHide(false)}
-                  >
-                    Unhide
-                  </button>
-                </div>
-              )}
-
-              {bulkActionMessage && (
-                <div
-                  style={{
-                    marginBottom: '0.5rem',
-                    padding: '0.5rem',
-                    borderRadius: '4px',
-                    background: bulkActionMessage.type === 'success' ? 'var(--color-success-bg)' : 'var(--color-error-bg)',
-                    color: bulkActionMessage.type === 'success' ? 'var(--color-success)' : 'var(--color-error)',
-                    fontSize: '0.9rem',
-                  }}
-                >
-                  {bulkActionMessage.text}
-                </div>
-              )}
-
-              {/* Image Grid */}
-              {imagesData && imagesData.images.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
-                  {imagesData.images.map((img) => (
-                    <div
-                      key={img.url_id}
-                      onClick={() => toggleImageSelection(img.url_id)}
-                      style={{
-                        position: 'relative',
-                        cursor: 'pointer',
-                        border: selectedImages.has(img.url_id) ? '2px solid var(--color-primary)' : '2px solid transparent',
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        opacity: img.is_hidden ? 0.5 : 1,
-                      }}
-                    >
-                      <img
-                        src={img.thumbnail_url}
-                        alt={img.filename}
-                        style={{ width: '100%', height: '100px', objectFit: 'cover', display: 'block' }}
-                      />
-                      <div style={{ position: 'absolute', top: '4px', left: '4px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedImages.has(img.url_id)}
-                          onChange={() => toggleImageSelection(img.url_id)}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{ width: '16px', height: '16px' }}
-                        />
-                      </div>
-                      {img.is_hidden && (
-                        <div style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '2px 4px', borderRadius: '2px', fontSize: '10px' }}>
-                          Hidden
-                        </div>
-                      )}
-                      <div style={{ padding: '4px', fontSize: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {img.filename}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', margin: '0.5rem 0' }}>
-                  No images in this folder.
-                </p>
-              )}
-            </div>
-
-            {/* Folder Picker Modal */}
-            {showFolderPicker && (
-              <FolderPickerModal
-                title={showFolderPicker === 'move' ? 'Move Images' : 'Copy Images'}
-                currentFolder={folder.path}
-                folders={allFolders}
-                onSelect={(targetFolder) => handleMoveOrCopy(targetFolder, showFolderPicker)}
-                onClose={() => setShowFolderPicker(null)}
-                disabled={bulkActionPending}
+            {/* Create Subfolder Modal */}
+            {showCreateSubfolder && (
+              <CreateFolderModal
+                galleryName={galleryName}
+                parentFolder={folder.path}
+                onClose={() => setShowCreateSubfolder(false)}
+                onCreated={() => {
+                  queryClient.invalidateQueries({ queryKey: ['galleryFolders'] });
+                  setShowCreateSubfolder(false);
+                }}
               />
             )}
           </>
         )}
 
         <div className="modal-actions" style={fullScreen ? { position: 'sticky', bottom: 0, background: 'var(--color-bg-primary)', zIndex: 10, borderTop: '1px solid var(--color-border)', padding: '1rem', margin: 0 } : undefined}>
+          {canDeleteFolder && (
+            <button
+              className="btn btn-danger"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={loading || saving || deleting}
+              style={{ marginRight: 'auto' }}
+            >
+              Delete Folder
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
@@ -1525,69 +1349,33 @@ function FolderPermissionsModal({
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
 
-function FolderPickerModal({
-  title,
-  currentFolder,
-  folders,
-  onSelect,
-  onClose,
-  disabled = false,
-}: {
-  title: string;
-  currentFolder: string;
-  folders: FolderInfo[];
-  onSelect: (folderPath: string) => void;
-  onClose: () => void;
-  disabled?: boolean;
-}) {
-  const [selectedFolder, setSelectedFolder] = useState<string>('');
-  const hierarchicalFolders = useMemo(
-    () => formatFolderHierarchy(folders, currentFolder),
-    [folders, currentFolder]
-  );
-
-  return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1001 }}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-        <div className="modal-header">{title}</div>
-        <div className="form-group">
-          <label className="form-label">Select destination folder</label>
-          <select
-            className="form-input"
-            value={selectedFolder}
-            onChange={(e) => setSelectedFolder(e.target.value)}
-            style={{ fontFamily: 'monospace' }}
-          >
-            <option value="">Select folder...</option>
-            {hierarchicalFolders.map((f) => (
-              <option key={f.path} value={f.path}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-          {selectedFolder === currentFolder && (
-            <small style={{ color: 'var(--color-error)' }}>
-              Cannot move/copy to the same folder
-            </small>
-          )}
-        </div>
-        <div className="modal-actions">
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => onSelect(selectedFolder)}
-            disabled={disabled || !selectedFolder || selectedFolder === currentFolder}
-          >
-            {disabled ? 'Processing...' : title.split(' ')[0]}
-          </button>
-        </div>
+        {/* Delete Folder Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)} style={{ zIndex: 1001 }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+              <div className="modal-header">Delete Folder</div>
+              <p style={{ margin: '1rem 0' }}>
+                Are you sure you want to delete the folder <strong>{folder.name}</strong>?
+              </p>
+              <p style={{ color: 'var(--color-error)', fontSize: '0.9rem' }}>
+                This action cannot be undone.
+              </p>
+              <div className="modal-actions">
+                <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={handleDeleteFolder}
+                  disabled={deleting}
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

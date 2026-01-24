@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { GalleryWithFilter } from '@components/Gallery/GalleryWithFilter';
 import { EditModal } from '../components/Editor/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
+import { galleryManageApi } from '../api/gallery-manage.ts';
 import type { GalleryData, GalleryItem } from '../types/index.ts';
 
 interface GalleryPageProps {
@@ -37,7 +38,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       if (isManageMode) {
         setIsManageMode(false);
         setSelectedImages(new Set());
-        manageButton.textContent = 'Manage';
+        manageButton.textContent = 'Edit';
         manageButton.classList.remove('active');
       } else {
         setIsManageMode(true);
@@ -67,7 +68,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     setSelectedImages(new Set());
     setIsManageMode(false);
     if (manageButton) {
-      manageButton.textContent = 'Manage';
+      manageButton.textContent = 'Edit';
       manageButton.classList.remove('active');
     }
   }, [manageButton]);
@@ -77,7 +78,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     setSelectedImages(new Set());
     setIsManageMode(false);
     if (manageButton) {
-      manageButton.textContent = 'Manage';
+      manageButton.textContent = 'Edit';
       manageButton.classList.remove('active');
     }
   }, [manageButton]);
@@ -86,7 +87,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     setIsManageMode(false);
     setSelectedImages(new Set());
     if (manageButton) {
-      manageButton.textContent = 'Manage';
+      manageButton.textContent = 'Edit';
       manageButton.classList.remove('active');
     }
   }, [manageButton]);
@@ -97,7 +98,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     setSelectedImages(new Set());
     setIsManageMode(false);
     if (manageButton) {
-      manageButton.textContent = 'Manage';
+      manageButton.textContent = 'Edit';
       manageButton.classList.remove('active');
     }
     alert(`Successfully moved ${movedCount} image(s)`);
@@ -108,7 +109,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     setSelectedImages(new Set());
     setIsManageMode(false);
     if (manageButton) {
-      manageButton.textContent = 'Manage';
+      manageButton.textContent = 'Edit';
       manageButton.classList.remove('active');
     }
     alert(`Successfully copied ${copiedCount} image(s)`);
@@ -169,6 +170,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Always mount folder description editor (works even without images)
   mountFolderDescriptionEditor(galleryData);
 
+  // Always set up create folder button (works even without images)
+  mountCreateFolderButton(galleryData);
+
+  // Always set up delete folder button (only shows for empty folders)
+  mountDeleteFolderButton();
+
   // Only mount gallery grid if there are images
   if (!images.length) {
     return;
@@ -218,6 +225,138 @@ document.addEventListener('DOMContentLoaded', () => {
     />
   );
 });
+
+interface CreateFolderModalProps {
+  galleryName: string;
+  parentFolder: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
+  galleryName,
+  parentFolder,
+  onSuccess,
+  onClose,
+}) => {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setIsCreating(true);
+    setError(null);
+    try {
+      await galleryManageApi.createFolder(galleryName, parentFolder, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create folder');
+      setIsCreating(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ textAlign: 'left', maxWidth: '400px' }}>
+        <h3 style={{ marginBottom: '1rem' }}>Create Folder</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Parent Folder
+            </label>
+            <input
+              type="text"
+              value={parentFolder || '(root)'}
+              disabled
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                background: '#f5f5f5',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Folder Name *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="new-folder"
+              pattern="[a-zA-Z0-9_\- ]+"
+              title="Only letters, numbers, hyphens, underscores, and spaces"
+              required
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                boxSizing: 'border-box'
+              }}
+            />
+            <small style={{ color: '#666', fontSize: '12px' }}>
+              Letters, numbers, hyphens, underscores, and spaces only
+            </small>
+          </div>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+              Description (optional)
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Optional description for this folder..."
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                resize: 'vertical',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+          {error && (
+            <div style={{
+              color: '#dc3545',
+              background: '#ffe0e0',
+              padding: '8px',
+              borderRadius: '4px',
+              marginBottom: '1rem'
+            }}>
+              {error}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isCreating || !name.trim()}
+            >
+              {isCreating ? 'Creating...' : 'Create Folder'}
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 interface FolderEditorProps {
   galleryName: string;
@@ -354,4 +493,176 @@ function mountFolderDescriptionEditor(galleryData: GalleryData | null) {
       canEdit={canEdit}
     />
   );
+}
+
+// Store reference to allow triggering modal from button click
+let createFolderTrigger: (() => void) | null = null;
+
+/**
+ * Mount the create folder button handler
+ * This works even when there are no images in the gallery
+ */
+function mountCreateFolderButton(galleryData: GalleryData | null) {
+  const createFolderButton = document.getElementById('create-folder-btn');
+  if (!createFolderButton || !galleryData) return;
+
+  const galleryName = galleryData.gallery_name;
+  const galleryPath = galleryData.gallery_path;
+
+  // Create a mount point for the modal
+  let modalMount = document.getElementById('create-folder-modal-mount');
+  if (!modalMount) {
+    modalMount = document.createElement('div');
+    modalMount.id = 'create-folder-modal-mount';
+    document.body.appendChild(modalMount);
+  }
+
+  // Create a stateful wrapper component
+  const CreateFolderWrapper: React.FC = () => {
+    const [showModal, setShowModal] = useState(false);
+
+    // Expose the trigger function
+    useEffect(() => {
+      createFolderTrigger = () => setShowModal(true);
+      return () => {
+        createFolderTrigger = null;
+      };
+    }, []);
+
+    const handleSuccess = useCallback(() => {
+      setShowModal(false);
+      window.location.reload();
+    }, []);
+
+    return showModal ? (
+      <CreateFolderModal
+        galleryName={galleryName}
+        parentFolder={galleryPath}
+        onSuccess={handleSuccess}
+        onClose={() => setShowModal(false)}
+      />
+    ) : null;
+  };
+
+  // Mount the wrapper
+  const root = createRoot(modalMount);
+  root.render(<CreateFolderWrapper />);
+
+  // Wire up the button click
+  createFolderButton.addEventListener('click', () => {
+    if (createFolderTrigger) {
+      createFolderTrigger();
+    }
+  });
+}
+
+/**
+ * Mount the delete folder button handler
+ * This works for empty folders where GalleryPage isn't mounted
+ */
+function mountDeleteFolderButton() {
+  const deleteFolderButton = document.getElementById('delete-folder-btn');
+  if (!deleteFolderButton) return;
+
+  const galleryName = deleteFolderButton.getAttribute('data-gallery-name') || '';
+  const folderPath = deleteFolderButton.getAttribute('data-folder-path') || '';
+  const folderName = deleteFolderButton.getAttribute('data-folder-name') || folderPath;
+
+  // Create a mount point for the modal
+  let modalMount = document.getElementById('delete-folder-modal-mount');
+  if (!modalMount) {
+    modalMount = document.createElement('div');
+    modalMount.id = 'delete-folder-modal-mount';
+    document.body.appendChild(modalMount);
+  }
+
+  // Store reference to allow triggering modal from button click
+  let showDeleteModal: (() => void) | null = null;
+
+  // Create a stateful wrapper component
+  const DeleteFolderWrapper: React.FC = () => {
+    const [showModal, setShowModal] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Expose the trigger function
+    useEffect(() => {
+      showDeleteModal = () => setShowModal(true);
+      return () => {
+        showDeleteModal = null;
+      };
+    }, []);
+
+    const handleDelete = async () => {
+      setIsDeleting(true);
+      setError(null);
+      try {
+        await galleryManageApi.deleteFolder(galleryName, folderPath);
+        // Navigate to parent folder
+        const parentPath = folderPath.includes('/')
+          ? folderPath.substring(0, folderPath.lastIndexOf('/'))
+          : '';
+        const galleryUrlEl = document.querySelector('[data-gallery-url]');
+        const galleryUrl = galleryUrlEl?.getAttribute('data-gallery-url') || '/gallery';
+        window.location.href = parentPath ? `${galleryUrl}/${parentPath}` : galleryUrl;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete folder');
+        setIsDeleting(false);
+      }
+    };
+
+    if (!showModal) return null;
+
+    return (
+      <div className="modal-overlay" onClick={() => !isDeleting && setShowModal(false)}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ textAlign: 'left', maxWidth: '400px' }}>
+          <h3 style={{ marginBottom: '1rem', color: '#333' }}>Delete Folder</h3>
+          <p style={{ marginBottom: '1rem', color: '#333' }}>
+            Are you sure you want to delete <strong>{folderName}</strong>?
+          </p>
+          <p style={{ color: '#dc3545', fontSize: '14px', marginBottom: '1rem' }}>
+            This action cannot be undone.
+          </p>
+          {error && (
+            <div style={{
+              color: '#dc3545',
+              background: '#ffe0e0',
+              padding: '8px',
+              borderRadius: '4px',
+              marginBottom: '1rem'
+            }}>
+              {error}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowModal(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Mount the wrapper
+  const root = createRoot(modalMount);
+  root.render(<DeleteFolderWrapper />);
+
+  // Wire up the button click
+  deleteFolderButton.addEventListener('click', () => {
+    if (showDeleteModal) {
+      showDeleteModal();
+    }
+  });
 }

@@ -339,4 +339,7 @@ export const api = {
   // Folder Management (resolved - site determined from host)
   createFolder: (gallery: string, parentPath: string, data: CreateFolderRequest) =>
     request<CreateFolderResponse>('POST', `/galleries/${gallery}/folders/${encodeURIComponent(parentPath || '_root')}/create`, data),
+
+  deleteFolder: (gallery: string, folderPath: string) =>
+    request<{ success: boolean; message: string }>('DELETE', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}`),
 };
