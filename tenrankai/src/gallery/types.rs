@@ -290,7 +290,6 @@ pub struct NavigationImage {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GalleryQuery {
-    pub page: Option<usize>,
     pub size: Option<String>,
 }
 

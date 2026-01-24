@@ -128,21 +128,6 @@
             <script type="application/json" id="gallery-images">
 {{ images_json }}
             </script>
-
-            <!-- Pagination -->
-            {% if total_pages > 1 %}
-                <div class="gallery-pagination">
-                    {% if has_prev %}
-                        <a href="?page={{ prev_page }}" class="page-link">← Previous</a>
-                    {% endif %}
-
-                    <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
-
-                    {% if has_next %}
-                        <a href="?page={{ next_page }}" class="page-link">Next →</a>
-                    {% endif %}
-                </div>
-            {% endif %}
         {% endif %}
     {% else %}
         <p class="empty-gallery">No images found in this directory.</p>

@@ -13,9 +13,6 @@ cache_directory = "cache/portfolio"
 gallery_template = "modules/gallery.html.liquid"
 image_detail_template = "modules/image_detail.html.liquid"
 
-# Display settings - fewer images per page for portfolio presentation
-images_per_page = 24
-
 # Higher quality for portfolio
 jpeg_quality = 90
 webp_quality = 90.0

@@ -1072,7 +1072,6 @@ pub async fn list_site_galleries(
                 url_prefix: config.url_prefix,
                 source_directory: config.source_directory,
                 cache_directory: config.cache_directory,
-                images_per_page: config.images_per_page,
             });
         }
     }
@@ -1102,7 +1101,6 @@ pub async fn get_site_gallery(
         url_prefix: config.url_prefix,
         source_directory: config.source_directory,
         cache_directory: config.cache_directory,
-        images_per_page: config.images_per_page,
     }))
 }
 
@@ -1148,7 +1146,6 @@ pub async fn upsert_site_gallery(
         url_prefix: request.url_prefix.clone(),
         source_directory: request.source_directory.clone(),
         cache_directory: request.cache_directory.clone(),
-        images_per_page: request.images_per_page,
         gallery_template: "modules/gallery.html.liquid".to_string(),
         image_detail_template: "modules/image_detail.html.liquid".to_string(),
         thumbnail: tenrankai_config_storage::StoredImageSizeConfig {
@@ -1190,7 +1187,6 @@ pub async fn upsert_site_gallery(
         url_prefix: request.url_prefix,
         source_directory: request.source_directory,
         cache_directory: request.cache_directory,
-        images_per_page: request.images_per_page,
     }))
 }
 

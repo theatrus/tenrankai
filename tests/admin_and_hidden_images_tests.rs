@@ -27,7 +27,6 @@ fn create_admin_test_config(temp_dir: &TempDir, indexing_mode: ImageIndexingMode
         name: "main".to_string(),
         source_directory: photos_dir.to_string_lossy().to_string(),
         cache_directory: cache_dir.join("main").to_string_lossy().to_string(),
-        images_per_page: 20,
         image_indexing: indexing_mode,
         permissions: tenrankai::permissions::PermissionConfig {
             site_admins: Vec::new(),

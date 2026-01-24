@@ -193,9 +193,6 @@ pub struct StoredGalleryConfig {
     #[serde(default = "default_image_detail_template")]
     pub image_detail_template: String,
 
-    #[serde(default = "default_images_per_page")]
-    pub images_per_page: usize,
-
     #[serde(default = "default_thumbnail_size")]
     pub thumbnail: StoredImageSizeConfig,
 
@@ -329,9 +326,6 @@ fn default_gallery_template() -> String {
 }
 fn default_image_detail_template() -> String {
     "modules/image_detail.html.liquid".to_string()
-}
-fn default_images_per_page() -> usize {
-    50
 }
 fn default_thumbnail_size() -> StoredImageSizeConfig {
     StoredImageSizeConfig {

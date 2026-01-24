@@ -251,17 +251,15 @@ impl Gallery {
     pub async fn list_directory(
         &self,
         path: &str,
-        page: usize,
-    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
-        self.list_directory_with_user(path, page, None).await
+    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>), GalleryError> {
+        self.list_directory_with_user(path, None).await
     }
 
     pub async fn list_directory_with_user(
         &self,
         path: &str,
-        page: usize,
         user: Option<&str>,
-    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>, usize), GalleryError> {
+    ) -> Result<(Vec<GalleryItem>, Vec<GalleryItem>), GalleryError> {
         let items = self.scan_directory_with_user(path, user).await?;
 
         // Separate directories and images
@@ -275,31 +273,7 @@ impl Gallery {
             path
         );
 
-        // Calculate pagination for images
-        let total_images = images.len();
-        let total_pages = total_images.div_ceil(self.config.images_per_page);
-        let total_pages = total_pages.max(1); // At least 1 page
-
-        let start = page * self.config.images_per_page;
-        let end = ((page + 1) * self.config.images_per_page).min(total_images);
-
-        let paginated_images = if start < total_images {
-            images[start..end].to_vec()
-        } else {
-            Vec::new()
-        };
-
-        debug!(
-            "Pagination: page={}, start={}, end={}, total_images={}, returning {} paginated images",
-            page,
-            start,
-            end,
-            total_images,
-            paginated_images.len()
-        );
-
-        // Return all directories and paginated images
-        Ok((directories, paginated_images, total_pages))
+        Ok((directories, images))
     }
 
     pub async fn get_image_info(&self, relative_path: &str) -> Result<ImageInfo, GalleryError> {

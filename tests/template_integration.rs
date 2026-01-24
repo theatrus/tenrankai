@@ -77,7 +77,6 @@ async fn setup_test_server() -> (TempDir, TestServer) {
             name: "test".to_string(),
             source_directory: gallery_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.to_string_lossy().to_string(),
-            images_per_page: 20,
             ..Default::default()
         }]),
         posts: None,

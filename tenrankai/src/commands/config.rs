@@ -58,9 +58,6 @@ cache_directory = "cache/main"
 gallery_template = "modules/gallery.html.liquid"
 image_detail_template = "modules/image_detail.html.liquid"
 
-# Display settings
-images_per_page = 50
-
 # Image quality
 jpeg_quality = 85
 webp_quality = 85.0
@@ -269,7 +266,6 @@ pub async fn handle_add_gallery_command(
         cache_directory: cache_dir.clone(),
         gallery_template: "modules/gallery.html.liquid".to_string(),
         image_detail_template: "modules/image_detail.html.liquid".to_string(),
-        images_per_page: 50,
         jpeg_quality: Some(85),
         webp_quality: Some(85.0),
         thumbnail: StoredImageSizeConfig {

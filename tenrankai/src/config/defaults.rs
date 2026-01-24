@@ -51,11 +51,6 @@ pub fn default_image_detail_template() -> String {
     "modules/image_detail.html.liquid".to_string()
 }
 
-/// Default number of images per page in gallery
-pub fn default_images_per_page() -> usize {
-    50
-}
-
 /// Default thumbnail size configuration
 pub fn default_thumbnail_size() -> ImageSizeConfig {
     ImageSizeConfig {
@@ -130,7 +125,6 @@ impl Default for GallerySystemConfig {
             cache_directory: "cache".to_string(),
             gallery_template: default_gallery_template(),
             image_detail_template: default_image_detail_template(),
-            images_per_page: default_images_per_page(),
             thumbnail: default_thumbnail_size(),
             gallery_size: default_gallery_size(),
             medium: default_medium_size(),

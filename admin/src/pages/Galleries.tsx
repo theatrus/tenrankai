@@ -23,7 +23,6 @@ export function Galleries() {
     url_prefix: '/gallery',
     source_directory: '',
     cache_directory: '',
-    images_per_page: 50,
   });
 
   // Check if we have ConfigStorage mode by fetching sites
@@ -58,7 +57,6 @@ export function Galleries() {
         url_prefix: '/gallery',
         source_directory: '',
         cache_directory: '',
-        images_per_page: 50,
       });
     },
   });
@@ -100,7 +98,6 @@ export function Galleries() {
         url_prefix: editGallery.url_prefix,
         source_directory: editGallery.source_directory,
         cache_directory: editGallery.cache_directory,
-        images_per_page: editGallery.images_per_page,
       });
     }
   };
@@ -303,17 +300,6 @@ export function Galleries() {
                   Relative to the site's storage prefix
                 </small>
               </div>
-              <div className="form-group">
-                <label className="form-label">Images Per Page</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={newGallery.images_per_page}
-                  onChange={(e) => setNewGallery({ ...newGallery, images_per_page: parseInt(e.target.value) || 50 })}
-                  min={1}
-                  max={500}
-                />
-              </div>
               {createMutation.error && (
                 <div className="error" style={{ marginBottom: '1rem' }}>
                   {String(createMutation.error)}
@@ -381,17 +367,6 @@ export function Galleries() {
                   value={editGallery.cache_directory}
                   onChange={(e) => setEditGallery({ ...editGallery, cache_directory: e.target.value })}
                   required
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Images Per Page</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={editGallery.images_per_page}
-                  onChange={(e) => setEditGallery({ ...editGallery, images_per_page: parseInt(e.target.value) || 50 })}
-                  min={1}
-                  max={500}
                 />
               </div>
               {updateMutation.error && (

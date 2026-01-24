@@ -277,7 +277,6 @@ name = "main"
 url_prefix = "/gallery"
 source_directory = "photos"       # Relative to storage_prefix
 cache_directory = "cache/main"
-images_per_page = 50
 jpeg_quality = 85
 webp_quality = 85.0
 copyright_holder = "Your Name"
@@ -330,7 +329,6 @@ cargo run -- config add-posts <name> --site <site> --source <dir> --url-prefix <
 - `url_prefix`: URL path (e.g., `/gallery`, `/portfolio`)
 - `source_directory`: Photo directory (relative to storage_prefix)
 - `cache_directory`: Cache directory (relative to storage_prefix)
-- `images_per_page`: Number of images per page
 - `new_threshold_days`: Days to consider an image "new"
 - `jpeg_quality`: JPEG compression quality (1-100)
 - `webp_quality`: WebP compression quality (0.0-100.0)

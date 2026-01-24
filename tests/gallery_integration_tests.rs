@@ -29,7 +29,6 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
             name: "main".to_string(),
             source_directory: photos_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.join("main").to_string_lossy().to_string(),
-            images_per_page: 20,
             preview: tenrankai::PreviewConfig {
                 max_images: 6,
                 max_depth: 3,
@@ -89,7 +88,6 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
             url_prefix: "/my-portfolio".to_string(),
             source_directory: portfolio_dir.to_string_lossy().to_string(),
             cache_directory: cache_dir.join("portfolio").to_string_lossy().to_string(),
-            images_per_page: 12,
             preview: tenrankai::PreviewConfig {
                 max_images: 9,
                 max_depth: 2,
@@ -604,41 +602,6 @@ async fn test_gallery_breadcrumbs() {
 }
 
 #[tokio::test]
-async fn test_gallery_pagination() {
-    let temp_dir = TempDir::new().unwrap();
-    let config = create_test_config(&temp_dir);
-
-    // Create many images to test pagination (main gallery has 20 per page)
-    create_test_images(
-        config.galleries.as_ref().unwrap()[0]
-            .source_directory
-            .as_ref(),
-        25,
-    );
-
-    let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
-
-    // First page
-    let response = server.get("/gallery").await;
-    assert_eq!(response.status_code(), StatusCode::OK);
-
-    let html = response.text();
-    assert!(html.contains("test_000.jpg"));
-    assert!(html.contains("test_019.jpg"));
-    assert!(!html.contains("test_020.jpg")); // Should be on page 2
-
-    // Second page
-    let response = server.get("/gallery?page=1").await;
-    assert_eq!(response.status_code(), StatusCode::OK);
-
-    let html = response.text();
-    assert!(html.contains("test_020.jpg"));
-    assert!(html.contains("test_024.jpg"));
-    assert!(!html.contains("test_000.jpg")); // Should be on page 1
-}
-
-#[tokio::test]
 async fn test_nonexistent_gallery_returns_404() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
@@ -1129,7 +1092,6 @@ fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> SiteConfig {
         name: "main".to_string(),
         source_directory: photos_dir.to_string_lossy().to_string(),
         cache_directory: cache_dir.join("main").to_string_lossy().to_string(),
-        images_per_page: 20,
         image_indexing: ImageIndexingMode::Filename,
         permissions: tenrankai::permissions::PermissionConfig {
             site_admins: Vec::new(),

@@ -472,9 +472,7 @@ The admin API requires authentication and admin privileges.
   "name": "main",
   "url_prefix": "/gallery",
   "source_directory": "photos",
-  "cache_directory": "cache/main",
-  "images_per_page": 50,
-  "jpeg_quality": 85
+  "cache_directory": "cache/main"
 }
 ```
 
@@ -490,8 +488,7 @@ The admin API requires authentication and admin privileges.
   "name": "main",
   "url_prefix": "/gallery",
   "source_directory": "photos",
-  "cache_directory": "cache/main",
-  "images_per_page": 50
+  "cache_directory": "cache/main"
 }
 ```
 

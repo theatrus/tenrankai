@@ -238,7 +238,6 @@ impl ConfigStorageLoader {
             cache_directory,
             gallery_template: stored.gallery_template,
             image_detail_template: stored.image_detail_template,
-            images_per_page: stored.images_per_page,
             thumbnail: ImageSizeConfig {
                 width: stored.thumbnail.width,
                 height: stored.thumbnail.height,

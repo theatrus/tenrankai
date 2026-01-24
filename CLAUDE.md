@@ -142,7 +142,6 @@ name = "main"
 url_prefix = "/gallery"
 source_directory = "photos"          # Relative to storage_prefix
 cache_directory = "cache/main"
-images_per_page = 50
 jpeg_quality = 85
 webp_quality = 85.0
 copyright_holder = "Your Name"

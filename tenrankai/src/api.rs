@@ -129,8 +129,6 @@ pub struct GalleryApiResponse {
     pub breadcrumbs: Vec<crate::gallery::BreadcrumbItem>,
     pub directories: Vec<crate::gallery::GalleryItem>,
     pub images: Vec<crate::gallery::GalleryItem>,
-    pub page: usize,
-    pub total_pages: usize,
     pub folder_title: Option<String>,
     pub folder_description: Option<String>,
     /// Raw markdown for folder description (for editing)
@@ -223,13 +221,10 @@ pub async fn gallery_composite_preview_handler_for_named(
 
     // Not in cache, need to generate it
     // List directory to get images
-    let (_, images, _) = gallery
-        .list_directory(&gallery_path, 0)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to list directory: {}", e);
-            StatusCode::NOT_FOUND
-        })?;
+    let (_, images) = gallery.list_directory(&gallery_path).await.map_err(|e| {
+        tracing::error!("Failed to list directory: {}", e);
+        StatusCode::NOT_FOUND
+    })?;
 
     // Take up to 4 images for a 2x2 grid
     let preview_images: Vec<_> = images.into_iter().take(4).collect();
@@ -292,7 +287,7 @@ pub async fn refresh_static_versions(
 pub async fn gallery_api_handler_for_named(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
-    Query(query): Query<crate::gallery::GalleryQuery>,
+    Query(_query): Query<crate::gallery::GalleryQuery>,
     auth: crate::login::OptionalAuth,
 ) -> Result<Json<GalleryApiResponse>, StatusCode> {
     let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
@@ -320,9 +315,8 @@ pub async fn gallery_api_handler_for_named(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let page = query.page.unwrap_or(0);
-    let (directories, images, total_pages) = gallery
-        .list_directory_with_user(&path, page, auth.username())
+    let (directories, images) = gallery
+        .list_directory_with_user(&path, auth.username())
         .await
         .map_err(|e| {
             error!("Failed to list directory: {}", e);
@@ -392,8 +386,6 @@ pub async fn gallery_api_handler_for_named(
         breadcrumbs,
         directories,
         images,
-        page,
-        total_pages,
         folder_title,
         folder_description,
         folder_description_markdown,
@@ -537,8 +529,8 @@ pub async fn image_detail_api_handler_for_named(
 
     // Get all images in the parent directory for navigation
     // Use list_directory_with_user to filter hidden images based on user permissions
-    let (_, images, _) = gallery
-        .list_directory_with_user(parent_path, 0, auth.username())
+    let (_, images) = gallery
+        .list_directory_with_user(parent_path, auth.username())
         .await
         .unwrap_or_default();
 
@@ -1738,7 +1730,7 @@ pub async fn analyze_folder_handler(
     }
 
     // List images in the folder
-    let (_, images, _) = match gallery.list_directory(&folder_path, 0).await {
+    let (_, images) = match gallery.list_directory(&folder_path).await {
         Ok(result) => result,
         Err(e) => {
             error!("Failed to list directory: {}", e);
@@ -2323,7 +2315,6 @@ roles = ["viewer"]
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "test.html".to_string(),
             image_detail_template: "test.html".to_string(),
-            images_per_page: 50,
             jpeg_quality: Some(85),
             webp_quality: Some(85.0),
             new_threshold_days: Some(7),

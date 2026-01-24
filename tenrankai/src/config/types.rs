@@ -126,8 +126,6 @@ pub struct GallerySystemConfig {
     pub gallery_template: String,
     #[serde(default = "super::defaults::default_image_detail_template")]
     pub image_detail_template: String,
-    #[serde(default = "super::defaults::default_images_per_page")]
-    pub images_per_page: usize,
     #[serde(default = "super::defaults::default_thumbnail_size")]
     pub thumbnail: ImageSizeConfig,
     #[serde(default = "super::defaults::default_gallery_size")]

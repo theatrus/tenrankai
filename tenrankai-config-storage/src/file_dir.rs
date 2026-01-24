@@ -499,7 +499,6 @@ mod tests {
             cache_directory: cache.to_string(),
             gallery_template: "modules/gallery.html.liquid".to_string(),
             image_detail_template: "modules/image_detail.html.liquid".to_string(),
-            images_per_page: 50,
             thumbnail: StoredImageSizeConfig {
                 width: 300,
                 height: 300,

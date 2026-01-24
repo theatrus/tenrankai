@@ -12,6 +12,8 @@ export default defineConfig({
   build: {
     outDir: '../../static/dist',
     emptyOutDir: true,
+    // We intentionally bundle into a single file, so increase the warning limit
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: resolve(__dirname, 'frontend/react/app.ts'),
       output: {

@@ -91,7 +91,6 @@ export interface SiteGalleryInfo {
   url_prefix: string;
   source_directory: string;
   cache_directory: string;
-  images_per_page: number;
 }
 
 export interface SiteGalleryListResponse {
@@ -103,7 +102,6 @@ export interface CreateGalleryRequest {
   url_prefix: string;
   source_directory: string;
   cache_directory: string;
-  images_per_page?: number;
 }
 
 export interface SiteInfo {

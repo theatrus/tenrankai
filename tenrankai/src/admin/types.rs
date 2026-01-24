@@ -272,7 +272,6 @@ pub struct SiteGalleryInfo {
     pub url_prefix: String,
     pub source_directory: String,
     pub cache_directory: String,
-    pub images_per_page: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -286,12 +285,6 @@ pub struct CreateGalleryRequest {
     pub url_prefix: String,
     pub source_directory: String,
     pub cache_directory: String,
-    #[serde(default = "default_images_per_page")]
-    pub images_per_page: usize,
-}
-
-fn default_images_per_page() -> usize {
-    50
 }
 
 #[derive(Debug, Deserialize)]
@@ -299,7 +292,6 @@ pub struct UpdateGalleryRequest {
     pub url_prefix: Option<String>,
     pub source_directory: Option<String>,
     pub cache_directory: Option<String>,
-    pub images_per_page: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]

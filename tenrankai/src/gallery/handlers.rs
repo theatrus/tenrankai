@@ -81,9 +81,8 @@ pub async fn gallery_handler_for_named(
         }
     }
 
-    let page = query.page.unwrap_or(0);
-    let (directories, images, total_pages) = match gallery
-        .list_directory_with_user(&path, page, auth.username())
+    let (directories, images) = match gallery
+        .list_directory_with_user(&path, auth.username())
         .await
     {
         Ok(result) => {
@@ -189,8 +188,6 @@ pub async fn gallery_handler_for_named(
         "items": items,
         "images_json": images_json,
         "gallery_data_json": gallery_data_json,
-        "current_page": page,
-        "total_pages": total_pages,
         "folder_title": folder_title,
         "folder_description": folder_description,
         "folder_description_markdown": folder_description_markdown,
@@ -658,7 +655,6 @@ pub async fn image_handler_for_named_v2(
 
     // Create a query struct with the size parameter
     let query = GalleryQuery {
-        page: None,
         size: size_param.map(String::from),
     };
 

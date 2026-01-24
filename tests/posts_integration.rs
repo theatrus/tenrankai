@@ -137,7 +137,6 @@ This is the content of the second test post."#;
             cache_directory: cache_dir.to_string_lossy().to_string(),
             gallery_template: "gallery.html.liquid".to_string(),
             image_detail_template: "image_detail.html.liquid".to_string(),
-            images_per_page: 20,
             ..Default::default()
         }]),
         posts: Some(vec![PostsSystemConfig {
