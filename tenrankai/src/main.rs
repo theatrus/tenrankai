@@ -26,7 +26,7 @@ use tenrankai::site::ConfigReloader;
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 
     /// Global options that apply to all commands
     #[arg(short, long, default_value = "config.toml", global = true)]
@@ -38,7 +38,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Run the web server (default if no command specified)
+    /// Run the web server
     Serve {
         #[arg(short, long)]
         port: Option<u16>,
@@ -389,48 +389,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle commands
     match cli.command {
-        Some(Commands::User(user_cmd)) => handle_user_command(user_cmd).await,
-        Some(Commands::Cache(cache_cmd)) => handle_cache_command(cache_cmd, config).await,
+        Commands::User(user_cmd) => handle_user_command(user_cmd).await,
+        Commands::Cache(cache_cmd) => handle_cache_command(cache_cmd, config).await,
         #[cfg(feature = "avif")]
-        Some(Commands::AvifDebug {
+        Commands::AvifDebug {
             image_path,
             verbose,
-        }) => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
-        Some(Commands::AnalyzeImages {
+        } => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
+        Commands::AnalyzeImages {
             gallery,
             site,
             folder,
             limit,
             force,
             dry_run,
-        }) => {
+        } => {
             commands::analyze::handle_analyze_command(
                 config, site, gallery, folder, limit, force, dry_run,
             )
             .await
         }
-        Some(Commands::ClearAnalysis {
+        Commands::ClearAnalysis {
             gallery,
             site,
             folder,
             dry_run,
-        }) => {
+        } => {
             commands::clear_analysis::handle_clear_analysis_command(
                 config, site, gallery, folder, dry_run,
             )
             .await
         }
-        Some(Commands::Config(config_cmd)) => handle_config_command(config_cmd, config).await,
-        Some(Commands::Admin(admin_cmd)) => handle_admin_command(admin_cmd, config).await,
-        Some(Commands::Serve {
+        Commands::Config(config_cmd) => handle_config_command(config_cmd, config).await,
+        Commands::Admin(admin_cmd) => handle_admin_command(admin_cmd, config).await,
+        Commands::Serve {
             port,
             host,
             quit_after,
-        }) => run_server(config, port, host, quit_after).await,
-        None => {
-            // Default to serve command if no subcommand specified
-            run_server(config, None, None, None).await
-        }
+        } => run_server(config, port, host, quit_after).await,
     }
 }
 

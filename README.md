@@ -395,27 +395,30 @@ cache_directory = "s3://mybucket/cache?region=us-west-2"  # S3 for cached images
 
 ```bash
 # Using default config.toml with AVIF support
-cargo run --release
+cargo run --release -- serve
 
 # Run without AVIF support (faster builds, especially on Windows)
-cargo run --release --no-default-features
+cargo run --release --no-default-features -- serve
 
 # With custom configuration
-cargo run --release -- --config /path/to/config.toml
+cargo run --release -- --config /path/to/config.toml serve
 
 # Specify host and port
-cargo run --release -- --host 0.0.0.0 --port 8080
+cargo run --release -- serve --host 0.0.0.0 --port 8080
 
 # Enable debug logging
-cargo run --release -- --log-level debug
+cargo run --release -- --log-level debug serve
 ```
 
 ### Command Line Options
 
+Global options (before the subcommand):
 - `--config <path>`: Path to configuration file (default: config.toml)
+- `--log-level <level>`: Set logging level (trace, debug, info, warn, error)
+
+Serve command options:
 - `--host <address>`: Override configured host address
 - `--port <number>`: Override configured port
-- `--log-level <level>`: Set logging level (trace, debug, info, warn, error)
 - `--quit-after <seconds>`: Auto-shutdown after specified seconds (useful for testing)
 
 ### Utility Commands
