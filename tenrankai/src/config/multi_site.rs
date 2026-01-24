@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::types::{AppConfig, ServerConfig};
+use super::types::{AppConfig, CacheQueueConfig, ServerConfig};
 use crate::{email, openai};
 
 /// Root configuration structure (config.toml)
@@ -43,6 +43,10 @@ pub struct RootConfig {
     /// OpenAI configuration (shared across all sites)
     #[serde(default)]
     pub openai: Option<openai::OpenAIConfig>,
+
+    /// Cache generation queue configuration
+    #[serde(default)]
+    pub cache_queue: Option<CacheQueueConfig>,
 }
 
 /// Convert RootConfig to Config
@@ -53,7 +57,7 @@ impl From<RootConfig> for super::types::Config {
             app: config.app,
             email: config.email,
             openai: config.openai,
-            cache_queue: None, // RootConfig doesn't have cache_queue yet
+            cache_queue: config.cache_queue,
         }
     }
 }
@@ -83,6 +87,7 @@ mod tests {
             },
             email: None,
             openai: None,
+            cache_queue: None,
         };
 
         let config: super::super::types::Config = root.into();
