@@ -1,6 +1,8 @@
 pub mod coverage;
 pub mod operations;
 pub mod persistent_cache;
+/// Cache generation queue for background processing
+pub mod queue;
 /// Cache type definitions and utilities
 pub mod types;
 

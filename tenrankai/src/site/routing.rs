@@ -166,6 +166,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
+            cache_queue: None,
         };
 
         // Create router with middleware
@@ -208,6 +209,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
+            cache_queue: None,
         };
 
         let app = Router::new()
@@ -253,6 +255,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
+            cache_queue: None,
         };
 
         let app = Router::new()
@@ -285,6 +288,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
+            cache_queue: None,
         };
 
         let app = Router::new()

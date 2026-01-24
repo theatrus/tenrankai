@@ -8,6 +8,7 @@ use axum::{
 use super::error::AdminError;
 use super::extractors::RequireAdmin;
 use super::types::*;
+use crate::cache::queue::{CacheCleanupRequest, CacheGenerationRequest};
 use crate::permissions::types::RolePermissions;
 use crate::site::ResolvedState;
 
@@ -2950,6 +2951,28 @@ pub async fn move_gallery_images(
             }
         }
 
+        // Queue cache cleanup for old path and generation for new path
+        if let Some(cache_queue) = app_state.cache_queue() {
+            let gallery_key = format!("{}:{}", site, gallery);
+
+            // Cleanup old cache files
+            let _ = cache_queue
+                .submit_cleanup(CacheCleanupRequest {
+                    gallery_name: gallery_key.clone(),
+                    old_path: source_path.clone(),
+                })
+                .await;
+
+            // Generate cache for new path
+            let _ = cache_queue
+                .submit(CacheGenerationRequest {
+                    gallery_name: gallery_key,
+                    image_path: dest_path.clone(),
+                    priority: 5,
+                })
+                .await;
+        }
+
         moved_count += 1;
     }
 
@@ -3122,6 +3145,19 @@ pub async fn copy_gallery_images(
         if let Err(e) = gallery_obj.source_storage().write(&dest_path, data).await {
             errors.push(format!("Failed to write {}: {}", filename, e));
             continue;
+        }
+
+        // Queue cache generation for new path
+        if let Some(cache_queue) = app_state.cache_queue() {
+            let gallery_key = format!("{}:{}", site, gallery);
+
+            let _ = cache_queue
+                .submit(CacheGenerationRequest {
+                    gallery_name: gallery_key,
+                    image_path: dest_path.clone(),
+                    priority: 5,
+                })
+                .await;
         }
 
         copied_count += 1;

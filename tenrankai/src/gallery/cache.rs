@@ -817,8 +817,8 @@ impl Gallery {
         Ok(removed_count)
     }
 
-    /// Load all cache filenames into a HashSet for fast lookups
-    async fn load_cache_file_set(&self) -> HashSet<String> {
+    /// Load all cache filenames into a HashSet for fast lookups.
+    pub async fn load_cache_file_set(&self) -> HashSet<String> {
         match self.cache_storage.list("").await {
             Ok(entries) => entries
                 .into_iter()

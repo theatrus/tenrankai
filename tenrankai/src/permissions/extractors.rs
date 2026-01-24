@@ -453,6 +453,7 @@ mod tests {
             email_provider: None,
             webauthn: None,
             openai_client: None,
+            cache_queue: None,
         };
 
         // Test public user permissions

@@ -16,6 +16,22 @@ pub struct Config {
     pub email: Option<email::EmailConfig>,
     #[serde(default)]
     pub openai: Option<openai::OpenAIConfig>,
+    #[serde(default)]
+    pub cache_queue: Option<CacheQueueConfig>,
+}
+
+/// Configuration for the cache generation queue.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct CacheQueueConfig {
+    /// Enable the cache generation queue (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Buffer size for in-memory queue (default: 1000)
+    #[serde(default)]
+    pub buffer_size: Option<usize>,
+    /// Number of concurrent workers (default: num_cpus)
+    #[serde(default)]
+    pub concurrency: Option<usize>,
 }
 
 /// Server configuration for host and port settings

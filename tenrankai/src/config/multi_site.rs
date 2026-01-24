@@ -53,6 +53,7 @@ impl From<RootConfig> for super::types::Config {
             app: config.app,
             email: config.email,
             openai: config.openai,
+            cache_queue: None, // RootConfig doesn't have cache_queue yet
         }
     }
 }

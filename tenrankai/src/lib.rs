@@ -60,6 +60,7 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
+    pub cache_queue: Option<cache::queue::DynCacheQueue>,
 }
 
 impl AppState {
@@ -71,7 +72,13 @@ impl AppState {
             email_provider: self.email_provider.clone(),
             webauthn: self.webauthn.clone(),
             openai_client: self.openai_client.clone(),
+            cache_queue: self.cache_queue.clone(),
         }
+    }
+
+    /// Get the cache generation queue (if enabled)
+    pub fn cache_queue(&self) -> Option<&cache::queue::DynCacheQueue> {
+        self.cache_queue.as_ref()
     }
 }
 
@@ -193,13 +200,14 @@ pub async fn create_app(
         login::start_periodic_cleanup(built_site.login_state().clone());
     }
 
-    // Create minimal AppState for testing (no email, webauthn, openai)
+    // Create minimal AppState for testing (no email, webauthn, openai, cache_queue)
     let app_state = AppState {
         site: built_site.clone(),
         site_manager: None,
         email_provider: None,
         webauthn: None,
         openai_client: None,
+        cache_queue: None,
     };
 
     create_router(app_state, built_site)
@@ -209,6 +217,7 @@ pub async fn create_app(
 pub async fn create_app_with_site_manager(
     config: Config,
     site_manager: Arc<site::SiteManager>,
+    cache_queue: Option<cache::queue::DynCacheQueue>,
 ) -> axum::Router {
     // In multi-site mode, get the default site from SiteManager
     // The site_resolution_middleware will swap in the correct site per-request
@@ -284,6 +293,7 @@ pub async fn create_app_with_site_manager(
         email_provider,
         webauthn,
         openai_client,
+        cache_queue,
     };
 
     create_router(app_state, built_site)

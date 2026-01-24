@@ -2423,6 +2423,7 @@ roles = ["viewer"]
             email_provider: None,
             webauthn: None,
             openai_client: None,
+            cache_queue: None,
         };
 
         (app_state, temp_dir)

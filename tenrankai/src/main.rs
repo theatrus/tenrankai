@@ -7,7 +7,9 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
-    Config, GallerySystemConfig, LogLevel, commands,
+    Config, GallerySystemConfig, LogLevel,
+    cache::queue::{CacheQueueWorker, DynCacheQueue, InMemoryQueue},
+    commands,
     config::{ConfigStorageLoader, MultiSiteConfig},
     create_app_with_site_manager,
     gallery::Gallery,
@@ -999,10 +1001,45 @@ async fn run_server(
         info!("Site '{}' ready with hostnames: {:?}", site_name, hostnames);
     }
 
-    let app = create_app_with_site_manager(config.clone(), site_manager.clone()).await;
+    // Create cache generation queue if configured
+    let cache_queue: Option<DynCacheQueue> = if let Some(ref queue_config) = config.cache_queue
+        && queue_config.enabled
+    {
+        let buffer_size = queue_config.buffer_size.unwrap_or(1000);
+        info!(
+            "Cache generation queue enabled (buffer_size={})",
+            buffer_size
+        );
+        Some(Arc::new(InMemoryQueue::new(buffer_size)))
+    } else {
+        None
+    };
+
+    let app =
+        create_app_with_site_manager(config.clone(), site_manager.clone(), cache_queue.clone())
+            .await;
 
     // Convert all_galleries_map to Arc for background analysis
     let galleries_arc = Arc::new(all_galleries_map);
+
+    // Start cache queue worker if queue is enabled
+    let cache_queue_shutdown_token = tokio_util::sync::CancellationToken::new();
+    if let Some(ref queue) = cache_queue {
+        let concurrency = config
+            .cache_queue
+            .as_ref()
+            .and_then(|c| c.concurrency)
+            .unwrap_or_else(num_cpus::get);
+
+        let worker = Arc::new(CacheQueueWorker::new(
+            queue.clone(),
+            (*galleries_arc).clone(),
+            cache_queue_shutdown_token.clone(),
+            concurrency,
+        ));
+        worker.start();
+        info!("Cache queue worker started (concurrency={})", concurrency);
+    }
 
     // Start background image analysis if configured
     let background_analysis_token = tokio_util::sync::CancellationToken::new();
@@ -1098,6 +1135,12 @@ async fn run_server(
 
     // Cancel background image analysis
     background_analysis_token.cancel();
+
+    // Cancel cache queue worker and close queue
+    cache_queue_shutdown_token.cancel();
+    if let Some(ref queue) = cache_queue {
+        queue.close().await;
+    }
 
     // Cancel SIGHUP handler
     #[cfg(unix)]
