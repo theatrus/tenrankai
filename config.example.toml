@@ -81,3 +81,16 @@ config_storage = "config.d"
 # [openai]
 # api_key = "sk-..."
 # model = "gpt-4o"  # Default model for image analysis
+
+# =============================================================================
+# Optional: Cache Generation Queue
+# =============================================================================
+# Background processing for cache generation after move/copy operations.
+# When enabled, moving or copying images queues cache regeneration in the
+# background instead of blocking the request. Also cleans up orphaned cache
+# files when images are moved.
+#
+# [cache_queue]
+# enabled = true
+# buffer_size = 1000  # Max queued items (default: 1000)
+# concurrency = 4     # Parallel workers (default: number of CPUs)
