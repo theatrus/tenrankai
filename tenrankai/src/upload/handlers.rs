@@ -348,6 +348,15 @@ pub async fn patch_upload(
             warn!(path = %info.path, error = %e, "Failed to refresh metadata for uploaded image");
         }
 
+        // Refresh folder cache so the image appears in directory listings
+        let folder_path = std::path::Path::new(&info.path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("");
+        if let Err(e) = gallery.refresh_single_folder_cache(folder_path).await {
+            warn!(path = %folder_path, error = %e, "Failed to refresh folder cache after upload");
+        }
+
         // Queue cache generation in background (thumbnails, etc.)
         if let Some(queue) = app_state.cache_queue() {
             let request = CacheGenerationRequest::new(&gallery_name, &info.path).with_priority(8);

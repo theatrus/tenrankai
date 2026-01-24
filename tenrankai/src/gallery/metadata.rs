@@ -1,3 +1,4 @@
+use super::indexing::ImageIndexer;
 use super::metadata_sources::{merge_metadata_sources, read_xmp_metadata_from_storage};
 use super::path_utils::{FileExtension, SidecarPaths};
 use super::{CameraInfo, Gallery, ImageMetadata, LocationInfo};
@@ -6,11 +7,93 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::stream::{self, StreamExt};
 use rand::rng;
 use rand::seq::SliceRandom;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
+use tenrankai_storage::StorageEntry;
 use tracing::{debug, info, trace};
 
+/// Result of classifying a folder's entries for caching
+struct FolderEntryClassification {
+    /// Visible subdirectory names (excludes __ prefixed)
+    subdirectories: Vec<String>,
+    /// Image paths in this folder (displayable images only)
+    images: Vec<String>,
+    /// Files for grouping algorithm: (path, modification_time, size)
+    groupable_files: Vec<(String, Option<SystemTime>, u64)>,
+}
+
 impl Gallery {
+    /// Classify a folder's entries into subdirectories, images, and groupable files.
+    /// This shared logic is used by both single-folder and full refresh operations.
+    fn classify_folder_entries(&self, entries: &[StorageEntry]) -> FolderEntryClassification {
+        let mut subdirectories = Vec::new();
+        let mut images = Vec::new();
+        let mut groupable_files = Vec::new();
+
+        for entry in entries {
+            let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
+
+            // Skip hidden files and markdown
+            if name.starts_with('.') || name.ends_with(".md") {
+                continue;
+            }
+
+            if entry.is_dir {
+                // Skip __ prefixed directories from visible list
+                if !name.starts_with("__") {
+                    subdirectories.push(name.to_string());
+                }
+            } else {
+                let ext = super::grouping::get_extension(name).map(|e| e.to_lowercase());
+                let is_displayable_image = self.is_image(name);
+                let is_raw = ext
+                    .as_ref()
+                    .is_some_and(|e| super::grouping::is_raw_extension(e));
+
+                if is_displayable_image {
+                    images.push(entry.path.clone());
+                }
+
+                if is_displayable_image || is_raw {
+                    let mod_time = entry.metadata.as_ref().and_then(|m| m.last_modified);
+                    let file_size = entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
+                    groupable_files.push((entry.path.clone(), mod_time, file_size));
+                }
+            }
+        }
+
+        FolderEntryClassification {
+            subdirectories,
+            images,
+            groupable_files,
+        }
+    }
+
+    /// Build a CachedPreviewItem for an image path.
+    /// Used by both single-folder and full refresh operations.
+    fn build_preview_item(
+        &self,
+        img_path: &str,
+        indexer: &ImageIndexer,
+        image_cache: &HashMap<String, ImageMetadata>,
+    ) -> super::CachedPreviewItem {
+        let url_id = indexer
+            .get_index(img_path)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| urlencoding::encode(img_path).to_string());
+        let thumbnail_url = self.build_thumbnail_url(&url_id);
+        let gallery_url = self.build_gallery_url(&url_id);
+        let dimensions = image_cache.get(img_path).map(|m| m.dimensions);
+
+        super::CachedPreviewItem {
+            path: img_path.to_string(),
+            url_id,
+            thumbnail_url,
+            gallery_url,
+            dimensions,
+        }
+    }
     /// Extract EXIF data from image bytes
     pub(crate) fn extract_all_exif_data_from_bytes(
         &self,
@@ -384,6 +467,166 @@ impl Gallery {
             let mut indexer = self.image_indexer.write().await;
             indexer.build_index(&all_paths);
         }
+
+        Ok(())
+    }
+
+    /// Refresh the folder cache for a single folder after an upload.
+    /// This updates the folder's image list, groups, preview items, and
+    /// bubbles up recursive_image_count changes to parent folders.
+    pub async fn refresh_single_folder_cache(
+        &self,
+        folder_path: &str,
+    ) -> Result<(), super::GalleryError> {
+        debug!("Refreshing folder cache for: {}", folder_path);
+
+        // List and classify this folder's contents
+        let entries = self.source_storage.list(folder_path).await?;
+        let mut classified = self.classify_folder_entries(&entries);
+
+        // Also collect groupable files from __versions subfolder if it exists
+        let versions_path = if folder_path.is_empty() {
+            "__versions".to_string()
+        } else {
+            format!("{}/__versions", folder_path)
+        };
+        if let Ok(version_entries) = self.source_storage.list(&versions_path).await {
+            let version_classified = self.classify_folder_entries(&version_entries);
+            classified
+                .groupable_files
+                .extend(version_classified.groupable_files);
+        }
+
+        // Build image groups
+        let indexer = self.image_indexer.read().await;
+        let image_groups = super::grouping::group_files(
+            classified
+                .groupable_files
+                .iter()
+                .map(|(p, m, s)| (p.as_str(), *m, *s)),
+            |path| {
+                indexer
+                    .get_index(path)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| urlencoding::encode(path).to_string())
+            },
+            |url_id| self.build_thumbnail_url(url_id),
+        );
+
+        // Build preview items for this folder's images
+        let image_cache_guard = self.image_cache.read_all().await;
+        let image_cache: HashMap<String, ImageMetadata> = image_cache_guard.clone();
+        drop(image_cache_guard);
+
+        let preview_items: Vec<super::CachedPreviewItem> = classified
+            .images
+            .iter()
+            .take(self.config.preview.max_images)
+            .map(|img_path| self.build_preview_item(img_path, &indexer, &image_cache))
+            .collect();
+        drop(indexer);
+
+        // Get existing folder metadata (from _folder.md) or use defaults
+        let (metadata, metadata_last_modified) =
+            if let Some(existing) = self.folder_cache.get(folder_path).await {
+                (existing.metadata, existing.metadata_last_modified)
+            } else {
+                // Try to read _folder.md for new folders
+                let folder_meta = self.read_folder_metadata_from_storage(folder_path).await;
+                (folder_meta, None)
+            };
+
+        // Calculate direct image count for this folder
+        let direct_count = classified.images.len();
+
+        // Calculate recursive count: direct images + counts from cached subdirectories
+        let recursive_image_count = {
+            let mut count = direct_count;
+            for subdir_name in &classified.subdirectories {
+                let subdir_path = if folder_path.is_empty() {
+                    subdir_name.clone()
+                } else {
+                    format!("{}/{}", folder_path, subdir_name)
+                };
+                if let Some(subdir_cache) = self.folder_cache.get(&subdir_path).await {
+                    count += subdir_cache.recursive_image_count;
+                }
+            }
+            count
+        };
+
+        // Insert updated folder cache entry
+        self.folder_cache
+            .insert(
+                folder_path.to_string(),
+                super::CachedFolderMetadata {
+                    metadata,
+                    metadata_last_modified,
+                    subdirectories: classified.subdirectories,
+                    images: classified.images,
+                    recursive_image_count,
+                    preview_items,
+                    image_groups,
+                },
+            )
+            .await;
+
+        // Bubble up the count change to parent folders
+        let mut current = folder_path.to_string();
+        while let Some(last_slash) = current.rfind('/') {
+            let parent = &current[..last_slash];
+            if let Some(mut parent_cache) = self.folder_cache.get(parent).await {
+                // Recalculate parent's recursive count from its subdirectories
+                let mut new_count = 0;
+                // Direct images in parent
+                new_count += parent_cache.images.len();
+                // Add counts from all subdirectories
+                for subdir_name in &parent_cache.subdirectories {
+                    let subdir_path = if parent.is_empty() {
+                        subdir_name.clone()
+                    } else {
+                        format!("{}/{}", parent, subdir_name)
+                    };
+                    if let Some(subdir_cache) = self.folder_cache.get(&subdir_path).await {
+                        new_count += subdir_cache.recursive_image_count;
+                    }
+                }
+                parent_cache.recursive_image_count = new_count;
+                self.folder_cache
+                    .insert(parent.to_string(), parent_cache)
+                    .await;
+            }
+            current = parent.to_string();
+        }
+
+        // Also update root folder if we're not already at root
+        if !folder_path.is_empty()
+            && let Some(mut root_cache) = self.folder_cache.get("").await
+        {
+            let mut new_count = root_cache.images.len();
+            for subdir_name in &root_cache.subdirectories {
+                if let Some(subdir_cache) = self.folder_cache.get(subdir_name).await {
+                    new_count += subdir_cache.recursive_image_count;
+                }
+            }
+            root_cache.recursive_image_count = new_count;
+            self.folder_cache.insert(String::new(), root_cache).await;
+        }
+
+        debug!(
+            "Folder cache updated for {}: {} images, {} subdirs",
+            if folder_path.is_empty() {
+                "(root)"
+            } else {
+                folder_path
+            },
+            direct_count,
+            self.folder_cache
+                .get(folder_path)
+                .await
+                .map(|c| c.subdirectories.len())
+                .unwrap_or(0)
+        );
 
         Ok(())
     }
@@ -836,29 +1079,17 @@ impl Gallery {
         // Pre-build image path -> preview item data (avoids lookups in closure)
         let image_preview_data: HashMap<String, super::CachedPreviewItem> = {
             let indexer = self.image_indexer.read().await;
-            let image_cache = self.image_cache.read_all().await;
+            let image_cache_guard = self.image_cache.read_all().await;
+            let image_cache: HashMap<String, ImageMetadata> = image_cache_guard.clone();
+            drop(image_cache_guard);
 
             folder_children
                 .values()
                 .flat_map(|(_, images)| images.iter())
                 .map(|img_path| {
-                    let url_id = indexer
-                        .get_index(img_path)
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| urlencoding::encode(img_path).to_string());
-                    let thumbnail_url = self.build_thumbnail_url(&url_id);
-                    let gallery_url = self.build_gallery_url(&url_id);
-                    let dimensions = image_cache.get(img_path).map(|m| m.dimensions);
-
                     (
                         img_path.clone(),
-                        super::CachedPreviewItem {
-                            path: img_path.clone(),
-                            url_id,
-                            thumbnail_url,
-                            gallery_url,
-                            dimensions,
-                        },
+                        self.build_preview_item(img_path, &indexer, &image_cache),
                     )
                 })
                 .collect()
