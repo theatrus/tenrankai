@@ -118,7 +118,8 @@ pub fn generate_theme_css(theme: &StoredThemeConfig) -> String {
     }
 
     if has_fonts {
-        css.push_str(":root {\n");
+        // Use grouped selector to match specificity of style.css
+        css.push_str(":root,\n:root[data-theme=\"dark\"],\n:root[data-theme=\"light\"] {\n");
         css.push_str(&font_vars);
         css.push_str("}\n\n");
     }
@@ -140,34 +141,15 @@ pub fn generate_theme_css(theme: &StoredThemeConfig) -> String {
         }
         _ => {
             if has_dark {
-                css.push_str("[data-theme=\"dark\"] {\n");
+                // Use :root[data-theme] to match specificity of style.css
+                css.push_str(":root,\n:root[data-theme=\"dark\"] {\n");
                 css.push_str(&dark_vars);
-                css.push_str("}\n\n");
-
-                css.push_str("@media (prefers-color-scheme: dark) {\n");
-                css.push_str("  :root:not([data-theme]) {\n");
-                for line in dark_vars.lines() {
-                    css.push_str("  ");
-                    css.push_str(line);
-                    css.push('\n');
-                }
-                css.push_str("  }\n");
                 css.push_str("}\n\n");
             }
 
             if has_light {
-                css.push_str("[data-theme=\"light\"] {\n");
+                css.push_str(":root[data-theme=\"light\"] {\n");
                 css.push_str(&light_vars);
-                css.push_str("}\n\n");
-
-                css.push_str("@media (prefers-color-scheme: light) {\n");
-                css.push_str("  :root:not([data-theme]) {\n");
-                for line in light_vars.lines() {
-                    css.push_str("  ");
-                    css.push_str(line);
-                    css.push('\n');
-                }
-                css.push_str("  }\n");
                 css.push_str("}\n");
             }
         }
@@ -211,9 +193,8 @@ mod tests {
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains("[data-theme=\"dark\"]"));
+        assert!(css.contains(":root[data-theme=\"dark\"]"));
         assert!(css.contains("--bg-primary: #1a1a1a;"));
-        assert!(css.contains("@media (prefers-color-scheme: dark)"));
     }
 
     #[test]
@@ -226,9 +207,8 @@ mod tests {
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains("[data-theme=\"light\"]"));
+        assert!(css.contains(":root[data-theme=\"light\"]"));
         assert!(css.contains("--bg-primary: #ffffff;"));
-        assert!(css.contains("@media (prefers-color-scheme: light)"));
     }
 
     #[test]
@@ -279,8 +259,8 @@ mod tests {
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains("[data-theme=\"dark\"]"));
-        assert!(css.contains("[data-theme=\"light\"]"));
+        assert!(css.contains(":root[data-theme=\"dark\"]"));
+        assert!(css.contains(":root[data-theme=\"light\"]"));
         assert!(css.contains("--bg-primary: #1a1a1a;"));
         assert!(css.contains("--bg-primary: #ffffff;"));
     }
@@ -292,7 +272,9 @@ mod tests {
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains(":root {"));
+        assert!(css.contains(":root,"));
+        assert!(css.contains(":root[data-theme=\"dark\"]"));
+        assert!(css.contains(":root[data-theme=\"light\"]"));
         assert!(css.contains("--font-body: 'Poppins', sans-serif;"));
     }
 
