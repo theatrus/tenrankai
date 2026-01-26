@@ -123,43 +123,88 @@ function ColorInput({ label, value, defaultValue, onChange }: ColorInputProps) {
   );
 }
 
+function buildGoogleFontsUrl(fonts: CuratedFont[]): string {
+  const families = fonts.map(f => {
+    const weights = f.weights.join(';');
+    return `family=${encodeURIComponent(f.family)}:wght@${weights}`;
+  });
+  return `https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`;
+}
+
+function useFontLoader() {
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const linkId = 'theme-editor-fonts';
+    if (document.getElementById(linkId)) {
+      setLoaded(true);
+      return;
+    }
+
+    const link = document.createElement('link');
+    link.id = linkId;
+    link.rel = 'stylesheet';
+    link.href = buildGoogleFontsUrl(CURATED_FONTS);
+    link.onload = () => setLoaded(true);
+    document.head.appendChild(link);
+  }, []);
+
+  return loaded;
+}
+
 interface FontSelectProps {
   label: string;
   category: 'sans-serif' | 'serif' | 'monospace' | 'all';
   value?: string;
   defaultFont: string;
+  sampleText?: string;
   onChange: (value: string | undefined, googleFont?: GoogleFontConfig) => void;
 }
 
-function FontSelect({ label, category, value, defaultFont, onChange }: FontSelectProps) {
+function FontSelect({ label, category, value, defaultFont, sampleText, onChange }: FontSelectProps) {
   const fonts = CURATED_FONTS.filter(f =>
     category === 'all' || f.category === category
   );
 
-  const selectedFamily = value ? extractFontFamily(value) : undefined;
+  const selectedFamily = value ? extractFontFamily(value) : defaultFont;
+  const currentFont = fonts.find(f => f.family === selectedFamily) || CURATED_FONTS.find(f => f.family === defaultFont);
+  const fontCategory = currentFont?.category || 'sans-serif';
+
+  const sample = sampleText || (category === 'monospace'
+    ? 'const x = 42; // code sample'
+    : 'The quick brown fox jumps over the lazy dog');
 
   return (
-    <div className="font-input-row">
-      <label>{label}</label>
-      <select
-        value={selectedFamily || ''}
-        onChange={(e) => {
-          const fontFamily = e.target.value;
-          if (!fontFamily) {
-            onChange(undefined, undefined);
-            return;
-          }
-          const font = fonts.find(f => f.family === fontFamily);
-          if (font) {
-            onChange(`'${font.family}', ${font.category}`, { family: font.family, weights: font.weights });
-          }
-        }}
+    <div className="font-select-group">
+      <div className="font-input-row">
+        <label>{label}</label>
+        <select
+          value={selectedFamily}
+          onChange={(e) => {
+            const fontFamily = e.target.value;
+            if (fontFamily === defaultFont) {
+              onChange(undefined, undefined);
+              return;
+            }
+            const font = fonts.find(f => f.family === fontFamily);
+            if (font) {
+              onChange(`'${font.family}', ${font.category}`, { family: font.family, weights: font.weights });
+            }
+          }}
+        >
+          {fonts.map(f => (
+            <option key={f.family} value={f.family}>
+              {f.family}{f.family === defaultFont ? ' (Default)' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div
+        className="font-preview"
+        style={{ fontFamily: `'${selectedFamily}', ${fontCategory}` }}
       >
-        <option value="">{defaultFont} (Default)</option>
-        {fonts.map(f => (
-          <option key={f.family} value={f.family}>{f.family}</option>
-        ))}
-      </select>
+        {sample}
+      </div>
     </div>
   );
 }
@@ -292,6 +337,9 @@ export function Theme() {
   const [theme, setTheme] = useState<ThemeConfig>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<ColorMode>('dark');
+
+  // Load all Google Fonts for previews
+  useFontLoader();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['theme'],

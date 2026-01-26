@@ -435,6 +435,32 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.font-select-group {
+  margin-bottom: 1.5rem;
+}
+
+.font-select-group .font-input-row {
+  margin-bottom: 0.5rem;
+}
+
+.font-preview {
+  padding: 0.75rem 1rem;
+  margin-left: calc(180px + 1rem);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .font-preview {
+    background: var(--color-bg-dark);
+    border-color: var(--color-border-dark);
+    color: var(--color-text-dark);
+  }
+}
+
 .color-input-row label,
 .font-input-row label {
   flex: 0 0 180px;
