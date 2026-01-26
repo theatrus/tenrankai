@@ -48,9 +48,12 @@ impl SiteBuilder {
         // Build template engine
         let (mut template_engine, static_handler) = self.build_template_and_static().await?;
 
-        // Set force_color_scheme on template engine if theme specifies it
+        // Set theme options on template engine
         if let Some(ref theme_config) = theme {
             template_engine.set_force_color_scheme(theme_config.force_color_scheme.clone());
+            if !theme_config.google_fonts.is_empty() {
+                template_engine.set_google_fonts(theme_config.google_fonts.clone());
+            }
         }
 
         let template_engine = Arc::new(template_engine);

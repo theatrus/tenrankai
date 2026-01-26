@@ -374,6 +374,30 @@ impl From<ThemeColorSetDto> for tenrankai_config_storage::ThemeColorSet {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleFontConfigDto {
+    pub family: String,
+    pub weights: Vec<String>,
+}
+
+impl From<tenrankai_config_storage::GoogleFontConfig> for GoogleFontConfigDto {
+    fn from(font: tenrankai_config_storage::GoogleFontConfig) -> Self {
+        Self {
+            family: font.family,
+            weights: font.weights,
+        }
+    }
+}
+
+impl From<GoogleFontConfigDto> for tenrankai_config_storage::GoogleFontConfig {
+    fn from(dto: GoogleFontConfigDto) -> Self {
+        Self {
+            family: dto.family,
+            weights: dto.weights,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ThemeConfigDto {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -388,6 +412,8 @@ pub struct ThemeConfigDto {
     pub font_heading: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_mono: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub google_fonts: Vec<GoogleFontConfigDto>,
 }
 
 impl From<tenrankai_config_storage::StoredThemeConfig> for ThemeConfigDto {
@@ -399,6 +425,7 @@ impl From<tenrankai_config_storage::StoredThemeConfig> for ThemeConfigDto {
             font_body: theme.font_body,
             font_heading: theme.font_heading,
             font_mono: theme.font_mono,
+            google_fonts: theme.google_fonts.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -412,6 +439,7 @@ impl From<ThemeConfigDto> for tenrankai_config_storage::StoredThemeConfig {
             font_body: dto.font_body,
             font_heading: dto.font_heading,
             font_mono: dto.font_mono,
+            google_fonts: dto.google_fonts.into_iter().map(Into::into).collect(),
         }
     }
 }

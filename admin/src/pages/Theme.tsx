@@ -1,6 +1,33 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ThemeConfig, ThemeColorSet } from '@api/client';
+import { api, ThemeConfig, ThemeColorSet, GoogleFontConfig } from '@api/client';
+
+interface CuratedFont {
+  family: string;
+  weights: string[];
+  category: 'sans-serif' | 'serif' | 'monospace';
+}
+
+const CURATED_FONTS: CuratedFont[] = [
+  { family: 'Poppins', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
+  { family: 'Roboto', weights: ['300', '400', '500', '700'], category: 'sans-serif' },
+  { family: 'Open Sans', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
+  { family: 'Lato', weights: ['300', '400', '700'], category: 'sans-serif' },
+  { family: 'Montserrat', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
+  { family: 'Inter', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
+  { family: 'Raleway', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
+  { family: 'Nunito', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
+  { family: 'Source Sans Pro', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
+  { family: 'PT Sans', weights: ['400', '700'], category: 'sans-serif' },
+  { family: 'Merriweather', weights: ['300', '400', '700'], category: 'serif' },
+  { family: 'Playfair Display', weights: ['400', '500', '600', '700'], category: 'serif' },
+  { family: 'Lora', weights: ['400', '500', '600', '700'], category: 'serif' },
+  { family: 'Libre Baskerville', weights: ['400', '700'], category: 'serif' },
+  { family: 'Source Code Pro', weights: ['400', '500', '600', '700'], category: 'monospace' },
+  { family: 'Fira Code', weights: ['400', '500', '600', '700'], category: 'monospace' },
+  { family: 'JetBrains Mono', weights: ['400', '500', '600', '700'], category: 'monospace' },
+  { family: 'IBM Plex Mono', weights: ['400', '500', '600', '700'], category: 'monospace' },
+];
 
 interface ColorInputProps {
   label: string;
@@ -53,24 +80,49 @@ function ColorInput({ label, value, onChange }: ColorInputProps) {
   );
 }
 
-interface FontInputProps {
+interface FontSelectProps {
   label: string;
+  category: 'sans-serif' | 'serif' | 'monospace' | 'all';
   value?: string;
-  onChange: (value: string | undefined) => void;
+  onChange: (value: string | undefined, googleFont?: GoogleFontConfig) => void;
 }
 
-function FontInput({ label, value, onChange }: FontInputProps) {
+function FontSelect({ label, category, value, onChange }: FontSelectProps) {
+  const fonts = CURATED_FONTS.filter(f =>
+    category === 'all' || f.category === category
+  );
+
+  const selectedFamily = value ? extractFontFamily(value) : undefined;
+
   return (
     <div className="font-input-row">
       <label>{label}</label>
-      <input
-        type="text"
-        value={value || ''}
-        placeholder="e.g., 'Poppins', sans-serif"
-        onChange={(e) => onChange(e.target.value || undefined)}
-      />
+      <select
+        value={selectedFamily || ''}
+        onChange={(e) => {
+          const fontFamily = e.target.value;
+          if (!fontFamily) {
+            onChange(undefined, undefined);
+            return;
+          }
+          const font = fonts.find(f => f.family === fontFamily);
+          if (font) {
+            onChange(`'${font.family}', ${font.category}`, { family: font.family, weights: font.weights });
+          }
+        }}
+      >
+        <option value="">System Default</option>
+        {fonts.map(f => (
+          <option key={f.family} value={f.family}>{f.family}</option>
+        ))}
+      </select>
     </div>
   );
+}
+
+function extractFontFamily(cssValue: string): string | undefined {
+  const match = cssValue.match(/^'([^']+)'/);
+  return match ? match[1] : undefined;
 }
 
 interface ColorSectionProps {
@@ -229,8 +281,36 @@ export function Theme() {
     setHasChanges(true);
   };
 
-  const handleFontChange = (key: 'font_body' | 'font_heading' | 'font_mono') => (value: string | undefined) => {
-    setTheme((prev) => ({ ...prev, [key]: value }));
+  const handleFontChange = (key: 'font_body' | 'font_heading' | 'font_mono') => (value: string | undefined, googleFont?: GoogleFontConfig) => {
+    setTheme((prev) => {
+      const updated = { ...prev, [key]: value };
+
+      // Update google_fonts array
+      const existingFonts = prev.google_fonts || [];
+
+      if (googleFont) {
+        // Check if this font is already in the list
+        const hasFont = existingFonts.some(f => f.family === googleFont.family);
+        if (!hasFont) {
+          updated.google_fonts = [...existingFonts, googleFont];
+        }
+      }
+
+      // Clean up google_fonts: only keep fonts that are actually in use
+      const usedFamilies = new Set<string>();
+      const fontKeys: ('font_body' | 'font_heading' | 'font_mono')[] = ['font_body', 'font_heading', 'font_mono'];
+      for (const k of fontKeys) {
+        const fontValue = k === key ? value : prev[k];
+        if (fontValue) {
+          const family = extractFontFamily(fontValue);
+          if (family) usedFamilies.add(family);
+        }
+      }
+
+      updated.google_fonts = (updated.google_fonts || []).filter(f => usedFamilies.has(f.family));
+
+      return updated;
+    });
     setHasChanges(true);
   };
 
@@ -330,18 +410,21 @@ export function Theme() {
       <div className="theme-sections">
         <section className="theme-section">
           <h3>Fonts</h3>
-          <FontInput
+          <FontSelect
             label="Body Font"
+            category="all"
             value={theme.font_body}
             onChange={handleFontChange('font_body')}
           />
-          <FontInput
+          <FontSelect
             label="Heading Font"
+            category="all"
             value={theme.font_heading}
             onChange={handleFontChange('font_heading')}
           />
-          <FontInput
+          <FontSelect
             label="Monospace Font"
+            category="monospace"
             value={theme.font_mono}
             onChange={handleFontChange('font_mono')}
           />

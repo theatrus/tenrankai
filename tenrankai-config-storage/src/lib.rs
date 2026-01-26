@@ -10,6 +10,7 @@ pub use types::{
     AuditAction,
     AuditEntry,
     GalleryPermissionConfig,
+    GoogleFontConfig,
     Role,
     RolePermissions,
     // Site configuration types

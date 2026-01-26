@@ -196,6 +196,7 @@ pub struct TemplateEngine {
     static_handler: Option<crate::static_files::StaticFileHandler>,
     has_user_auth: bool,
     force_color_scheme: Option<String>,
+    google_fonts: Vec<tenrankai_config_storage::GoogleFontConfig>,
     file_versions: Arc<RwLock<HashMap<String, u64>>>,
     /// TTL for cached templates. Within this duration, cached templates are
     /// returned without checking file modification time (useful for S3 backends).
@@ -217,6 +218,7 @@ impl TemplateEngine {
             static_handler: None,
             has_user_auth: false,
             force_color_scheme: None,
+            google_fonts: Vec::new(),
             file_versions: Arc::new(RwLock::new(HashMap::new())),
             cache_ttl: DEFAULT_TEMPLATE_CACHE_TTL,
         }
@@ -264,6 +266,10 @@ impl TemplateEngine {
 
     pub fn set_force_color_scheme(&mut self, scheme: Option<String>) {
         self.force_color_scheme = scheme;
+    }
+
+    pub fn set_google_fonts(&mut self, fonts: Vec<tenrankai_config_storage::GoogleFontConfig>) {
+        self.google_fonts = fonts;
     }
 
     fn create_parser_with_filters(
@@ -440,6 +446,25 @@ impl TemplateEngine {
             globals.insert(
                 "force_color_scheme".into(),
                 liquid::model::Value::scalar(scheme.clone()),
+            );
+        }
+
+        // Add google_fonts array for dynamic font loading
+        if !self.google_fonts.is_empty() {
+            let fonts_value: Vec<liquid::model::Value> = self
+                .google_fonts
+                .iter()
+                .map(|f| {
+                    liquid::model::to_value(&serde_json::json!({
+                        "family": f.family,
+                        "weights": f.weights.join(";")
+                    }))
+                    .unwrap_or(liquid::model::Value::Nil)
+                })
+                .collect();
+            globals.insert(
+                "google_fonts".into(),
+                liquid::model::Value::Array(fonts_value),
             );
         }
 

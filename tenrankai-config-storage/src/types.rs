@@ -112,6 +112,13 @@ pub struct GalleryPermissionConfig {
 // Theme Configuration Types
 // ============================================================================
 
+/// Configuration for a Google Font to load
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GoogleFontConfig {
+    pub family: String,
+    pub weights: Vec<String>,
+}
+
 /// Color overrides for a single color scheme (dark or light)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ThemeColorSet {
@@ -192,6 +199,10 @@ pub struct StoredThemeConfig {
     pub font_heading: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_mono: Option<String>,
+
+    /// Google Fonts to load (replaces hardcoded Poppins when set)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub google_fonts: Vec<GoogleFontConfig>,
 }
 
 // ============================================================================

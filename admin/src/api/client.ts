@@ -242,6 +242,11 @@ export interface ThemeColorSet {
   btn_danger_bg?: string;
 }
 
+export interface GoogleFontConfig {
+  family: string;
+  weights: string[];
+}
+
 export interface ThemeConfig {
   force_color_scheme?: string;
   dark?: ThemeColorSet;
@@ -249,6 +254,7 @@ export interface ThemeConfig {
   font_body?: string;
   font_heading?: string;
   font_mono?: string;
+  google_fonts?: GoogleFontConfig[];
 }
 
 class ApiError extends Error {
