@@ -149,9 +149,15 @@ class ThemeManager {
      * Initialize the theme system
      */
     private init(): void {
-        // Set initial theme
-        this.setTheme(this.currentTheme);
-        
+        // Check if server already set the correct theme (to avoid flash)
+        const currentServerTheme = document.documentElement.getAttribute('data-theme');
+        const targetTheme = this.currentTheme === 'auto' ? null : this.currentTheme;
+
+        if (currentServerTheme !== targetTheme) {
+            // Only set theme if it differs from what server rendered
+            this.setTheme(this.currentTheme);
+        }
+
         // Listen for OS theme changes when in auto mode
         window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
             if (this.currentTheme === 'auto') {
@@ -159,7 +165,7 @@ class ThemeManager {
                 this.updateToggleButton();
             }
         });
-        
+
         // Create and insert toggle button when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.createToggleButton());
