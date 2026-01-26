@@ -3807,3 +3807,105 @@ async fn update_folder_hidden_images(
 
     Ok(())
 }
+
+// ============================================================================
+// Theme Management
+// ============================================================================
+
+/// Get the current theme configuration
+pub async fn get_theme(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+) -> Result<Json<ThemeConfigDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Get site name from the first site (in single-site mode) or current site
+    let sites = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let site_name = sites.first().ok_or(AdminError::Internal("No sites configured".into()))?;
+
+    let site_config = config_storage
+        .get_site_config(site_name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound("Site config not found".into()))?;
+
+    let theme = site_config.theme.unwrap_or_default();
+
+    Ok(Json(ThemeConfigDto::from(theme)))
+}
+
+/// Update theme configuration
+pub async fn update_theme(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Json(request): Json<ThemeConfigDto>,
+) -> Result<Json<ThemeConfigDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let sites = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let site_name = sites.first().ok_or(AdminError::Internal("No sites configured".into()))?;
+
+    let mut site_config = config_storage
+        .get_site_config(site_name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound("Site config not found".into()))?;
+
+    // Update theme
+    site_config.theme = Some(request.clone().into());
+
+    config_storage
+        .set_site_config(site_name, &site_config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(Json(request))
+}
+
+/// Reset theme to defaults
+pub async fn reset_theme(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+) -> Result<StatusCode, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let sites = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let site_name = sites.first().ok_or(AdminError::Internal("No sites configured".into()))?;
+
+    let mut site_config = config_storage
+        .get_site_config(site_name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound("Site config not found".into()))?;
+
+    // Remove theme
+    site_config.theme = None;
+
+    config_storage
+        .set_site_config(site_name, &site_config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}

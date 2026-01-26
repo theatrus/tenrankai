@@ -226,6 +226,32 @@ export interface FolderImagesResponse {
   images: FolderImageInfo[];
 }
 
+export interface ThemeConfig {
+  color_scheme?: string;
+  // Background colors
+  bg_primary?: string;
+  bg_secondary?: string;
+  bg_card?: string;
+  bg_hover?: string;
+  header_bg?: string;
+  // Text colors
+  text_primary?: string;
+  text_secondary?: string;
+  text_muted?: string;
+  // Link colors
+  link_color?: string;
+  link_hover?: string;
+  // Border colors
+  border_color?: string;
+  // Accent/button colors
+  accent_color?: string;
+  btn_danger_bg?: string;
+  // Font families
+  font_body?: string;
+  font_heading?: string;
+  font_mono?: string;
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -346,4 +372,9 @@ export const api = {
 
   deleteFolder: (gallery: string, folderPath: string) =>
     request<{ success: boolean; message: string }>('DELETE', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}`),
+
+  // Theme Management
+  getTheme: () => request<ThemeConfig>('GET', '/theme'),
+  updateTheme: (theme: ThemeConfig) => request<ThemeConfig>('PUT', '/theme', theme),
+  resetTheme: () => request<void>('DELETE', '/theme'),
 };

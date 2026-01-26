@@ -109,6 +109,62 @@ pub struct GalleryPermissionConfig {
 }
 
 // ============================================================================
+// Theme Configuration Types
+// ============================================================================
+
+/// Theme configuration for CSS variable overrides
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct StoredThemeConfig {
+    /// Color scheme preference: "light", "dark", or "auto"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_scheme: Option<String>,
+
+    // Background colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_primary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_secondary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_card: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_hover: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_bg: Option<String>,
+
+    // Text colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_primary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_secondary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_muted: Option<String>,
+
+    // Link colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_hover: Option<String>,
+
+    // Border colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_color: Option<String>,
+
+    // Accent/button colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub btn_danger_bg: Option<String>,
+
+    // Font families
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_heading: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_mono: Option<String>,
+}
+
+// ============================================================================
 // Site Configuration Types
 // ============================================================================
 
@@ -161,6 +217,10 @@ pub struct StoredSiteConfig {
     /// Per-site email sender configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<StoredSiteEmailConfig>,
+
+    /// Theme customization configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<StoredThemeConfig>,
 }
 
 /// Per-site email sender configuration

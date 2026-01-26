@@ -191,6 +191,7 @@ pub async fn handle_add_site_command(
         storage_prefix: None,
         cache_prefix: None,
         email: None,
+        theme: None,
     };
 
     storage.set_site_config(name, &site_config, "cli").await?;

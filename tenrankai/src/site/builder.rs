@@ -62,6 +62,9 @@ impl SiteBuilder {
         // Build config storage
         let config_storage = self.build_config_storage().await?;
 
+        // Load theme from config storage if available
+        let theme = self.load_theme(&config_storage).await;
+
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),
             cookie_secret: self.config.cookie_secret.clone(),
@@ -76,6 +79,7 @@ impl SiteBuilder {
             config_storage,
             config_storage_url: self.config.config_storage.clone(),
             site_admins: self.config.site_admins.clone(),
+            theme,
         };
 
         info!("Site '{}' built successfully", self.config.name);
@@ -297,5 +301,29 @@ impl SiteBuilder {
         );
 
         Ok(Some(storage))
+    }
+
+    async fn load_theme(
+        &self,
+        config_storage: &Option<DynConfigStorage>,
+    ) -> Option<tenrankai_config_storage::StoredThemeConfig> {
+        let storage = config_storage.as_ref()?;
+
+        match storage.get_site_config(&self.config.name).await {
+            Ok(Some(site_config)) => {
+                if site_config.theme.is_some() {
+                    info!("Loaded theme configuration for site '{}'", self.config.name);
+                }
+                site_config.theme
+            }
+            Ok(None) => None,
+            Err(e) => {
+                error!(
+                    "Failed to load theme for site '{}': {}",
+                    self.config.name, e
+                );
+                None
+            }
+        }
     }
 }

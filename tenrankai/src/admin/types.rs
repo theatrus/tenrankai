@@ -301,6 +301,108 @@ pub struct ReloadSiteResponse {
 }
 
 // ============================================================================
+// Theme Management Types
+// ============================================================================
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ThemeConfigDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_scheme: Option<String>,
+
+    // Background colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_primary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_secondary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_card: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg_hover: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_bg: Option<String>,
+
+    // Text colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_primary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_secondary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_muted: Option<String>,
+
+    // Link colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_hover: Option<String>,
+
+    // Border colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_color: Option<String>,
+
+    // Accent/button colors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub btn_danger_bg: Option<String>,
+
+    // Font families
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_heading: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_mono: Option<String>,
+}
+
+impl From<tenrankai_config_storage::StoredThemeConfig> for ThemeConfigDto {
+    fn from(theme: tenrankai_config_storage::StoredThemeConfig) -> Self {
+        Self {
+            color_scheme: theme.color_scheme,
+            bg_primary: theme.bg_primary,
+            bg_secondary: theme.bg_secondary,
+            bg_card: theme.bg_card,
+            bg_hover: theme.bg_hover,
+            header_bg: theme.header_bg,
+            text_primary: theme.text_primary,
+            text_secondary: theme.text_secondary,
+            text_muted: theme.text_muted,
+            link_color: theme.link_color,
+            link_hover: theme.link_hover,
+            border_color: theme.border_color,
+            accent_color: theme.accent_color,
+            btn_danger_bg: theme.btn_danger_bg,
+            font_body: theme.font_body,
+            font_heading: theme.font_heading,
+            font_mono: theme.font_mono,
+        }
+    }
+}
+
+impl From<ThemeConfigDto> for tenrankai_config_storage::StoredThemeConfig {
+    fn from(dto: ThemeConfigDto) -> Self {
+        Self {
+            color_scheme: dto.color_scheme,
+            bg_primary: dto.bg_primary,
+            bg_secondary: dto.bg_secondary,
+            bg_card: dto.bg_card,
+            bg_hover: dto.bg_hover,
+            header_bg: dto.header_bg,
+            text_primary: dto.text_primary,
+            text_secondary: dto.text_secondary,
+            text_muted: dto.text_muted,
+            link_color: dto.link_color,
+            link_hover: dto.link_hover,
+            border_color: dto.border_color,
+            accent_color: dto.accent_color,
+            btn_danger_bg: dto.btn_danger_bg,
+            font_body: dto.font_body,
+            font_heading: dto.font_heading,
+            font_mono: dto.font_mono,
+        }
+    }
+}
+
+// ============================================================================
 // Folder Management Types
 // ============================================================================
 

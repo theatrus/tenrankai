@@ -22,6 +22,7 @@ pub use types::{
     StoredPreviewConfig,
     StoredSiteConfig,
     StoredSiteEmailConfig,
+    StoredThemeConfig,
     StoredTileConfig,
     UserRole,
 };

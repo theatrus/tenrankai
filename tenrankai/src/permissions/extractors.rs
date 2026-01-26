@@ -444,6 +444,7 @@ mod tests {
             config_storage: None,
             config_storage_url: None,
             site_admins: Vec::new(),
+            theme: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);
