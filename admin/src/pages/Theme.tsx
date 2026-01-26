@@ -2,11 +2,27 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ThemeConfig, ThemeColorSet, GoogleFontConfig } from '@api/client';
 
+type FontCategory = 'sans-serif' | 'serif' | 'monospace' | 'display' | 'script' | 'slab-serif' | 'rounded';
+
 interface CuratedFont {
   family: string;
   weights: string[];
-  category: 'sans-serif' | 'serif' | 'monospace';
+  category: FontCategory;
 }
+
+const CATEGORY_LABELS: Record<FontCategory, string> = {
+  'sans-serif': 'Sans Serif',
+  'serif': 'Serif',
+  'monospace': 'Monospace',
+  'display': 'Display',
+  'script': 'Script & Handwriting',
+  'slab-serif': 'Slab Serif',
+  'rounded': 'Rounded',
+};
+
+const CATEGORY_ORDER: FontCategory[] = [
+  'sans-serif', 'serif', 'slab-serif', 'display', 'script', 'rounded', 'monospace'
+];
 
 const DEFAULT_DARK_COLORS: Required<ThemeColorSet> = {
   bg_primary: '#1a1a1a',
@@ -47,6 +63,7 @@ const DEFAULT_FONTS = {
 };
 
 const CURATED_FONTS: CuratedFont[] = [
+  // Sans Serif
   { family: 'Poppins', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
   { family: 'Roboto', weights: ['300', '400', '500', '700'], category: 'sans-serif' },
   { family: 'Open Sans', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
@@ -57,10 +74,43 @@ const CURATED_FONTS: CuratedFont[] = [
   { family: 'Nunito', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
   { family: 'Source Sans Pro', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
   { family: 'PT Sans', weights: ['400', '700'], category: 'sans-serif' },
+
+  // Serif
   { family: 'Merriweather', weights: ['300', '400', '700'], category: 'serif' },
   { family: 'Playfair Display', weights: ['400', '500', '600', '700'], category: 'serif' },
   { family: 'Lora', weights: ['400', '500', '600', '700'], category: 'serif' },
   { family: 'Libre Baskerville', weights: ['400', '700'], category: 'serif' },
+  { family: 'Crimson Text', weights: ['400', '600', '700'], category: 'serif' },
+  { family: 'EB Garamond', weights: ['400', '500', '600', '700'], category: 'serif' },
+  { family: 'Cormorant Garamond', weights: ['300', '400', '500', '600', '700'], category: 'serif' },
+  { family: 'Spectral', weights: ['300', '400', '500', '600', '700'], category: 'serif' },
+  { family: 'PT Serif', weights: ['400', '700'], category: 'serif' },
+  { family: 'Source Serif Pro', weights: ['300', '400', '600', '700'], category: 'serif' },
+
+  // Slab Serif
+  { family: 'Roboto Slab', weights: ['300', '400', '500', '700'], category: 'slab-serif' },
+  { family: 'Zilla Slab', weights: ['300', '400', '500', '600', '700'], category: 'slab-serif' },
+  { family: 'Bitter', weights: ['400', '500', '600', '700'], category: 'slab-serif' },
+
+  // Display
+  { family: 'Oswald', weights: ['300', '400', '500', '600', '700'], category: 'display' },
+  { family: 'Bebas Neue', weights: ['400'], category: 'display' },
+  { family: 'Abril Fatface', weights: ['400'], category: 'display' },
+  { family: 'Josefin Sans', weights: ['300', '400', '500', '600', '700'], category: 'display' },
+
+  // Script & Handwriting
+  { family: 'Dancing Script', weights: ['400', '500', '600', '700'], category: 'script' },
+  { family: 'Pacifico', weights: ['400'], category: 'script' },
+  { family: 'Great Vibes', weights: ['400'], category: 'script' },
+  { family: 'Caveat', weights: ['400', '500', '600', '700'], category: 'script' },
+  { family: 'Sacramento', weights: ['400'], category: 'script' },
+
+  // Rounded
+  { family: 'Quicksand', weights: ['300', '400', '500', '600', '700'], category: 'rounded' },
+  { family: 'Comfortaa', weights: ['300', '400', '500', '600', '700'], category: 'rounded' },
+  { family: 'Varela Round', weights: ['400'], category: 'rounded' },
+
+  // Monospace
   { family: 'Source Code Pro', weights: ['400', '500', '600', '700'], category: 'monospace' },
   { family: 'Fira Code', weights: ['400', '500', '600', '700'], category: 'monospace' },
   { family: 'JetBrains Mono', weights: ['400', '500', '600', '700'], category: 'monospace' },
@@ -152,13 +202,25 @@ function useFontLoader() {
   return loaded;
 }
 
+type FontSelectCategory = FontCategory | 'all';
+
 interface FontSelectProps {
   label: string;
-  category: 'sans-serif' | 'serif' | 'monospace' | 'all';
+  category: FontSelectCategory;
   value?: string;
   defaultFont: string;
   sampleText?: string;
   onChange: (value: string | undefined, googleFont?: GoogleFontConfig) => void;
+}
+
+function getCssFallback(category: FontCategory): string {
+  switch (category) {
+    case 'monospace': return 'monospace';
+    case 'serif':
+    case 'slab-serif': return 'serif';
+    case 'script': return 'cursive';
+    default: return 'sans-serif';
+  }
 }
 
 function FontSelect({ label, category, value, defaultFont, sampleText, onChange }: FontSelectProps) {
@@ -167,12 +229,22 @@ function FontSelect({ label, category, value, defaultFont, sampleText, onChange 
   );
 
   const selectedFamily = value ? extractFontFamily(value) : defaultFont;
-  const currentFont = fonts.find(f => f.family === selectedFamily) || CURATED_FONTS.find(f => f.family === defaultFont);
-  const fontCategory = currentFont?.category || 'sans-serif';
+  const currentFont = CURATED_FONTS.find(f => f.family === selectedFamily) || CURATED_FONTS.find(f => f.family === defaultFont);
+  const cssFallback = currentFont ? getCssFallback(currentFont.category) : 'sans-serif';
 
   const sample = sampleText || (category === 'monospace'
     ? 'const x = 42; // code sample'
     : 'The quick brown fox jumps over the lazy dog');
+
+  // Group fonts by category for the dropdown
+  const fontsByCategory = CATEGORY_ORDER
+    .filter(cat => category === 'all' || cat === category)
+    .map(cat => ({
+      category: cat,
+      label: CATEGORY_LABELS[cat],
+      fonts: fonts.filter(f => f.category === cat),
+    }))
+    .filter(group => group.fonts.length > 0);
 
   return (
     <div className="font-select-group">
@@ -186,22 +258,26 @@ function FontSelect({ label, category, value, defaultFont, sampleText, onChange 
               onChange(undefined, undefined);
               return;
             }
-            const font = fonts.find(f => f.family === fontFamily);
+            const font = CURATED_FONTS.find(f => f.family === fontFamily);
             if (font) {
-              onChange(`'${font.family}', ${font.category}`, { family: font.family, weights: font.weights });
+              onChange(`'${font.family}', ${getCssFallback(font.category)}`, { family: font.family, weights: font.weights });
             }
           }}
         >
-          {fonts.map(f => (
-            <option key={f.family} value={f.family}>
-              {f.family}{f.family === defaultFont ? ' (Default)' : ''}
-            </option>
+          {fontsByCategory.map(group => (
+            <optgroup key={group.category} label={group.label}>
+              {group.fonts.map(f => (
+                <option key={f.family} value={f.family}>
+                  {f.family}{f.family === defaultFont ? ' (Default)' : ''}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
       <div
         className="font-preview"
-        style={{ fontFamily: `'${selectedFamily}', ${fontCategory}` }}
+        style={{ fontFamily: `'${selectedFamily}', ${cssFallback}` }}
       >
         {sample}
       </div>
