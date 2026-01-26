@@ -1,8 +1,8 @@
 use axum::{
-    http::{StatusCode, header, HeaderMap, HeaderValue},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::IntoResponse,
 };
-use tenrankai_config_storage::StoredThemeConfig;
+use tenrankai_config_storage::{StoredThemeConfig, ThemeColorSet};
 
 use crate::site::ResolvedState;
 
@@ -16,8 +16,14 @@ pub async fn serve_theme_css(ResolvedState(app_state): ResolvedState) -> impl In
     let etag = compute_theme_etag(&css);
 
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/css; charset=utf-8"));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=86400"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/css; charset=utf-8"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
     if let Ok(etag_value) = HeaderValue::from_str(&etag) {
         headers.insert(header::ETAG, etag_value);
     }
@@ -25,60 +31,55 @@ pub async fn serve_theme_css(ResolvedState(app_state): ResolvedState) -> impl In
     (StatusCode::OK, headers, css)
 }
 
-pub fn generate_theme_css(theme: &StoredThemeConfig) -> String {
+fn generate_color_set_vars(colors: &ThemeColorSet) -> String {
     let mut css = String::new();
-    css.push_str(":root {\n");
 
-    // Background colors
-    if let Some(ref v) = theme.bg_primary {
+    if let Some(ref v) = colors.bg_primary {
         css.push_str(&format!("  --bg-primary: {};\n", v));
     }
-    if let Some(ref v) = theme.bg_secondary {
+    if let Some(ref v) = colors.bg_secondary {
         css.push_str(&format!("  --bg-secondary: {};\n", v));
     }
-    if let Some(ref v) = theme.bg_card {
+    if let Some(ref v) = colors.bg_card {
         css.push_str(&format!("  --bg-card: {};\n", v));
     }
-    if let Some(ref v) = theme.bg_hover {
+    if let Some(ref v) = colors.bg_hover {
         css.push_str(&format!("  --bg-hover: {};\n", v));
     }
-    if let Some(ref v) = theme.header_bg {
+    if let Some(ref v) = colors.header_bg {
         css.push_str(&format!("  --header-bg: {};\n", v));
     }
-
-    // Text colors
-    if let Some(ref v) = theme.text_primary {
+    if let Some(ref v) = colors.text_primary {
         css.push_str(&format!("  --text-primary: {};\n", v));
     }
-    if let Some(ref v) = theme.text_secondary {
+    if let Some(ref v) = colors.text_secondary {
         css.push_str(&format!("  --text-secondary: {};\n", v));
     }
-    if let Some(ref v) = theme.text_muted {
+    if let Some(ref v) = colors.text_muted {
         css.push_str(&format!("  --text-muted: {};\n", v));
     }
-
-    // Link colors
-    if let Some(ref v) = theme.link_color {
+    if let Some(ref v) = colors.link_color {
         css.push_str(&format!("  --link-color: {};\n", v));
     }
-    if let Some(ref v) = theme.link_hover {
+    if let Some(ref v) = colors.link_hover {
         css.push_str(&format!("  --link-hover: {};\n", v));
     }
-
-    // Border colors
-    if let Some(ref v) = theme.border_color {
+    if let Some(ref v) = colors.border_color {
         css.push_str(&format!("  --border-color: {};\n", v));
     }
-
-    // Accent/button colors
-    if let Some(ref v) = theme.accent_color {
+    if let Some(ref v) = colors.accent_color {
         css.push_str(&format!("  --accent-red: {};\n", v));
     }
-    if let Some(ref v) = theme.btn_danger_bg {
+    if let Some(ref v) = colors.btn_danger_bg {
         css.push_str(&format!("  --btn-danger-bg: {};\n", v));
     }
 
-    // Font families
+    css
+}
+
+fn generate_font_vars(theme: &StoredThemeConfig) -> String {
+    let mut css = String::new();
+
     if let Some(ref v) = theme.font_body {
         css.push_str(&format!("  --font-body: {};\n", v));
     }
@@ -89,11 +90,87 @@ pub fn generate_theme_css(theme: &StoredThemeConfig) -> String {
         css.push_str(&format!("  --font-mono: {};\n", v));
     }
 
-    css.push_str("}\n");
+    css
+}
 
-    // If the theme is empty, return empty string
-    if css == ":root {\n}\n" {
+pub fn generate_theme_css(theme: &StoredThemeConfig) -> String {
+    let mut css = String::new();
+
+    let font_vars = generate_font_vars(theme);
+    let dark_vars = theme
+        .dark
+        .as_ref()
+        .map(generate_color_set_vars)
+        .unwrap_or_default();
+    let light_vars = theme
+        .light
+        .as_ref()
+        .map(generate_color_set_vars)
+        .unwrap_or_default();
+
+    let has_fonts = !font_vars.is_empty();
+    let has_dark = !dark_vars.is_empty();
+    let has_light = !light_vars.is_empty();
+    let has_force = theme.force_color_scheme.is_some();
+
+    if !has_fonts && !has_dark && !has_light && !has_force {
         return String::new();
+    }
+
+    if has_fonts {
+        css.push_str(":root {\n");
+        css.push_str(&font_vars);
+        css.push_str("}\n\n");
+    }
+
+    match theme.force_color_scheme.as_deref() {
+        Some("dark") => {
+            if has_dark {
+                css.push_str(":root {\n");
+                css.push_str(&dark_vars);
+                css.push_str("}\n");
+            }
+        }
+        Some("light") => {
+            if has_light {
+                css.push_str(":root {\n");
+                css.push_str(&light_vars);
+                css.push_str("}\n");
+            }
+        }
+        _ => {
+            if has_dark {
+                css.push_str("[data-theme=\"dark\"] {\n");
+                css.push_str(&dark_vars);
+                css.push_str("}\n\n");
+
+                css.push_str("@media (prefers-color-scheme: dark) {\n");
+                css.push_str("  :root:not([data-theme]) {\n");
+                for line in dark_vars.lines() {
+                    css.push_str("  ");
+                    css.push_str(line);
+                    css.push('\n');
+                }
+                css.push_str("  }\n");
+                css.push_str("}\n\n");
+            }
+
+            if has_light {
+                css.push_str("[data-theme=\"light\"] {\n");
+                css.push_str(&light_vars);
+                css.push_str("}\n\n");
+
+                css.push_str("@media (prefers-color-scheme: light) {\n");
+                css.push_str("  :root:not([data-theme]) {\n");
+                for line in light_vars.lines() {
+                    css.push_str("  ");
+                    css.push_str(line);
+                    css.push('\n');
+                }
+                css.push_str("  }\n");
+                css.push_str("}\n");
+            }
+        }
     }
 
     css
@@ -125,29 +202,98 @@ mod tests {
     }
 
     #[test]
-    fn test_single_override() {
+    fn test_dark_mode_override() {
         let theme = StoredThemeConfig {
-            bg_primary: Some("#ff0000".to_string()),
+            dark: Some(ThemeColorSet {
+                bg_primary: Some("#1a1a1a".to_string()),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains("--bg-primary: #ff0000;"));
-        assert!(css.starts_with(":root {"));
-        assert!(css.ends_with("}\n"));
+        assert!(css.contains("[data-theme=\"dark\"]"));
+        assert!(css.contains("--bg-primary: #1a1a1a;"));
+        assert!(css.contains("@media (prefers-color-scheme: dark)"));
     }
 
     #[test]
-    fn test_multiple_overrides() {
+    fn test_light_mode_override() {
         let theme = StoredThemeConfig {
-            bg_primary: Some("#111".to_string()),
-            text_primary: Some("#eee".to_string()),
-            link_color: Some("#00f".to_string()),
+            light: Some(ThemeColorSet {
+                bg_primary: Some("#ffffff".to_string()),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains("--bg-primary: #111;"));
-        assert!(css.contains("--text-primary: #eee;"));
-        assert!(css.contains("--link-color: #00f;"));
+        assert!(css.contains("[data-theme=\"light\"]"));
+        assert!(css.contains("--bg-primary: #ffffff;"));
+        assert!(css.contains("@media (prefers-color-scheme: light)"));
+    }
+
+    #[test]
+    fn test_force_dark_mode() {
+        let theme = StoredThemeConfig {
+            force_color_scheme: Some("dark".to_string()),
+            dark: Some(ThemeColorSet {
+                bg_primary: Some("#1a1a1a".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let css = generate_theme_css(&theme);
+        assert!(css.contains(":root {"));
+        assert!(css.contains("--bg-primary: #1a1a1a;"));
+        assert!(!css.contains("[data-theme="));
+        assert!(!css.contains("@media"));
+    }
+
+    #[test]
+    fn test_force_light_mode() {
+        let theme = StoredThemeConfig {
+            force_color_scheme: Some("light".to_string()),
+            light: Some(ThemeColorSet {
+                bg_primary: Some("#ffffff".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let css = generate_theme_css(&theme);
+        assert!(css.contains(":root {"));
+        assert!(css.contains("--bg-primary: #ffffff;"));
+        assert!(!css.contains("[data-theme="));
+        assert!(!css.contains("@media"));
+    }
+
+    #[test]
+    fn test_both_modes() {
+        let theme = StoredThemeConfig {
+            dark: Some(ThemeColorSet {
+                bg_primary: Some("#1a1a1a".to_string()),
+                ..Default::default()
+            }),
+            light: Some(ThemeColorSet {
+                bg_primary: Some("#ffffff".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let css = generate_theme_css(&theme);
+        assert!(css.contains("[data-theme=\"dark\"]"));
+        assert!(css.contains("[data-theme=\"light\"]"));
+        assert!(css.contains("--bg-primary: #1a1a1a;"));
+        assert!(css.contains("--bg-primary: #ffffff;"));
+    }
+
+    #[test]
+    fn test_fonts_in_root() {
+        let theme = StoredThemeConfig {
+            font_body: Some("'Poppins', sans-serif".to_string()),
+            ..Default::default()
+        };
+        let css = generate_theme_css(&theme);
+        assert!(css.contains(":root {"));
+        assert!(css.contains("--font-body: 'Poppins', sans-serif;"));
     }
 
     #[test]

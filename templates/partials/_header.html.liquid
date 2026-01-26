@@ -69,6 +69,11 @@
         {% endfor %}
     {% endif %}
     
+    {% comment %} Theme configuration {% endcomment %}
+    {% if force_color_scheme %}
+    <script>window.TENRANKAI_FORCE_COLOR_SCHEME = "{{ force_color_scheme }}";</script>
+    {% endif %}
+
     {% comment %} Tenrankai bundle - includes theme toggle {% endcomment %}
     <script src="{{ 'dist/tenrankai.js' | asset_url }}" defer></script>
 </head>

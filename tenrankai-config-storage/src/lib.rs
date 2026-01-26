@@ -24,6 +24,7 @@ pub use types::{
     StoredSiteEmailConfig,
     StoredThemeConfig,
     StoredTileConfig,
+    ThemeColorSet,
     UserRole,
 };
 pub use url::ConfigStorageUrl;

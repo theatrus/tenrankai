@@ -195,6 +195,7 @@ pub struct TemplateEngine {
     cache: Arc<RwLock<HashMap<String, CachedTemplate>>>,
     static_handler: Option<crate::static_files::StaticFileHandler>,
     has_user_auth: bool,
+    force_color_scheme: Option<String>,
     file_versions: Arc<RwLock<HashMap<String, u64>>>,
     /// TTL for cached templates. Within this duration, cached templates are
     /// returned without checking file modification time (useful for S3 backends).
@@ -215,6 +216,7 @@ impl TemplateEngine {
             cache: Arc::new(RwLock::new(HashMap::new())),
             static_handler: None,
             has_user_auth: false,
+            force_color_scheme: None,
             file_versions: Arc::new(RwLock::new(HashMap::new())),
             cache_ttl: DEFAULT_TEMPLATE_CACHE_TTL,
         }
@@ -258,6 +260,10 @@ impl TemplateEngine {
 
     pub fn set_has_user_auth(&mut self, has_auth: bool) {
         self.has_user_auth = has_auth;
+    }
+
+    pub fn set_force_color_scheme(&mut self, scheme: Option<String>) {
+        self.force_color_scheme = scheme;
     }
 
     fn create_parser_with_filters(
@@ -428,6 +434,14 @@ impl TemplateEngine {
             "has_user_auth".into(),
             liquid::model::Value::scalar(self.has_user_auth),
         );
+
+        // Add force color scheme (if set)
+        if let Some(ref scheme) = self.force_color_scheme {
+            globals.insert(
+                "force_color_scheme".into(),
+                liquid::model::Value::scalar(scheme.clone()),
+            );
+        }
 
         // Load common partials first (before loading main template)
         let header_content = self

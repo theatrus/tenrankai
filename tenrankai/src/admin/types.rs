@@ -305,11 +305,7 @@ pub struct ReloadSiteResponse {
 // ============================================================================
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ThemeConfigDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color_scheme: Option<String>,
-
-    // Background colors
+pub struct ThemeColorSetDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bg_primary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -320,68 +316,47 @@ pub struct ThemeConfigDto {
     pub bg_hover: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub header_bg: Option<String>,
-
-    // Text colors
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_primary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_secondary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_muted: Option<String>,
-
-    // Link colors
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_hover: Option<String>,
-
-    // Border colors
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border_color: Option<String>,
-
-    // Accent/button colors
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub btn_danger_bg: Option<String>,
-
-    // Font families
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub font_body: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub font_heading: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub font_mono: Option<String>,
 }
 
-impl From<tenrankai_config_storage::StoredThemeConfig> for ThemeConfigDto {
-    fn from(theme: tenrankai_config_storage::StoredThemeConfig) -> Self {
+impl From<tenrankai_config_storage::ThemeColorSet> for ThemeColorSetDto {
+    fn from(colors: tenrankai_config_storage::ThemeColorSet) -> Self {
         Self {
-            color_scheme: theme.color_scheme,
-            bg_primary: theme.bg_primary,
-            bg_secondary: theme.bg_secondary,
-            bg_card: theme.bg_card,
-            bg_hover: theme.bg_hover,
-            header_bg: theme.header_bg,
-            text_primary: theme.text_primary,
-            text_secondary: theme.text_secondary,
-            text_muted: theme.text_muted,
-            link_color: theme.link_color,
-            link_hover: theme.link_hover,
-            border_color: theme.border_color,
-            accent_color: theme.accent_color,
-            btn_danger_bg: theme.btn_danger_bg,
-            font_body: theme.font_body,
-            font_heading: theme.font_heading,
-            font_mono: theme.font_mono,
+            bg_primary: colors.bg_primary,
+            bg_secondary: colors.bg_secondary,
+            bg_card: colors.bg_card,
+            bg_hover: colors.bg_hover,
+            header_bg: colors.header_bg,
+            text_primary: colors.text_primary,
+            text_secondary: colors.text_secondary,
+            text_muted: colors.text_muted,
+            link_color: colors.link_color,
+            link_hover: colors.link_hover,
+            border_color: colors.border_color,
+            accent_color: colors.accent_color,
+            btn_danger_bg: colors.btn_danger_bg,
         }
     }
 }
 
-impl From<ThemeConfigDto> for tenrankai_config_storage::StoredThemeConfig {
-    fn from(dto: ThemeConfigDto) -> Self {
+impl From<ThemeColorSetDto> for tenrankai_config_storage::ThemeColorSet {
+    fn from(dto: ThemeColorSetDto) -> Self {
         Self {
-            color_scheme: dto.color_scheme,
             bg_primary: dto.bg_primary,
             bg_secondary: dto.bg_secondary,
             bg_card: dto.bg_card,
@@ -395,6 +370,45 @@ impl From<ThemeConfigDto> for tenrankai_config_storage::StoredThemeConfig {
             border_color: dto.border_color,
             accent_color: dto.accent_color,
             btn_danger_bg: dto.btn_danger_bg,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ThemeConfigDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub force_color_scheme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dark: Option<ThemeColorSetDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<ThemeColorSetDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_heading: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_mono: Option<String>,
+}
+
+impl From<tenrankai_config_storage::StoredThemeConfig> for ThemeConfigDto {
+    fn from(theme: tenrankai_config_storage::StoredThemeConfig) -> Self {
+        Self {
+            force_color_scheme: theme.force_color_scheme,
+            dark: theme.dark.map(Into::into),
+            light: theme.light.map(Into::into),
+            font_body: theme.font_body,
+            font_heading: theme.font_heading,
+            font_mono: theme.font_mono,
+        }
+    }
+}
+
+impl From<ThemeConfigDto> for tenrankai_config_storage::StoredThemeConfig {
+    fn from(dto: ThemeConfigDto) -> Self {
+        Self {
+            force_color_scheme: dto.force_color_scheme,
+            dark: dto.dark.map(Into::into),
+            light: dto.light.map(Into::into),
             font_body: dto.font_body,
             font_heading: dto.font_heading,
             font_mono: dto.font_mono,

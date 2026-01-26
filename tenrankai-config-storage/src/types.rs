@@ -112,13 +112,9 @@ pub struct GalleryPermissionConfig {
 // Theme Configuration Types
 // ============================================================================
 
-/// Theme configuration for CSS variable overrides
+/// Color overrides for a single color scheme (dark or light)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct StoredThemeConfig {
-    /// Color scheme preference: "light", "dark", or "auto"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color_scheme: Option<String>,
-
+pub struct ThemeColorSet {
     // Background colors
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bg_primary: Option<String>,
@@ -154,8 +150,42 @@ pub struct StoredThemeConfig {
     pub accent_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub btn_danger_bg: Option<String>,
+}
 
-    // Font families
+impl ThemeColorSet {
+    pub fn is_empty(&self) -> bool {
+        self.bg_primary.is_none()
+            && self.bg_secondary.is_none()
+            && self.bg_card.is_none()
+            && self.bg_hover.is_none()
+            && self.header_bg.is_none()
+            && self.text_primary.is_none()
+            && self.text_secondary.is_none()
+            && self.text_muted.is_none()
+            && self.link_color.is_none()
+            && self.link_hover.is_none()
+            && self.border_color.is_none()
+            && self.accent_color.is_none()
+            && self.btn_danger_bg.is_none()
+    }
+}
+
+/// Theme configuration for CSS variable overrides
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct StoredThemeConfig {
+    /// Force a specific color scheme: "dark", "light", or None for user choice
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub force_color_scheme: Option<String>,
+
+    /// Dark mode color overrides
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dark: Option<ThemeColorSet>,
+
+    /// Light mode color overrides
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<ThemeColorSet>,
+
+    // Font families (apply to both modes)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_body: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

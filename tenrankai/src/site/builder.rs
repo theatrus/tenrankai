@@ -39,8 +39,20 @@ impl SiteBuilder {
     pub async fn build(self) -> Result<Site, SiteBuilderError> {
         info!("Building site '{}'", self.config.name);
 
+        // Build config storage first so we can load theme for template engine
+        let config_storage = self.build_config_storage().await?;
+
+        // Load theme from config storage if available
+        let theme = self.load_theme(&config_storage).await;
+
         // Build template engine
-        let (template_engine, static_handler) = self.build_template_and_static().await?;
+        let (mut template_engine, static_handler) = self.build_template_and_static().await?;
+
+        // Set force_color_scheme on template engine if theme specifies it
+        if let Some(ref theme_config) = theme {
+            template_engine.set_force_color_scheme(theme_config.force_color_scheme.clone());
+        }
+
         let template_engine = Arc::new(template_engine);
 
         // Build favicon renderer
@@ -58,12 +70,6 @@ impl SiteBuilder {
 
         // Build login state and user storage
         let (login_state, user_storage) = self.build_login_state().await?;
-
-        // Build config storage
-        let config_storage = self.build_config_storage().await?;
-
-        // Load theme from config storage if available
-        let theme = self.load_theme(&config_storage).await;
 
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),

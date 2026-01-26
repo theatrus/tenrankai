@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ThemeConfig } from '@api/client';
+import { api, ThemeConfig, ThemeColorSet } from '@api/client';
 
 interface ColorInputProps {
   label: string;
@@ -73,10 +73,115 @@ function FontInput({ label, value, onChange }: FontInputProps) {
   );
 }
 
+interface ColorSectionProps {
+  colors: ThemeColorSet;
+  onChange: (colors: ThemeColorSet) => void;
+}
+
+function ColorSection({ colors, onChange }: ColorSectionProps) {
+  const handleChange = (key: keyof ThemeColorSet) => (value: string | undefined) => {
+    const updated = { ...colors };
+    if (value === undefined) {
+      delete updated[key];
+    } else {
+      updated[key] = value;
+    }
+    onChange(updated);
+  };
+
+  return (
+    <div className="theme-sections">
+      <section className="theme-section">
+        <h3>Background Colors</h3>
+        <ColorInput
+          label="Primary Background"
+          value={colors.bg_primary}
+          onChange={handleChange('bg_primary')}
+        />
+        <ColorInput
+          label="Secondary Background"
+          value={colors.bg_secondary}
+          onChange={handleChange('bg_secondary')}
+        />
+        <ColorInput
+          label="Card Background"
+          value={colors.bg_card}
+          onChange={handleChange('bg_card')}
+        />
+        <ColorInput
+          label="Hover Background"
+          value={colors.bg_hover}
+          onChange={handleChange('bg_hover')}
+        />
+        <ColorInput
+          label="Header Background"
+          value={colors.header_bg}
+          onChange={handleChange('header_bg')}
+        />
+      </section>
+
+      <section className="theme-section">
+        <h3>Text Colors</h3>
+        <ColorInput
+          label="Primary Text"
+          value={colors.text_primary}
+          onChange={handleChange('text_primary')}
+        />
+        <ColorInput
+          label="Secondary Text"
+          value={colors.text_secondary}
+          onChange={handleChange('text_secondary')}
+        />
+        <ColorInput
+          label="Muted Text"
+          value={colors.text_muted}
+          onChange={handleChange('text_muted')}
+        />
+      </section>
+
+      <section className="theme-section">
+        <h3>Link Colors</h3>
+        <ColorInput
+          label="Link Color"
+          value={colors.link_color}
+          onChange={handleChange('link_color')}
+        />
+        <ColorInput
+          label="Link Hover"
+          value={colors.link_hover}
+          onChange={handleChange('link_hover')}
+        />
+      </section>
+
+      <section className="theme-section">
+        <h3>Border &amp; Accent Colors</h3>
+        <ColorInput
+          label="Border Color"
+          value={colors.border_color}
+          onChange={handleChange('border_color')}
+        />
+        <ColorInput
+          label="Accent Color"
+          value={colors.accent_color}
+          onChange={handleChange('accent_color')}
+        />
+        <ColorInput
+          label="Danger Button"
+          value={colors.btn_danger_bg}
+          onChange={handleChange('btn_danger_bg')}
+        />
+      </section>
+    </div>
+  );
+}
+
+type ColorMode = 'dark' | 'light';
+
 export function Theme() {
   const queryClient = useQueryClient();
   const [theme, setTheme] = useState<ThemeConfig>({});
   const [hasChanges, setHasChanges] = useState(false);
+  const [activeTab, setActiveTab] = useState<ColorMode>('dark');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['theme'],
@@ -107,11 +212,25 @@ export function Theme() {
     },
   });
 
-  const handleFieldChange = <K extends keyof ThemeConfig>(
-    field: K,
-    value: ThemeConfig[K]
-  ) => {
-    setTheme((prev) => ({ ...prev, [field]: value }));
+  const handleColorSetChange = (mode: ColorMode) => (colors: ThemeColorSet) => {
+    const isEmpty = Object.keys(colors).length === 0;
+    setTheme((prev) => ({
+      ...prev,
+      [mode]: isEmpty ? undefined : colors,
+    }));
+    setHasChanges(true);
+  };
+
+  const handleForceColorSchemeChange = (value: string) => {
+    setTheme((prev) => ({
+      ...prev,
+      force_color_scheme: value || undefined,
+    }));
+    setHasChanges(true);
+  };
+
+  const handleFontChange = (key: 'font_body' | 'font_heading' | 'font_mono') => (value: string | undefined) => {
+    setTheme((prev) => ({ ...prev, [key]: value }));
     setHasChanges(true);
   };
 
@@ -132,6 +251,8 @@ export function Theme() {
   if (error) {
     return <div className="error">Error loading theme: {(error as Error).message}</div>;
   }
+
+  const currentColors = activeTab === 'dark' ? (theme.dark || {}) : (theme.light || {});
 
   return (
     <div className="theme-editor">
@@ -165,104 +286,64 @@ export function Theme() {
         </div>
       )}
 
+      <div className="theme-settings-section">
+        <section className="theme-section">
+          <h3>Color Scheme Settings</h3>
+          <div className="form-row">
+            <label htmlFor="force-color-scheme">Force Color Scheme</label>
+            <select
+              id="force-color-scheme"
+              value={theme.force_color_scheme || ''}
+              onChange={(e) => handleForceColorSchemeChange(e.target.value)}
+            >
+              <option value="">User Choice (Auto)</option>
+              <option value="dark">Always Dark</option>
+              <option value="light">Always Light</option>
+            </select>
+            <span className="form-help">
+              When set, users cannot switch between dark and light mode.
+            </span>
+          </div>
+        </section>
+      </div>
+
+      <div className="theme-tabs">
+        <button
+          className={`theme-tab ${activeTab === 'dark' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dark')}
+        >
+          Dark Mode Colors
+        </button>
+        <button
+          className={`theme-tab ${activeTab === 'light' ? 'active' : ''}`}
+          onClick={() => setActiveTab('light')}
+        >
+          Light Mode Colors
+        </button>
+      </div>
+
+      <ColorSection
+        colors={currentColors}
+        onChange={handleColorSetChange(activeTab)}
+      />
+
       <div className="theme-sections">
-        <section className="theme-section">
-          <h3>Background Colors</h3>
-          <ColorInput
-            label="Primary Background"
-            value={theme.bg_primary}
-            onChange={(v) => handleFieldChange('bg_primary', v)}
-          />
-          <ColorInput
-            label="Secondary Background"
-            value={theme.bg_secondary}
-            onChange={(v) => handleFieldChange('bg_secondary', v)}
-          />
-          <ColorInput
-            label="Card Background"
-            value={theme.bg_card}
-            onChange={(v) => handleFieldChange('bg_card', v)}
-          />
-          <ColorInput
-            label="Hover Background"
-            value={theme.bg_hover}
-            onChange={(v) => handleFieldChange('bg_hover', v)}
-          />
-          <ColorInput
-            label="Header Background"
-            value={theme.header_bg}
-            onChange={(v) => handleFieldChange('header_bg', v)}
-          />
-        </section>
-
-        <section className="theme-section">
-          <h3>Text Colors</h3>
-          <ColorInput
-            label="Primary Text"
-            value={theme.text_primary}
-            onChange={(v) => handleFieldChange('text_primary', v)}
-          />
-          <ColorInput
-            label="Secondary Text"
-            value={theme.text_secondary}
-            onChange={(v) => handleFieldChange('text_secondary', v)}
-          />
-          <ColorInput
-            label="Muted Text"
-            value={theme.text_muted}
-            onChange={(v) => handleFieldChange('text_muted', v)}
-          />
-        </section>
-
-        <section className="theme-section">
-          <h3>Link Colors</h3>
-          <ColorInput
-            label="Link Color"
-            value={theme.link_color}
-            onChange={(v) => handleFieldChange('link_color', v)}
-          />
-          <ColorInput
-            label="Link Hover"
-            value={theme.link_hover}
-            onChange={(v) => handleFieldChange('link_hover', v)}
-          />
-        </section>
-
-        <section className="theme-section">
-          <h3>Border &amp; Accent Colors</h3>
-          <ColorInput
-            label="Border Color"
-            value={theme.border_color}
-            onChange={(v) => handleFieldChange('border_color', v)}
-          />
-          <ColorInput
-            label="Accent Color"
-            value={theme.accent_color}
-            onChange={(v) => handleFieldChange('accent_color', v)}
-          />
-          <ColorInput
-            label="Danger Button"
-            value={theme.btn_danger_bg}
-            onChange={(v) => handleFieldChange('btn_danger_bg', v)}
-          />
-        </section>
-
         <section className="theme-section">
           <h3>Fonts</h3>
           <FontInput
             label="Body Font"
             value={theme.font_body}
-            onChange={(v) => handleFieldChange('font_body', v)}
+            onChange={handleFontChange('font_body')}
           />
           <FontInput
             label="Heading Font"
             value={theme.font_heading}
-            onChange={(v) => handleFieldChange('font_heading', v)}
+            onChange={handleFontChange('font_heading')}
           />
           <FontInput
             label="Monospace Font"
             value={theme.font_mono}
-            onChange={(v) => handleFieldChange('font_mono', v)}
+            onChange={handleFontChange('font_mono')}
           />
         </section>
       </div>

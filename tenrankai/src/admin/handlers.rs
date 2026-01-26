@@ -3828,7 +3828,9 @@ pub async fn get_theme(
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
-    let site_name = sites.first().ok_or(AdminError::Internal("No sites configured".into()))?;
+    let site_name = sites
+        .first()
+        .ok_or(AdminError::Internal("No sites configured".into()))?;
 
     let site_config = config_storage
         .get_site_config(site_name)
@@ -3857,7 +3859,9 @@ pub async fn update_theme(
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
-    let site_name = sites.first().ok_or(AdminError::Internal("No sites configured".into()))?;
+    let site_name = sites
+        .first()
+        .ok_or(AdminError::Internal("No sites configured".into()))?;
 
     let mut site_config = config_storage
         .get_site_config(site_name)
@@ -3891,7 +3895,9 @@ pub async fn reset_theme(
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
-    let site_name = sites.first().ok_or(AdminError::Internal("No sites configured".into()))?;
+    let site_name = sites
+        .first()
+        .ok_or(AdminError::Internal("No sites configured".into()))?;
 
     let mut site_config = config_storage
         .get_site_config(site_name)
