@@ -502,6 +502,25 @@ body {
   }
 }
 
+.color-default-badge {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .color-default-badge {
+    background: var(--color-surface-dark);
+    border-color: var(--color-border-dark);
+    color: var(--color-text-dark);
+  }
+}
+
 .theme-settings-section {
   margin-bottom: 1.5rem;
 }

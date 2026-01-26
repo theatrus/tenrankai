@@ -8,6 +8,44 @@ interface CuratedFont {
   category: 'sans-serif' | 'serif' | 'monospace';
 }
 
+const DEFAULT_DARK_COLORS: Required<ThemeColorSet> = {
+  bg_primary: '#1a1a1a',
+  bg_secondary: '#2a2a2a',
+  bg_card: '#606060',
+  bg_hover: '#505050',
+  header_bg: '#606060',
+  text_primary: '#e0e0e0',
+  text_secondary: '#b8b8b8',
+  text_muted: '#cccccc',
+  link_color: '#66b3ff',
+  link_hover: '#99ccff',
+  border_color: '#555555',
+  accent_color: '#66b3ff',
+  btn_danger_bg: '#dc3545',
+};
+
+const DEFAULT_LIGHT_COLORS: Required<ThemeColorSet> = {
+  bg_primary: '#ffffff',
+  bg_secondary: '#f8f9fa',
+  bg_card: '#ffffff',
+  bg_hover: '#e9ecef',
+  header_bg: '#f0f4f8',
+  text_primary: '#212529',
+  text_secondary: '#6c757d',
+  text_muted: '#6c757d',
+  link_color: '#0d6efd',
+  link_hover: '#0a58ca',
+  border_color: '#dee2e6',
+  accent_color: '#0d6efd',
+  btn_danger_bg: '#dc3545',
+};
+
+const DEFAULT_FONTS = {
+  font_body: 'Poppins',
+  font_heading: 'Poppins',
+  font_mono: 'Consolas',
+};
+
 const CURATED_FONTS: CuratedFont[] = [
   { family: 'Poppins', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
   { family: 'Roboto', weights: ['300', '400', '500', '700'], category: 'sans-serif' },
@@ -32,15 +70,18 @@ const CURATED_FONTS: CuratedFont[] = [
 interface ColorInputProps {
   label: string;
   value?: string;
+  defaultValue: string;
   onChange: (value: string | undefined) => void;
 }
 
-function ColorInput({ label, value, onChange }: ColorInputProps) {
+function ColorInput({ label, value, defaultValue, onChange }: ColorInputProps) {
   const [localValue, setLocalValue] = useState(value || '');
 
   useEffect(() => {
     setLocalValue(value || '');
   }, [value]);
+
+  const displayColor = localValue || defaultValue;
 
   return (
     <div className="color-input-row">
@@ -48,7 +89,7 @@ function ColorInput({ label, value, onChange }: ColorInputProps) {
       <div className="color-input-controls">
         <input
           type="color"
-          value={localValue || '#000000'}
+          value={displayColor}
           onChange={(e) => {
             setLocalValue(e.target.value);
             onChange(e.target.value);
@@ -57,13 +98,13 @@ function ColorInput({ label, value, onChange }: ColorInputProps) {
         <input
           type="text"
           value={localValue}
-          placeholder="e.g., #1a1a1a"
+          placeholder={`Default: ${defaultValue}`}
           onChange={(e) => {
             setLocalValue(e.target.value);
             onChange(e.target.value || undefined);
           }}
         />
-        {localValue && (
+        {localValue ? (
           <button
             type="button"
             className="btn-clear"
@@ -74,6 +115,8 @@ function ColorInput({ label, value, onChange }: ColorInputProps) {
           >
             Clear
           </button>
+        ) : (
+          <span className="color-default-badge">default</span>
         )}
       </div>
     </div>
@@ -84,10 +127,11 @@ interface FontSelectProps {
   label: string;
   category: 'sans-serif' | 'serif' | 'monospace' | 'all';
   value?: string;
+  defaultFont: string;
   onChange: (value: string | undefined, googleFont?: GoogleFontConfig) => void;
 }
 
-function FontSelect({ label, category, value, onChange }: FontSelectProps) {
+function FontSelect({ label, category, value, defaultFont, onChange }: FontSelectProps) {
   const fonts = CURATED_FONTS.filter(f =>
     category === 'all' || f.category === category
   );
@@ -111,7 +155,7 @@ function FontSelect({ label, category, value, onChange }: FontSelectProps) {
           }
         }}
       >
-        <option value="">System Default</option>
+        <option value="">{defaultFont} (Default)</option>
         {fonts.map(f => (
           <option key={f.family} value={f.family}>{f.family}</option>
         ))}
@@ -127,10 +171,11 @@ function extractFontFamily(cssValue: string): string | undefined {
 
 interface ColorSectionProps {
   colors: ThemeColorSet;
+  defaults: Required<ThemeColorSet>;
   onChange: (colors: ThemeColorSet) => void;
 }
 
-function ColorSection({ colors, onChange }: ColorSectionProps) {
+function ColorSection({ colors, defaults, onChange }: ColorSectionProps) {
   const handleChange = (key: keyof ThemeColorSet) => (value: string | undefined) => {
     const updated = { ...colors };
     if (value === undefined) {
@@ -148,26 +193,31 @@ function ColorSection({ colors, onChange }: ColorSectionProps) {
         <ColorInput
           label="Primary Background"
           value={colors.bg_primary}
+          defaultValue={defaults.bg_primary}
           onChange={handleChange('bg_primary')}
         />
         <ColorInput
           label="Secondary Background"
           value={colors.bg_secondary}
+          defaultValue={defaults.bg_secondary}
           onChange={handleChange('bg_secondary')}
         />
         <ColorInput
           label="Card Background"
           value={colors.bg_card}
+          defaultValue={defaults.bg_card}
           onChange={handleChange('bg_card')}
         />
         <ColorInput
           label="Hover Background"
           value={colors.bg_hover}
+          defaultValue={defaults.bg_hover}
           onChange={handleChange('bg_hover')}
         />
         <ColorInput
           label="Header Background"
           value={colors.header_bg}
+          defaultValue={defaults.header_bg}
           onChange={handleChange('header_bg')}
         />
       </section>
@@ -177,16 +227,19 @@ function ColorSection({ colors, onChange }: ColorSectionProps) {
         <ColorInput
           label="Primary Text"
           value={colors.text_primary}
+          defaultValue={defaults.text_primary}
           onChange={handleChange('text_primary')}
         />
         <ColorInput
           label="Secondary Text"
           value={colors.text_secondary}
+          defaultValue={defaults.text_secondary}
           onChange={handleChange('text_secondary')}
         />
         <ColorInput
           label="Muted Text"
           value={colors.text_muted}
+          defaultValue={defaults.text_muted}
           onChange={handleChange('text_muted')}
         />
       </section>
@@ -196,11 +249,13 @@ function ColorSection({ colors, onChange }: ColorSectionProps) {
         <ColorInput
           label="Link Color"
           value={colors.link_color}
+          defaultValue={defaults.link_color}
           onChange={handleChange('link_color')}
         />
         <ColorInput
           label="Link Hover"
           value={colors.link_hover}
+          defaultValue={defaults.link_hover}
           onChange={handleChange('link_hover')}
         />
       </section>
@@ -210,16 +265,19 @@ function ColorSection({ colors, onChange }: ColorSectionProps) {
         <ColorInput
           label="Border Color"
           value={colors.border_color}
+          defaultValue={defaults.border_color}
           onChange={handleChange('border_color')}
         />
         <ColorInput
           label="Accent Color"
           value={colors.accent_color}
+          defaultValue={defaults.accent_color}
           onChange={handleChange('accent_color')}
         />
         <ColorInput
           label="Danger Button"
           value={colors.btn_danger_bg}
+          defaultValue={defaults.btn_danger_bg}
           onChange={handleChange('btn_danger_bg')}
         />
       </section>
@@ -333,6 +391,7 @@ export function Theme() {
   }
 
   const currentColors = activeTab === 'dark' ? (theme.dark || {}) : (theme.light || {});
+  const currentDefaults = activeTab === 'dark' ? DEFAULT_DARK_COLORS : DEFAULT_LIGHT_COLORS;
 
   return (
     <div className="theme-editor">
@@ -404,6 +463,7 @@ export function Theme() {
 
       <ColorSection
         colors={currentColors}
+        defaults={currentDefaults}
         onChange={handleColorSetChange(activeTab)}
       />
 
@@ -414,18 +474,21 @@ export function Theme() {
             label="Body Font"
             category="all"
             value={theme.font_body}
+            defaultFont={DEFAULT_FONTS.font_body}
             onChange={handleFontChange('font_body')}
           />
           <FontSelect
             label="Heading Font"
             category="all"
             value={theme.font_heading}
+            defaultFont={DEFAULT_FONTS.font_heading}
             onChange={handleFontChange('font_heading')}
           />
           <FontSelect
             label="Monospace Font"
             category="monospace"
             value={theme.font_mono}
+            defaultFont={DEFAULT_FONTS.font_mono}
             onChange={handleFontChange('font_mono')}
           />
         </section>
