@@ -8,6 +8,8 @@
  * 4. Support for forced color scheme (disables toggle)
  */
 
+export {};
+
 declare global {
     interface Window {
         TENRANKAI_FORCE_COLOR_SCHEME?: 'light' | 'dark';
