@@ -4,6 +4,7 @@ import { Dashboard } from '@pages/Dashboard';
 import { Users } from '@pages/Users';
 import { Galleries } from '@pages/Galleries';
 import { Roles } from '@pages/Roles';
+import { Theme } from '@pages/Theme';
 
 export function App() {
   return (
@@ -16,6 +17,7 @@ export function App() {
           <Route path="galleries/:name" element={<Galleries />} />
           <Route path="galleries/:name/folders/*" element={<Galleries />} />
           <Route path="roles" element={<Roles />} />
+          <Route path="theme" element={<Theme />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

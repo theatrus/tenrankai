@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if force_color_scheme %} data-theme="{{ force_color_scheme }}"{% endif %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -57,9 +57,10 @@
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    {% if google_fonts %}<link href="https://fonts.googleapis.com/css2?{% for font in google_fonts %}family={{ font.family | url_encode }}:wght@{{ font.weights }}{% unless forloop.last %}&{% endunless %}{% endfor %}&display=swap" rel="stylesheet">{% else %}<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">{% endif %}
     <link rel="stylesheet" href="{{ 'style.css' | asset_url }}">
     <link rel="stylesheet" href="{{ 'theme-override.css' | asset_url }}">
+    <link rel="stylesheet" href="/theme.css">
 
     {% comment %} Page-specific CSS files {% endcomment %}
     {% if page_css %}
@@ -68,6 +69,11 @@
         {% endfor %}
     {% endif %}
     
+    {% comment %} Theme configuration {% endcomment %}
+    {% if force_color_scheme %}
+    <script>window.TENRANKAI_FORCE_COLOR_SCHEME = "{{ force_color_scheme }}";</script>
+    {% endif %}
+
     {% comment %} Tenrankai bundle - includes theme toggle {% endcomment %}
     <script src="{{ 'dist/tenrankai.js' | asset_url }}" defer></script>
 </head>

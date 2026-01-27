@@ -1,18 +1,37 @@
 /**
  * Theme Toggle Functionality
- * 
+ *
  * This script provides:
  * 1. OS-based automatic theme detection
  * 2. Manual theme toggle with persistence
  * 3. Smooth theme transitions
+ * 4. Support for forced color scheme (disables toggle)
  */
+
+export {};
+
+declare global {
+    interface Window {
+        TENRANKAI_FORCE_COLOR_SCHEME?: 'light' | 'dark';
+    }
+}
 
 type Theme = 'light' | 'dark' | 'auto';
 
 class ThemeManager {
     private currentTheme: Theme;
+    private forcedScheme: 'light' | 'dark' | null = null;
+
     constructor() {
-        this.currentTheme = this.getStoredTheme() || 'light';  // Default to light mode
+        // Check for forced color scheme from server
+        this.forcedScheme = window.TENRANKAI_FORCE_COLOR_SCHEME || null;
+
+        if (this.forcedScheme) {
+            // When forced, always use the forced scheme
+            this.currentTheme = this.forcedScheme;
+        } else {
+            this.currentTheme = this.getStoredTheme() || 'light';  // Default to light mode
+        }
         this.init();
     }
 
@@ -130,9 +149,15 @@ class ThemeManager {
      * Initialize the theme system
      */
     private init(): void {
-        // Set initial theme
-        this.setTheme(this.currentTheme);
-        
+        // Check if server already set the correct theme (to avoid flash)
+        const currentServerTheme = document.documentElement.getAttribute('data-theme');
+        const targetTheme = this.currentTheme === 'auto' ? null : this.currentTheme;
+
+        if (currentServerTheme !== targetTheme) {
+            // Only set theme if it differs from what server rendered
+            this.setTheme(this.currentTheme);
+        }
+
         // Listen for OS theme changes when in auto mode
         window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
             if (this.currentTheme === 'auto') {
@@ -140,7 +165,7 @@ class ThemeManager {
                 this.updateToggleButton();
             }
         });
-        
+
         // Create and insert toggle button when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.createToggleButton());
@@ -153,6 +178,11 @@ class ThemeManager {
      * Create and insert the theme toggle button
      */
     private createToggleButton(): void {
+        // Don't create toggle button if color scheme is forced
+        if (this.forcedScheme) {
+            return;
+        }
+
         const nav = document.querySelector('nav ul');
         if (!nav) {
             return;
@@ -160,21 +190,21 @@ class ThemeManager {
 
         const toggleContainer = document.createElement('li');
         toggleContainer.className = 'theme-toggle';
-        
+
         const button = document.createElement('button');
         button.id = 'theme-toggle-btn';
         button.className = 'theme-toggle-button';
         button.setAttribute('aria-label', 'Toggle theme');
-        
+
         // Use simple text for now to ensure visibility
         button.style.fontSize = '14px';
         button.style.fontWeight = 'bold';
         toggleContainer.appendChild(button);
         nav.appendChild(toggleContainer);
-        
+
         // Add click listener
         button.addEventListener('click', () => this.toggleTheme());
-        
+
         // Initial update
         this.updateToggleButton();
     }

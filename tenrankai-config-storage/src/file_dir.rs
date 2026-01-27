@@ -547,6 +547,7 @@ mod tests {
             storage_prefix: Some("/data/sites/default".to_string()),
             cache_prefix: Some("/var/cache/sites/default".to_string()),
             email: None,
+            theme: None,
         };
 
         storage

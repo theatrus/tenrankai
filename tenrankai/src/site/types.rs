@@ -1,5 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
-use tenrankai_config_storage::DynConfigStorage;
+use tenrankai_config_storage::{DynConfigStorage, StoredThemeConfig};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -39,6 +39,7 @@ pub struct SiteResources {
     pub config_storage: Option<DynConfigStorage>,
     pub config_storage_url: Option<String>,
     pub site_admins: Vec<String>,
+    pub theme: Option<StoredThemeConfig>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -117,6 +118,10 @@ impl Site {
             .iter()
             .any(|admin| admin.eq_ignore_ascii_case(username))
     }
+
+    pub fn theme(&self) -> Option<&StoredThemeConfig> {
+        self.resources.theme.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +144,7 @@ mod tests {
             config_storage: None,
             config_storage_url: None,
             site_admins: Vec::new(),
+            theme: None,
         };
         Site::new(name.to_string(), resources)
     }

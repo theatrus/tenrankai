@@ -402,6 +402,7 @@ mod tests {
             config_storage: None,
             config_storage_url: None,
             site_admins: Vec::new(),
+            theme: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }

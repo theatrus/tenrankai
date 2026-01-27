@@ -3807,3 +3807,143 @@ async fn update_folder_hidden_images(
 
     Ok(())
 }
+
+// ============================================================================
+// Theme Management
+// ============================================================================
+
+/// Get the current theme configuration
+pub async fn get_theme(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+) -> Result<Json<ThemeConfigDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    // Get site name from the first site (in single-site mode) or current site
+    let sites = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let site_name = sites
+        .first()
+        .ok_or(AdminError::Internal("No sites configured".into()))?;
+
+    let site_config = config_storage
+        .get_site_config(site_name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound("Site config not found".into()))?;
+
+    let theme = site_config.theme.unwrap_or_default();
+
+    Ok(Json(ThemeConfigDto::from(theme)))
+}
+
+/// Update theme configuration
+async fn reload_site_theme(app_state: &crate::AppState, site_name: &str) {
+    // Try to reload the site so theme changes take effect immediately
+    let Some(site_manager) = app_state.site_manager.as_ref() else {
+        return;
+    };
+    let Some(config_storage) = app_state.config_storage() else {
+        return;
+    };
+    let Some(config_storage_url) = app_state.config_storage_url() else {
+        return;
+    };
+
+    let loader = crate::config::ConfigStorageLoader::new(
+        config_storage.clone(),
+        app_state.cookie_secret().to_string(),
+    );
+    if let Err(e) = site_manager
+        .reload_site(site_name, &loader, config_storage_url)
+        .await
+    {
+        tracing::warn!("Failed to reload site after theme change: {}", e);
+    }
+}
+
+pub async fn update_theme(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Json(request): Json<ThemeConfigDto>,
+) -> Result<Json<ThemeConfigDto>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let sites = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let site_name = sites
+        .first()
+        .ok_or(AdminError::Internal("No sites configured".into()))?
+        .clone();
+
+    let mut site_config = config_storage
+        .get_site_config(&site_name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound("Site config not found".into()))?;
+
+    // Update theme
+    site_config.theme = Some(request.clone().into());
+
+    config_storage
+        .set_site_config(&site_name, &site_config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Reload site so theme changes take effect immediately
+    reload_site_theme(&app_state, &site_name).await;
+
+    Ok(Json(request))
+}
+
+/// Reset theme to defaults
+pub async fn reset_theme(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+) -> Result<StatusCode, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let sites = config_storage
+        .list_sites()
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    let site_name = sites
+        .first()
+        .ok_or(AdminError::Internal("No sites configured".into()))?
+        .clone();
+
+    let mut site_config = config_storage
+        .get_site_config(&site_name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?
+        .ok_or_else(|| AdminError::NotFound("Site config not found".into()))?;
+
+    // Remove theme
+    site_config.theme = None;
+
+    config_storage
+        .set_site_config(&site_name, &site_config, &admin.0.username)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Reload site so theme changes take effect immediately
+    reload_site_theme(&app_state, &site_name).await;
+
+    Ok(StatusCode::NO_CONTENT)
+}

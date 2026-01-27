@@ -1,5 +1,11 @@
 /* ==========================================================================
    CSS Custom Properties for Theming
+   ==========================================================================
+   NOTE: When adding new theme-related CSS variables, also update:
+   - tenrankai-config-storage/src/types.rs (StoredThemeConfig struct)
+   - tenrankai/src/theme/mod.rs (generate_theme_css function)
+   - admin/src/pages/Theme.tsx (theme editor UI)
+   - admin/src/api/client.ts (ThemeConfig interface)
    ========================================================================== */
 
 /* Default theme (can be overridden by user preference or OS) */

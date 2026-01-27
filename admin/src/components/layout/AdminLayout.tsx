@@ -21,6 +21,9 @@ export function AdminLayout() {
             <li>
               <NavLink to="/roles">Roles</NavLink>
             </li>
+            <li>
+              <NavLink to="/theme">Theme</NavLink>
+            </li>
           </ul>
         </nav>
         <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>

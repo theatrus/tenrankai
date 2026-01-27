@@ -39,8 +39,23 @@ impl SiteBuilder {
     pub async fn build(self) -> Result<Site, SiteBuilderError> {
         info!("Building site '{}'", self.config.name);
 
+        // Build config storage first so we can load theme for template engine
+        let config_storage = self.build_config_storage().await?;
+
+        // Load theme from config storage if available
+        let theme = self.load_theme(&config_storage).await;
+
         // Build template engine
-        let (template_engine, static_handler) = self.build_template_and_static().await?;
+        let (mut template_engine, static_handler) = self.build_template_and_static().await?;
+
+        // Set theme options on template engine
+        if let Some(ref theme_config) = theme {
+            template_engine.set_force_color_scheme(theme_config.force_color_scheme.clone());
+            if !theme_config.google_fonts.is_empty() {
+                template_engine.set_google_fonts(theme_config.google_fonts.clone());
+            }
+        }
+
         let template_engine = Arc::new(template_engine);
 
         // Build favicon renderer
@@ -59,9 +74,6 @@ impl SiteBuilder {
         // Build login state and user storage
         let (login_state, user_storage) = self.build_login_state().await?;
 
-        // Build config storage
-        let config_storage = self.build_config_storage().await?;
-
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),
             cookie_secret: self.config.cookie_secret.clone(),
@@ -76,6 +88,7 @@ impl SiteBuilder {
             config_storage,
             config_storage_url: self.config.config_storage.clone(),
             site_admins: self.config.site_admins.clone(),
+            theme,
         };
 
         info!("Site '{}' built successfully", self.config.name);
@@ -297,5 +310,29 @@ impl SiteBuilder {
         );
 
         Ok(Some(storage))
+    }
+
+    async fn load_theme(
+        &self,
+        config_storage: &Option<DynConfigStorage>,
+    ) -> Option<tenrankai_config_storage::StoredThemeConfig> {
+        let storage = config_storage.as_ref()?;
+
+        match storage.get_site_config(&self.config.name).await {
+            Ok(Some(site_config)) => {
+                if site_config.theme.is_some() {
+                    info!("Loaded theme configuration for site '{}'", self.config.name);
+                }
+                site_config.theme
+            }
+            Ok(None) => None,
+            Err(e) => {
+                error!(
+                    "Failed to load theme for site '{}': {}",
+                    self.config.name, e
+                );
+                None
+            }
+        }
     }
 }

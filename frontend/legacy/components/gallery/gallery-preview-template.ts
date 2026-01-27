@@ -35,9 +35,12 @@ export class GalleryPreviewTemplate {
   private async init(): Promise<void> {
     try {
       await this.fetchInitialImages();
-      this.layoutPreviewMasonry();
-      this.setupEventListeners();
-      this.startDynamicReplacement();
+      // Wait for next frame to ensure DOM layout is complete before measuring
+      requestAnimationFrame(() => {
+        this.layoutPreviewMasonry();
+        this.setupEventListeners();
+        this.startDynamicReplacement();
+      });
     } catch (error) {
       console.error('Failed to initialize gallery preview:', error);
       this.previewComponent.style.display = 'none';

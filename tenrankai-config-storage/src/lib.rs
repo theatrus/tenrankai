@@ -10,6 +10,7 @@ pub use types::{
     AuditAction,
     AuditEntry,
     GalleryPermissionConfig,
+    GoogleFontConfig,
     Role,
     RolePermissions,
     // Site configuration types
@@ -22,7 +23,9 @@ pub use types::{
     StoredPreviewConfig,
     StoredSiteConfig,
     StoredSiteEmailConfig,
+    StoredThemeConfig,
     StoredTileConfig,
+    ThemeColorSet,
     UserRole,
 };
 pub use url::ConfigStorageUrl;

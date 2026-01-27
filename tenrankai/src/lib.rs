@@ -21,6 +21,7 @@ pub mod startup_checks;
 pub mod static_files;
 pub mod template_system;
 pub mod templating;
+pub mod theme;
 pub mod upload;
 pub mod webp_encoder;
 
@@ -132,6 +133,10 @@ impl AppState {
 
     pub fn is_site_admin(&self, username: &str) -> bool {
         self.site.is_site_admin(username)
+    }
+
+    pub fn theme(&self) -> Option<&tenrankai_config_storage::StoredThemeConfig> {
+        self.site.theme()
     }
 
     pub fn is_admin(&self, username: &str) -> bool {
@@ -362,6 +367,7 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             "/robots.txt",
             axum::routing::get(robots::robots_txt_handler),
         )
+        .route("/theme.css", axum::routing::get(theme::serve_theme_css))
         .route("/static/{*path}", axum::routing::get(static_file_handler));
 
     // Add login routes only if user database is configured
@@ -547,6 +553,13 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             .route(
                 "/_admin/api/sites/{site}/reload",
                 axum::routing::post(admin::reload_site),
+            )
+            // Theme management
+            .route(
+                "/_admin/api/theme",
+                axum::routing::get(admin::get_theme)
+                    .put(admin::update_theme)
+                    .delete(admin::reset_theme),
             )
             // Admin SPA catch-all (must be last)
             .route("/_admin", axum::routing::get(admin::admin_spa_handler))
