@@ -31,65 +31,37 @@ pub async fn serve_theme_css(ResolvedState(app_state): ResolvedState) -> impl In
     (StatusCode::OK, headers, css)
 }
 
+macro_rules! push_css_var {
+    ($css:expr, $colors:expr, $field:ident, $var_name:expr) => {
+        if let Some(ref v) = $colors.$field {
+            $css.push_str(&format!("  {}: {};\n", $var_name, v));
+        }
+    };
+}
+
 fn generate_color_set_vars(colors: &ThemeColorSet) -> String {
     let mut css = String::new();
-
-    if let Some(ref v) = colors.bg_primary {
-        css.push_str(&format!("  --bg-primary: {};\n", v));
-    }
-    if let Some(ref v) = colors.bg_secondary {
-        css.push_str(&format!("  --bg-secondary: {};\n", v));
-    }
-    if let Some(ref v) = colors.bg_card {
-        css.push_str(&format!("  --bg-card: {};\n", v));
-    }
-    if let Some(ref v) = colors.bg_hover {
-        css.push_str(&format!("  --bg-hover: {};\n", v));
-    }
-    if let Some(ref v) = colors.header_bg {
-        css.push_str(&format!("  --header-bg: {};\n", v));
-    }
-    if let Some(ref v) = colors.text_primary {
-        css.push_str(&format!("  --text-primary: {};\n", v));
-    }
-    if let Some(ref v) = colors.text_secondary {
-        css.push_str(&format!("  --text-secondary: {};\n", v));
-    }
-    if let Some(ref v) = colors.text_muted {
-        css.push_str(&format!("  --text-muted: {};\n", v));
-    }
-    if let Some(ref v) = colors.link_color {
-        css.push_str(&format!("  --link-color: {};\n", v));
-    }
-    if let Some(ref v) = colors.link_hover {
-        css.push_str(&format!("  --link-hover: {};\n", v));
-    }
-    if let Some(ref v) = colors.border_color {
-        css.push_str(&format!("  --border-color: {};\n", v));
-    }
-    if let Some(ref v) = colors.accent_color {
-        css.push_str(&format!("  --accent-red: {};\n", v));
-    }
-    if let Some(ref v) = colors.btn_danger_bg {
-        css.push_str(&format!("  --btn-danger-bg: {};\n", v));
-    }
-
+    push_css_var!(css, colors, bg_primary, "--bg-primary");
+    push_css_var!(css, colors, bg_secondary, "--bg-secondary");
+    push_css_var!(css, colors, bg_card, "--bg-card");
+    push_css_var!(css, colors, bg_hover, "--bg-hover");
+    push_css_var!(css, colors, header_bg, "--header-bg");
+    push_css_var!(css, colors, text_primary, "--text-primary");
+    push_css_var!(css, colors, text_secondary, "--text-secondary");
+    push_css_var!(css, colors, text_muted, "--text-muted");
+    push_css_var!(css, colors, link_color, "--link-color");
+    push_css_var!(css, colors, link_hover, "--link-hover");
+    push_css_var!(css, colors, border_color, "--border-color");
+    push_css_var!(css, colors, accent_color, "--accent-red");
+    push_css_var!(css, colors, btn_danger_bg, "--btn-danger-bg");
     css
 }
 
 fn generate_font_vars(theme: &StoredThemeConfig) -> String {
     let mut css = String::new();
-
-    if let Some(ref v) = theme.font_body {
-        css.push_str(&format!("  --font-body: {};\n", v));
-    }
-    if let Some(ref v) = theme.font_heading {
-        css.push_str(&format!("  --font-heading: {};\n", v));
-    }
-    if let Some(ref v) = theme.font_mono {
-        css.push_str(&format!("  --font-mono: {};\n", v));
-    }
-
+    push_css_var!(css, theme, font_body, "--font-body");
+    push_css_var!(css, theme, font_heading, "--font-heading");
+    push_css_var!(css, theme, font_mono, "--font-mono");
     css
 }
 
@@ -127,14 +99,16 @@ pub fn generate_theme_css(theme: &StoredThemeConfig) -> String {
     match theme.force_color_scheme.as_deref() {
         Some("dark") => {
             if has_dark {
-                css.push_str(":root {\n");
+                // Use data-theme selector to match specificity of style.css
+                css.push_str(":root[data-theme=\"dark\"] {\n");
                 css.push_str(&dark_vars);
                 css.push_str("}\n");
             }
         }
         Some("light") => {
             if has_light {
-                css.push_str(":root {\n");
+                // Use data-theme selector to match specificity of style.css
+                css.push_str(":root[data-theme=\"light\"] {\n");
                 css.push_str(&light_vars);
                 css.push_str("}\n");
             }
@@ -222,9 +196,8 @@ mod tests {
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains(":root {"));
+        assert!(css.contains(":root[data-theme=\"dark\"]"));
         assert!(css.contains("--bg-primary: #1a1a1a;"));
-        assert!(!css.contains("[data-theme="));
         assert!(!css.contains("@media"));
     }
 
@@ -239,9 +212,8 @@ mod tests {
             ..Default::default()
         };
         let css = generate_theme_css(&theme);
-        assert!(css.contains(":root {"));
+        assert!(css.contains(":root[data-theme=\"light\"]"));
         assert!(css.contains("--bg-primary: #ffffff;"));
-        assert!(!css.contains("[data-theme="));
         assert!(!css.contains("@media"));
     }
 

@@ -1,121 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ThemeConfig, ThemeColorSet, GoogleFontConfig } from '@api/client';
+import {
+  FontCategory,
+  CATEGORY_LABELS,
+  CATEGORY_ORDER,
+  CURATED_FONTS,
+  buildGoogleFontsUrl,
+  getCssFallback,
+  extractFontFamily,
+} from '../constants/curated-fonts';
+import {
+  DEFAULT_DARK_COLORS,
+  DEFAULT_LIGHT_COLORS,
+  DEFAULT_FONTS,
+  COLOR_FIELDS,
+  COLOR_GROUP_LABELS,
+  COLOR_GROUP_ORDER,
+  ColorFieldGroup,
+} from '../constants/theme-defaults';
 
-type FontCategory = 'sans-serif' | 'serif' | 'monospace' | 'display' | 'script' | 'slab-serif' | 'rounded';
-
-interface CuratedFont {
-  family: string;
-  weights: string[];
-  category: FontCategory;
-}
-
-const CATEGORY_LABELS: Record<FontCategory, string> = {
-  'sans-serif': 'Sans Serif',
-  'serif': 'Serif',
-  'monospace': 'Monospace',
-  'display': 'Display',
-  'script': 'Script & Handwriting',
-  'slab-serif': 'Slab Serif',
-  'rounded': 'Rounded',
-};
-
-const CATEGORY_ORDER: FontCategory[] = [
-  'sans-serif', 'serif', 'slab-serif', 'display', 'script', 'rounded', 'monospace'
-];
-
-const DEFAULT_DARK_COLORS: Required<ThemeColorSet> = {
-  bg_primary: '#1a1a1a',
-  bg_secondary: '#2a2a2a',
-  bg_card: '#606060',
-  bg_hover: '#505050',
-  header_bg: '#606060',
-  text_primary: '#e0e0e0',
-  text_secondary: '#b8b8b8',
-  text_muted: '#cccccc',
-  link_color: '#66b3ff',
-  link_hover: '#99ccff',
-  border_color: '#555555',
-  accent_color: '#66b3ff',
-  btn_danger_bg: '#dc3545',
-};
-
-const DEFAULT_LIGHT_COLORS: Required<ThemeColorSet> = {
-  bg_primary: '#ffffff',
-  bg_secondary: '#f8f9fa',
-  bg_card: '#ffffff',
-  bg_hover: '#e9ecef',
-  header_bg: '#f0f4f8',
-  text_primary: '#212529',
-  text_secondary: '#6c757d',
-  text_muted: '#6c757d',
-  link_color: '#0d6efd',
-  link_hover: '#0a58ca',
-  border_color: '#dee2e6',
-  accent_color: '#0d6efd',
-  btn_danger_bg: '#dc3545',
-};
-
-const DEFAULT_FONTS = {
-  font_body: 'Poppins',
-  font_heading: 'Poppins',
-  font_mono: 'Consolas',
-};
-
-const CURATED_FONTS: CuratedFont[] = [
-  // Sans Serif
-  { family: 'Poppins', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
-  { family: 'Roboto', weights: ['300', '400', '500', '700'], category: 'sans-serif' },
-  { family: 'Open Sans', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
-  { family: 'Lato', weights: ['300', '400', '700'], category: 'sans-serif' },
-  { family: 'Montserrat', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
-  { family: 'Inter', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
-  { family: 'Raleway', weights: ['300', '400', '500', '600', '700'], category: 'sans-serif' },
-  { family: 'Nunito', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
-  { family: 'Source Sans Pro', weights: ['300', '400', '600', '700'], category: 'sans-serif' },
-  { family: 'PT Sans', weights: ['400', '700'], category: 'sans-serif' },
-
-  // Serif
-  { family: 'Merriweather', weights: ['300', '400', '700'], category: 'serif' },
-  { family: 'Playfair Display', weights: ['400', '500', '600', '700'], category: 'serif' },
-  { family: 'Lora', weights: ['400', '500', '600', '700'], category: 'serif' },
-  { family: 'Libre Baskerville', weights: ['400', '700'], category: 'serif' },
-  { family: 'Crimson Text', weights: ['400', '600', '700'], category: 'serif' },
-  { family: 'EB Garamond', weights: ['400', '500', '600', '700'], category: 'serif' },
-  { family: 'Cormorant Garamond', weights: ['300', '400', '500', '600', '700'], category: 'serif' },
-  { family: 'Spectral', weights: ['300', '400', '500', '600', '700'], category: 'serif' },
-  { family: 'PT Serif', weights: ['400', '700'], category: 'serif' },
-  { family: 'Source Serif Pro', weights: ['300', '400', '600', '700'], category: 'serif' },
-
-  // Slab Serif
-  { family: 'Roboto Slab', weights: ['300', '400', '500', '700'], category: 'slab-serif' },
-  { family: 'Zilla Slab', weights: ['300', '400', '500', '600', '700'], category: 'slab-serif' },
-  { family: 'Bitter', weights: ['400', '500', '600', '700'], category: 'slab-serif' },
-
-  // Display
-  { family: 'Oswald', weights: ['300', '400', '500', '600', '700'], category: 'display' },
-  { family: 'Bebas Neue', weights: ['400'], category: 'display' },
-  { family: 'Abril Fatface', weights: ['400'], category: 'display' },
-  { family: 'Josefin Sans', weights: ['300', '400', '500', '600', '700'], category: 'display' },
-
-  // Script & Handwriting
-  { family: 'Dancing Script', weights: ['400', '500', '600', '700'], category: 'script' },
-  { family: 'Pacifico', weights: ['400'], category: 'script' },
-  { family: 'Great Vibes', weights: ['400'], category: 'script' },
-  { family: 'Caveat', weights: ['400', '500', '600', '700'], category: 'script' },
-  { family: 'Sacramento', weights: ['400'], category: 'script' },
-
-  // Rounded
-  { family: 'Quicksand', weights: ['300', '400', '500', '600', '700'], category: 'rounded' },
-  { family: 'Comfortaa', weights: ['300', '400', '500', '600', '700'], category: 'rounded' },
-  { family: 'Varela Round', weights: ['400'], category: 'rounded' },
-
-  // Monospace
-  { family: 'Source Code Pro', weights: ['400', '500', '600', '700'], category: 'monospace' },
-  { family: 'Fira Code', weights: ['400', '500', '600', '700'], category: 'monospace' },
-  { family: 'JetBrains Mono', weights: ['400', '500', '600', '700'], category: 'monospace' },
-  { family: 'IBM Plex Mono', weights: ['400', '500', '600', '700'], category: 'monospace' },
-];
+const FONT_LOADER_ID = 'theme-editor-fonts';
 
 interface ColorInputProps {
   label: string;
@@ -173,26 +78,17 @@ function ColorInput({ label, value, defaultValue, onChange }: ColorInputProps) {
   );
 }
 
-function buildGoogleFontsUrl(fonts: CuratedFont[]): string {
-  const families = fonts.map(f => {
-    const weights = f.weights.join(';');
-    return `family=${encodeURIComponent(f.family)}:wght@${weights}`;
-  });
-  return `https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`;
-}
-
 function useFontLoader() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const linkId = 'theme-editor-fonts';
-    if (document.getElementById(linkId)) {
+    if (document.getElementById(FONT_LOADER_ID)) {
       setLoaded(true);
       return;
     }
 
     const link = document.createElement('link');
-    link.id = linkId;
+    link.id = FONT_LOADER_ID;
     link.rel = 'stylesheet';
     link.href = buildGoogleFontsUrl(CURATED_FONTS);
     link.onload = () => setLoaded(true);
@@ -213,16 +109,6 @@ interface FontSelectProps {
   onChange: (value: string | undefined, googleFont?: GoogleFontConfig) => void;
 }
 
-function getCssFallback(category: FontCategory): string {
-  switch (category) {
-    case 'monospace': return 'monospace';
-    case 'serif':
-    case 'slab-serif': return 'serif';
-    case 'script': return 'cursive';
-    default: return 'sans-serif';
-  }
-}
-
 function FontSelect({ label, category, value, defaultFont, sampleText, onChange }: FontSelectProps) {
   const fonts = CURATED_FONTS.filter(f =>
     category === 'all' || f.category === category
@@ -236,7 +122,6 @@ function FontSelect({ label, category, value, defaultFont, sampleText, onChange 
     ? 'const x = 42; // code sample'
     : 'The quick brown fox jumps over the lazy dog');
 
-  // Group fonts by category for the dropdown
   const fontsByCategory = CATEGORY_ORDER
     .filter(cat => category === 'all' || cat === category)
     .map(cat => ({
@@ -285,11 +170,6 @@ function FontSelect({ label, category, value, defaultFont, sampleText, onChange 
   );
 }
 
-function extractFontFamily(cssValue: string): string | undefined {
-  const match = cssValue.match(/^'([^']+)'/);
-  return match ? match[1] : undefined;
-}
-
 interface ColorSectionProps {
   colors: ThemeColorSet;
   defaults: Required<ThemeColorSet>;
@@ -307,103 +187,40 @@ function ColorSection({ colors, defaults, onChange }: ColorSectionProps) {
     onChange(updated);
   };
 
+  const renderGroup = (group: ColorFieldGroup) => {
+    const fields = COLOR_FIELDS.filter(f => f.group === group);
+    return (
+      <section key={group} className="theme-section">
+        <h3>{COLOR_GROUP_LABELS[group]}</h3>
+        {fields.map(field => (
+          <ColorInput
+            key={field.key}
+            label={field.label}
+            value={colors[field.key]}
+            defaultValue={defaults[field.key]}
+            onChange={handleChange(field.key)}
+          />
+        ))}
+      </section>
+    );
+  };
+
   return (
     <div className="theme-sections">
-      <section className="theme-section">
-        <h3>Background Colors</h3>
-        <ColorInput
-          label="Primary Background"
-          value={colors.bg_primary}
-          defaultValue={defaults.bg_primary}
-          onChange={handleChange('bg_primary')}
-        />
-        <ColorInput
-          label="Secondary Background"
-          value={colors.bg_secondary}
-          defaultValue={defaults.bg_secondary}
-          onChange={handleChange('bg_secondary')}
-        />
-        <ColorInput
-          label="Card Background"
-          value={colors.bg_card}
-          defaultValue={defaults.bg_card}
-          onChange={handleChange('bg_card')}
-        />
-        <ColorInput
-          label="Hover Background"
-          value={colors.bg_hover}
-          defaultValue={defaults.bg_hover}
-          onChange={handleChange('bg_hover')}
-        />
-        <ColorInput
-          label="Header Background"
-          value={colors.header_bg}
-          defaultValue={defaults.header_bg}
-          onChange={handleChange('header_bg')}
-        />
-      </section>
-
-      <section className="theme-section">
-        <h3>Text Colors</h3>
-        <ColorInput
-          label="Primary Text"
-          value={colors.text_primary}
-          defaultValue={defaults.text_primary}
-          onChange={handleChange('text_primary')}
-        />
-        <ColorInput
-          label="Secondary Text"
-          value={colors.text_secondary}
-          defaultValue={defaults.text_secondary}
-          onChange={handleChange('text_secondary')}
-        />
-        <ColorInput
-          label="Muted Text"
-          value={colors.text_muted}
-          defaultValue={defaults.text_muted}
-          onChange={handleChange('text_muted')}
-        />
-      </section>
-
-      <section className="theme-section">
-        <h3>Link Colors</h3>
-        <ColorInput
-          label="Link Color"
-          value={colors.link_color}
-          defaultValue={defaults.link_color}
-          onChange={handleChange('link_color')}
-        />
-        <ColorInput
-          label="Link Hover"
-          value={colors.link_hover}
-          defaultValue={defaults.link_hover}
-          onChange={handleChange('link_hover')}
-        />
-      </section>
-
-      <section className="theme-section">
-        <h3>Border &amp; Accent Colors</h3>
-        <ColorInput
-          label="Border Color"
-          value={colors.border_color}
-          defaultValue={defaults.border_color}
-          onChange={handleChange('border_color')}
-        />
-        <ColorInput
-          label="Accent Color"
-          value={colors.accent_color}
-          defaultValue={defaults.accent_color}
-          onChange={handleChange('accent_color')}
-        />
-        <ColorInput
-          label="Danger Button"
-          value={colors.btn_danger_bg}
-          defaultValue={defaults.btn_danger_bg}
-          onChange={handleChange('btn_danger_bg')}
-        />
-      </section>
+      {COLOR_GROUP_ORDER.map(renderGroup)}
     </div>
   );
+}
+
+function collectUsedFonts(theme: ThemeConfig): GoogleFontConfig[] {
+  const usedFamilies = new Set<string>();
+  for (const key of ['font_body', 'font_heading', 'font_mono'] as const) {
+    const family = theme[key] && extractFontFamily(theme[key]!);
+    if (family) usedFamilies.add(family);
+  }
+  return CURATED_FONTS
+    .filter(f => usedFamilies.has(f.family))
+    .map(f => ({ family: f.family, weights: f.weights }));
 }
 
 type ColorMode = 'dark' | 'light';
@@ -414,7 +231,6 @@ export function Theme() {
   const [hasChanges, setHasChanges] = useState(false);
   const [activeTab, setActiveTab] = useState<ColorMode>('dark');
 
-  // Load all Google Fonts for previews
   useFontLoader();
 
   const { data, isLoading, error } = useQuery({
@@ -430,7 +246,10 @@ export function Theme() {
   }, [data]);
 
   const updateMutation = useMutation({
-    mutationFn: api.updateTheme,
+    mutationFn: (themeToSave: ThemeConfig) => {
+      const withFonts = { ...themeToSave, google_fonts: collectUsedFonts(themeToSave) };
+      return api.updateTheme(withFonts);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['theme'] });
       setHasChanges(false);
@@ -463,36 +282,8 @@ export function Theme() {
     setHasChanges(true);
   };
 
-  const handleFontChange = (key: 'font_body' | 'font_heading' | 'font_mono') => (value: string | undefined, googleFont?: GoogleFontConfig) => {
-    setTheme((prev) => {
-      const updated = { ...prev, [key]: value };
-
-      // Update google_fonts array
-      const existingFonts = prev.google_fonts || [];
-
-      if (googleFont) {
-        // Check if this font is already in the list
-        const hasFont = existingFonts.some(f => f.family === googleFont.family);
-        if (!hasFont) {
-          updated.google_fonts = [...existingFonts, googleFont];
-        }
-      }
-
-      // Clean up google_fonts: only keep fonts that are actually in use
-      const usedFamilies = new Set<string>();
-      const fontKeys: ('font_body' | 'font_heading' | 'font_mono')[] = ['font_body', 'font_heading', 'font_mono'];
-      for (const k of fontKeys) {
-        const fontValue = k === key ? value : prev[k];
-        if (fontValue) {
-          const family = extractFontFamily(fontValue);
-          if (family) usedFamilies.add(family);
-        }
-      }
-
-      updated.google_fonts = (updated.google_fonts || []).filter(f => usedFamilies.has(f.family));
-
-      return updated;
-    });
+  const handleFontChange = (key: 'font_body' | 'font_heading' | 'font_mono') => (value: string | undefined) => {
+    setTheme((prev) => ({ ...prev, [key]: value }));
     setHasChanges(true);
   };
 
