@@ -36,6 +36,8 @@ pub struct ImageWatermark {
     image: RgbaImage,
     original_width: u32,
     original_height: u32,
+    /// True if the watermark image is predominantly light (should invert on light backgrounds)
+    is_light: bool,
 }
 
 impl ImageWatermark {
@@ -44,11 +46,47 @@ impl ImageWatermark {
         let rgba = img.to_rgba8();
         let (width, height) = (rgba.width(), rgba.height());
 
+        // Auto-detect if watermark is light or dark by sampling pixels with significant alpha
+        let is_light = Self::detect_is_light(&rgba);
+
         Ok(Self {
             image: rgba,
             original_width: width,
             original_height: height,
+            is_light,
         })
+    }
+
+    /// Detect if the watermark image is predominantly light or dark
+    /// Only samples pixels with significant alpha (> 50%)
+    fn detect_is_light(image: &RgbaImage) -> bool {
+        let mut total_luminance = 0.0f64;
+        let mut sample_count = 0u32;
+
+        // Sample every 4th pixel for performance
+        let step = 4;
+        for y in (0..image.height()).step_by(step) {
+            for x in (0..image.width()).step_by(step) {
+                let pixel = image.get_pixel(x, y);
+                // Only consider pixels with significant alpha
+                if pixel[3] > 127 {
+                    let luminance = calculate_luminance(pixel[0], pixel[1], pixel[2]);
+                    total_luminance += luminance as f64;
+                    sample_count += 1;
+                }
+            }
+        }
+
+        if sample_count == 0 {
+            // Default to assuming light if no opaque pixels
+            true
+        } else {
+            (total_luminance / sample_count as f64) > 0.5
+        }
+    }
+
+    pub fn is_light(&self) -> bool {
+        self.is_light
     }
 
     pub fn width(&self) -> u32 {
@@ -177,8 +215,11 @@ impl ImageWatermark {
         let (wm_width, wm_height) = (watermark.width(), watermark.height());
 
         let should_invert = if adaptive {
-            let luminance = self.sample_region_luminance(target, x, y, wm_width, wm_height);
-            luminance > 0.5
+            let bg_luminance = self.sample_region_luminance(target, x, y, wm_width, wm_height);
+            let bg_is_light = bg_luminance > 0.5;
+            // Invert when watermark and background have same brightness
+            // (both light or both dark would have poor contrast)
+            self.is_light == bg_is_light
         } else {
             false
         };
@@ -205,8 +246,11 @@ impl ImageWatermark {
             let mut x = spacing as i32;
             while x < target_width as i32 {
                 let should_invert = if adaptive {
-                    let luminance = self.sample_region_luminance(target, x, y, wm_width, wm_height);
-                    luminance > 0.5
+                    let bg_luminance =
+                        self.sample_region_luminance(target, x, y, wm_width, wm_height);
+                    let bg_is_light = bg_luminance > 0.5;
+                    // Invert when watermark and background have same brightness
+                    self.is_light == bg_is_light
                 } else {
                     false
                 };
@@ -378,6 +422,7 @@ mod tests {
             image: RgbaImage::new(100, 50),
             original_width: 100,
             original_height: 50,
+            is_light: true,
         };
 
         let (x, y) =
@@ -408,6 +453,7 @@ mod tests {
             image: RgbaImage::new(10, 10),
             original_width: 10,
             original_height: 10,
+            is_light: true,
         };
 
         let lum = watermark.sample_region_luminance(&image, 10, 10, 50, 50);
@@ -421,10 +467,30 @@ mod tests {
             image: RgbaImage::new(10, 10),
             original_width: 10,
             original_height: 10,
+            is_light: true,
         };
 
         let lum = watermark.sample_region_luminance(&image, 10, 10, 50, 50);
         assert!(lum > 0.99, "White image should have near-one luminance");
+    }
+
+    #[test]
+    fn test_detect_is_light_white_watermark() {
+        let white_image = RgbaImage::from_pixel(10, 10, Rgba([255, 255, 255, 255]));
+        assert!(ImageWatermark::detect_is_light(&white_image));
+    }
+
+    #[test]
+    fn test_detect_is_light_black_watermark() {
+        let black_image = RgbaImage::from_pixel(10, 10, Rgba([0, 0, 0, 255]));
+        assert!(!ImageWatermark::detect_is_light(&black_image));
+    }
+
+    #[test]
+    fn test_detect_is_light_transparent_defaults_to_light() {
+        let transparent_image = RgbaImage::from_pixel(10, 10, Rgba([0, 0, 0, 0]));
+        // No opaque pixels, should default to light
+        assert!(ImageWatermark::detect_is_light(&transparent_image));
     }
 
     #[test]
