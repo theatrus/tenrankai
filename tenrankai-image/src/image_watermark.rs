@@ -38,6 +38,9 @@ pub struct ImageWatermark {
     original_height: u32,
     /// True if the watermark image is predominantly light (should invert on light backgrounds)
     is_light: bool,
+    /// True if the watermark is grayscale (R ≈ G ≈ B for all opaque pixels)
+    /// Only grayscale watermarks should be inverted in adaptive mode
+    is_grayscale: bool,
 }
 
 impl ImageWatermark {
@@ -48,12 +51,15 @@ impl ImageWatermark {
 
         // Auto-detect if watermark is light or dark by sampling pixels with significant alpha
         let is_light = Self::detect_is_light(&rgba);
+        // Detect if watermark is grayscale (only grayscale should be inverted)
+        let is_grayscale = Self::detect_is_grayscale(&rgba);
 
         Ok(Self {
             image: rgba,
             original_width: width,
             original_height: height,
             is_light,
+            is_grayscale,
         })
     }
 
@@ -85,8 +91,40 @@ impl ImageWatermark {
         }
     }
 
+    /// Detect if the watermark image is grayscale (R ≈ G ≈ B for opaque pixels)
+    /// Colored watermarks should not be inverted as it produces wrong colors
+    fn detect_is_grayscale(image: &RgbaImage) -> bool {
+        const TOLERANCE: u8 = 10; // Allow small differences for anti-aliasing
+
+        // Sample every 4th pixel for performance
+        let step = 4;
+        for y in (0..image.height()).step_by(step) {
+            for x in (0..image.width()).step_by(step) {
+                let pixel = image.get_pixel(x, y);
+                // Only consider pixels with significant alpha
+                if pixel[3] > 127 {
+                    let r = pixel[0];
+                    let g = pixel[1];
+                    let b = pixel[2];
+
+                    // Check if R, G, B are approximately equal
+                    let max_diff = r.abs_diff(g).max(g.abs_diff(b)).max(r.abs_diff(b));
+                    if max_diff > TOLERANCE {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
     pub fn is_light(&self) -> bool {
         self.is_light
+    }
+
+    pub fn is_grayscale(&self) -> bool {
+        self.is_grayscale
     }
 
     pub fn width(&self) -> u32 {
@@ -214,7 +252,8 @@ impl ImageWatermark {
     ) {
         let (wm_width, wm_height) = (watermark.width(), watermark.height());
 
-        let should_invert = if adaptive {
+        // Only invert grayscale watermarks - colored watermarks would look wrong inverted
+        let should_invert = if adaptive && self.is_grayscale {
             let bg_luminance = self.sample_region_luminance(target, x, y, wm_width, wm_height);
             let bg_is_light = bg_luminance > 0.5;
             // Invert when watermark and background have same brightness
@@ -245,7 +284,8 @@ impl ImageWatermark {
         while y < target_height as i32 {
             let mut x = spacing as i32;
             while x < target_width as i32 {
-                let should_invert = if adaptive {
+                // Only invert grayscale watermarks - colored watermarks would look wrong inverted
+                let should_invert = if adaptive && self.is_grayscale {
                     let bg_luminance =
                         self.sample_region_luminance(target, x, y, wm_width, wm_height);
                     let bg_is_light = bg_luminance > 0.5;
@@ -423,6 +463,7 @@ mod tests {
             original_width: 100,
             original_height: 50,
             is_light: true,
+            is_grayscale: true,
         };
 
         let (x, y) =
@@ -454,6 +495,7 @@ mod tests {
             original_width: 10,
             original_height: 10,
             is_light: true,
+            is_grayscale: true,
         };
 
         let lum = watermark.sample_region_luminance(&image, 10, 10, 50, 50);
@@ -468,6 +510,7 @@ mod tests {
             original_width: 10,
             original_height: 10,
             is_light: true,
+            is_grayscale: true,
         };
 
         let lum = watermark.sample_region_luminance(&image, 10, 10, 50, 50);
@@ -497,5 +540,42 @@ mod tests {
     fn test_load_watermark_invalid_data() {
         let result = ImageWatermark::load(&[0, 1, 2, 3]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_is_grayscale_white() {
+        let white_image = RgbaImage::from_pixel(10, 10, Rgba([255, 255, 255, 255]));
+        assert!(ImageWatermark::detect_is_grayscale(&white_image));
+    }
+
+    #[test]
+    fn test_detect_is_grayscale_black() {
+        let black_image = RgbaImage::from_pixel(10, 10, Rgba([0, 0, 0, 255]));
+        assert!(ImageWatermark::detect_is_grayscale(&black_image));
+    }
+
+    #[test]
+    fn test_detect_is_grayscale_gray() {
+        let gray_image = RgbaImage::from_pixel(10, 10, Rgba([128, 128, 128, 255]));
+        assert!(ImageWatermark::detect_is_grayscale(&gray_image));
+    }
+
+    #[test]
+    fn test_detect_is_grayscale_red() {
+        let red_image = RgbaImage::from_pixel(10, 10, Rgba([255, 0, 0, 255]));
+        assert!(!ImageWatermark::detect_is_grayscale(&red_image));
+    }
+
+    #[test]
+    fn test_detect_is_grayscale_colored() {
+        let colored_image = RgbaImage::from_pixel(10, 10, Rgba([100, 150, 200, 255]));
+        assert!(!ImageWatermark::detect_is_grayscale(&colored_image));
+    }
+
+    #[test]
+    fn test_detect_is_grayscale_transparent_defaults_to_true() {
+        let transparent_image = RgbaImage::from_pixel(10, 10, Rgba([255, 0, 0, 0]));
+        // No opaque pixels, should default to grayscale (safe for inversion)
+        assert!(ImageWatermark::detect_is_grayscale(&transparent_image));
     }
 }
