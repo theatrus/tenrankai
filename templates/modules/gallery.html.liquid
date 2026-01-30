@@ -75,6 +75,11 @@
         </div>
     </div>
     
+    <!-- Embedded gallery data for React component (always present for +New dropdown) -->
+    <script type="application/json" id="gallery-data">
+{{ gallery_data_json }}
+    </script>
+
     {% if items.size > 0 %}
         <!-- Directory Navigation -->
         {% assign directories = items | where: "is_directory", true %}
@@ -112,11 +117,6 @@
                 </div>
             </div>
         {% endif %}
-        
-        <!-- Embedded gallery data for React component (always present) -->
-        <script type="application/json" id="gallery-data">
-{{ gallery_data_json }}
-        </script>
 
         <!-- Image Gallery (React renders into this container) -->
         {% if images.size > 0 %}
