@@ -1203,7 +1203,11 @@ pub async fn upsert_site_gallery(
             webp_quality: existing.webp_quality,
             new_threshold_days: existing.new_threshold_days,
             tiles: match request.enable_tile_zoom {
-                Some(true) => Some(existing.tiles.unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 })),
+                Some(true) => Some(
+                    existing
+                        .tiles
+                        .unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 }),
+                ),
                 Some(false) => None,
                 None => existing.tiles,
             },
@@ -1233,7 +1237,11 @@ pub async fn upsert_site_gallery(
             webp_quality: proto.webp_quality,
             new_threshold_days: proto.new_threshold_days,
             tiles: match request.enable_tile_zoom {
-                Some(true) => Some(proto.tiles.unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 })),
+                Some(true) => Some(
+                    proto
+                        .tiles
+                        .unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 }),
+                ),
                 Some(false) => None,
                 None => proto.tiles,
             },
