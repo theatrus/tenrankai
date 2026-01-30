@@ -190,14 +190,14 @@ impl Gallery {
         let mut hasher = Sha256::new();
 
         // Include file modification time
-        if let Ok(meta) = self.source_storage.metadata(&config.image).await {
-            if let Some(mtime) = meta.last_modified {
-                let timestamp = mtime
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                hasher.update(timestamp.to_le_bytes());
-            }
+        if let Ok(meta) = self.source_storage.metadata(&config.image).await
+            && let Some(mtime) = meta.last_modified
+        {
+            let timestamp = mtime
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            hasher.update(timestamp.to_le_bytes());
         }
 
         // Include all config settings so cache is invalidated when they change
@@ -206,7 +206,7 @@ impl Gallery {
         hasher.update(config.opacity.to_le_bytes());
         hasher.update(config.scale.to_le_bytes());
         hasher.update(config.padding.to_le_bytes());
-        hasher.update(&[config.adaptive as u8]);
+        hasher.update([config.adaptive as u8]);
 
         let hash = format!("{:x}", hasher.finalize());
         Some(hash[..8].to_string())
