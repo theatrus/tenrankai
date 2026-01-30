@@ -330,6 +330,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
   const [showWatermarkSettings, setShowWatermarkSettings] = useState(false);
   const [enableTextWatermark, setEnableTextWatermark] = useState(false);
   const [enableImageWatermark, setEnableImageWatermark] = useState(false);
+  const [enableTileZoom, setEnableTileZoom] = useState(false);
   const [watermarkImages, setWatermarkImages] = useState<WatermarkImageInfo[]>([]);
   const [watermarkFolderLoading, setWatermarkFolderLoading] = useState(false);
 
@@ -356,6 +357,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
       setShowWatermarkSettings(!!(siteGalleryData.copyright_holder || siteGalleryData.image_watermark));
       setEnableTextWatermark(!!siteGalleryData.copyright_holder);
       setEnableImageWatermark(!!siteGalleryData.image_watermark);
+      setEnableTileZoom(!!siteGalleryData.enable_tile_zoom);
     }
   }, [siteGalleryData, gallerySettings]);
 
@@ -422,6 +424,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
       cache_directory: gallerySettings.cache_directory,
       copyright_holder: enableTextWatermark ? (gallerySettings.copyright_holder || undefined) : undefined,
       image_watermark: enableImageWatermark ? gallerySettings.image_watermark : undefined,
+      enable_tile_zoom: enableTileZoom,
     };
     updateGalleryMutation.mutate(request);
   };
@@ -617,6 +620,24 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                 onChange={(e) => updateGallerySettings({ cache_directory: e.target.value })}
               />
             </div>
+          </div>
+
+          {/* Tile Zoom Toggle */}
+          <div className="form-group" style={{ marginTop: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={enableTileZoom}
+                onChange={(e) => {
+                  setEnableTileZoom(e.target.checked);
+                  setHasSettingsChanges(true);
+                }}
+              />
+              <strong>Enable Tile Zoom</strong>
+            </label>
+            <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
+              Generate tile-based deep zoom for high-resolution image viewing
+            </small>
           </div>
 
           {/* Watermark Settings Toggle */}

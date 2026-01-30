@@ -382,6 +382,8 @@ pub struct SiteGalleryInfo {
     pub copyright_holder: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_watermark: Option<ImageWatermarkConfigDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_tile_zoom: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -399,6 +401,8 @@ pub struct CreateGalleryRequest {
     pub copyright_holder: Option<String>,
     #[serde(default)]
     pub image_watermark: Option<ImageWatermarkConfigDto>,
+    #[serde(default)]
+    pub enable_tile_zoom: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

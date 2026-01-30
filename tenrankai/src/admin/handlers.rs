@@ -1078,6 +1078,7 @@ pub async fn list_site_galleries(
                 cache_directory: config.cache_directory,
                 copyright_holder: config.copyright_holder,
                 image_watermark: config.image_watermark.map(Into::into),
+                enable_tile_zoom: Some(config.tiles.is_some()),
             });
         }
     }
@@ -1114,6 +1115,7 @@ pub async fn get_site_gallery(
         cache_directory: config.cache_directory,
         copyright_holder: config.copyright_holder,
         image_watermark: config.image_watermark.map(Into::into),
+        enable_tile_zoom: Some(config.tiles.is_some()),
     }))
 }
 
@@ -1200,7 +1202,11 @@ pub async fn upsert_site_gallery(
             jpeg_quality: existing.jpeg_quality,
             webp_quality: existing.webp_quality,
             new_threshold_days: existing.new_threshold_days,
-            tiles: existing.tiles,
+            tiles: match request.enable_tile_zoom {
+                Some(true) => Some(existing.tiles.unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 })),
+                Some(false) => None,
+                None => existing.tiles,
+            },
             pregenerate: existing.pregenerate,
             preview: existing.preview,
         }
@@ -1226,7 +1232,11 @@ pub async fn upsert_site_gallery(
             jpeg_quality: proto.jpeg_quality,
             webp_quality: proto.webp_quality,
             new_threshold_days: proto.new_threshold_days,
-            tiles: proto.tiles,
+            tiles: match request.enable_tile_zoom {
+                Some(true) => Some(proto.tiles.unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 })),
+                Some(false) => None,
+                None => proto.tiles,
+            },
             pregenerate: proto.pregenerate,
             preview: proto.preview,
         }
@@ -1263,7 +1273,11 @@ pub async fn upsert_site_gallery(
             new_threshold_days: None,
             copyright_holder: request.copyright_holder.clone(),
             image_watermark: request.image_watermark.clone().map(Into::into),
-            tiles: None,
+            tiles: if request.enable_tile_zoom == Some(true) {
+                Some(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 })
+            } else {
+                None
+            },
             pregenerate: None,
             preview: None,
         }
@@ -1285,6 +1299,7 @@ pub async fn upsert_site_gallery(
         cache_directory: request.cache_directory,
         copyright_holder: request.copyright_holder,
         image_watermark: request.image_watermark,
+        enable_tile_zoom: Some(stored_config.tiles.is_some()),
     }))
 }
 

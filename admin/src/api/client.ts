@@ -107,6 +107,7 @@ export interface SiteGalleryInfo {
   cache_directory: string;
   copyright_holder?: string;
   image_watermark?: ImageWatermarkConfig;
+  enable_tile_zoom?: boolean;
 }
 
 export interface SiteGalleryListResponse {
@@ -120,6 +121,7 @@ export interface CreateGalleryRequest {
   cache_directory: string;
   copyright_holder?: string;
   image_watermark?: ImageWatermarkConfig;
+  enable_tile_zoom?: boolean;
 }
 
 export interface SiteInfo {
