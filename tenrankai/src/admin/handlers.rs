@@ -1275,6 +1275,9 @@ pub async fn upsert_site_gallery(
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
+    // Reload site so gallery changes (especially watermark) take effect immediately
+    reload_site_after_change(&app_state, &site).await;
+
     Ok(Json(SiteGalleryInfo {
         name,
         url_prefix: request.url_prefix,
@@ -4019,9 +4022,9 @@ pub async fn get_theme(
     Ok(Json(ThemeConfigDto::from(theme)))
 }
 
-/// Update theme configuration
-async fn reload_site_theme(app_state: &crate::AppState, site_name: &str) {
-    // Try to reload the site so theme changes take effect immediately
+/// Reload a site after configuration changes (theme, gallery, watermark, etc.)
+async fn reload_site_after_change(app_state: &crate::AppState, site_name: &str) {
+    // Try to reload the site so config changes take effect immediately
     let Some(site_manager) = app_state.site_manager.as_ref() else {
         return;
     };
@@ -4040,7 +4043,7 @@ async fn reload_site_theme(app_state: &crate::AppState, site_name: &str) {
         .reload_site(site_name, &loader, config_storage_url)
         .await
     {
-        tracing::warn!("Failed to reload site after theme change: {}", e);
+        tracing::warn!("Failed to reload site after config change: {}", e);
     }
 }
 
@@ -4079,7 +4082,7 @@ pub async fn update_theme(
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     // Reload site so theme changes take effect immediately
-    reload_site_theme(&app_state, &site_name).await;
+    reload_site_after_change(&app_state, &site_name).await;
 
     Ok(Json(request))
 }
@@ -4119,7 +4122,7 @@ pub async fn reset_theme(
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     // Reload site so theme changes take effect immediately
-    reload_site_theme(&app_state, &site_name).await;
+    reload_site_after_change(&app_state, &site_name).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
