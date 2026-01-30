@@ -241,6 +241,17 @@ export interface FolderImagesResponse {
   images: FolderImageInfo[];
 }
 
+export interface WatermarkImageInfo {
+  filename: string;
+  path: string;
+}
+
+export interface EnsureWatermarkFolderResponse {
+  folder_path: string;
+  created: boolean;
+  images: WatermarkImageInfo[];
+}
+
 export interface ThemeColorSet {
   bg_primary?: string;
   bg_secondary?: string;
@@ -392,6 +403,10 @@ export const api = {
 
   deleteFolder: (gallery: string, folderPath: string) =>
     request<{ success: boolean; message: string }>('DELETE', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}`),
+
+  // Watermark Folder
+  ensureWatermarkFolder: (gallery: string) =>
+    request<EnsureWatermarkFolderResponse>('POST', `/galleries/${gallery}/watermark-folder`),
 
   // Theme Management
   getTheme: () => request<ThemeConfig>('GET', '/theme'),

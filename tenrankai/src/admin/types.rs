@@ -695,3 +695,16 @@ pub struct DeleteFolderResponse {
     pub success: bool,
     pub message: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct EnsureWatermarkFolderResponse {
+    pub folder_path: String,
+    pub created: bool,
+    pub images: Vec<WatermarkImageInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WatermarkImageInfo {
+    pub filename: String,
+    pub path: String,
+}

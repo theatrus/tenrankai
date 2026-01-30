@@ -248,7 +248,7 @@ impl Gallery {
         let (dimensions, is_medium) = self.parse_size(size)?;
 
         // Determine if watermark will be applied
-        let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+        let apply_watermark = self.should_apply_watermark(relative_path, is_medium);
 
         // Generate consistent cache keys that include watermark status
         let cache_filename = self.generate_cache_filename(

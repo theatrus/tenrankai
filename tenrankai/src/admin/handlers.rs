@@ -3062,6 +3062,87 @@ pub async fn delete_gallery_folder_resolved(
     .await
 }
 
+/// Watermark folder name constant
+const WATERMARK_FOLDER: &str = "_watermark";
+
+/// Ensure the watermark folder exists for a gallery
+/// Creates the folder with hidden=true if it doesn't exist
+/// Returns the list of images in the folder
+pub async fn ensure_watermark_folder(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(gallery): Path<String>,
+) -> Result<Json<EnsureWatermarkFolderResponse>, AdminError> {
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    let folder_md_path = format!("{}/_folder.md", WATERMARK_FOLDER);
+    let mut created = false;
+
+    // Check if folder exists
+    if !gallery_obj
+        .source_storage()
+        .exists(&folder_md_path)
+        .await
+        .unwrap_or(false)
+    {
+        // Create the folder with hidden=true
+        let content = "+++\nhidden = true\n+++\n\nWatermark images for this gallery.\n";
+        gallery_obj
+            .source_storage()
+            .write(&folder_md_path, bytes::Bytes::from(content))
+            .await
+            .map_err(|e| {
+                AdminError::Internal(format!("Failed to create watermark folder: {}", e))
+            })?;
+
+        // Refresh folder cache
+        gallery_obj
+            .refresh_folder_cache()
+            .await
+            .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+        created = true;
+    }
+
+    // List images in the watermark folder
+    let entries = gallery_obj
+        .source_storage()
+        .list(WATERMARK_FOLDER)
+        .await
+        .unwrap_or_default();
+
+    let images: Vec<WatermarkImageInfo> = entries
+        .into_iter()
+        .filter(|entry| {
+            if entry.is_dir {
+                return false;
+            }
+            let name = entry.path.to_lowercase();
+            // Include PNG, JPEG, and other common image formats
+            name.ends_with(".png")
+                || name.ends_with(".jpg")
+                || name.ends_with(".jpeg")
+                || name.ends_with(".gif")
+                || name.ends_with(".webp")
+        })
+        .map(|entry| WatermarkImageInfo {
+            filename: entry.path.clone(),
+            path: format!("{}/{}", WATERMARK_FOLDER, entry.path),
+        })
+        .collect();
+
+    Ok(Json(EnsureWatermarkFolderResponse {
+        folder_path: WATERMARK_FOLDER.to_string(),
+        created,
+        images,
+    }))
+}
+
 /// Rename a folder in a gallery
 pub async fn rename_gallery_folder(
     ResolvedState(app_state): ResolvedState,

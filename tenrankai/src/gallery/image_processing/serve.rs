@@ -188,7 +188,7 @@ impl Gallery {
                             return ApiResponse::InvalidSizeParameter.into_response();
                         }
                     };
-                    let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+                    let apply_watermark = self.should_apply_watermark(relative_path, is_medium);
 
                     let cache_filename = self.generate_cache_filename(
                         relative_path,

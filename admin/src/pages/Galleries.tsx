@@ -11,6 +11,7 @@ import {
   FolderInfo,
   ImageWatermarkConfig,
   WatermarkPosition,
+  WatermarkImageInfo,
 } from '@api/client';
 
 const DEFAULT_SITE = 'default';
@@ -328,6 +329,8 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
   const [hasSettingsChanges, setHasSettingsChanges] = useState(false);
   const [showWatermarkSettings, setShowWatermarkSettings] = useState(false);
   const [enableImageWatermark, setEnableImageWatermark] = useState(false);
+  const [watermarkImages, setWatermarkImages] = useState<WatermarkImageInfo[]>([]);
+  const [watermarkFolderLoading, setWatermarkFolderLoading] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['gallery', name],
@@ -417,6 +420,18 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
     };
     updateGalleryMutation.mutate(request);
   };
+
+  const loadWatermarkFolder = useCallback(async () => {
+    setWatermarkFolderLoading(true);
+    try {
+      const result = await api.ensureWatermarkFolder(name);
+      setWatermarkImages(result.images);
+    } catch (err) {
+      console.error('Failed to load watermark folder:', err);
+    } finally {
+      setWatermarkFolderLoading(false);
+    }
+  }, [name]);
 
   // Auto-open folder modal if initialFolderPath is provided via URL
   useEffect(() => {
@@ -631,8 +646,12 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                     onChange={(e) => {
                       setEnableImageWatermark(e.target.checked);
                       setHasSettingsChanges(true);
-                      if (e.target.checked && !gallerySettings.image_watermark) {
-                        updateWatermark({ image: '' });
+                      if (e.target.checked) {
+                        if (!gallerySettings.image_watermark) {
+                          updateWatermark({ image: '' });
+                        }
+                        // Auto-load watermark folder when enabling
+                        loadWatermarkFolder();
                       }
                     }}
                   />
@@ -646,16 +665,47 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
               {enableImageWatermark && (
                 <div style={{ marginTop: '1rem', paddingLeft: '1rem', borderLeft: '2px solid var(--color-border)' }}>
                   <div className="form-group">
-                    <label className="form-label">Watermark Image Path</label>
-                    <input
-                      type="text"
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Watermark Image</label>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={loadWatermarkFolder}
+                          disabled={watermarkFolderLoading}
+                          title="Refresh list of available watermark images"
+                        >
+                          {watermarkFolderLoading ? 'Loading...' : '↻'}
+                        </button>
+                        {data && (
+                          <a
+                            href={`${data.url_prefix}/_watermark`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-secondary btn-sm"
+                            title="Open gallery folder to upload images"
+                          >
+                            Upload
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <select
                       className="form-input"
                       value={gallerySettings.image_watermark?.image || ''}
                       onChange={(e) => updateWatermark({ image: e.target.value })}
-                      placeholder="_watermark/logo.png"
-                    />
+                    >
+                      <option value="">{watermarkFolderLoading ? 'Loading...' : watermarkImages.length === 0 ? 'No images yet' : 'Select an image...'}</option>
+                      {watermarkImages.map((img) => (
+                        <option key={img.path} value={img.path}>
+                          {img.filename}
+                        </option>
+                      ))}
+                    </select>
                     <small style={{ color: 'var(--color-text-muted)' }}>
-                      Path relative to source directory. Use a PNG with transparency.
+                      {watermarkImages.length > 0
+                        ? 'Select a watermark image. Click "Upload" to add more.'
+                        : 'Click "Upload" to add watermark images to the _watermark folder.'}
                     </small>
                   </div>
 

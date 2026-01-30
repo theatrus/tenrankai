@@ -211,6 +211,29 @@ impl Gallery {
         self.image_watermark_hash.as_deref()
     }
 
+    /// Determine if watermark should be applied to an image at the given path
+    /// Returns false for images in the _watermark folder to avoid recursive watermarking
+    pub fn should_apply_watermark(&self, relative_path: &str, is_medium_size: bool) -> bool {
+        // Don't apply watermarks to non-medium sizes
+        if !is_medium_size {
+            return false;
+        }
+
+        // Check if watermarking is configured at all
+        let has_watermark =
+            self.config.copyright_holder.is_some() || self.image_watermark.is_some();
+        if !has_watermark {
+            return false;
+        }
+
+        // Don't apply watermarks to images in the watermark folder
+        if relative_path.starts_with("_watermark/") || relative_path == "_watermark" {
+            return false;
+        }
+
+        true
+    }
+
     pub(crate) fn is_image(&self, file_name: &str) -> bool {
         grouping::get_extension(file_name).is_some_and(grouping::is_image_extension)
     }
