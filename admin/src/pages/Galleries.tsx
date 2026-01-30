@@ -402,6 +402,9 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
         scale: gallerySettings.image_watermark?.scale ?? 15,
         padding: gallerySettings.image_watermark?.padding ?? 10,
         adaptive: gallerySettings.image_watermark?.adaptive ?? true,
+        apply_to_gallery: gallerySettings.image_watermark?.apply_to_gallery ?? false,
+        apply_to_medium: gallerySettings.image_watermark?.apply_to_medium ?? true,
+        apply_to_large: gallerySettings.image_watermark?.apply_to_large ?? false,
         ...updates,
       },
     });
@@ -785,6 +788,39 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                     </label>
                     <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
                       Automatically inverts grayscale watermarks when placed on light areas
+                    </small>
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: '1rem' }}>
+                    <label className="form-label">Apply Watermark To</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={gallerySettings.image_watermark?.apply_to_gallery ?? false}
+                          onChange={(e) => updateWatermark({ apply_to_gallery: e.target.checked })}
+                        />
+                        <span>Gallery size (grid view)</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={gallerySettings.image_watermark?.apply_to_medium ?? true}
+                          onChange={(e) => updateWatermark({ apply_to_medium: e.target.checked })}
+                        />
+                        <span>Medium size (detail view)</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={gallerySettings.image_watermark?.apply_to_large ?? false}
+                          onChange={(e) => updateWatermark({ apply_to_large: e.target.checked })}
+                        />
+                        <span>Large size (download)</span>
+                      </label>
+                    </div>
+                    <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                      Select which image sizes should have watermarks applied
                     </small>
                   </div>
                 </div>

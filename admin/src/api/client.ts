@@ -95,6 +95,9 @@ export interface ImageWatermarkConfig {
   scale: number;
   padding: number;
   adaptive: boolean;
+  apply_to_gallery: boolean;
+  apply_to_medium: boolean;
+  apply_to_large: boolean;
 }
 
 export interface SiteGalleryInfo {

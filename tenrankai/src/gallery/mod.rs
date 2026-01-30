@@ -152,7 +152,7 @@ impl Gallery {
         match self.source_storage.read(&wm_config.image).await {
             Ok(bytes) => match tenrankai_image::ImageWatermark::load(&bytes) {
                 Ok(wm) => {
-                    let hash = self.compute_watermark_hash(&wm_config.image).await;
+                    let hash = self.compute_watermark_hash(wm_config).await;
                     info!(
                         "Loaded image watermark '{}' ({}x{}, hash: {})",
                         wm_config.image,
@@ -181,26 +181,35 @@ impl Gallery {
         Ok(())
     }
 
-    async fn compute_watermark_hash(&self, path: &str) -> Option<String> {
+    async fn compute_watermark_hash(
+        &self,
+        config: &crate::config::ImageWatermarkConfig,
+    ) -> Option<String> {
         use sha2::{Digest, Sha256};
 
-        match self.source_storage.metadata(path).await {
-            Ok(meta) => {
-                if let Some(mtime) = meta.last_modified {
-                    let mut hasher = Sha256::new();
-                    let timestamp = mtime
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    hasher.update(timestamp.to_le_bytes());
-                    let hash = format!("{:x}", hasher.finalize());
-                    Some(hash[..8].to_string())
-                } else {
-                    None
-                }
+        let mut hasher = Sha256::new();
+
+        // Include file modification time
+        if let Ok(meta) = self.source_storage.metadata(&config.image).await {
+            if let Some(mtime) = meta.last_modified {
+                let timestamp = mtime
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                hasher.update(timestamp.to_le_bytes());
             }
-            Err(_) => None,
         }
+
+        // Include all config settings so cache is invalidated when they change
+        hasher.update(config.image.as_bytes());
+        hasher.update(format!("{:?}", config.position).as_bytes());
+        hasher.update(config.opacity.to_le_bytes());
+        hasher.update(config.scale.to_le_bytes());
+        hasher.update(config.padding.to_le_bytes());
+        hasher.update(&[config.adaptive as u8]);
+
+        let hash = format!("{:x}", hasher.finalize());
+        Some(hash[..8].to_string())
     }
 
     pub fn get_image_watermark(&self) -> Option<&Arc<tenrankai_image::ImageWatermark>> {
@@ -211,14 +220,9 @@ impl Gallery {
         self.image_watermark_hash.as_deref()
     }
 
-    /// Determine if watermark should be applied to an image at the given path
+    /// Determine if watermark should be applied to an image at the given path and size
     /// Returns false for images in the _watermark folder to avoid recursive watermarking
-    pub fn should_apply_watermark(&self, relative_path: &str, is_medium_size: bool) -> bool {
-        // Don't apply watermarks to non-medium sizes
-        if !is_medium_size {
-            return false;
-        }
-
+    pub fn should_apply_watermark(&self, relative_path: &str, size: &str) -> bool {
         // Check if watermarking is configured at all
         let has_watermark =
             self.config.copyright_holder.is_some() || self.image_watermark.is_some();
@@ -231,7 +235,23 @@ impl Gallery {
             return false;
         }
 
-        true
+        // Check if this size should be watermarked based on config
+        // For image watermarks, check the apply_to_* settings
+        // For text-only watermarks (copyright_holder), default to medium only for backward compat
+        let size_lower = size.to_lowercase();
+        let base_size = size_lower.trim_end_matches("@2x");
+
+        if let Some(ref wm_config) = self.config.image_watermark {
+            match base_size {
+                "gallery" => wm_config.apply_to_gallery,
+                "medium" => wm_config.apply_to_medium,
+                "large" => wm_config.apply_to_large,
+                _ => false, // thumbnails and tiles never get watermarked
+            }
+        } else {
+            // Text-only watermark (copyright_holder): medium only for backward compat
+            base_size == "medium"
+        }
     }
 
     pub(crate) fn is_image(&self, file_name: &str) -> bool {

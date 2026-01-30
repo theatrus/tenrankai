@@ -301,6 +301,12 @@ pub struct StoredImageWatermarkConfig {
     pub padding: u32,
     #[serde(default = "default_true")]
     pub adaptive: bool,
+    #[serde(default)]
+    pub apply_to_gallery: bool,
+    #[serde(default = "default_true")]
+    pub apply_to_medium: bool,
+    #[serde(default)]
+    pub apply_to_large: bool,
 }
 
 fn default_watermark_opacity() -> f32 {

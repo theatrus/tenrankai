@@ -211,6 +211,15 @@ pub struct ImageWatermarkConfig {
     /// Auto-invert grayscale watermarks based on background luminance
     #[serde(default = "super::defaults::default_true")]
     pub adaptive: bool,
+    /// Apply watermark to gallery-size images
+    #[serde(default)]
+    pub apply_to_gallery: bool,
+    /// Apply watermark to medium-size images (default: true)
+    #[serde(default = "super::defaults::default_true")]
+    pub apply_to_medium: bool,
+    /// Apply watermark to large-size images
+    #[serde(default)]
+    pub apply_to_large: bool,
 }
 
 /// Image size configuration for gallery processing

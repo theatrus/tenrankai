@@ -245,10 +245,10 @@ impl Gallery {
         size: &str,
         output_format: OutputFormat,
     ) -> Result<PathBuf, GalleryError> {
-        let (dimensions, is_medium) = self.parse_size(size)?;
+        let (dimensions, _) = self.parse_size(size)?;
 
         // Determine if watermark will be applied
-        let apply_watermark = self.should_apply_watermark(relative_path, is_medium);
+        let apply_watermark = self.should_apply_watermark(relative_path, size);
 
         // Generate consistent cache keys that include watermark status
         let cache_filename = self.generate_cache_filename(

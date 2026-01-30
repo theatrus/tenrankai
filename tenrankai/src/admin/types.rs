@@ -319,6 +319,12 @@ pub struct ImageWatermarkConfigDto {
     pub padding: u32,
     #[serde(default = "default_true")]
     pub adaptive: bool,
+    #[serde(default)]
+    pub apply_to_gallery: bool,
+    #[serde(default = "default_true")]
+    pub apply_to_medium: bool,
+    #[serde(default)]
+    pub apply_to_large: bool,
 }
 
 fn default_watermark_opacity() -> f32 {
@@ -343,6 +349,9 @@ impl From<tenrankai_config_storage::StoredImageWatermarkConfig> for ImageWaterma
             scale: config.scale,
             padding: config.padding,
             adaptive: config.adaptive,
+            apply_to_gallery: config.apply_to_gallery,
+            apply_to_medium: config.apply_to_medium,
+            apply_to_large: config.apply_to_large,
         }
     }
 }
@@ -356,6 +365,9 @@ impl From<ImageWatermarkConfigDto> for tenrankai_config_storage::StoredImageWate
             scale: dto.scale,
             padding: dto.padding,
             adaptive: dto.adaptive,
+            apply_to_gallery: dto.apply_to_gallery,
+            apply_to_medium: dto.apply_to_medium,
+            apply_to_large: dto.apply_to_large,
         }
     }
 }

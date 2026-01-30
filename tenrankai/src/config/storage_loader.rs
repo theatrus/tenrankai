@@ -258,6 +258,9 @@ impl ConfigStorageLoader {
             scale: wm.scale,
             padding: wm.padding,
             adaptive: wm.adaptive,
+            apply_to_gallery: wm.apply_to_gallery,
+            apply_to_medium: wm.apply_to_medium,
+            apply_to_large: wm.apply_to_large,
         });
 
         Ok(GallerySystemConfig {
