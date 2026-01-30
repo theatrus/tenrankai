@@ -328,6 +328,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
   const [gallerySettings, setGallerySettings] = useState<SiteGalleryInfo | null>(null);
   const [hasSettingsChanges, setHasSettingsChanges] = useState(false);
   const [showWatermarkSettings, setShowWatermarkSettings] = useState(false);
+  const [enableTextWatermark, setEnableTextWatermark] = useState(false);
   const [enableImageWatermark, setEnableImageWatermark] = useState(false);
   const [watermarkImages, setWatermarkImages] = useState<WatermarkImageInfo[]>([]);
   const [watermarkFolderLoading, setWatermarkFolderLoading] = useState(false);
@@ -353,6 +354,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
     if (siteGalleryData && !gallerySettings) {
       setGallerySettings(siteGalleryData);
       setShowWatermarkSettings(!!(siteGalleryData.copyright_holder || siteGalleryData.image_watermark));
+      setEnableTextWatermark(!!siteGalleryData.copyright_holder);
       setEnableImageWatermark(!!siteGalleryData.image_watermark);
     }
   }, [siteGalleryData, gallerySettings]);
@@ -418,7 +420,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
       url_prefix: gallerySettings.url_prefix,
       source_directory: gallerySettings.source_directory,
       cache_directory: gallerySettings.cache_directory,
-      copyright_holder: gallerySettings.copyright_holder || undefined,
+      copyright_holder: enableTextWatermark ? (gallerySettings.copyright_holder || undefined) : undefined,
       image_watermark: enableImageWatermark ? gallerySettings.image_watermark : undefined,
     };
     updateGalleryMutation.mutate(request);
@@ -632,20 +634,38 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
 
           {showWatermarkSettings && (
             <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--color-bg-secondary)', borderRadius: '4px' }}>
-              {/* Text Watermark */}
+              {/* Text Watermark Toggle */}
               <div className="form-group">
-                <label className="form-label">Copyright Holder (Text Watermark)</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={gallerySettings.copyright_holder || ''}
-                  onChange={(e) => updateGallerySettings({ copyright_holder: e.target.value || undefined })}
-                  placeholder="e.g., John Doe Photography"
-                />
-                <small style={{ color: 'var(--color-text-muted)' }}>
-                  Adds a text watermark with this name to medium-sized images
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={enableTextWatermark}
+                    onChange={(e) => {
+                      setEnableTextWatermark(e.target.checked);
+                      setHasSettingsChanges(true);
+                    }}
+                  />
+                  <strong>Enable Text Watermark</strong>
+                </label>
+                <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                  Adds a copyright text watermark to medium-sized images
                 </small>
               </div>
+
+              {enableTextWatermark && (
+                <div style={{ marginTop: '0.5rem', paddingLeft: '1rem', borderLeft: '2px solid var(--color-border)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Copyright Holder</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={gallerySettings.copyright_holder || ''}
+                      onChange={(e) => updateGallerySettings({ copyright_holder: e.target.value || undefined })}
+                      placeholder="e.g., John Doe Photography"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Image Watermark Toggle */}
               <div className="form-group" style={{ marginTop: '1rem' }}>
@@ -668,7 +688,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                   <strong>Enable Image Watermark</strong>
                 </label>
                 <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
-                  Overlay a PNG image as a watermark on medium-sized images
+                  Overlay a PNG image as a watermark
                 </small>
               </div>
 
