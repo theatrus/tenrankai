@@ -1,0 +1,41 @@
+# Prototype gallery configuration - used as template for new galleries
+# This file is not visible as a gallery and cannot be edited via the admin UI
+
+name = "_prototype"
+url_prefix = "/_prototype"
+source_directory = ""
+cache_directory = ""
+gallery_template = "modules/gallery.html.liquid"
+image_detail_template = "modules/image_detail.html.liquid"
+image_indexing = "filename"
+metadata_cache_size = 1000
+
+[thumbnail]
+width = 300
+height = 300
+
+[gallery_size]
+width = 800
+height = 800
+
+[medium]
+width = 1200
+height = 1200
+
+[large]
+width = 1600
+height = 1600
+
+[pregenerate]
+tiles = true
+
+[pregenerate.formats]
+jpeg = true
+webp = false
+avif = true
+
+[pregenerate.sizes]
+thumbnail = true
+gallery = true
+medium = true
+large = false

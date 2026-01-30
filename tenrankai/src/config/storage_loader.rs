@@ -109,6 +109,10 @@ impl ConfigStorageLoader {
         let mut galleries = Vec::new();
 
         for gallery_name in gallery_names {
+            // Skip hidden/prototype galleries (those starting with underscore)
+            if gallery_name.starts_with('_') {
+                continue;
+            }
             if let Some(stored) = self
                 .storage
                 .get_gallery_full_config(site, &gallery_name)

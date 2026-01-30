@@ -1066,6 +1066,10 @@ pub async fn list_site_galleries(
 
     let mut galleries = Vec::new();
     for name in gallery_names {
+        // Skip hidden/prototype galleries (those starting with underscore)
+        if name.starts_with('_') {
+            continue;
+        }
         if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
             galleries.push(SiteGalleryInfo {
                 name,
@@ -1087,6 +1091,11 @@ pub async fn get_site_gallery(
     _admin: RequireAdmin,
     Path((site, name)): Path<(String, String)>,
 ) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    // Prevent access to hidden/prototype galleries
+    if name.starts_with('_') {
+        return Err(AdminError::NotFound(format!("Gallery not found: {}", name)));
+    }
+
     let config_storage = app_state
         .config_storage()
         .as_ref()
@@ -1137,6 +1146,13 @@ pub async fn upsert_site_gallery(
         ));
     }
 
+    // Prevent creating/editing hidden/prototype galleries
+    if name.starts_with('_') {
+        return Err(AdminError::BadRequest(
+            "Gallery names starting with underscore are reserved".into(),
+        ));
+    }
+
     // Validate URL prefix starts with /
     if !request.url_prefix.starts_with('/') {
         return Err(AdminError::BadRequest(
@@ -1144,41 +1160,113 @@ pub async fn upsert_site_gallery(
         ));
     }
 
-    // Create the stored config with sensible defaults
-    let stored_config = tenrankai_config_storage::StoredGalleryConfig {
-        name: name.clone(),
-        url_prefix: request.url_prefix.clone(),
-        source_directory: request.source_directory.clone(),
-        cache_directory: request.cache_directory.clone(),
-        gallery_template: "modules/gallery.html.liquid".to_string(),
-        image_detail_template: "modules/image_detail.html.liquid".to_string(),
-        thumbnail: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 300,
-            height: 300,
-        },
-        gallery_size: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 800,
-            height: 800,
-        },
-        medium: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 1200,
-            height: 1200,
-        },
-        large: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 1600,
-            height: 1600,
-        },
-        image_indexing: "filename".to_string(),
-        metadata_cache_size: 1000,
-        cache_refresh_interval_minutes: None,
-        jpeg_quality: None,
-        webp_quality: None,
-        new_threshold_days: None,
-        copyright_holder: request.copyright_holder.clone(),
-        image_watermark: request.image_watermark.clone().map(Into::into),
-        tiles: None,
-        pregenerate: None,
-        preview: None,
+    // Try to load existing config to preserve settings not exposed via API
+    let existing_config = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Try to load prototype config for new gallery defaults
+    let prototype_config = if existing_config.is_none() {
+        config_storage
+            .get_gallery_full_config(&site, "_prototype")
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
+    // Create the stored config, preserving existing settings where appropriate
+    let stored_config = if let Some(existing) = existing_config {
+        // Update only the fields exposed via the API, preserve everything else
+        tenrankai_config_storage::StoredGalleryConfig {
+            name: name.clone(),
+            url_prefix: request.url_prefix.clone(),
+            source_directory: request.source_directory.clone(),
+            cache_directory: request.cache_directory.clone(),
+            copyright_holder: request.copyright_holder.clone(),
+            image_watermark: request.image_watermark.clone().map(Into::into),
+            // Preserve all other settings from existing config
+            gallery_template: existing.gallery_template,
+            image_detail_template: existing.image_detail_template,
+            thumbnail: existing.thumbnail,
+            gallery_size: existing.gallery_size,
+            medium: existing.medium,
+            large: existing.large,
+            image_indexing: existing.image_indexing,
+            metadata_cache_size: existing.metadata_cache_size,
+            cache_refresh_interval_minutes: existing.cache_refresh_interval_minutes,
+            jpeg_quality: existing.jpeg_quality,
+            webp_quality: existing.webp_quality,
+            new_threshold_days: existing.new_threshold_days,
+            tiles: existing.tiles,
+            pregenerate: existing.pregenerate,
+            preview: existing.preview,
+        }
+    } else if let Some(proto) = prototype_config {
+        // New gallery - use prototype config as template
+        tenrankai_config_storage::StoredGalleryConfig {
+            name: name.clone(),
+            url_prefix: request.url_prefix.clone(),
+            source_directory: request.source_directory.clone(),
+            cache_directory: request.cache_directory.clone(),
+            copyright_holder: request.copyright_holder.clone(),
+            image_watermark: request.image_watermark.clone().map(Into::into),
+            // Use prototype settings as defaults
+            gallery_template: proto.gallery_template,
+            image_detail_template: proto.image_detail_template,
+            thumbnail: proto.thumbnail,
+            gallery_size: proto.gallery_size,
+            medium: proto.medium,
+            large: proto.large,
+            image_indexing: proto.image_indexing,
+            metadata_cache_size: proto.metadata_cache_size,
+            cache_refresh_interval_minutes: proto.cache_refresh_interval_minutes,
+            jpeg_quality: proto.jpeg_quality,
+            webp_quality: proto.webp_quality,
+            new_threshold_days: proto.new_threshold_days,
+            tiles: proto.tiles,
+            pregenerate: proto.pregenerate,
+            preview: proto.preview,
+        }
+    } else {
+        // New gallery - use hardcoded defaults (no prototype available)
+        tenrankai_config_storage::StoredGalleryConfig {
+            name: name.clone(),
+            url_prefix: request.url_prefix.clone(),
+            source_directory: request.source_directory.clone(),
+            cache_directory: request.cache_directory.clone(),
+            gallery_template: "modules/gallery.html.liquid".to_string(),
+            image_detail_template: "modules/image_detail.html.liquid".to_string(),
+            thumbnail: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            image_indexing: "filename".to_string(),
+            metadata_cache_size: 1000,
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: None,
+            webp_quality: None,
+            new_threshold_days: None,
+            copyright_holder: request.copyright_holder.clone(),
+            image_watermark: request.image_watermark.clone().map(Into::into),
+            tiles: None,
+            pregenerate: None,
+            preview: None,
+        }
     };
 
     // Save the gallery config

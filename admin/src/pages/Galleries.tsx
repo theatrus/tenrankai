@@ -436,6 +436,13 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
     }
   }, [name]);
 
+  // Load watermark images when image watermark is enabled and settings are shown
+  useEffect(() => {
+    if (enableImageWatermark && showWatermarkSettings && watermarkImages.length === 0 && !watermarkFolderLoading) {
+      loadWatermarkFolder();
+    }
+  }, [enableImageWatermark, showWatermarkSettings, watermarkImages.length, watermarkFolderLoading, loadWatermarkFolder]);
+
   // Auto-open folder modal if initialFolderPath is provided via URL
   useEffect(() => {
     if (initialFolderPath && foldersData && !initialFolderOpened) {
