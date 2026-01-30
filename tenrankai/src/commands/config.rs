@@ -293,6 +293,7 @@ pub async fn handle_add_gallery_command(
         cache_refresh_interval_minutes: None,
         new_threshold_days: None,
         copyright_holder: None,
+        image_watermark: None,
         image_indexing: "filename".to_string(),
         metadata_cache_size: 1000,
         tiles: None,

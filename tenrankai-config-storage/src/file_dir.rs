@@ -520,6 +520,7 @@ mod tests {
             webp_quality: None,
             new_threshold_days: None,
             copyright_holder: None,
+            image_watermark: None,
             image_indexing: "filename".to_string(),
             metadata_cache_size: 100,
             tiles: None,

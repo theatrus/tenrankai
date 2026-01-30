@@ -74,6 +74,10 @@ pub struct Gallery {
     pub(crate) image_processing_semaphore: Arc<Semaphore>,
     /// Counter for active blocking tasks (for graceful shutdown)
     pub(crate) active_blocking_tasks: Arc<AtomicUsize>,
+    /// Loaded image watermark (if configured)
+    pub(crate) image_watermark: Option<Arc<tenrankai_image::ImageWatermark>>,
+    /// Hash of watermark file modification time (for cache invalidation)
+    pub(crate) image_watermark_hash: Option<String>,
 }
 
 impl Gallery {
@@ -134,7 +138,77 @@ impl Gallery {
             // Use number of CPUs as the limit for a reasonable balance
             image_processing_semaphore: Arc::new(Semaphore::new(num_cpus::get())),
             active_blocking_tasks: Arc::new(AtomicUsize::new(0)),
+            image_watermark: None,
+            image_watermark_hash: None,
         }
+    }
+
+    pub async fn load_image_watermark(&mut self) -> Result<(), GalleryError> {
+        let wm_config = match &self.config.image_watermark {
+            Some(cfg) => cfg,
+            None => return Ok(()),
+        };
+
+        match self.source_storage.read(&wm_config.image).await {
+            Ok(bytes) => match tenrankai_image::ImageWatermark::load(&bytes) {
+                Ok(wm) => {
+                    let hash = self.compute_watermark_hash(&wm_config.image).await;
+                    info!(
+                        "Loaded image watermark '{}' ({}x{}, hash: {})",
+                        wm_config.image,
+                        wm.width(),
+                        wm.height(),
+                        hash.as_deref().unwrap_or("none")
+                    );
+                    self.image_watermark = Some(Arc::new(wm));
+                    self.image_watermark_hash = hash;
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to parse watermark image '{}': {}",
+                        wm_config.image, e
+                    );
+                }
+            },
+            Err(e) => {
+                error!(
+                    "Failed to load watermark image '{}': {}",
+                    wm_config.image, e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn compute_watermark_hash(&self, path: &str) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        match self.source_storage.metadata(path).await {
+            Ok(meta) => {
+                if let Some(mtime) = meta.last_modified {
+                    let mut hasher = Sha256::new();
+                    let timestamp = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    hasher.update(timestamp.to_le_bytes());
+                    let hash = format!("{:x}", hasher.finalize());
+                    Some(hash[..8].to_string())
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
+    pub fn get_image_watermark(&self) -> Option<&Arc<tenrankai_image::ImageWatermark>> {
+        self.image_watermark.as_ref()
+    }
+
+    pub fn get_image_watermark_hash(&self) -> Option<&str> {
+        self.image_watermark_hash.as_deref()
     }
 
     pub(crate) fn is_image(&self, file_name: &str) -> bool {

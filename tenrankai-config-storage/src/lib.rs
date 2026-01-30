@@ -16,6 +16,7 @@ pub use types::{
     // Site configuration types
     StoredGalleryConfig,
     StoredImageSizeConfig,
+    StoredImageWatermarkConfig,
     StoredPostsConfig,
     StoredPregenerateConfig,
     StoredPregenerateFormats,
@@ -25,6 +26,7 @@ pub use types::{
     StoredSiteEmailConfig,
     StoredThemeConfig,
     StoredTileConfig,
+    StoredWatermarkPosition,
     ThemeColorSet,
     UserRole,
 };

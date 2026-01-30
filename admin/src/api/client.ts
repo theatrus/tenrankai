@@ -86,11 +86,24 @@ export interface GalleryListResponse {
   galleries: GalleryInfo[];
 }
 
+export type WatermarkPosition = 'bottom_left' | 'bottom_right' | 'top_left' | 'top_right' | 'center' | 'tiled';
+
+export interface ImageWatermarkConfig {
+  image: string;
+  position: WatermarkPosition;
+  opacity: number;
+  scale: number;
+  padding: number;
+  adaptive: boolean;
+}
+
 export interface SiteGalleryInfo {
   name: string;
   url_prefix: string;
   source_directory: string;
   cache_directory: string;
+  copyright_holder?: string;
+  image_watermark?: ImageWatermarkConfig;
 }
 
 export interface SiteGalleryListResponse {
@@ -102,6 +115,8 @@ export interface CreateGalleryRequest {
   url_prefix: string;
   source_directory: string;
   cache_directory: string;
+  copyright_holder?: string;
+  image_watermark?: ImageWatermarkConfig;
 }
 
 export interface SiteInfo {

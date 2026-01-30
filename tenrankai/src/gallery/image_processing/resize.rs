@@ -48,6 +48,8 @@ impl Gallery {
             let static_dir = std::path::PathBuf::from("static");
             let jpeg_quality = self.config.jpeg_quality.unwrap_or(85);
             let webp_quality = self.config.webp_quality.unwrap_or(85.0);
+            let image_watermark = self.image_watermark.clone();
+            let image_watermark_config = self.config.image_watermark.clone();
 
             // Pre-generate cache filenames (not full paths)
             let mut variant_configs = Vec::new();
@@ -143,10 +145,18 @@ impl Gallery {
                         // Resize to target dimensions
                         variant_image.resize(dimensions.width, dimensions.height)?;
 
-                        // Apply watermark if needed
+                        // Apply text watermark if needed
                         if apply_watermark && let Some(ref holder) = copyright_holder {
                             let font_path = static_dir.join("DejaVuSans.ttf");
                             variant_image.apply_watermark(holder, &font_path)?;
+                        }
+
+                        // Apply image watermark if configured (after text watermark)
+                        if apply_watermark
+                            && let Some(ref wm) = image_watermark
+                            && let Some(ref wm_config) = image_watermark_config
+                        {
+                            variant_image.apply_image_watermark(wm, wm_config)?;
                         }
 
                         // Encode the variant (returns bytes)
@@ -291,6 +301,8 @@ impl Gallery {
             let cache_storage = self.cache_storage.clone();
             let source_storage = self.source_storage.clone();
             let runtime_handle = Handle::current();
+            let image_watermark = self.image_watermark.clone();
+            let image_watermark_config = self.config.image_watermark.clone();
 
             // Track this blocking task for graceful shutdown
             let _task_guard = self.track_blocking_task();
@@ -309,6 +321,8 @@ impl Gallery {
                     jpeg_quality,
                     webp_quality,
                     &runtime_handle,
+                    image_watermark.as_deref(),
+                    image_watermark_config.as_ref(),
                 )?;
 
                 // Write to cache storage synchronously
@@ -499,6 +513,8 @@ fn process_image_from_storage(
     jpeg_quality: u8,
     webp_quality: f32,
     runtime_handle: &Handle,
+    image_watermark: Option<&tenrankai_image::ImageWatermark>,
+    image_watermark_config: Option<&crate::config::ImageWatermarkConfig>,
 ) -> Result<Vec<u8>, GalleryError> {
     // Load image with all metadata from storage
     let mut loaded_image =
@@ -507,10 +523,18 @@ fn process_image_from_storage(
     // Resize the image (this also handles gain maps)
     loaded_image.resize(dimensions.width, dimensions.height)?;
 
-    // Apply watermark if needed
+    // Apply text watermark if needed
     if apply_watermark && let Some(holder) = copyright_holder {
         let font_path = static_dir.join("DejaVuSans.ttf");
         loaded_image.apply_watermark(&holder, &font_path)?;
+    }
+
+    // Apply image watermark if configured (after text watermark)
+    if apply_watermark
+        && let Some(wm) = image_watermark
+        && let Some(wm_config) = image_watermark_config
+    {
+        loaded_image.apply_image_watermark(wm, wm_config)?;
     }
 
     // Encode in requested format (returns bytes)

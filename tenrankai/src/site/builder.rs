@@ -171,11 +171,19 @@ impl SiteBuilder {
                 cache_storage.storage_type()
             );
 
-            let gallery = Arc::new(Gallery::new(
-                gallery_config.clone(),
-                source_storage,
-                cache_storage,
-            ));
+            let mut gallery = Gallery::new(gallery_config.clone(), source_storage, cache_storage);
+
+            // Load image watermark if configured (must be done before wrapping in Arc)
+            if gallery_config.image_watermark.is_some()
+                && let Err(e) = gallery.load_image_watermark().await
+            {
+                error!(
+                    "Failed to load image watermark for gallery '{}': {}",
+                    gallery_config.name, e
+                );
+            }
+
+            let gallery = Arc::new(gallery);
 
             // Initialize folder cache (mandatory for gallery operations)
             if let Err(e) = gallery.refresh_folder_cache().await {

@@ -6,8 +6,9 @@ use tenrankai_config_storage::{
 use thiserror::Error;
 
 use super::types::{
-    GallerySystemConfig, ImageSizeConfig, PostsSystemConfig, PregenerateConfig, PregenerateFormats,
-    PregenerateSizes, PreviewConfig, StaticConfig, TemplateConfig, TileConfig,
+    GallerySystemConfig, ImageSizeConfig, ImageWatermarkConfig, PostsSystemConfig,
+    PregenerateConfig, PregenerateFormats, PregenerateSizes, PreviewConfig, StaticConfig,
+    TemplateConfig, TileConfig, WatermarkPosition,
 };
 use crate::email::SiteEmailConfig;
 use crate::permissions::types::{PermissionConfig, Role, RolePermissions, UserRole};
@@ -231,6 +232,34 @@ impl ConfigStorageLoader {
         // Use site permissions if available, otherwise use defaults
         let permissions = site_permissions.cloned().unwrap_or_default();
 
+        let image_watermark = stored.image_watermark.map(|wm| ImageWatermarkConfig {
+            image: wm.image,
+            position: match wm.position {
+                tenrankai_config_storage::StoredWatermarkPosition::BottomLeft => {
+                    WatermarkPosition::BottomLeft
+                }
+                tenrankai_config_storage::StoredWatermarkPosition::BottomRight => {
+                    WatermarkPosition::BottomRight
+                }
+                tenrankai_config_storage::StoredWatermarkPosition::TopLeft => {
+                    WatermarkPosition::TopLeft
+                }
+                tenrankai_config_storage::StoredWatermarkPosition::TopRight => {
+                    WatermarkPosition::TopRight
+                }
+                tenrankai_config_storage::StoredWatermarkPosition::Center => {
+                    WatermarkPosition::Center
+                }
+                tenrankai_config_storage::StoredWatermarkPosition::Tiled => {
+                    WatermarkPosition::Tiled
+                }
+            },
+            opacity: wm.opacity,
+            scale: wm.scale,
+            padding: wm.padding,
+            adaptive: wm.adaptive,
+        });
+
         Ok(GallerySystemConfig {
             name: stored.name,
             url_prefix: stored.url_prefix,
@@ -262,6 +291,7 @@ impl ConfigStorageLoader {
             pregenerate,
             new_threshold_days: stored.new_threshold_days,
             copyright_holder: stored.copyright_holder,
+            image_watermark,
             image_indexing,
             permissions,
             metadata_cache_size: stored.metadata_cache_size,

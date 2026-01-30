@@ -1072,6 +1072,8 @@ pub async fn list_site_galleries(
                 url_prefix: config.url_prefix,
                 source_directory: config.source_directory,
                 cache_directory: config.cache_directory,
+                copyright_holder: config.copyright_holder,
+                image_watermark: config.image_watermark.map(Into::into),
             });
         }
     }
@@ -1101,6 +1103,8 @@ pub async fn get_site_gallery(
         url_prefix: config.url_prefix,
         source_directory: config.source_directory,
         cache_directory: config.cache_directory,
+        copyright_holder: config.copyright_holder,
+        image_watermark: config.image_watermark.map(Into::into),
     }))
 }
 
@@ -1170,7 +1174,8 @@ pub async fn upsert_site_gallery(
         jpeg_quality: None,
         webp_quality: None,
         new_threshold_days: None,
-        copyright_holder: None,
+        copyright_holder: request.copyright_holder.clone(),
+        image_watermark: request.image_watermark.clone().map(Into::into),
         tiles: None,
         pregenerate: None,
         preview: None,
@@ -1187,6 +1192,8 @@ pub async fn upsert_site_gallery(
         url_prefix: request.url_prefix,
         source_directory: request.source_directory,
         cache_directory: request.cache_directory,
+        copyright_holder: request.copyright_holder,
+        image_watermark: request.image_watermark,
     }))
 }
 

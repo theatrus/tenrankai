@@ -375,7 +375,7 @@ impl LoadedImage {
         Ok(())
     }
 
-    /// Apply watermark to the image
+    /// Apply text watermark to the image
     pub fn apply_watermark(
         &mut self,
         copyright_holder: &str,
@@ -401,6 +401,48 @@ impl LoadedImage {
             }
             Err(e) => {
                 tracing::error!("Failed to add copyright watermark: {}", e);
+                Ok(()) // Don't fail, just log the error
+            }
+        }
+    }
+
+    /// Apply image watermark to the image
+    pub fn apply_image_watermark(
+        &mut self,
+        watermark: &tenrankai_image::ImageWatermark,
+        config: &crate::config::ImageWatermarkConfig,
+    ) -> Result<(), GalleryError> {
+        let wm_config = tenrankai_image::WatermarkConfig {
+            position: match config.position {
+                crate::config::WatermarkPosition::BottomLeft => {
+                    tenrankai_image::WatermarkPosition::BottomLeft
+                }
+                crate::config::WatermarkPosition::BottomRight => {
+                    tenrankai_image::WatermarkPosition::BottomRight
+                }
+                crate::config::WatermarkPosition::TopLeft => {
+                    tenrankai_image::WatermarkPosition::TopLeft
+                }
+                crate::config::WatermarkPosition::TopRight => {
+                    tenrankai_image::WatermarkPosition::TopRight
+                }
+                crate::config::WatermarkPosition::Center => {
+                    tenrankai_image::WatermarkPosition::Center
+                }
+                crate::config::WatermarkPosition::Tiled => {
+                    tenrankai_image::WatermarkPosition::Tiled
+                }
+            },
+            opacity: config.opacity,
+            scale: config.scale,
+            padding: config.padding,
+            adaptive: config.adaptive,
+        };
+
+        match watermark.apply(&mut self.image, &wm_config) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                tracing::error!("Failed to apply image watermark: {}", e);
                 Ok(()) // Don't fail, just log the error
             }
         }

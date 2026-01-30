@@ -9,6 +9,8 @@ import {
   PermissionConfig,
   RoleInfo,
   FolderInfo,
+  ImageWatermarkConfig,
+  WatermarkPosition,
 } from '@api/client';
 
 const DEFAULT_SITE = 'default';
@@ -88,18 +90,6 @@ export function Galleries() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     createMutation.mutate(newGallery);
-  };
-
-  const handleUpdate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editGallery) {
-      updateMutation.mutate({
-        name: editGallery.name,
-        url_prefix: editGallery.url_prefix,
-        source_directory: editGallery.source_directory,
-        cache_directory: editGallery.cache_directory,
-      });
-    }
   };
 
   const handleDelete = (galleryName: string) => {
@@ -320,72 +310,290 @@ export function Galleries() {
 
       {/* Edit Gallery Modal */}
       {editGallery && (
-        <div className="modal-overlay" onClick={() => setEditGallery(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">Edit Gallery: {editGallery.name}</div>
-            <form onSubmit={handleUpdate}>
+        <EditGalleryModal
+          gallery={editGallery}
+          onClose={() => setEditGallery(null)}
+          onSave={(data) => updateMutation.mutate(data)}
+          isPending={updateMutation.isPending}
+          error={updateMutation.error}
+        />
+      )}
+    </div>
+  );
+}
+
+const WATERMARK_POSITIONS: { value: WatermarkPosition; label: string }[] = [
+  { value: 'bottom_right', label: 'Bottom Right' },
+  { value: 'bottom_left', label: 'Bottom Left' },
+  { value: 'top_right', label: 'Top Right' },
+  { value: 'top_left', label: 'Top Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'tiled', label: 'Tiled' },
+];
+
+function EditGalleryModal({
+  gallery,
+  onClose,
+  onSave,
+  isPending,
+  error,
+}: {
+  gallery: SiteGalleryInfo;
+  onClose: () => void;
+  onSave: (data: CreateGalleryRequest) => void;
+  isPending: boolean;
+  error: Error | null;
+}) {
+  const [editData, setEditData] = useState<SiteGalleryInfo>(gallery);
+  const [showAdvanced, setShowAdvanced] = useState(
+    !!(gallery.copyright_holder || gallery.image_watermark)
+  );
+  const [enableImageWatermark, setEnableImageWatermark] = useState(!!gallery.image_watermark);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const request: CreateGalleryRequest = {
+      name: editData.name,
+      url_prefix: editData.url_prefix,
+      source_directory: editData.source_directory,
+      cache_directory: editData.cache_directory,
+      copyright_holder: editData.copyright_holder || undefined,
+      image_watermark: enableImageWatermark ? editData.image_watermark : undefined,
+    };
+    onSave(request);
+  };
+
+  const updateWatermark = (updates: Partial<ImageWatermarkConfig>) => {
+    setEditData({
+      ...editData,
+      image_watermark: {
+        image: editData.image_watermark?.image || '',
+        position: editData.image_watermark?.position || 'bottom_right',
+        opacity: editData.image_watermark?.opacity ?? 0.5,
+        scale: editData.image_watermark?.scale ?? 15,
+        padding: editData.image_watermark?.padding ?? 10,
+        adaptive: editData.image_watermark?.adaptive ?? true,
+        ...updates,
+      },
+    });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <div className="modal-header">Edit Gallery: {gallery.name}</div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Name</label>
+            <input
+              type="text"
+              className="form-input"
+              value={editData.name}
+              disabled
+              style={{ background: 'var(--color-bg-secondary)' }}
+            />
+            <small style={{ color: 'var(--color-text-muted)' }}>
+              Gallery name cannot be changed
+            </small>
+          </div>
+          <div className="form-group">
+            <label className="form-label">URL Prefix</label>
+            <input
+              type="text"
+              className="form-input"
+              value={editData.url_prefix}
+              onChange={(e) => setEditData({ ...editData, url_prefix: e.target.value })}
+              required
+              pattern="/[a-zA-Z0-9/_-]*"
+              title="Must start with / (e.g., /gallery, /photos)"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Source Directory</label>
+            <input
+              type="text"
+              className="form-input"
+              value={editData.source_directory}
+              onChange={(e) => setEditData({ ...editData, source_directory: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Cache Directory</label>
+            <input
+              type="text"
+              className="form-input"
+              value={editData.cache_directory}
+              onChange={(e) => setEditData({ ...editData, cache_directory: e.target.value })}
+              required
+            />
+          </div>
+
+          {/* Advanced Settings Toggle */}
+          <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '1rem', paddingTop: '1rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <span>Watermark Settings</span>
+              <span>{showAdvanced ? '▼' : '▶'}</span>
+            </button>
+          </div>
+
+          {showAdvanced && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--color-bg-secondary)', borderRadius: '4px' }}>
+              {/* Text Watermark */}
               <div className="form-group">
-                <label className="form-label">Name</label>
+                <label className="form-label">Copyright Holder (Text Watermark)</label>
                 <input
                   type="text"
                   className="form-input"
-                  value={editGallery.name}
-                  disabled
-                  style={{ background: 'var(--color-bg-secondary)' }}
+                  value={editData.copyright_holder || ''}
+                  onChange={(e) => setEditData({ ...editData, copyright_holder: e.target.value || undefined })}
+                  placeholder="e.g., John Doe Photography"
                 />
                 <small style={{ color: 'var(--color-text-muted)' }}>
-                  Gallery name cannot be changed
+                  Adds a text watermark with this name to medium-sized images
                 </small>
               </div>
-              <div className="form-group">
-                <label className="form-label">URL Prefix</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editGallery.url_prefix}
-                  onChange={(e) => setEditGallery({ ...editGallery, url_prefix: e.target.value })}
-                  required
-                  pattern="/[a-zA-Z0-9/_-]*"
-                  title="Must start with / (e.g., /gallery, /photos)"
-                />
+
+              {/* Image Watermark Toggle */}
+              <div className="form-group" style={{ marginTop: '1rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={enableImageWatermark}
+                    onChange={(e) => {
+                      setEnableImageWatermark(e.target.checked);
+                      if (e.target.checked && !editData.image_watermark) {
+                        updateWatermark({ image: '' });
+                      }
+                    }}
+                  />
+                  <strong>Enable Image Watermark</strong>
+                </label>
+                <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                  Overlay a PNG image as a watermark on medium-sized images
+                </small>
               </div>
-              <div className="form-group">
-                <label className="form-label">Source Directory</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editGallery.source_directory}
-                  onChange={(e) => setEditGallery({ ...editGallery, source_directory: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Cache Directory</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={editGallery.cache_directory}
-                  onChange={(e) => setEditGallery({ ...editGallery, cache_directory: e.target.value })}
-                  required
-                />
-              </div>
-              {updateMutation.error && (
-                <div className="error" style={{ marginBottom: '1rem' }}>
-                  {String(updateMutation.error)}
+
+              {enableImageWatermark && (
+                <div style={{ marginTop: '1rem', paddingLeft: '1rem', borderLeft: '2px solid var(--color-border)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Watermark Image Path</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editData.image_watermark?.image || ''}
+                      onChange={(e) => updateWatermark({ image: e.target.value })}
+                      placeholder="_watermark/logo.png"
+                      required={enableImageWatermark}
+                    />
+                    <small style={{ color: 'var(--color-text-muted)' }}>
+                      Path relative to source directory. Use a PNG with transparency.
+                    </small>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Position</label>
+                      <select
+                        className="form-input"
+                        value={editData.image_watermark?.position || 'bottom_right'}
+                        onChange={(e) => updateWatermark({ position: e.target.value as WatermarkPosition })}
+                      >
+                        {WATERMARK_POSITIONS.map((pos) => (
+                          <option key={pos.value} value={pos.value}>
+                            {pos.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Opacity ({Math.round((editData.image_watermark?.opacity ?? 0.5) * 100)}%)</label>
+                      <input
+                        type="range"
+                        className="form-input"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={editData.image_watermark?.opacity ?? 0.5}
+                        onChange={(e) => updateWatermark({ opacity: parseFloat(e.target.value) })}
+                        style={{ padding: 0 }}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Scale ({editData.image_watermark?.scale ?? 15}%)</label>
+                      <input
+                        type="range"
+                        className="form-input"
+                        min="5"
+                        max="50"
+                        step="1"
+                        value={editData.image_watermark?.scale ?? 15}
+                        onChange={(e) => updateWatermark({ scale: parseInt(e.target.value) })}
+                        style={{ padding: 0 }}
+                      />
+                      <small style={{ color: 'var(--color-text-muted)' }}>
+                        Percentage of smaller image dimension
+                      </small>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Padding ({editData.image_watermark?.padding ?? 10}px)</label>
+                      <input
+                        type="range"
+                        className="form-input"
+                        min="0"
+                        max="50"
+                        step="5"
+                        value={editData.image_watermark?.padding ?? 10}
+                        onChange={(e) => updateWatermark({ padding: parseInt(e.target.value) })}
+                        style={{ padding: 0 }}
+                      />
+                      <small style={{ color: 'var(--color-text-muted)' }}>
+                        Distance from image edge
+                      </small>
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={editData.image_watermark?.adaptive ?? true}
+                        onChange={(e) => updateWatermark({ adaptive: e.target.checked })}
+                      />
+                      <span>Adaptive (auto-invert on light backgrounds)</span>
+                    </label>
+                    <small style={{ color: 'var(--color-text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                      Automatically inverts grayscale watermarks when placed on light areas
+                    </small>
+                  </div>
                 </div>
               )}
-              <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setEditGallery(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
+            </div>
+          )}
+
+          {error && (
+            <div className="error" style={{ marginTop: '1rem' }}>
+              {String(error)}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={isPending}>
+              {isPending ? 'Saving...' : 'Save Changes'}
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </div>
     </div>
   );
 }
