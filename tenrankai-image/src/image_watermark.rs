@@ -1,6 +1,8 @@
 use image::{DynamicImage, Rgba, RgbaImage};
 use std::error::Error;
 
+use crate::luminance::calculate_luminance;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum WatermarkPosition {
     BottomLeft,
@@ -140,10 +142,15 @@ impl ImageWatermark {
         target: &mut DynamicImage,
         config: &WatermarkConfig,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Clamp config values to valid ranges
+        let opacity = config.opacity.clamp(0.0, 1.0);
+        let scale = config.scale.clamp(1.0, 100.0);
+        let padding = config.padding.min(1000); // Reasonable max padding
+
         let (target_width, target_height) = (target.width(), target.height());
 
         let smaller_dimension = target_width.min(target_height);
-        let watermark_size = (smaller_dimension as f32 * config.scale / 100.0) as u32;
+        let watermark_size = (smaller_dimension as f32 * scale / 100.0) as u32;
 
         if watermark_size < 4 {
             return Ok(());
@@ -172,9 +179,9 @@ impl ImageWatermark {
                 self.apply_tiled(
                     &mut target_rgba,
                     &scaled_watermark,
-                    config.opacity,
+                    opacity,
                     config.adaptive,
-                    config.padding,
+                    padding,
                 );
             }
             _ => {
@@ -184,7 +191,7 @@ impl ImageWatermark {
                     scaled_width,
                     scaled_height,
                     config.position,
-                    config.padding,
+                    padding,
                 );
 
                 self.apply_single(
@@ -192,7 +199,7 @@ impl ImageWatermark {
                     &scaled_watermark,
                     x,
                     y,
-                    config.opacity,
+                    opacity,
                     config.adaptive,
                 );
             }
@@ -397,30 +404,6 @@ impl ImageWatermark {
     }
 }
 
-fn calculate_luminance(r: u8, g: u8, b: u8) -> f32 {
-    let r = r as f32 / 255.0;
-    let g = g as f32 / 255.0;
-    let b = b as f32 / 255.0;
-
-    let r_linear = if r <= 0.03928 {
-        r / 12.92
-    } else {
-        ((r + 0.055) / 1.055).powf(2.4)
-    };
-    let g_linear = if g <= 0.03928 {
-        g / 12.92
-    } else {
-        ((g + 0.055) / 1.055).powf(2.4)
-    };
-    let b_linear = if b <= 0.03928 {
-        b / 12.92
-    } else {
-        ((b + 0.055) / 1.055).powf(2.4)
-    };
-
-    0.2126 * r_linear + 0.7152 * g_linear + 0.0722 * b_linear
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,27 +416,6 @@ mod tests {
         assert_eq!(config.scale, 15.0);
         assert_eq!(config.padding, 10);
         assert!(config.adaptive);
-    }
-
-    #[test]
-    fn test_calculate_luminance_black() {
-        let lum = calculate_luminance(0, 0, 0);
-        assert!(lum < 0.01, "Black should have near-zero luminance");
-    }
-
-    #[test]
-    fn test_calculate_luminance_white() {
-        let lum = calculate_luminance(255, 255, 255);
-        assert!(lum > 0.99, "White should have near-one luminance");
-    }
-
-    #[test]
-    fn test_calculate_luminance_gray() {
-        let lum = calculate_luminance(128, 128, 128);
-        assert!(
-            lum > 0.2 && lum < 0.3,
-            "Mid-gray luminance should be around 0.21"
-        );
     }
 
     #[test]

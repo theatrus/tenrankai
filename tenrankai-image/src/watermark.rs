@@ -4,6 +4,8 @@ use imageproc::drawing::{draw_text_mut, text_size};
 use std::error::Error;
 use std::path::Path;
 
+use crate::luminance::calculate_luminance;
+
 /// Configuration for copyright notice
 pub struct CopyrightConfig {
     /// The copyright holder name (e.g., "John Doe Photography")
@@ -86,28 +88,7 @@ fn determine_text_color(image: &RgbaImage, x: u32, y: u32, width: u32, height: u
     for py in y_start..y_end {
         for px in x_start..x_end {
             let pixel = image.get_pixel(px, py);
-            // Calculate relative luminance using the formula from WCAG
-            let r = pixel[0] as f32 / 255.0;
-            let g = pixel[1] as f32 / 255.0;
-            let b = pixel[2] as f32 / 255.0;
-
-            let r_linear = if r <= 0.03928 {
-                r / 12.92
-            } else {
-                ((r + 0.055) / 1.055).powf(2.4)
-            };
-            let g_linear = if g <= 0.03928 {
-                g / 12.92
-            } else {
-                ((g + 0.055) / 1.055).powf(2.4)
-            };
-            let b_linear = if b <= 0.03928 {
-                b / 12.92
-            } else {
-                ((b + 0.055) / 1.055).powf(2.4)
-            };
-
-            let luminance = 0.2126 * r_linear + 0.7152 * g_linear + 0.0722 * b_linear;
+            let luminance = calculate_luminance(pixel[0], pixel[1], pixel[2]);
             total_luminance += luminance;
             pixel_count += 1;
         }

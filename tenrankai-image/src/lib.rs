@@ -4,6 +4,7 @@ pub mod error;
 pub mod formats;
 pub mod icc;
 pub mod image_watermark;
+pub mod luminance;
 pub mod types;
 pub mod watermark;
 pub mod webp_encoder;
