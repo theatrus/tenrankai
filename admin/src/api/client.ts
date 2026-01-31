@@ -86,11 +86,28 @@ export interface GalleryListResponse {
   galleries: GalleryInfo[];
 }
 
+export type WatermarkPosition = 'bottom_left' | 'bottom_right' | 'top_left' | 'top_right' | 'center' | 'tiled';
+
+export interface ImageWatermarkConfig {
+  image: string;
+  position: WatermarkPosition;
+  opacity: number;
+  scale: number;
+  padding: number;
+  adaptive: boolean;
+  apply_to_gallery: boolean;
+  apply_to_medium: boolean;
+  apply_to_large: boolean;
+}
+
 export interface SiteGalleryInfo {
   name: string;
   url_prefix: string;
   source_directory: string;
   cache_directory: string;
+  copyright_holder?: string;
+  image_watermark?: ImageWatermarkConfig;
+  enable_tile_zoom?: boolean;
 }
 
 export interface SiteGalleryListResponse {
@@ -102,6 +119,9 @@ export interface CreateGalleryRequest {
   url_prefix: string;
   source_directory: string;
   cache_directory: string;
+  copyright_holder?: string;
+  image_watermark?: ImageWatermarkConfig;
+  enable_tile_zoom?: boolean;
 }
 
 export interface SiteInfo {
@@ -224,6 +244,17 @@ export interface FolderImageInfo {
 
 export interface FolderImagesResponse {
   images: FolderImageInfo[];
+}
+
+export interface WatermarkImageInfo {
+  filename: string;
+  path: string;
+}
+
+export interface EnsureWatermarkFolderResponse {
+  folder_path: string;
+  created: boolean;
+  images: WatermarkImageInfo[];
 }
 
 export interface ThemeColorSet {
@@ -377,6 +408,10 @@ export const api = {
 
   deleteFolder: (gallery: string, folderPath: string) =>
     request<{ success: boolean; message: string }>('DELETE', `/galleries/${gallery}/folders/${encodeURIComponent(folderPath || '_root')}`),
+
+  // Watermark Folder
+  ensureWatermarkFolder: (gallery: string) =>
+    request<EnsureWatermarkFolderResponse>('POST', `/galleries/${gallery}/watermark-folder`),
 
   // Theme Management
   getTheme: () => request<ThemeConfig>('GET', '/theme'),

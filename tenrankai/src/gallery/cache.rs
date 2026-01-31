@@ -252,6 +252,12 @@ impl Gallery {
 
     /// Generate a cache key for regular images with size, format, and watermark status
     /// This is the primary method for generating cache keys that match the serving code.
+    ///
+    /// Cache key format includes:
+    /// - Size (thumbnail, medium, etc.)
+    /// - Format (jpg, webp, etc.)
+    /// - Text watermark status ("watermarked" if copyright_holder is set for medium sizes)
+    /// - Image watermark hash (if configured, for cache invalidation on watermark changes)
     pub fn generate_image_cache_key(
         &self,
         path: &str,
@@ -259,11 +265,17 @@ impl Gallery {
         format: &str,
         has_watermark: bool,
     ) -> String {
-        let cache_key = if has_watermark {
-            format!("{}_{}_{}", size, format, "watermarked")
-        } else {
-            format!("{}_{}", size, format)
-        };
+        let mut cache_key = format!("{}_{}", size, format);
+
+        if has_watermark {
+            cache_key.push_str("_watermarked");
+        }
+
+        if let Some(ref hash) = self.image_watermark_hash {
+            cache_key.push_str("_imgwm_");
+            cache_key.push_str(hash);
+        }
+
         self.generate_cache_key(path, &cache_key)
     }
 

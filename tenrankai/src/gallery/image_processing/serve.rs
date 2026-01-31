@@ -181,14 +181,11 @@ impl Gallery {
                     }
                 } else {
                     // Regular size request
-                    // Determine if this size would have a watermark
-                    let (_, is_medium) = match self.parse_size(size) {
-                        Ok(result) => result,
-                        Err(_) => {
-                            return ApiResponse::InvalidSizeParameter.into_response();
-                        }
-                    };
-                    let apply_watermark = is_medium && self.config.copyright_holder.is_some();
+                    // Validate size parameter
+                    if self.parse_size(size).is_err() {
+                        return ApiResponse::InvalidSizeParameter.into_response();
+                    }
+                    let apply_watermark = self.should_apply_watermark(relative_path, size);
 
                     let cache_filename = self.generate_cache_filename(
                         relative_path,

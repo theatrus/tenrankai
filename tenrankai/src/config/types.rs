@@ -147,9 +147,12 @@ pub struct GallerySystemConfig {
     pub pregenerate: Option<PregenerateConfig>,
     /// Number of days to consider an image as "new" (based on file modification date)
     pub new_threshold_days: Option<u32>,
-    /// Copyright holder name for watermarking medium-sized images
+    /// Copyright holder name for text watermarking medium-sized images
     #[serde(default)]
     pub copyright_holder: Option<String>,
+    /// Image-based watermark configuration
+    #[serde(default)]
+    pub image_watermark: Option<ImageWatermarkConfig>,
     /// Image indexing mode for URLs: "filename" (default), "sequence", or "unique_id"
     #[serde(default = "super::defaults::default_image_indexing")]
     pub image_indexing: ImageIndexingMode,
@@ -172,6 +175,51 @@ pub enum ImageIndexingMode {
     Sequence,
     /// Use unique base36 identifiers generated from path hash
     UniqueId,
+}
+
+/// Position for image watermarks
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum WatermarkPosition {
+    BottomLeft,
+    #[default]
+    BottomRight,
+    TopLeft,
+    TopRight,
+    Center,
+    Tiled,
+}
+
+/// Configuration for PNG image-based watermarks
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageWatermarkConfig {
+    /// Path to watermark image (relative to gallery source_directory)
+    pub image: String,
+    /// Position of watermark on the image
+    #[serde(default)]
+    pub position: WatermarkPosition,
+    /// Opacity (0.0 - 1.0)
+    #[serde(default = "super::defaults::default_watermark_opacity")]
+    pub opacity: f32,
+    /// Scale as percentage of smaller image dimension
+    #[serde(default = "super::defaults::default_watermark_scale")]
+    pub scale: f32,
+    /// Padding from edge in pixels
+    #[serde(default = "super::defaults::default_watermark_padding")]
+    pub padding: u32,
+    /// Auto-invert grayscale watermarks based on background luminance
+    #[serde(default = "super::defaults::default_true")]
+    pub adaptive: bool,
+    /// Apply watermark to gallery-size images
+    #[serde(default)]
+    pub apply_to_gallery: bool,
+    /// Apply watermark to medium-size images (default: true)
+    #[serde(default = "super::defaults::default_true")]
+    pub apply_to_medium: bool,
+    /// Apply watermark to large-size images
+    #[serde(default)]
+    pub apply_to_large: bool,
 }
 
 /// Image size configuration for gallery processing

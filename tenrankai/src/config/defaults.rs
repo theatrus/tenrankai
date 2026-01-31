@@ -116,6 +116,21 @@ pub fn default_pregenerate_sizes() -> super::types::PregenerateSizes {
     }
 }
 
+/// Default watermark opacity
+pub fn default_watermark_opacity() -> f32 {
+    0.5
+}
+
+/// Default watermark scale (percentage of smaller image dimension)
+pub fn default_watermark_scale() -> f32 {
+    15.0
+}
+
+/// Default watermark padding from edge in pixels
+pub fn default_watermark_padding() -> u32 {
+    10
+}
+
 impl Default for GallerySystemConfig {
     fn default() -> Self {
         Self {
@@ -136,6 +151,7 @@ impl Default for GallerySystemConfig {
             pregenerate: None,
             new_threshold_days: None,
             copyright_holder: None,
+            image_watermark: None,
             image_indexing: default_image_indexing(),
             permissions: Default::default(),
             tiles: None,

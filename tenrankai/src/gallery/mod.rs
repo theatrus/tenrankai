@@ -74,6 +74,10 @@ pub struct Gallery {
     pub(crate) image_processing_semaphore: Arc<Semaphore>,
     /// Counter for active blocking tasks (for graceful shutdown)
     pub(crate) active_blocking_tasks: Arc<AtomicUsize>,
+    /// Loaded image watermark (if configured)
+    pub(crate) image_watermark: Option<Arc<tenrankai_image::ImageWatermark>>,
+    /// Hash of watermark file modification time (for cache invalidation)
+    pub(crate) image_watermark_hash: Option<String>,
 }
 
 impl Gallery {
@@ -134,6 +138,119 @@ impl Gallery {
             // Use number of CPUs as the limit for a reasonable balance
             image_processing_semaphore: Arc::new(Semaphore::new(num_cpus::get())),
             active_blocking_tasks: Arc::new(AtomicUsize::new(0)),
+            image_watermark: None,
+            image_watermark_hash: None,
+        }
+    }
+
+    pub async fn load_image_watermark(&mut self) -> Result<(), GalleryError> {
+        let wm_config = match &self.config.image_watermark {
+            Some(cfg) => cfg,
+            None => return Ok(()),
+        };
+
+        match self.source_storage.read(&wm_config.image).await {
+            Ok(bytes) => match tenrankai_image::ImageWatermark::load(&bytes) {
+                Ok(wm) => {
+                    let hash = self.compute_watermark_hash(wm_config).await;
+                    info!(
+                        "Loaded image watermark '{}' ({}x{}, hash: {})",
+                        wm_config.image,
+                        wm.width(),
+                        wm.height(),
+                        hash.as_deref().unwrap_or("none")
+                    );
+                    self.image_watermark = Some(Arc::new(wm));
+                    self.image_watermark_hash = hash;
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to parse watermark image '{}': {}",
+                        wm_config.image, e
+                    );
+                }
+            },
+            Err(e) => {
+                error!(
+                    "Failed to load watermark image '{}': {}",
+                    wm_config.image, e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn compute_watermark_hash(
+        &self,
+        config: &crate::config::ImageWatermarkConfig,
+    ) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        let mut hasher = Sha256::new();
+
+        // Include file modification time
+        if let Ok(meta) = self.source_storage.metadata(&config.image).await
+            && let Some(mtime) = meta.last_modified
+        {
+            let timestamp = mtime
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            hasher.update(timestamp.to_le_bytes());
+        }
+
+        // Include all config settings so cache is invalidated when they change
+        hasher.update(config.image.as_bytes());
+        hasher.update(format!("{:?}", config.position).as_bytes());
+        hasher.update(config.opacity.to_le_bytes());
+        hasher.update(config.scale.to_le_bytes());
+        hasher.update(config.padding.to_le_bytes());
+        hasher.update([config.adaptive as u8]);
+
+        let hash = format!("{:x}", hasher.finalize());
+        Some(hash[..8].to_string())
+    }
+
+    pub fn get_image_watermark(&self) -> Option<&Arc<tenrankai_image::ImageWatermark>> {
+        self.image_watermark.as_ref()
+    }
+
+    pub fn get_image_watermark_hash(&self) -> Option<&str> {
+        self.image_watermark_hash.as_deref()
+    }
+
+    /// Determine if watermark should be applied to an image at the given path and size
+    /// Returns false for images in the _watermark folder to avoid recursive watermarking
+    pub fn should_apply_watermark(&self, relative_path: &str, size: &str) -> bool {
+        // Check if watermarking is configured at all
+        let has_watermark =
+            self.config.copyright_holder.is_some() || self.image_watermark.is_some();
+        if !has_watermark {
+            return false;
+        }
+
+        // Don't apply watermarks to images in the watermark folder
+        if relative_path.starts_with("_watermark/") || relative_path == "_watermark" {
+            return false;
+        }
+
+        // Check if this size should be watermarked based on config
+        // For image watermarks, check the apply_to_* settings
+        // For text-only watermarks (copyright_holder), default to medium only for backward compat
+        let size_lower = size.to_lowercase();
+        let base_size = size_lower.trim_end_matches("@2x");
+
+        if let Some(ref wm_config) = self.config.image_watermark {
+            match base_size {
+                "gallery" => wm_config.apply_to_gallery,
+                "medium" => wm_config.apply_to_medium,
+                "large" => wm_config.apply_to_large,
+                _ => false, // thumbnails and tiles never get watermarked
+            }
+        } else {
+            // Text-only watermark (copyright_holder): medium only for backward compat
+            base_size == "medium"
         }
     }
 

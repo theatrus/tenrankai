@@ -266,12 +266,124 @@ pub struct UpdateSiteRequest {
     // NOTE: storage_prefix is intentionally NOT included - cannot be edited via API
 }
 
+/// Watermark position for image watermarks
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatermarkPositionDto {
+    BottomLeft,
+    #[default]
+    BottomRight,
+    TopLeft,
+    TopRight,
+    Center,
+    Tiled,
+}
+
+impl From<tenrankai_config_storage::StoredWatermarkPosition> for WatermarkPositionDto {
+    fn from(pos: tenrankai_config_storage::StoredWatermarkPosition) -> Self {
+        match pos {
+            tenrankai_config_storage::StoredWatermarkPosition::BottomLeft => Self::BottomLeft,
+            tenrankai_config_storage::StoredWatermarkPosition::BottomRight => Self::BottomRight,
+            tenrankai_config_storage::StoredWatermarkPosition::TopLeft => Self::TopLeft,
+            tenrankai_config_storage::StoredWatermarkPosition::TopRight => Self::TopRight,
+            tenrankai_config_storage::StoredWatermarkPosition::Center => Self::Center,
+            tenrankai_config_storage::StoredWatermarkPosition::Tiled => Self::Tiled,
+        }
+    }
+}
+
+impl From<WatermarkPositionDto> for tenrankai_config_storage::StoredWatermarkPosition {
+    fn from(dto: WatermarkPositionDto) -> Self {
+        match dto {
+            WatermarkPositionDto::BottomLeft => Self::BottomLeft,
+            WatermarkPositionDto::BottomRight => Self::BottomRight,
+            WatermarkPositionDto::TopLeft => Self::TopLeft,
+            WatermarkPositionDto::TopRight => Self::TopRight,
+            WatermarkPositionDto::Center => Self::Center,
+            WatermarkPositionDto::Tiled => Self::Tiled,
+        }
+    }
+}
+
+/// Image watermark configuration DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageWatermarkConfigDto {
+    pub image: String,
+    #[serde(default)]
+    pub position: WatermarkPositionDto,
+    #[serde(default = "default_watermark_opacity")]
+    pub opacity: f32,
+    #[serde(default = "default_watermark_scale")]
+    pub scale: f32,
+    #[serde(default = "default_watermark_padding")]
+    pub padding: u32,
+    #[serde(default = "default_true")]
+    pub adaptive: bool,
+    #[serde(default)]
+    pub apply_to_gallery: bool,
+    #[serde(default = "default_true")]
+    pub apply_to_medium: bool,
+    #[serde(default)]
+    pub apply_to_large: bool,
+}
+
+fn default_watermark_opacity() -> f32 {
+    0.5
+}
+fn default_watermark_scale() -> f32 {
+    15.0
+}
+fn default_watermark_padding() -> u32 {
+    10
+}
+fn default_true() -> bool {
+    true
+}
+
+impl From<tenrankai_config_storage::StoredImageWatermarkConfig> for ImageWatermarkConfigDto {
+    fn from(config: tenrankai_config_storage::StoredImageWatermarkConfig) -> Self {
+        Self {
+            image: config.image,
+            position: config.position.into(),
+            opacity: config.opacity,
+            scale: config.scale,
+            padding: config.padding,
+            adaptive: config.adaptive,
+            apply_to_gallery: config.apply_to_gallery,
+            apply_to_medium: config.apply_to_medium,
+            apply_to_large: config.apply_to_large,
+        }
+    }
+}
+
+impl From<ImageWatermarkConfigDto> for tenrankai_config_storage::StoredImageWatermarkConfig {
+    fn from(dto: ImageWatermarkConfigDto) -> Self {
+        Self {
+            image: dto.image,
+            position: dto.position.into(),
+            opacity: dto.opacity,
+            scale: dto.scale,
+            padding: dto.padding,
+            adaptive: dto.adaptive,
+            apply_to_gallery: dto.apply_to_gallery,
+            apply_to_medium: dto.apply_to_medium,
+            apply_to_large: dto.apply_to_large,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct SiteGalleryInfo {
     pub name: String,
     pub url_prefix: String,
     pub source_directory: String,
     pub cache_directory: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copyright_holder: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_watermark: Option<ImageWatermarkConfigDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_tile_zoom: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -285,6 +397,12 @@ pub struct CreateGalleryRequest {
     pub url_prefix: String,
     pub source_directory: String,
     pub cache_directory: String,
+    #[serde(default)]
+    pub copyright_holder: Option<String>,
+    #[serde(default)]
+    pub image_watermark: Option<ImageWatermarkConfigDto>,
+    #[serde(default)]
+    pub enable_tile_zoom: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -592,4 +710,17 @@ pub struct RenameFolderResponse {
 pub struct DeleteFolderResponse {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EnsureWatermarkFolderResponse {
+    pub folder_path: String,
+    pub created: bool,
+    pub images: Vec<WatermarkImageInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WatermarkImageInfo {
+    pub filename: String,
+    pub path: String,
 }

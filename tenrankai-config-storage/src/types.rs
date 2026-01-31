@@ -274,6 +274,51 @@ pub struct StoredSiteEmailConfig {
     pub reply_to: Option<String>,
 }
 
+/// Image watermark position
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StoredWatermarkPosition {
+    BottomLeft,
+    #[default]
+    BottomRight,
+    TopLeft,
+    TopRight,
+    Center,
+    Tiled,
+}
+
+/// Image watermark configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StoredImageWatermarkConfig {
+    pub image: String,
+    #[serde(default)]
+    pub position: StoredWatermarkPosition,
+    #[serde(default = "default_watermark_opacity")]
+    pub opacity: f32,
+    #[serde(default = "default_watermark_scale")]
+    pub scale: f32,
+    #[serde(default = "default_watermark_padding")]
+    pub padding: u32,
+    #[serde(default = "default_true")]
+    pub adaptive: bool,
+    #[serde(default)]
+    pub apply_to_gallery: bool,
+    #[serde(default = "default_true")]
+    pub apply_to_medium: bool,
+    #[serde(default)]
+    pub apply_to_large: bool,
+}
+
+fn default_watermark_opacity() -> f32 {
+    0.5
+}
+fn default_watermark_scale() -> f32 {
+    15.0
+}
+fn default_watermark_padding() -> u32 {
+    10
+}
+
 /// Stored gallery configuration (full gallery settings)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredGalleryConfig {
@@ -320,6 +365,9 @@ pub struct StoredGalleryConfig {
 
     #[serde(default)]
     pub copyright_holder: Option<String>,
+
+    #[serde(default)]
+    pub image_watermark: Option<StoredImageWatermarkConfig>,
 
     #[serde(default = "default_image_indexing")]
     pub image_indexing: String,

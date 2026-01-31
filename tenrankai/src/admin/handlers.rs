@@ -1066,12 +1066,19 @@ pub async fn list_site_galleries(
 
     let mut galleries = Vec::new();
     for name in gallery_names {
+        // Skip hidden/prototype galleries (those starting with underscore)
+        if name.starts_with('_') {
+            continue;
+        }
         if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
             galleries.push(SiteGalleryInfo {
                 name,
                 url_prefix: config.url_prefix,
                 source_directory: config.source_directory,
                 cache_directory: config.cache_directory,
+                copyright_holder: config.copyright_holder,
+                image_watermark: config.image_watermark.map(Into::into),
+                enable_tile_zoom: Some(config.tiles.is_some()),
             });
         }
     }
@@ -1085,6 +1092,11 @@ pub async fn get_site_gallery(
     _admin: RequireAdmin,
     Path((site, name)): Path<(String, String)>,
 ) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    // Prevent access to hidden/prototype galleries
+    if name.starts_with('_') {
+        return Err(AdminError::NotFound(format!("Gallery not found: {}", name)));
+    }
+
     let config_storage = app_state
         .config_storage()
         .as_ref()
@@ -1101,6 +1113,9 @@ pub async fn get_site_gallery(
         url_prefix: config.url_prefix,
         source_directory: config.source_directory,
         cache_directory: config.cache_directory,
+        copyright_holder: config.copyright_holder,
+        image_watermark: config.image_watermark.map(Into::into),
+        enable_tile_zoom: Some(config.tiles.is_some()),
     }))
 }
 
@@ -1133,6 +1148,13 @@ pub async fn upsert_site_gallery(
         ));
     }
 
+    // Prevent creating/editing hidden/prototype galleries
+    if name.starts_with('_') {
+        return Err(AdminError::BadRequest(
+            "Gallery names starting with underscore are reserved".into(),
+        ));
+    }
+
     // Validate URL prefix starts with /
     if !request.url_prefix.starts_with('/') {
         return Err(AdminError::BadRequest(
@@ -1140,40 +1162,133 @@ pub async fn upsert_site_gallery(
         ));
     }
 
-    // Create the stored config with sensible defaults
-    let stored_config = tenrankai_config_storage::StoredGalleryConfig {
-        name: name.clone(),
-        url_prefix: request.url_prefix.clone(),
-        source_directory: request.source_directory.clone(),
-        cache_directory: request.cache_directory.clone(),
-        gallery_template: "modules/gallery.html.liquid".to_string(),
-        image_detail_template: "modules/image_detail.html.liquid".to_string(),
-        thumbnail: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 300,
-            height: 300,
-        },
-        gallery_size: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 800,
-            height: 800,
-        },
-        medium: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 1200,
-            height: 1200,
-        },
-        large: tenrankai_config_storage::StoredImageSizeConfig {
-            width: 1600,
-            height: 1600,
-        },
-        image_indexing: "filename".to_string(),
-        metadata_cache_size: 1000,
-        cache_refresh_interval_minutes: None,
-        jpeg_quality: None,
-        webp_quality: None,
-        new_threshold_days: None,
-        copyright_holder: None,
-        tiles: None,
-        pregenerate: None,
-        preview: None,
+    // Try to load existing config to preserve settings not exposed via API
+    let existing_config = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    // Try to load prototype config for new gallery defaults
+    let prototype_config = if existing_config.is_none() {
+        config_storage
+            .get_gallery_full_config(&site, "_prototype")
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
+    // Create the stored config, preserving existing settings where appropriate
+    let stored_config = if let Some(existing) = existing_config {
+        // Update only the fields exposed via the API, preserve everything else
+        tenrankai_config_storage::StoredGalleryConfig {
+            name: name.clone(),
+            url_prefix: request.url_prefix.clone(),
+            source_directory: request.source_directory.clone(),
+            cache_directory: request.cache_directory.clone(),
+            copyright_holder: request.copyright_holder.clone(),
+            image_watermark: request.image_watermark.clone().map(Into::into),
+            // Preserve all other settings from existing config
+            gallery_template: existing.gallery_template,
+            image_detail_template: existing.image_detail_template,
+            thumbnail: existing.thumbnail,
+            gallery_size: existing.gallery_size,
+            medium: existing.medium,
+            large: existing.large,
+            image_indexing: existing.image_indexing,
+            metadata_cache_size: existing.metadata_cache_size,
+            cache_refresh_interval_minutes: existing.cache_refresh_interval_minutes,
+            jpeg_quality: existing.jpeg_quality,
+            webp_quality: existing.webp_quality,
+            new_threshold_days: existing.new_threshold_days,
+            tiles: match request.enable_tile_zoom {
+                Some(true) => Some(
+                    existing
+                        .tiles
+                        .unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 }),
+                ),
+                Some(false) => None,
+                None => existing.tiles,
+            },
+            pregenerate: existing.pregenerate,
+            preview: existing.preview,
+        }
+    } else if let Some(proto) = prototype_config {
+        // New gallery - use prototype config as template
+        tenrankai_config_storage::StoredGalleryConfig {
+            name: name.clone(),
+            url_prefix: request.url_prefix.clone(),
+            source_directory: request.source_directory.clone(),
+            cache_directory: request.cache_directory.clone(),
+            copyright_holder: request.copyright_holder.clone(),
+            image_watermark: request.image_watermark.clone().map(Into::into),
+            // Use prototype settings as defaults
+            gallery_template: proto.gallery_template,
+            image_detail_template: proto.image_detail_template,
+            thumbnail: proto.thumbnail,
+            gallery_size: proto.gallery_size,
+            medium: proto.medium,
+            large: proto.large,
+            image_indexing: proto.image_indexing,
+            metadata_cache_size: proto.metadata_cache_size,
+            cache_refresh_interval_minutes: proto.cache_refresh_interval_minutes,
+            jpeg_quality: proto.jpeg_quality,
+            webp_quality: proto.webp_quality,
+            new_threshold_days: proto.new_threshold_days,
+            tiles: match request.enable_tile_zoom {
+                Some(true) => Some(
+                    proto
+                        .tiles
+                        .unwrap_or(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 }),
+                ),
+                Some(false) => None,
+                None => proto.tiles,
+            },
+            pregenerate: proto.pregenerate,
+            preview: proto.preview,
+        }
+    } else {
+        // New gallery - use hardcoded defaults (no prototype available)
+        tenrankai_config_storage::StoredGalleryConfig {
+            name: name.clone(),
+            url_prefix: request.url_prefix.clone(),
+            source_directory: request.source_directory.clone(),
+            cache_directory: request.cache_directory.clone(),
+            gallery_template: "modules/gallery.html.liquid".to_string(),
+            image_detail_template: "modules/image_detail.html.liquid".to_string(),
+            thumbnail: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 300,
+                height: 300,
+            },
+            gallery_size: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 800,
+                height: 800,
+            },
+            medium: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 1200,
+                height: 1200,
+            },
+            large: tenrankai_config_storage::StoredImageSizeConfig {
+                width: 1600,
+                height: 1600,
+            },
+            image_indexing: "filename".to_string(),
+            metadata_cache_size: 1000,
+            cache_refresh_interval_minutes: None,
+            jpeg_quality: None,
+            webp_quality: None,
+            new_threshold_days: None,
+            copyright_holder: request.copyright_holder.clone(),
+            image_watermark: request.image_watermark.clone().map(Into::into),
+            tiles: if request.enable_tile_zoom == Some(true) {
+                Some(tenrankai_config_storage::StoredTileConfig { tile_size: 1024 })
+            } else {
+                None
+            },
+            pregenerate: None,
+            preview: None,
+        }
     };
 
     // Save the gallery config
@@ -1182,11 +1297,17 @@ pub async fn upsert_site_gallery(
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
+    // Reload site so gallery changes (especially watermark) take effect immediately
+    reload_site_after_change(&app_state, &site).await;
+
     Ok(Json(SiteGalleryInfo {
         name,
         url_prefix: request.url_prefix,
         source_directory: request.source_directory,
         cache_directory: request.cache_directory,
+        copyright_holder: request.copyright_holder,
+        image_watermark: request.image_watermark,
+        enable_tile_zoom: Some(stored_config.tiles.is_some()),
     }))
 }
 
@@ -3055,6 +3176,87 @@ pub async fn delete_gallery_folder_resolved(
     .await
 }
 
+/// Watermark folder name constant
+const WATERMARK_FOLDER: &str = "_watermark";
+
+/// Ensure the watermark folder exists for a gallery
+/// Creates the folder with hidden=true if it doesn't exist
+/// Returns the list of images in the folder
+pub async fn ensure_watermark_folder(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path(gallery): Path<String>,
+) -> Result<Json<EnsureWatermarkFolderResponse>, AdminError> {
+    // Get gallery
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    let folder_md_path = format!("{}/_folder.md", WATERMARK_FOLDER);
+    let mut created = false;
+
+    // Check if folder exists
+    if !gallery_obj
+        .source_storage()
+        .exists(&folder_md_path)
+        .await
+        .unwrap_or(false)
+    {
+        // Create the folder with hidden=true
+        let content = "+++\nhidden = true\n+++\n\nWatermark images for this gallery.\n";
+        gallery_obj
+            .source_storage()
+            .write(&folder_md_path, bytes::Bytes::from(content))
+            .await
+            .map_err(|e| {
+                AdminError::Internal(format!("Failed to create watermark folder: {}", e))
+            })?;
+
+        // Refresh folder cache
+        gallery_obj
+            .refresh_folder_cache()
+            .await
+            .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
+
+        created = true;
+    }
+
+    // List images in the watermark folder
+    let entries = gallery_obj
+        .source_storage()
+        .list(WATERMARK_FOLDER)
+        .await
+        .unwrap_or_default();
+
+    let images: Vec<WatermarkImageInfo> = entries
+        .into_iter()
+        .filter(|entry| {
+            if entry.is_dir {
+                return false;
+            }
+            let name = entry.path.to_lowercase();
+            // Include PNG, JPEG, and other common image formats
+            name.ends_with(".png")
+                || name.ends_with(".jpg")
+                || name.ends_with(".jpeg")
+                || name.ends_with(".gif")
+                || name.ends_with(".webp")
+        })
+        .map(|entry| WatermarkImageInfo {
+            filename: entry.path.clone(),
+            path: format!("{}/{}", WATERMARK_FOLDER, entry.path),
+        })
+        .collect();
+
+    Ok(Json(EnsureWatermarkFolderResponse {
+        folder_path: WATERMARK_FOLDER.to_string(),
+        created,
+        images,
+    }))
+}
+
 /// Rename a folder in a gallery
 pub async fn rename_gallery_folder(
     ResolvedState(app_state): ResolvedState,
@@ -3843,9 +4045,9 @@ pub async fn get_theme(
     Ok(Json(ThemeConfigDto::from(theme)))
 }
 
-/// Update theme configuration
-async fn reload_site_theme(app_state: &crate::AppState, site_name: &str) {
-    // Try to reload the site so theme changes take effect immediately
+/// Reload a site after configuration changes (theme, gallery, watermark, etc.)
+async fn reload_site_after_change(app_state: &crate::AppState, site_name: &str) {
+    // Try to reload the site so config changes take effect immediately
     let Some(site_manager) = app_state.site_manager.as_ref() else {
         return;
     };
@@ -3864,7 +4066,7 @@ async fn reload_site_theme(app_state: &crate::AppState, site_name: &str) {
         .reload_site(site_name, &loader, config_storage_url)
         .await
     {
-        tracing::warn!("Failed to reload site after theme change: {}", e);
+        tracing::warn!("Failed to reload site after config change: {}", e);
     }
 }
 
@@ -3903,7 +4105,7 @@ pub async fn update_theme(
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     // Reload site so theme changes take effect immediately
-    reload_site_theme(&app_state, &site_name).await;
+    reload_site_after_change(&app_state, &site_name).await;
 
     Ok(Json(request))
 }
@@ -3943,7 +4145,7 @@ pub async fn reset_theme(
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     // Reload site so theme changes take effect immediately
-    reload_site_theme(&app_state, &site_name).await;
+    reload_site_after_change(&app_state, &site_name).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
