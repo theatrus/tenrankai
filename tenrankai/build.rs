@@ -229,17 +229,22 @@ fn build_frontend() {
             .expect("Failed to run npm install");
 
         if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
             panic!(
-                "Frontend dependency installation failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "Frontend dependency installation failed:\nstdout: {}\nstderr: {}",
+                stdout, stderr
             );
         }
     }
 
+    // Install admin dependencies first (needed because npm run build:prod includes admin build)
+    install_admin_dependencies(frontend_dir);
+
     // Build legacy TypeScript first
     build_legacy_typescript(frontend_dir);
 
-    // Then build Vite/React
+    // Then build Vite/React (this also builds admin via npm run build:prod)
     if !frontend_dir.join("vite.config.js").exists()
         && !frontend_dir.join("vite.config.ts").exists()
     {
@@ -248,9 +253,6 @@ fn build_frontend() {
     }
 
     build_with_vite(frontend_dir);
-
-    // Build admin frontend
-    build_admin_frontend(frontend_dir);
 }
 
 fn build_legacy_typescript(frontend_dir: &Path) {
@@ -272,9 +274,11 @@ fn build_legacy_typescript(frontend_dir: &Path) {
         .expect("Failed to run legacy TypeScript build");
 
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
         panic!(
-            "Legacy TypeScript build failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "Legacy TypeScript build failed:\nstdout: {}\nstderr: {}",
+            stdout, stderr
         );
     }
 
@@ -296,10 +300,9 @@ fn build_with_vite(frontend_dir: &Path) {
         .expect("Failed to run Vite build");
 
     if !output.status.success() {
-        panic!(
-            "Vite build failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!("Vite build failed:\nstdout: {}\nstderr: {}", stdout, stderr);
     }
 
     println!("cargo:warning=Vite build completed successfully.");
@@ -322,22 +325,23 @@ fn run_frontend_linting(frontend_dir: &Path) {
         .expect("Failed to run frontend linting");
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        panic!("Frontend linting failed:\n{}\n{}", stdout, stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        panic!(
+            "Frontend linting failed:\nstdout: {}\nstderr: {}",
+            stdout, stderr
+        );
     }
 
     println!("cargo:warning=Frontend linting passed.");
 }
 
-fn build_admin_frontend(frontend_dir: &Path) {
+fn install_admin_dependencies(frontend_dir: &Path) {
     let admin_dir = frontend_dir.join("admin");
     if !admin_dir.exists() {
-        println!("cargo:warning=No admin directory found. Skipping admin build.");
         return;
     }
 
-    // Install admin dependencies if needed
     if !admin_dir.join("node_modules").exists() {
         println!("cargo:warning=Installing admin frontend dependencies...");
         let output = Command::new(npm_command())
@@ -347,30 +351,14 @@ fn build_admin_frontend(frontend_dir: &Path) {
             .expect("Failed to run npm install for admin");
 
         if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
             panic!(
-                "Admin dependency installation failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "Admin dependency installation failed:\nstdout: {}\nstderr: {}",
+                stdout, stderr
             );
         }
     }
-
-    println!("cargo:warning=Building admin frontend...");
-
-    let output = Command::new(npm_command())
-        .arg("run")
-        .arg("build")
-        .current_dir(&admin_dir)
-        .output()
-        .expect("Failed to run admin build");
-
-    if !output.status.success() {
-        panic!(
-            "Admin build failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    println!("cargo:warning=Admin frontend build completed successfully.");
 }
 
 fn check_node_available() -> bool {
