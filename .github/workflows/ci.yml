@@ -71,6 +71,9 @@ jobs:
     - name: Run frontend linting (TypeScript, CSS, CSS variables)
       run: npm run lint
 
+    - name: Run frontend tests
+      run: npm test
+
     - name: Install build dependencies (Windows - no AVIF/HEIF)
       if: matrix.os == 'windows-latest'
       run: |
