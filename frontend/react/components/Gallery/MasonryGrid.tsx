@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
+export type GridMode = 'masonry' | 'square';
+
 export interface GalleryImage {
-  path: string; // Contains the indexed identifier (filename, sequence, or unique_id)
+  path: string;
   name: string;
   thumbnail_url?: string;
   gallery_url?: string;
@@ -26,6 +28,9 @@ interface MasonryGridProps {
   selectedImages?: Set<string>;
   hiddenImages?: string[];
   onToggleSelect?: (path: string) => void;
+  gridMode?: GridMode;
+  columnCount?: number;
+  maxColumns?: number;
 }
 
 interface DisplayDimensions {
@@ -41,31 +46,45 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   selectedImages = new Set(),
   hiddenImages = [],
   onToggleSelect,
+  gridMode = 'masonry',
+  columnCount,
+  maxColumns,
 }) => {
   const [columnWidth, setColumnWidth] = useState(400);
   const [numColumns, setNumColumns] = useState(2);
   const gridRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<number>();
 
-  // Calculate column width based on viewport
   const calculateColumnWidth = useCallback(() => {
     const viewportWidth = window.innerWidth;
     const containerWidth = Math.min(viewportWidth, 1200);
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const gap = 24; // 1.5rem
-    
-    if (viewportWidth <= 768) {
-      // Mobile: single column with minimal padding
-      const mobilePadding = isIOS ? 16 : 20;
-      setColumnWidth(containerWidth - mobilePadding);
-      setNumColumns(1);
+    const gap = 24;
+
+    let cols: number;
+    if (columnCount !== undefined) {
+      cols = Math.max(1, columnCount);
+    } else if (viewportWidth <= 480) {
+      cols = 1;
+    } else if (viewportWidth <= 768) {
+      cols = 2;
+    } else if (viewportWidth <= 1024) {
+      cols = 3;
+    } else if (viewportWidth <= 1400) {
+      cols = 4;
     } else {
-      // Desktop: two columns
-      const desktopPadding = isIOS ? 32 : 40;
-      setColumnWidth((containerWidth - desktopPadding - gap) / 2);
-      setNumColumns(2);
+      cols = 5;
     }
-  }, []);
+
+    if (maxColumns !== undefined && maxColumns >= 1 && columnCount === undefined) {
+      cols = Math.min(cols, maxColumns);
+    }
+
+    const padding = isIOS ? (cols === 1 ? 16 : 32) : (cols === 1 ? 20 : 40);
+    const totalGaps = gap * (cols - 1);
+    setColumnWidth((containerWidth - padding - totalGaps) / cols);
+    setNumColumns(cols);
+  }, [columnCount, maxColumns]);
 
   // Calculate display dimensions for an image
   const calculateDisplayDimensions = (
@@ -108,9 +127,13 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
 
   // Distribute images across columns with proper height tracking
   const distributeImages = useCallback(() => {
-    const columns: Array<{ images: GalleryImage[]; height: number }> = 
+    if (gridMode === 'square') {
+      return Array(numColumns).fill(null).map(() => [] as GalleryImage[]);
+    }
+
+    const columns: Array<{ images: GalleryImage[]; height: number }> =
       Array(numColumns).fill(null).map(() => ({ images: [], height: 0 }));
-    
+
     images.forEach((image) => {
       // Use default dimensions if not available
       const width = image.dimensions?.[0] || 800;
@@ -128,7 +151,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     });
     
     return columns.map(col => col.images);
-  }, [images, columnWidth, numColumns]);
+  }, [images, columnWidth, numColumns, gridMode]);
 
 
   // Scroll to anchor if present
@@ -145,7 +168,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     }
   }, []);
 
-  const columns = distributeImages();
+  const columns = gridMode === 'masonry' ? distributeImages() : [];
 
   // Function to render metadata badges
   const renderBadges = (image: GalleryImage) => {
@@ -218,87 +241,148 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     ) : null;
   };
 
+  const renderImageItem = (image: GalleryImage, isSquare: boolean) => {
+    const filename = image.path.split('/').pop() || '';
+    const isHidden = hiddenImages.includes(filename);
+    const isSelected = selectedImages.has(image.path);
+
+    const handleClick = (e: React.MouseEvent) => {
+      if (isManageMode && onToggleSelect) {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleSelect(image.path);
+      }
+    };
+
+    const classNames = [
+      'image-item',
+      image.is_new ? 'is-new' : '',
+      isHidden ? 'is-hidden' : '',
+      isManageMode ? 'select-mode' : '',
+      isSelected ? 'selected' : '',
+    ].filter(Boolean).join(' ');
+
+    const imageUrl = isSquare
+      ? (image.thumbnail_url || image.gallery_url || '')
+      : (image.gallery_url || image.thumbnail_url || '');
+    const retinaUrl = imageUrl.replace(
+      isSquare ? '?size=thumbnail' : '?size=gallery',
+      isSquare ? '?size=thumbnail@2x' : '?size=gallery@2x',
+    );
+
+    if (isSquare) {
+      return (
+        <div
+          key={image.path}
+          className={classNames}
+          id={image.path}
+          data-id={image.path}
+          onClick={handleClick}
+        >
+          {isManageMode && (
+            <div className="selection-checkbox">
+              {isSelected ? '\u2713' : ''}
+            </div>
+          )}
+          <a
+            href={`${galleryUrl}/detail/${image.path}`}
+            className="image-link"
+            onContextMenu={(e) => e.preventDefault()}
+            onDragStart={(e) => e.preventDefault()}
+            onClick={isManageMode ? (e) => e.preventDefault() : undefined}
+          >
+            <div
+              className="gallery-image-container"
+              style={{
+                backgroundImage: `image-set(
+                  url("${imageUrl}") 1x,
+                  url("${retinaUrl}") 2x
+                )`,
+              }}
+              role="img"
+              aria-label={image.name}
+            />
+            {renderBadges(image)}
+          </a>
+        </div>
+      );
+    }
+
+    const width = image.dimensions?.[0] || 800;
+    const height = image.dimensions?.[1] || 600;
+    const displayDimensions = calculateDisplayDimensions(width, height, columnWidth);
+
+    return (
+      <div
+        key={image.path}
+        className={classNames}
+        id={image.path}
+        data-id={image.path}
+        style={{
+          width: `${displayDimensions.width}px`,
+          height: `${displayDimensions.height}px`,
+        }}
+        onClick={handleClick}
+      >
+        {isManageMode && (
+          <div className="selection-checkbox">
+            {isSelected ? '\u2713' : ''}
+          </div>
+        )}
+        <a
+          href={`${galleryUrl}/detail/${image.path}`}
+          className="image-link"
+          onContextMenu={(e) => e.preventDefault()}
+          onDragStart={(e) => e.preventDefault()}
+          onClick={isManageMode ? (e) => e.preventDefault() : undefined}
+        >
+          <div
+            className="gallery-image-container"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              backgroundImage: `image-set(
+                url("${imageUrl}") 1x,
+                url("${retinaUrl}") 2x
+              )`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            }}
+            role="img"
+            aria-label={image.name}
+          />
+          {renderBadges(image)}
+        </a>
+      </div>
+    );
+  };
+
+  if (gridMode === 'square') {
+    return (
+      <div
+        className="image-grid square-grid"
+        ref={gridRef}
+        style={{ '--grid-columns': numColumns } as React.CSSProperties}
+      >
+        {images.map((image) => renderImageItem(image, true))}
+      </div>
+    );
+  }
+
   return (
     <div className="image-grid" ref={gridRef}>
       {columns.map((column, columnIndex) => (
-        <div 
-          key={columnIndex} 
-          className="masonry-column" 
+        <div
+          key={columnIndex}
+          className="masonry-column"
           data-column={columnIndex}
           style={{ display: columnIndex >= numColumns ? 'none' : 'flex' }}
         >
-          {column.map((image) => {
-            const width = image.dimensions?.[0] || 800;
-            const height = image.dimensions?.[1] || 600;
-            const displayDimensions = calculateDisplayDimensions(width, height, columnWidth);
-            const filename = image.path.split('/').pop() || '';
-            const isHidden = hiddenImages.includes(filename);
-            const isSelected = selectedImages.has(image.path);
-
-            const handleClick = (e: React.MouseEvent) => {
-              if (isManageMode && onToggleSelect) {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleSelect(image.path);
-              }
-            };
-
-            const classNames = [
-              'image-item',
-              image.is_new ? 'is-new' : '',
-              isHidden ? 'is-hidden' : '',
-              isManageMode ? 'select-mode' : '',
-              isSelected ? 'selected' : '',
-            ].filter(Boolean).join(' ');
-
-            return (
-              <div
-                key={image.path}
-                className={classNames}
-                id={image.path}
-                data-id={image.path}
-                style={{
-                  width: `${displayDimensions.width}px`,
-                  height: `${displayDimensions.height}px`
-                }}
-                onClick={handleClick}
-              >
-                {isManageMode && (
-                  <div className="selection-checkbox">
-                    {isSelected ? '✓' : ''}
-                  </div>
-                )}
-                <a
-                  href={`${galleryUrl}/detail/${image.path}`}
-                  className="image-link"
-                  onContextMenu={(e) => e.preventDefault()}
-                  onDragStart={(e) => e.preventDefault()}
-                  onClick={isManageMode ? (e) => e.preventDefault() : undefined}
-                >
-                  <div
-                    className="gallery-image-container"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '100%',
-                      backgroundImage: `image-set(
-                        url("${image.gallery_url || image.thumbnail_url || ''}") 1x,
-                        url("${(image.gallery_url || image.thumbnail_url || '').replace('?size=gallery', '?size=gallery@2x')}") 2x
-                      )`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      backgroundRepeat: 'no-repeat'
-                    }}
-                    role="img"
-                    aria-label={image.name}
-                  />
-                  {renderBadges(image)}
-                </a>
-              </div>
-            );
-          })}
+          {column.map((image) => renderImageItem(image, false))}
         </div>
       ))}
     </div>

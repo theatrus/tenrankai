@@ -205,6 +205,8 @@ export interface GalleryData {
   permissions: RolePermissions;
   /** List of hidden image filenames in this folder */
   hidden_images?: string[];
+  grid_mode?: string;
+  max_columns: number;
 }
 
 export interface ApiError {

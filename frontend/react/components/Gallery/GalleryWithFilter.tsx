@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { MasonryGrid } from './MasonryGrid';
 import { FilterBar, FilterType } from './FilterBar';
 import { ManageToolbar } from './ManageToolbar';
-import type { GalleryImage } from './MasonryGrid';
+import type { GalleryImage, GridMode } from './MasonryGrid';
 import type { RolePermissions } from '../../types';
 
 interface GalleryWithFilterProps {
@@ -23,6 +23,8 @@ interface GalleryWithFilterProps {
   onCopySuccess: (copiedCount: number) => void;
   onCancelManage: () => void;
   toolbarMount?: HTMLElement | null;
+  gridMode?: GridMode;
+  maxColumns?: number;
 }
 
 export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
@@ -42,8 +44,9 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   onCopySuccess,
   onCancelManage,
   toolbarMount,
+  gridMode = 'masonry',
+  maxColumns,
 }) => {
-  // Initialize filter from URL parameters
   const getInitialFilter = (): FilterType => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -57,10 +60,9 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
 
   const [activeFilter, setActiveFilter] = useState<FilterType>(getInitialFilter());
 
-  // Update URL when filter changes
   const handleFilterChange = useCallback((filter: FilterType) => {
     setActiveFilter(filter);
-    
+
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       if (filter === 'all') {
@@ -68,12 +70,10 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
       } else {
         url.searchParams.set('filter', filter);
       }
-      // Update URL without page reload
       window.history.pushState({}, '', url.toString());
     }
   }, []);
 
-  // Calculate filter counts
   const filterCounts = React.useMemo(() => {
     const counts = {
       all: images.length,
@@ -100,7 +100,6 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
     return counts;
   }, [images, permissions]);
 
-  // Filter images based on active filter
   const filteredImages = React.useMemo(() => {
     if (!permissions?.can_read_metadata || activeFilter === 'all') {
       return images;
@@ -125,15 +124,12 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
     });
   }, [images, activeFilter, permissions]);
 
-  // Create a ref to store the filter root
   const filterRootRef = React.useRef<any>(null);
-  
-  // Mount filter bar only once
+
   React.useEffect(() => {
     if (filterMount && permissions?.can_read_metadata && !filterRootRef.current) {
       import('react-dom/client').then(({ createRoot }) => {
         filterRootRef.current = createRoot(filterMount);
-        // Initial render
         filterRootRef.current.render(
           <FilterBar
             activeFilter={activeFilter}
@@ -143,9 +139,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
         );
       });
     }
-    
+
     return () => {
-      // Cleanup on unmount
       if (filterRootRef.current) {
         setTimeout(() => {
           filterRootRef.current?.unmount();
@@ -153,9 +148,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
         }, 0);
       }
     };
-  }, [filterMount, permissions?.can_read_metadata]); // Note: intentionally not including other deps to prevent remount
-  
-  // Update filter bar when props change
+  }, [filterMount, permissions?.can_read_metadata]);
+
   React.useEffect(() => {
     if (filterRootRef.current && permissions?.can_read_metadata) {
       filterRootRef.current.render(
@@ -178,6 +172,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
         selectedImages={selectedImages}
         hiddenImages={hiddenImages}
         onToggleSelect={onToggleSelect}
+        gridMode={gridMode}
+        maxColumns={maxColumns}
       />
       {isManageMode && toolbarMount && createPortal(
         <ManageToolbar

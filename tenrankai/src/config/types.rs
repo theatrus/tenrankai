@@ -163,6 +163,27 @@ pub struct GallerySystemConfig {
     /// Default: 1000 entries
     #[serde(default = "super::defaults::default_metadata_cache_size")]
     pub metadata_cache_size: usize,
+    #[serde(default)]
+    pub grid_mode: GridMode,
+    #[serde(default)]
+    pub max_columns: Option<u8>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum GridMode {
+    #[default]
+    Masonry,
+    Square,
+}
+
+impl GridMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GridMode::Masonry => "masonry",
+            GridMode::Square => "square",
+        }
+    }
 }
 
 /// Image indexing mode for gallery URLs
