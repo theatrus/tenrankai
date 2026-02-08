@@ -274,31 +274,33 @@ export function Galleries() {
                   Relative to the site's storage prefix
                 </small>
               </div>
-              <div className="form-group">
-                <label className="form-label">Grid Mode</label>
-                <select
-                  className="form-input"
-                  value={newGallery.grid_mode || 'masonry'}
-                  onChange={(e) => setNewGallery({ ...newGallery, grid_mode: e.target.value })}
-                >
-                  <option value="masonry">Masonry</option>
-                  <option value="square">Square</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Max Columns</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  min="1"
-                  max="5"
-                  value={newGallery.max_columns ?? ''}
-                  onChange={(e) => setNewGallery({ ...newGallery, max_columns: e.target.value ? Number(e.target.value) : undefined })}
-                  placeholder="No limit"
-                />
-                <small style={{ color: 'var(--color-text-muted)' }}>
-                  Maximum number of columns in the grid layout (leave empty for auto)
-                </small>
+              <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '0.5rem', paddingTop: '0.75rem' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Layout</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">Grid Mode</label>
+                    <select
+                      className="form-input"
+                      value={newGallery.grid_mode || 'masonry'}
+                      onChange={(e) => setNewGallery({ ...newGallery, grid_mode: e.target.value })}
+                    >
+                      <option value="masonry">Masonry</option>
+                      <option value="square">Square</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Max Columns</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      min="1"
+                      max="5"
+                      value={newGallery.max_columns ?? ''}
+                      onChange={(e) => setNewGallery({ ...newGallery, max_columns: e.target.value ? Number(e.target.value) : undefined })}
+                      placeholder="Default (2)"
+                    />
+                  </div>
+                </div>
               </div>
               {createMutation.error && (
                 <div className="error" style={{ marginBottom: '1rem' }}>
@@ -648,28 +650,41 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                 onChange={(e) => updateGallerySettings({ cache_directory: e.target.value })}
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">Grid Mode</label>
-              <select
-                className="form-input"
-                value={gallerySettings.grid_mode || 'masonry'}
-                onChange={(e) => updateGallerySettings({ grid_mode: e.target.value })}
-              >
-                <option value="masonry">Masonry</option>
-                <option value="square">Square</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Max Columns</label>
-              <input
-                type="number"
-                className="form-input"
-                min="1"
-                max="5"
-                value={gallerySettings.max_columns ?? ''}
-                onChange={(e) => updateGallerySettings({ max_columns: e.target.value ? Number(e.target.value) : undefined })}
-                placeholder="No limit"
-              />
+          </div>
+
+          {/* Layout Settings */}
+          <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '1rem', paddingTop: '1rem' }}>
+            <h4 style={{ margin: '0 0 0.75rem 0' }}>Layout Settings</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Grid Mode</label>
+                <select
+                  className="form-input"
+                  value={gallerySettings.grid_mode || 'masonry'}
+                  onChange={(e) => updateGallerySettings({ grid_mode: e.target.value })}
+                >
+                  <option value="masonry">Masonry</option>
+                  <option value="square">Square</option>
+                </select>
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Masonry uses variable-height images; Square uses uniform grid cells
+                </small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Max Columns</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  min="1"
+                  max="5"
+                  value={gallerySettings.max_columns ?? ''}
+                  onChange={(e) => updateGallerySettings({ max_columns: e.target.value ? Number(e.target.value) : undefined })}
+                  placeholder="Default (2)"
+                />
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Maximum number of columns in the grid layout (default: 2)
+                </small>
+              </div>
             </div>
           </div>
 
