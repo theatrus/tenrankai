@@ -26,6 +26,8 @@ export function createGalleryData(overrides?: Partial<GalleryData>): GalleryData
     page: 1,
     total_pages: 1,
     permissions: createRolePermissions(),
+    grid_mode: 'masonry',
+    max_columns: 2,
     ...overrides,
   };
 }

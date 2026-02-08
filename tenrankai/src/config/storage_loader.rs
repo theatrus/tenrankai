@@ -302,6 +302,13 @@ impl ConfigStorageLoader {
             image_indexing,
             permissions,
             metadata_cache_size: stored.metadata_cache_size,
+            grid_mode: match stored.grid_mode {
+                tenrankai_config_storage::StoredGridMode::Masonry => {
+                    super::types::GridMode::Masonry
+                }
+                tenrankai_config_storage::StoredGridMode::Square => super::types::GridMode::Square,
+            },
+            max_columns: stored.max_columns,
         })
     }
 

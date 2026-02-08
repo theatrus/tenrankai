@@ -156,6 +156,8 @@ impl Default for GallerySystemConfig {
             permissions: Default::default(),
             tiles: None,
             metadata_cache_size: default_metadata_cache_size(),
+            grid_mode: Default::default(),
+            max_columns: Some(2),
         }
     }
 }

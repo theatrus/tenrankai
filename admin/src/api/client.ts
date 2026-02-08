@@ -108,6 +108,8 @@ export interface SiteGalleryInfo {
   copyright_holder?: string;
   image_watermark?: ImageWatermarkConfig;
   enable_tile_zoom?: boolean;
+  grid_mode?: string;
+  max_columns?: number;
 }
 
 export interface SiteGalleryListResponse {
@@ -122,6 +124,8 @@ export interface CreateGalleryRequest {
   copyright_holder?: string;
   image_watermark?: ImageWatermarkConfig;
   enable_tile_zoom?: boolean;
+  grid_mode?: string;
+  max_columns?: number;
 }
 
 export interface SiteInfo {
@@ -164,12 +168,16 @@ export interface FolderPermissions {
   hidden: boolean;
   permissions: PermissionConfig;
   description: string;
+  grid_mode?: string;
+  max_columns?: number;
 }
 
 export interface UpdateFolderPermissionsRequest {
   hidden: boolean;
   permissions: PermissionConfig;
   description: string;
+  grid_mode?: string;
+  max_columns?: number;
 }
 
 export interface ShareFolderRequest {

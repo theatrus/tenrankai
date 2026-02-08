@@ -384,6 +384,10 @@ pub struct SiteGalleryInfo {
     pub image_watermark: Option<ImageWatermarkConfigDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_tile_zoom: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_columns: Option<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -403,6 +407,10 @@ pub struct CreateGalleryRequest {
     pub image_watermark: Option<ImageWatermarkConfigDto>,
     #[serde(default)]
     pub enable_tile_zoom: Option<bool>,
+    #[serde(default)]
+    pub grid_mode: Option<String>,
+    #[serde(default)]
+    pub max_columns: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -588,6 +596,10 @@ pub struct FolderPermissionsResponse {
     pub hidden_images: Vec<String>,
     pub permissions: PermissionConfigDto,
     pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_columns: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -597,6 +609,10 @@ pub struct UpdateFolderPermissionsRequest {
     pub hidden_images: Vec<String>,
     pub permissions: PermissionConfigDto,
     pub description: String,
+    #[serde(default)]
+    pub grid_mode: Option<String>,
+    #[serde(default)]
+    pub max_columns: Option<u8>,
 }
 
 // ============================================================================

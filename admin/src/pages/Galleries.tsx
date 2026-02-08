@@ -274,6 +274,32 @@ export function Galleries() {
                   Relative to the site's storage prefix
                 </small>
               </div>
+              <div className="form-group">
+                <label className="form-label">Grid Mode</label>
+                <select
+                  className="form-input"
+                  value={newGallery.grid_mode || 'masonry'}
+                  onChange={(e) => setNewGallery({ ...newGallery, grid_mode: e.target.value })}
+                >
+                  <option value="masonry">Masonry</option>
+                  <option value="square">Square</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Max Columns</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  min="1"
+                  max="5"
+                  value={newGallery.max_columns ?? ''}
+                  onChange={(e) => setNewGallery({ ...newGallery, max_columns: e.target.value ? Number(e.target.value) : undefined })}
+                  placeholder="No limit"
+                />
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Maximum number of columns in the grid layout (leave empty for auto)
+                </small>
+              </div>
               {createMutation.error && (
                 <div className="error" style={{ marginBottom: '1rem' }}>
                   {String(createMutation.error)}
@@ -425,6 +451,8 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
       copyright_holder: enableTextWatermark ? (gallerySettings.copyright_holder || undefined) : undefined,
       image_watermark: enableImageWatermark ? gallerySettings.image_watermark : undefined,
       enable_tile_zoom: enableTileZoom,
+      grid_mode: gallerySettings.grid_mode || 'masonry',
+      max_columns: gallerySettings.max_columns,
     };
     updateGalleryMutation.mutate(request);
   };
@@ -618,6 +646,29 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                 className="form-input"
                 value={gallerySettings.cache_directory}
                 onChange={(e) => updateGallerySettings({ cache_directory: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Grid Mode</label>
+              <select
+                className="form-input"
+                value={gallerySettings.grid_mode || 'masonry'}
+                onChange={(e) => updateGallerySettings({ grid_mode: e.target.value })}
+              >
+                <option value="masonry">Masonry</option>
+                <option value="square">Square</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Max Columns</label>
+              <input
+                type="number"
+                className="form-input"
+                min="1"
+                max="5"
+                value={gallerySettings.max_columns ?? ''}
+                onChange={(e) => updateGallerySettings({ max_columns: e.target.value ? Number(e.target.value) : undefined })}
+                placeholder="No limit"
               />
             </div>
           </div>
@@ -1243,6 +1294,8 @@ function FolderPermissionsModal({
     user_roles: [],
   });
   const [description, setDescription] = useState('');
+  const [gridMode, setGridMode] = useState<string | undefined>(undefined);
+  const [maxColumns, setMaxColumns] = useState<number | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1278,6 +1331,8 @@ function FolderPermissionsModal({
         setHidden(data.hidden);
         setPermissions(data.permissions);
         setDescription(data.description);
+        setGridMode(data.grid_mode);
+        setMaxColumns(data.max_columns);
         setLoading(false);
       })
       .catch((err) => {
@@ -1294,6 +1349,8 @@ function FolderPermissionsModal({
         hidden,
         permissions,
         description,
+        grid_mode: gridMode,
+        max_columns: maxColumns,
       });
       onSaved();
     } catch (err) {
@@ -1446,6 +1503,33 @@ function FolderPermissionsModal({
               <small style={{ color: 'var(--color-text-muted)' }}>
                 Hidden folders are not shown in gallery listings
               </small>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Grid Mode Override</label>
+                <select
+                  className="form-input"
+                  value={gridMode || ''}
+                  onChange={(e) => setGridMode(e.target.value || undefined)}
+                >
+                  <option value="">Inherit from gallery</option>
+                  <option value="masonry">Masonry</option>
+                  <option value="square">Square</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Max Columns Override</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  min={1}
+                  max={5}
+                  placeholder="Inherit from gallery"
+                  value={maxColumns ?? ''}
+                  onChange={(e) => setMaxColumns(e.target.value ? Number(e.target.value) : undefined)}
+                />
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

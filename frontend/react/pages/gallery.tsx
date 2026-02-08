@@ -134,6 +134,8 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       onCopySuccess={handleCopySuccess}
       onCancelManage={handleCancelManage}
       toolbarMount={toolbarMount}
+      gridMode={galleryData.grid_mode === 'square' ? 'square' : 'masonry'}
+      maxColumns={galleryData.max_columns}
     />
   );
 };

@@ -15,6 +15,7 @@ pub use types::{
     RolePermissions,
     // Site configuration types
     StoredGalleryConfig,
+    StoredGridMode,
     StoredImageSizeConfig,
     StoredImageWatermarkConfig,
     StoredPostsConfig,

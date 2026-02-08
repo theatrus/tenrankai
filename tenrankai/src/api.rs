@@ -136,6 +136,8 @@ pub struct GalleryApiResponse {
     pub permissions: crate::permissions::RolePermissions,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hidden_images: Vec<String>,
+    pub grid_mode: String,
+    pub max_columns: u8,
 }
 
 /// Maximum number of navigation images to include in each direction
@@ -348,27 +350,23 @@ pub async fn gallery_api_handler_for_named(
         }
     };
 
-    // Get hidden_images from folder metadata (only include if user has can_see_hidden permission)
-    // Translate filenames to URL IDs so frontend can match them against image URLs
+    let folder_metadata = gallery.read_folder_metadata_full(&path).await;
+
     let hidden_images = if user_permissions.permissions.can_see_hidden {
-        let filenames = gallery
-            .read_folder_metadata_full(&path)
-            .await
-            .map(|m| m.config.hidden_images)
+        let filenames = folder_metadata
+            .as_ref()
+            .map(|m| m.config.hidden_images.clone())
             .unwrap_or_default();
 
-        // Translate filenames to URL IDs
         let indexer = gallery.image_indexer.read().await;
         filenames
             .into_iter()
             .filter_map(|filename| {
-                // Construct full path
                 let full_path = if path.is_empty() {
                     filename.clone()
                 } else {
                     format!("{}/{}", path, filename)
                 };
-                // Get URL ID from indexer and extract just the ID part
                 indexer
                     .get_index(&full_path)
                     .map(|url_path| url_path.rsplit('/').next().unwrap_or(url_path).to_string())
@@ -377,6 +375,16 @@ pub async fn gallery_api_handler_for_named(
     } else {
         Vec::new()
     };
+
+    let folder_grid_mode = folder_metadata
+        .as_ref()
+        .and_then(|m| m.config.grid_mode.as_deref());
+    let folder_max_columns = folder_metadata.as_ref().and_then(|m| m.config.max_columns);
+
+    let grid_mode = folder_grid_mode.unwrap_or_else(|| gallery.config.grid_mode.as_str());
+    let max_columns = folder_max_columns
+        .or(gallery.config.max_columns)
+        .or(Some(2));
 
     Ok(Json(GalleryApiResponse {
         site_name: app_state.site.name.clone(),
@@ -391,6 +399,8 @@ pub async fn gallery_api_handler_for_named(
         folder_description_markdown,
         permissions: user_permissions.permissions,
         hidden_images,
+        grid_mode: grid_mode.to_string(),
+        max_columns: max_columns.unwrap_or(2),
     }))
 }
 
@@ -2031,6 +2041,14 @@ pub async fn update_folder_description_handler(
                     .as_ref()
                     .map(|m| m.config.permissions.clone())
                     .unwrap_or_default(),
+                grid_mode: cached_entry
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.config.grid_mode.clone()),
+                max_columns: cached_entry
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.config.max_columns),
             },
             description_markdown: markdown_content.clone(),
         };
@@ -2816,6 +2834,25 @@ roles = ["viewer"]
             headers.get("cache-control").map(|v| v.to_str().unwrap()),
             Some("public, max-age=60")
         );
+    }
+
+    #[tokio::test]
+    async fn test_gallery_api_response_includes_grid_mode() {
+        let (app_state, _temp_dir) = create_test_app_state().await;
+        let headers = HeaderMap::new();
+        let auth = headers_to_optional_auth(&headers, &app_state);
+
+        let result = gallery_api_handler_for_named(
+            ResolvedState(app_state),
+            axum::extract::Path(("test".to_string(), "".to_string())),
+            axum::extract::Query(crate::gallery::GalleryQuery::default()),
+            auth,
+        )
+        .await;
+
+        let response = result.unwrap();
+        assert_eq!(response.0.grid_mode, "masonry");
+        assert_eq!(response.0.max_columns, 2);
     }
 
     #[tokio::test]

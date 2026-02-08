@@ -311,18 +311,21 @@ pub(crate) struct ImageMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
 
-    /// List of hidden image filenames (relative to this folder)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden_images: Vec<String>,
 
-    /// Folder-specific permission overrides
     #[serde(default)]
     pub permissions: crate::permissions::types::PermissionConfig,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_mode: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_columns: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -298,6 +298,8 @@ pub async fn handle_add_gallery_command(
         metadata_cache_size: 1000,
         tiles: None,
         pregenerate: None,
+        grid_mode: Default::default(),
+        max_columns: None,
     };
 
     storage

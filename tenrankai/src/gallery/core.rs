@@ -742,6 +742,8 @@ impl Gallery {
                         hidden: false,
                         hidden_images: vec![],
                         permissions: Default::default(),
+                        grid_mode: None,
+                        max_columns: None,
                     },
                     description_markdown: content,
                 })

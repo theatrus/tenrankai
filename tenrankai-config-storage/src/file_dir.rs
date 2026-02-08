@@ -530,6 +530,8 @@ mod tests {
                 max_depth: 3,
                 max_per_folder: 5,
             }),
+            grid_mode: Default::default(),
+            max_columns: Some(2),
         }
     }
 

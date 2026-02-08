@@ -386,6 +386,8 @@ mod scenario_tests {
             hidden: false,
             hidden_images: vec![],
             permissions: Default::default(),
+            grid_mode: None,
+            max_columns: None,
         };
 
         // Override viewer role for this folder
@@ -573,6 +575,8 @@ mod scenario_tests {
             hidden: false,
             hidden_images: vec![],
             permissions: Default::default(),
+            grid_mode: None,
+            max_columns: None,
         };
 
         let mut wedding_roles = HashMap::new();
@@ -629,6 +633,8 @@ mod scenario_tests {
             hidden: true, // Hidden from gallery listings
             hidden_images: vec![],
             permissions: Default::default(),
+            grid_mode: None,
+            max_columns: None,
         };
 
         let mut corp_roles = HashMap::new();

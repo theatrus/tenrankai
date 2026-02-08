@@ -319,6 +319,23 @@ fn default_watermark_padding() -> u32 {
     10
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StoredGridMode {
+    #[default]
+    Masonry,
+    Square,
+}
+
+impl StoredGridMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StoredGridMode::Masonry => "masonry",
+            StoredGridMode::Square => "square",
+        }
+    }
+}
+
 /// Stored gallery configuration (full gallery settings)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredGalleryConfig {
@@ -386,6 +403,12 @@ pub struct StoredGalleryConfig {
     /// Preview configuration
     #[serde(default)]
     pub preview: Option<StoredPreviewConfig>,
+
+    #[serde(default)]
+    pub grid_mode: StoredGridMode,
+
+    #[serde(default = "default_max_columns")]
+    pub max_columns: Option<u8>,
 }
 
 /// Image size configuration
@@ -506,6 +529,9 @@ fn default_image_indexing() -> String {
 fn default_metadata_cache_size() -> usize {
     1000
 }
+fn default_max_columns() -> Option<u8> {
+    Some(2)
+}
 fn default_tile_size() -> u32 {
     1024
 }
@@ -593,5 +619,104 @@ impl AuditEntry {
     pub fn with_changes(mut self, changes: serde_json::Value) -> Self {
         self.changes = Some(changes);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_grid_mode_defaults_to_masonry() {
+        let mode = StoredGridMode::default();
+        assert_eq!(mode, StoredGridMode::Masonry);
+        assert_eq!(mode.as_str(), "masonry");
+    }
+
+    #[test]
+    fn stored_grid_mode_square_as_str() {
+        assert_eq!(StoredGridMode::Square.as_str(), "square");
+    }
+
+    #[test]
+    fn stored_grid_mode_serializes_to_lowercase() {
+        #[derive(serde::Serialize)]
+        struct Wrapper {
+            mode: StoredGridMode,
+        }
+        let masonry = toml_edit::ser::to_string_pretty(&Wrapper {
+            mode: StoredGridMode::Masonry,
+        })
+        .unwrap();
+        assert!(masonry.contains("mode = \"masonry\""));
+
+        let square = toml_edit::ser::to_string_pretty(&Wrapper {
+            mode: StoredGridMode::Square,
+        })
+        .unwrap();
+        assert!(square.contains("mode = \"square\""));
+    }
+
+    #[test]
+    fn stored_grid_mode_deserializes_from_string() {
+        #[derive(serde::Deserialize)]
+        struct Wrapper {
+            mode: StoredGridMode,
+        }
+        let masonry: Wrapper = toml_edit::de::from_str("mode = \"masonry\"").unwrap();
+        assert_eq!(masonry.mode, StoredGridMode::Masonry);
+
+        let square: Wrapper = toml_edit::de::from_str("mode = \"square\"").unwrap();
+        assert_eq!(square.mode, StoredGridMode::Square);
+    }
+
+    #[test]
+    fn gallery_config_defaults_grid_mode_when_missing() {
+        let toml = r#"
+name = "test"
+url_prefix = "/gallery"
+source_directory = "photos"
+cache_directory = "cache"
+"#;
+        let config: StoredGalleryConfig = toml_edit::de::from_str(toml).unwrap();
+        assert_eq!(config.grid_mode, StoredGridMode::Masonry);
+    }
+
+    #[test]
+    fn gallery_config_reads_explicit_grid_mode() {
+        let toml = r#"
+name = "test"
+url_prefix = "/gallery"
+source_directory = "photos"
+cache_directory = "cache"
+grid_mode = "square"
+"#;
+        let config: StoredGalleryConfig = toml_edit::de::from_str(toml).unwrap();
+        assert_eq!(config.grid_mode, StoredGridMode::Square);
+    }
+
+    #[test]
+    fn gallery_config_defaults_max_columns_to_two() {
+        let toml = r#"
+name = "test"
+url_prefix = "/gallery"
+source_directory = "photos"
+cache_directory = "cache"
+"#;
+        let config: StoredGalleryConfig = toml_edit::de::from_str(toml).unwrap();
+        assert_eq!(config.max_columns, Some(2));
+    }
+
+    #[test]
+    fn gallery_config_reads_explicit_max_columns() {
+        let toml = r#"
+name = "test"
+url_prefix = "/gallery"
+source_directory = "photos"
+cache_directory = "cache"
+max_columns = 3
+"#;
+        let config: StoredGalleryConfig = toml_edit::de::from_str(toml).unwrap();
+        assert_eq!(config.max_columns, Some(3));
     }
 }

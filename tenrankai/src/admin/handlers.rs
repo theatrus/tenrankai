@@ -1071,6 +1071,7 @@ pub async fn list_site_galleries(
             continue;
         }
         if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
+            let grid_mode_str = config.grid_mode.as_str();
             galleries.push(SiteGalleryInfo {
                 name,
                 url_prefix: config.url_prefix,
@@ -1079,6 +1080,8 @@ pub async fn list_site_galleries(
                 copyright_holder: config.copyright_holder,
                 image_watermark: config.image_watermark.map(Into::into),
                 enable_tile_zoom: Some(config.tiles.is_some()),
+                grid_mode: Some(grid_mode_str.to_string()),
+                max_columns: config.max_columns,
             });
         }
     }
@@ -1108,6 +1111,8 @@ pub async fn get_site_gallery(
         .map_err(|e| AdminError::Internal(e.to_string()))?
         .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", name)))?;
 
+    let grid_mode_str = config.grid_mode.as_str();
+
     Ok(Json(SiteGalleryInfo {
         name,
         url_prefix: config.url_prefix,
@@ -1116,6 +1121,8 @@ pub async fn get_site_gallery(
         copyright_holder: config.copyright_holder,
         image_watermark: config.image_watermark.map(Into::into),
         enable_tile_zoom: Some(config.tiles.is_some()),
+        grid_mode: Some(grid_mode_str.to_string()),
+        max_columns: config.max_columns,
     }))
 }
 
@@ -1179,6 +1186,11 @@ pub async fn upsert_site_gallery(
         None
     };
 
+    let requested_grid_mode = match request.grid_mode.as_deref() {
+        Some("square") => tenrankai_config_storage::StoredGridMode::Square,
+        _ => tenrankai_config_storage::StoredGridMode::Masonry,
+    };
+
     // Create the stored config, preserving existing settings where appropriate
     let stored_config = if let Some(existing) = existing_config {
         // Update only the fields exposed via the API, preserve everything else
@@ -1213,6 +1225,8 @@ pub async fn upsert_site_gallery(
             },
             pregenerate: existing.pregenerate,
             preview: existing.preview,
+            grid_mode: requested_grid_mode,
+            max_columns: request.max_columns.or(existing.max_columns),
         }
     } else if let Some(proto) = prototype_config {
         // New gallery - use prototype config as template
@@ -1247,6 +1261,8 @@ pub async fn upsert_site_gallery(
             },
             pregenerate: proto.pregenerate,
             preview: proto.preview,
+            grid_mode: requested_grid_mode,
+            max_columns: request.max_columns,
         }
     } else {
         // New gallery - use hardcoded defaults (no prototype available)
@@ -1288,6 +1304,8 @@ pub async fn upsert_site_gallery(
             },
             pregenerate: None,
             preview: None,
+            grid_mode: requested_grid_mode,
+            max_columns: request.max_columns,
         }
     };
 
@@ -1300,6 +1318,8 @@ pub async fn upsert_site_gallery(
     // Reload site so gallery changes (especially watermark) take effect immediately
     reload_site_after_change(&app_state, &site).await;
 
+    let response_grid_mode = stored_config.grid_mode.as_str();
+
     Ok(Json(SiteGalleryInfo {
         name,
         url_prefix: request.url_prefix,
@@ -1308,6 +1328,8 @@ pub async fn upsert_site_gallery(
         copyright_holder: request.copyright_holder,
         image_watermark: request.image_watermark,
         enable_tile_zoom: Some(stored_config.tiles.is_some()),
+        grid_mode: Some(response_grid_mode.to_string()),
+        max_columns: stored_config.max_columns,
     }))
 }
 
@@ -1699,7 +1721,7 @@ pub async fn get_folder_permissions(
     // read_folder_metadata_full returns Option<FolderMetadata>
     let metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
 
-    let (hidden, hidden_images, permissions, description) = match metadata {
+    let (hidden, hidden_images, permissions, description, grid_mode, max_columns) = match metadata {
         Some(meta) => {
             let perms = &meta.config.permissions;
             (
@@ -1734,11 +1756,11 @@ pub async fn get_folder_permissions(
                         .collect(),
                 },
                 meta.description_markdown,
+                meta.config.grid_mode,
+                meta.config.max_columns,
             )
         }
         None => {
-            // Folder exists in cache but has no _folder.md - return empty permissions
-            // Check if the folder exists in the cache at all
             let folder_cache = gallery_obj.folder_cache.read_all().await;
             if !folder_cache.contains_key(&folder_path) {
                 return Err(AdminError::NotFound(format!(
@@ -1757,6 +1779,8 @@ pub async fn get_folder_permissions(
                     user_roles: vec![],
                 },
                 String::new(),
+                None,
+                None,
             )
         }
     };
@@ -1766,6 +1790,8 @@ pub async fn get_folder_permissions(
         hidden_images,
         permissions,
         description,
+        grid_mode,
+        max_columns,
     }))
 }
 
@@ -1953,6 +1979,14 @@ pub async fn update_folder_permissions(
         toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
     }
 
+    if let Some(ref gm) = request.grid_mode {
+        toml_content["grid_mode"] = toml_edit::value(gm.clone());
+    }
+
+    if let Some(mc) = request.max_columns {
+        toml_content["max_columns"] = toml_edit::value(i64::from(mc));
+    }
+
     // Build the full _folder.md content
     let toml_str = toml_content.to_string();
     let content = if toml_str.trim().is_empty() && request.description.is_empty() {
@@ -1987,6 +2021,8 @@ pub async fn update_folder_permissions(
         hidden_images: request.hidden_images,
         permissions: request.permissions,
         description: request.description,
+        grid_mode: request.grid_mode,
+        max_columns: request.max_columns,
     }))
 }
 
@@ -2218,7 +2254,14 @@ pub async fn share_folder(
     // Read current folder metadata
     let current_metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
 
-    let (hidden, hidden_images, mut permissions, description) = match current_metadata {
+    let (
+        hidden,
+        hidden_images,
+        mut permissions,
+        description,
+        existing_grid_mode,
+        existing_max_columns,
+    ) = match current_metadata {
         Some(meta) => {
             let perms = &meta.config.permissions;
             (
@@ -2253,6 +2296,8 @@ pub async fn share_folder(
                         .collect(),
                 },
                 meta.description_markdown,
+                meta.config.grid_mode,
+                meta.config.max_columns,
             )
         }
         None => (
@@ -2266,6 +2311,8 @@ pub async fn share_folder(
                 user_roles: vec![],
             },
             String::new(),
+            None,
+            None,
         ),
     };
 
@@ -2273,7 +2320,6 @@ pub async fn share_folder(
     let mut found = false;
     for assignment in &mut permissions.user_roles {
         if assignment.username == username {
-            // Add role if not already present
             if !assignment.roles.contains(&request.role) {
                 assignment.roles.push(request.role.clone());
             }
@@ -2294,6 +2340,8 @@ pub async fn share_folder(
         hidden_images,
         permissions: permissions.clone(),
         description,
+        grid_mode: existing_grid_mode,
+        max_columns: existing_max_columns,
     };
 
     // Build the _folder.md content (reuse logic from update_folder_permissions)
@@ -2739,62 +2787,67 @@ pub async fn hide_gallery_images(
         hidden_images.retain(|f| !filenames.contains(f));
     }
 
-    // Get other metadata values to preserve
-    let (hidden, permissions, description) = match &current_metadata {
-        Some(meta) => {
-            let perms = &meta.config.permissions;
-            (
-                meta.config.hidden,
+    let (hidden, permissions, description, existing_grid_mode, existing_max_columns) =
+        match &current_metadata {
+            Some(meta) => {
+                let perms = &meta.config.permissions;
+                (
+                    meta.config.hidden,
+                    PermissionConfigDto {
+                        site_admins: perms.site_admins.clone(),
+                        public_role: perms.public_role.clone(),
+                        default_authenticated_role: perms.default_authenticated_role.clone(),
+                        roles: perms
+                            .roles
+                            .iter()
+                            .map(|(name, role)| {
+                                (
+                                    name.clone(),
+                                    RoleDto {
+                                        name: name.clone(),
+                                        permissions: RolePermissionsDto::from(&role.permissions),
+                                        inherits: role.inherits.clone(),
+                                        is_builtin: false,
+                                    },
+                                )
+                            })
+                            .collect(),
+                        user_roles: perms
+                            .user_roles
+                            .iter()
+                            .map(|user_role| UserRoleAssignment {
+                                username: user_role.username.clone(),
+                                roles: user_role.roles.clone(),
+                            })
+                            .collect(),
+                    },
+                    meta.description_markdown.clone(),
+                    meta.config.grid_mode.clone(),
+                    meta.config.max_columns,
+                )
+            }
+            None => (
+                false,
                 PermissionConfigDto {
-                    site_admins: perms.site_admins.clone(),
-                    public_role: perms.public_role.clone(),
-                    default_authenticated_role: perms.default_authenticated_role.clone(),
-                    roles: perms
-                        .roles
-                        .iter()
-                        .map(|(name, role)| {
-                            (
-                                name.clone(),
-                                RoleDto {
-                                    name: name.clone(),
-                                    permissions: RolePermissionsDto::from(&role.permissions),
-                                    inherits: role.inherits.clone(),
-                                    is_builtin: false,
-                                },
-                            )
-                        })
-                        .collect(),
-                    user_roles: perms
-                        .user_roles
-                        .iter()
-                        .map(|user_role| UserRoleAssignment {
-                            username: user_role.username.clone(),
-                            roles: user_role.roles.clone(),
-                        })
-                        .collect(),
+                    site_admins: Vec::new(),
+                    public_role: None,
+                    default_authenticated_role: None,
+                    roles: std::collections::HashMap::new(),
+                    user_roles: vec![],
                 },
-                meta.description_markdown.clone(),
-            )
-        }
-        None => (
-            false,
-            PermissionConfigDto {
-                site_admins: Vec::new(),
-                public_role: None,
-                default_authenticated_role: None,
-                roles: std::collections::HashMap::new(),
-                user_roles: vec![],
-            },
-            String::new(),
-        ),
-    };
+                String::new(),
+                None,
+                None,
+            ),
+        };
 
-    // Build the _folder.md content
     let update_request = UpdateFolderPermissionsRequest {
         hidden,
         hidden_images: hidden_images.clone(),
         permissions,
         description,
+        grid_mode: existing_grid_mode,
+        max_columns: existing_max_columns,
     };
 
     // Build the TOML content
