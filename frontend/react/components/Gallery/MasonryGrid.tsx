@@ -57,8 +57,6 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
 
   const calculateColumnWidth = useCallback(() => {
     const viewportWidth = window.innerWidth;
-    const containerWidth = Math.min(viewportWidth, 1200);
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const gap = 24;
 
     let cols: number;
@@ -80,9 +78,17 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
       cols = Math.min(cols, maxColumns);
     }
 
-    const padding = isIOS ? (cols === 1 ? 16 : 32) : (cols === 1 ? 20 : 40);
+    const el = gridRef.current;
+    let availableWidth: number;
+    if (el) {
+      const style = getComputedStyle(el);
+      availableWidth = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    } else {
+      availableWidth = Math.min(viewportWidth, 1200) - (viewportWidth <= 768 ? 16 : 32);
+    }
+
     const totalGaps = gap * (cols - 1);
-    setColumnWidth((containerWidth - padding - totalGaps) / cols);
+    setColumnWidth((availableWidth - totalGaps) / cols);
     setNumColumns(cols);
   }, [columnCount, maxColumns]);
 

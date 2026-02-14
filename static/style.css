@@ -575,6 +575,7 @@ footer p {
     overflow: hidden;
     transition: transform 0.2s;
     display: block;
+    max-width: 100%;
 }
 
 .image-item:hover {
@@ -897,7 +898,7 @@ footer p {
     }
 
     .image-grid:not(.square-grid) .masonry-column {
-        padding: 0 0.5rem;
+        padding: 0;
         width: 100%;
         box-sizing: border-box;
     }
