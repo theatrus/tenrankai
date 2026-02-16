@@ -69,7 +69,7 @@ dev: frontend build
 dev-no-avif: frontend build-no-avif
 
 run: release
-	./target/release/tenrankai serve --config-file config.toml
+	./target/release/tenrankai serve --config config.toml
 
 release: frontend-prod build-release
 
