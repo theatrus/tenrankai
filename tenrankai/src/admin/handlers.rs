@@ -886,13 +886,14 @@ pub async fn get_user_gallery_roles(
 // Hosted Mode
 // ============================================================================
 
+/// Check whether the server is running in hosted mode
 pub async fn get_hosted_mode(
     _admin: RequireAdmin,
     ResolvedState(app_state): ResolvedState,
-) -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "hosted_mode": app_state.hosted_mode()
-    }))
+) -> Json<HostedModeResponse> {
+    Json(HostedModeResponse {
+        hosted_mode: app_state.hosted_mode(),
+    })
 }
 
 fn redact_site_info(info: &mut SiteInfo) {
@@ -900,6 +901,7 @@ fn redact_site_info(info: &mut SiteInfo) {
     info.base_url = None;
     info.templates = vec![];
     info.static_files = vec![];
+    info.static_use_redirects = false;
     info.user_database = None;
     info.storage_prefix = None;
     info.cache_prefix = None;
@@ -914,6 +916,7 @@ fn redact_gallery_info(info: &mut SiteGalleryInfo) {
 // Site Management
 // ============================================================================
 
+/// List all sites
 pub async fn list_sites(
     ResolvedState(app_state): ResolvedState,
     _admin: RequireAdmin,
@@ -968,6 +971,7 @@ pub async fn list_sites(
     Ok(Json(SiteListResponse { sites }))
 }
 
+/// Get a single site
 pub async fn get_site(
     ResolvedState(app_state): ResolvedState,
     _admin: RequireAdmin,
@@ -1052,9 +1056,9 @@ pub async fn update_site(
         if let Some(user_database) = request.user_database {
             config.user_database = Some(user_database);
         }
-    }
-    if let Some(static_use_redirects) = request.static_use_redirects {
-        config.static_use_redirects = static_use_redirects;
+        if let Some(static_use_redirects) = request.static_use_redirects {
+            config.static_use_redirects = static_use_redirects;
+        }
     }
 
     config_storage
@@ -1401,6 +1405,7 @@ pub async fn upsert_site_gallery(
     Ok(Json(info))
 }
 
+/// Delete a gallery
 pub async fn delete_site_gallery(
     ResolvedState(app_state): ResolvedState,
     admin: RequireAdmin,
