@@ -62,11 +62,14 @@ build-release-no-avif:
 # Combined builds
 # ---------------------------------------------------------------------------
 
-.PHONY: dev dev-no-avif release release-no-avif
+.PHONY: dev dev-no-avif release release-no-avif run
 
 dev: frontend build
 
 dev-no-avif: frontend build-no-avif
+
+run: release
+	./target/release/tenrankai serve --config-file config.toml
 
 release: frontend-prod build-release
 
@@ -162,6 +165,7 @@ help:
 	@echo "Release:"
 	@echo "  make release           - Production frontend + release binary"
 	@echo "  make release-no-avif   - Production frontend + release binary (no AVIF)"
+	@echo "  make run               - Release build + run server (config.toml)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test           - Run Rust tests (with AVIF)"

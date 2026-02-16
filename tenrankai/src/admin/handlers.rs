@@ -1491,6 +1491,22 @@ pub async fn delete_site_gallery(
         return Err(AdminError::NotFound(format!("Site not found: {}", site)));
     }
 
+    // Reject deletion if the gallery still has images
+    if let Some(gallery) = app_state.galleries().get(&name) {
+        let image_count = gallery
+            .folder_cache
+            .get("")
+            .await
+            .map(|cache| cache.recursive_image_count)
+            .unwrap_or(0);
+        if image_count > 0 {
+            return Err(AdminError::BadRequest(format!(
+                "Cannot delete gallery '{}': it still contains {} image(s). Remove all images first.",
+                name, image_count
+            )));
+        }
+    }
+
     let deleted = config_storage
         .delete_gallery(&site, &name, &admin.0.username)
         .await
