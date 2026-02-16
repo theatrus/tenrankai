@@ -299,6 +299,7 @@ impl SiteManager {
         }
 
         site.rebuild_shortcode_index().await;
+        site.start_shortcode_index_refresh();
 
         // Replace the old site
         self.replace_site(name, site, hostnames).await;

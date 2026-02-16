@@ -242,6 +242,7 @@ impl ConfigReloader {
         }
 
         site.rebuild_shortcode_index().await;
+        site.start_shortcode_index_refresh();
 
         Ok(site)
     }

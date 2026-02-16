@@ -67,6 +67,31 @@ impl Site {
         *index = new_index;
     }
 
+    pub fn start_shortcode_index_refresh(self: &Arc<Self>) {
+        let galleries = self.resources.galleries.clone();
+        let shortcode_index = self.resources.shortcode_index.clone();
+
+        for (name, gallery) in galleries.iter() {
+            let notify = gallery.metadata_generation_notify().clone();
+            let shortcode_index = shortcode_index.clone();
+            let galleries = galleries.clone();
+            let gallery_name = name.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    notify.notified().await;
+                    tracing::info!(
+                        "Rebuilding shortcode index after metadata refresh for gallery '{}'",
+                        gallery_name
+                    );
+                    let new_index = ShortcodeIndex::build(&galleries).await;
+                    let mut index = shortcode_index.write().await;
+                    *index = new_index;
+                }
+            });
+        }
+    }
+
     /// Get the site/app name
     pub fn app_name(&self) -> &str {
         &self.name
