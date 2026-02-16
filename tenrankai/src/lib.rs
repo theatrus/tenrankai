@@ -614,9 +614,18 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
         let prefix = &gallery_config.url_prefix;
         let name = gallery_name.clone();
 
-        // Root route for gallery
+        // Root route for gallery (with and without trailing slash)
         router = router.route(
             prefix,
+            axum::routing::get({
+                let name = name.clone();
+                move |state, query, auth| {
+                    gallery::gallery_root_handler_for_named(state, Path(name), query, auth)
+                }
+            }),
+        );
+        router = router.route(
+            &format!("{}/", prefix),
             axum::routing::get({
                 let name = name.clone();
                 move |state, query, auth| {
@@ -631,7 +640,7 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             axum::routing::get({
                 let name = name.clone();
                 move |state, path: Path<String>, query, auth| {
-                    let gallery_path = path.0;
+                    let gallery_path = path.0.trim_end_matches('/').to_string();
                     gallery::gallery_handler_for_named(
                         state,
                         Path((name, gallery_path)),
