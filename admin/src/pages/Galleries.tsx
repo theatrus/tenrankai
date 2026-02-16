@@ -367,6 +367,7 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
   const [enableTileZoom, setEnableTileZoom] = useState(false);
   const [watermarkImages, setWatermarkImages] = useState<WatermarkImageInfo[]>([]);
   const [watermarkFolderLoading, setWatermarkFolderLoading] = useState(false);
+  const [watermarkFolderError, setWatermarkFolderError] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['gallery', name],
@@ -467,11 +468,13 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
 
   const loadWatermarkFolder = useCallback(async () => {
     setWatermarkFolderLoading(true);
+    setWatermarkFolderError(false);
     try {
       const result = await api.ensureWatermarkFolder(name);
       setWatermarkImages(result.images);
     } catch (err) {
       console.error('Failed to load watermark folder:', err);
+      setWatermarkFolderError(true);
     } finally {
       setWatermarkFolderLoading(false);
     }
@@ -479,10 +482,10 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
 
   // Load watermark images when image watermark is enabled and settings are shown
   useEffect(() => {
-    if (enableImageWatermark && showWatermarkSettings && watermarkImages.length === 0 && !watermarkFolderLoading) {
+    if (enableImageWatermark && showWatermarkSettings && watermarkImages.length === 0 && !watermarkFolderLoading && !watermarkFolderError) {
       loadWatermarkFolder();
     }
-  }, [enableImageWatermark, showWatermarkSettings, watermarkImages.length, watermarkFolderLoading, loadWatermarkFolder]);
+  }, [enableImageWatermark, showWatermarkSettings, watermarkImages.length, watermarkFolderLoading, watermarkFolderError, loadWatermarkFolder]);
 
   // Auto-open folder modal if initialFolderPath is provided via URL
   useEffect(() => {

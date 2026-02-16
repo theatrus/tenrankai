@@ -3410,30 +3410,27 @@ pub async fn ensure_watermark_folder(
     let folder_md_path = format!("{}/_folder.md", WATERMARK_FOLDER);
     let mut created = false;
 
-    // Check if folder exists
+    // Try to create the folder if it doesn't exist (best-effort)
     if !gallery_obj
         .source_storage()
         .exists(&folder_md_path)
         .await
         .unwrap_or(false)
     {
-        // Create the folder with hidden=true
         let content = "+++\nhidden = true\n+++\n\nWatermark images for this gallery.\n";
-        gallery_obj
+        match gallery_obj
             .source_storage()
             .write(&folder_md_path, bytes::Bytes::from(content))
             .await
-            .map_err(|e| {
-                AdminError::Internal(format!("Failed to create watermark folder: {}", e))
-            })?;
-
-        // Refresh folder cache
-        gallery_obj
-            .refresh_folder_cache()
-            .await
-            .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
-
-        created = true;
+        {
+            Ok(()) => {
+                let _ = gallery_obj.refresh_folder_cache().await;
+                created = true;
+            }
+            Err(e) => {
+                tracing::warn!("Could not create watermark folder: {}", e);
+            }
+        }
     }
 
     // List images in the watermark folder
