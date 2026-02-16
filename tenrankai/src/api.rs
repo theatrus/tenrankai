@@ -138,6 +138,10 @@ pub struct GalleryApiResponse {
     pub hidden_images: Vec<String>,
     pub grid_mode: String,
     pub max_columns: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 /// Maximum number of navigation images to include in each direction
@@ -159,6 +163,10 @@ pub struct ImageDetailApiResponse {
     /// Whether this image is hidden (only set for users who can see hidden images)
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_hidden: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -386,6 +394,20 @@ pub async fn gallery_api_handler_for_named(
         .or(gallery.config.max_columns)
         .or(Some(2));
 
+    let shortcode_index = app_state.site.shortcode_index();
+    let share_url = {
+        let index = shortcode_index.read().await;
+        if is_root {
+            index
+                .encode_gallery(&gallery_name)
+                .map(|code| format!("/s/{}", code))
+        } else {
+            index
+                .encode_folder(&gallery_name, &path)
+                .map(|code| format!("/s/{}", code))
+        }
+    };
+
     Ok(Json(GalleryApiResponse {
         site_name: app_state.site.name.clone(),
         gallery_name,
@@ -401,6 +423,8 @@ pub async fn gallery_api_handler_for_named(
         hidden_images,
         grid_mode: grid_mode.to_string(),
         max_columns: max_columns.unwrap_or(2),
+        share_url,
+        base_url: app_state.base_url().map(String::from),
     }))
 }
 
@@ -693,6 +717,14 @@ pub async fn image_detail_api_handler_for_named(
         false
     };
 
+    let share_url = {
+        let shortcode_index = app_state.site.shortcode_index();
+        let index = shortcode_index.read().await;
+        index
+            .encode_image(&gallery_name, &resolved_path)
+            .map(|code| format!("/s/{}", code))
+    };
+
     Ok(Json(ImageDetailApiResponse {
         gallery_name,
         image: image_info,
@@ -704,6 +736,8 @@ pub async fn image_detail_api_handler_for_named(
         permissions: user_permissions.permissions,
         tile_config,
         is_hidden,
+        share_url,
+        base_url: app_state.base_url().map(String::from),
     }))
 }
 

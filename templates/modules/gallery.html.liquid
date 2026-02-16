@@ -4,7 +4,7 @@
     {% assign page_title = "Gallery" %}
 {% endif %}
 {% assign meta_description = folder_description | default: "Browse the photo gallery on theatr.us" | strip_html | truncate: 160 %}
-{% assign page_css = "gallery-filters.css,editor.css,gallery-manage.css" | split: "," %}
+{% assign page_css = "gallery-filters.css,editor.css,gallery-manage.css,share-modal.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container gallery-container">
@@ -44,6 +44,8 @@
             <!-- Filter bar will be injected here by React if user has permissions -->
             <div id="gallery-filter-mount"></div>
 
+            <div id="gallery-share-mount" style="display: inline-block;"></div>
+
             {% if permissions.can_download_gallery %}
                 <a href="{{ gallery_url }}/_download{% if gallery_path != '' %}/{{ gallery_path }}{% endif %}" class="btn btn-secondary" title="Download all images as ZIP">
                     Download
@@ -58,8 +60,8 @@
             {% endif %}
 
             {% if permissions.owner_access %}
-                <a href="/_admin/galleries/{{ gallery_name }}/folders/{% if gallery_path != '' %}{{ gallery_path | url_encode }}{% else %}_root{% endif %}" class="btn btn-secondary" title="Share folder and manage permissions">
-                    Share
+                <a href="/_admin/galleries/{{ gallery_name }}/folders/{% if gallery_path != '' %}{{ gallery_path | url_encode }}{% else %}_root{% endif %}" class="btn btn-secondary" title="Manage folder access and permissions">
+                    Access
                 </a>
             {% endif %}
 
