@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { GalleryWithFilter } from '@components/Gallery/GalleryWithFilter';
 import { EditModal } from '../components/Editor/index.ts';
 import { UploadModal, NewDropdown } from '../components/Upload/index.ts';
+import { ShareButton } from '../components/ShareModal.tsx';
 import { contentEditorApi } from '../api/content-editor.ts';
 import { galleryManageApi } from '../api/gallery-manage.ts';
 import type { GalleryData, GalleryItem } from '../types/index.ts';
@@ -178,6 +179,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Always set up delete folder button (only shows for empty folders)
   mountDeleteFolderButton();
+
+  // Mount share button if short URL is available
+  mountShareButton(galleryData);
 
   // Only mount gallery grid if there are images
   if (!images.length) {
@@ -566,6 +570,16 @@ function mountNewDropdown(galleryData: GalleryData | null) {
   // Mount the wrapper
   const root = createRoot(dropdownMount);
   root.render(<NewDropdownWrapper />);
+}
+
+function mountShareButton(galleryData: GalleryData | null) {
+  const mount = document.getElementById('gallery-share-mount');
+  if (!mount || !galleryData?.share_url) return;
+
+  const origin = galleryData.base_url || window.location.origin;
+  const fullUrl = `${origin}${galleryData.share_url}`;
+  const root = createRoot(mount);
+  root.render(<ShareButton shareUrl={fullUrl} />);
 }
 
 /**

@@ -8,6 +8,7 @@ use crate::{
     gallery::{Gallery, SharedGallery},
     login::LoginState,
     posts::{PostsConfig, PostsManager},
+    short_url::ShortcodeIndex,
     static_files::StaticFileHandler,
     storage,
     templating::TemplateEngine,
@@ -74,6 +75,8 @@ impl SiteBuilder {
         // Build login state and user storage
         let (login_state, user_storage) = self.build_login_state().await?;
 
+        let shortcode_index = Arc::new(RwLock::new(ShortcodeIndex::build(&galleries).await));
+
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),
             cookie_secret: self.config.cookie_secret.clone(),
@@ -90,6 +93,7 @@ impl SiteBuilder {
             site_admins: self.config.site_admins.clone(),
             theme,
             hosted_mode: self.config.hosted_mode,
+            shortcode_index,
         };
 
         info!("Site '{}' built successfully", self.config.name);

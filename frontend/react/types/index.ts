@@ -170,6 +170,8 @@ export interface ImageDetailData {
   tile_config?: TileConfig;
   /** Whether this image is hidden (only set for users who can see hidden images) */
   is_hidden?: boolean;
+  share_url?: string;
+  base_url?: string;
 }
 
 export interface GalleryItem {
@@ -207,6 +209,8 @@ export interface GalleryData {
   hidden_images?: string[];
   grid_mode?: string;
   max_columns: number;
+  share_url?: string;
+  base_url?: string;
 }
 
 export interface ApiError {

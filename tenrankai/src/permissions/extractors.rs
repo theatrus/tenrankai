@@ -446,6 +446,9 @@ mod tests {
             site_admins: Vec::new(),
             theme: None,
             hosted_mode: false,
+            shortcode_index: std::sync::Arc::new(tokio::sync::RwLock::new(
+                crate::short_url::ShortcodeIndex::new(),
+            )),
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);

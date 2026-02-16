@@ -5,7 +5,8 @@ use tokio::sync::RwLock;
 use crate::{
     GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig, email::SiteEmailConfig,
     favicon::FaviconRenderer, gallery::SharedGallery, login::LoginState, posts::PostsManager,
-    static_files::StaticFileHandler, templating::TemplateEngine, user_storage::DynUserStorage,
+    short_url::ShortcodeIndex, static_files::StaticFileHandler, templating::TemplateEngine,
+    user_storage::DynUserStorage,
 };
 
 /// Configuration for a single site (extracted from legacy Config or multi-site config)
@@ -42,6 +43,7 @@ pub struct SiteResources {
     pub site_admins: Vec<String>,
     pub theme: Option<StoredThemeConfig>,
     pub hosted_mode: bool,
+    pub shortcode_index: Arc<RwLock<ShortcodeIndex>>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -53,6 +55,41 @@ pub struct Site {
 impl Site {
     pub fn new(name: String, resources: SiteResources) -> Self {
         Self { name, resources }
+    }
+
+    pub fn shortcode_index(&self) -> &Arc<RwLock<ShortcodeIndex>> {
+        &self.resources.shortcode_index
+    }
+
+    pub async fn rebuild_shortcode_index(&self) {
+        let new_index = ShortcodeIndex::build(&self.resources.galleries).await;
+        let mut index = self.resources.shortcode_index.write().await;
+        *index = new_index;
+    }
+
+    pub fn start_shortcode_index_refresh(self: &Arc<Self>) {
+        let galleries = self.resources.galleries.clone();
+        let shortcode_index = self.resources.shortcode_index.clone();
+
+        for (name, gallery) in galleries.iter() {
+            let notify = gallery.metadata_generation_notify().clone();
+            let shortcode_index = shortcode_index.clone();
+            let galleries = galleries.clone();
+            let gallery_name = name.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    notify.notified().await;
+                    tracing::info!(
+                        "Rebuilding shortcode index after metadata refresh for gallery '{}'",
+                        gallery_name
+                    );
+                    let new_index = ShortcodeIndex::build(&galleries).await;
+                    let mut index = shortcode_index.write().await;
+                    *index = new_index;
+                }
+            });
+        }
     }
 
     /// Get the site/app name
@@ -152,6 +189,7 @@ mod tests {
             site_admins: Vec::new(),
             theme: None,
             hosted_mode: false,
+            shortcode_index: Arc::new(RwLock::new(ShortcodeIndex::new())),
         };
         Site::new(name.to_string(), resources)
     }

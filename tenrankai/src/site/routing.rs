@@ -139,6 +139,9 @@ mod tests {
             site_admins: Vec::new(),
             theme: None,
             hosted_mode: false,
+            shortcode_index: Arc::new(tokio::sync::RwLock::new(
+                crate::short_url::ShortcodeIndex::new(),
+            )),
         };
         Arc::new(Site::new(name.to_string(), resources))
     }

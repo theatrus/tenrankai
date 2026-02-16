@@ -324,7 +324,7 @@ export function ImageDetailPage({
 
           <AIMetadata image={currentData.image} permissions={currentData.permissions} />
 
-          <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} />
+          <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} shareUrl={currentData.share_url} baseUrl={currentData.base_url} />
 
           {currentData.permissions.can_read_metadata && (
             <UserMetadata

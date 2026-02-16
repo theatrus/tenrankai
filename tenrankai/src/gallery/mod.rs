@@ -78,6 +78,8 @@ pub struct Gallery {
     pub(crate) image_watermark: Option<Arc<tenrankai_image::ImageWatermark>>,
     /// Hash of watermark file modification time (for cache invalidation)
     pub(crate) image_watermark_hash: Option<String>,
+    /// Notifies listeners when metadata refresh completes (for shortcode index rebuild)
+    pub(crate) metadata_generation: Arc<tokio::sync::Notify>,
 }
 
 impl Gallery {
@@ -140,6 +142,7 @@ impl Gallery {
             active_blocking_tasks: Arc::new(AtomicUsize::new(0)),
             image_watermark: None,
             image_watermark_hash: None,
+            metadata_generation: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -351,6 +354,8 @@ impl Gallery {
         // First refresh metadata
         self.clone().refresh_all_metadata().await?;
 
+        self.metadata_generation.notify_waiters();
+
         // Report format coverage status
         if let Err(e) = self.report_format_coverage().await {
             error!("Failed to report format coverage: {}", e);
@@ -383,6 +388,10 @@ impl Gallery {
 
     pub fn get_config(&self) -> &crate::GallerySystemConfig {
         &self.config
+    }
+
+    pub fn metadata_generation_notify(&self) -> &Arc<tokio::sync::Notify> {
+        &self.metadata_generation
     }
 
     /// Trigger shutdown of all background tasks and wait for them to complete
