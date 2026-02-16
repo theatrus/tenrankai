@@ -1252,8 +1252,13 @@ async fn save_gallery_config(
     let hosted_mode = app_state.hosted_mode();
 
     if hosted_mode {
-        request.source_directory = format!("galleries/{}", name);
-        request.cache_directory = format!("cache/{}", name);
+        if let Some(ref existing) = existing_config {
+            request.source_directory = existing.source_directory.clone();
+            request.cache_directory = existing.cache_directory.clone();
+        } else {
+            request.source_directory = format!("galleries/{}", name);
+            request.cache_directory = format!("cache/{}", name);
+        }
     }
 
     // Verify site exists
