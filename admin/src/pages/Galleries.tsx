@@ -248,11 +248,7 @@ export function Galleries() {
                   placeholder="/gallery"
                 />
               </div>
-              {hostedMode ? (
-                <div style={{ padding: '0.5rem', background: 'var(--color-bg-secondary)', borderRadius: '4px', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-                  Storage paths are automatically managed.
-                </div>
-              ) : (
+              {!hostedMode && (
                 <>
                   <div className="form-group">
                     <label className="form-label">Source Directory</label>
@@ -665,12 +661,6 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
               </>
             )}
           </div>
-          {hostedMode && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', margin: '0.5rem 0 0 0' }}>
-              Storage paths are managed by the hosting provider.
-            </p>
-          )}
-
           {/* Layout Settings */}
           <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '1rem', paddingTop: '1rem' }}>
             <h4 style={{ margin: '0 0 0.75rem 0' }}>Layout Settings</h4>

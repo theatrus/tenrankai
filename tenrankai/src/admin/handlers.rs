@@ -896,6 +896,8 @@ pub async fn get_hosted_mode(
 }
 
 fn redact_site_info(info: &mut SiteInfo) {
+    info.hostnames = vec![];
+    info.base_url = None;
     info.templates = vec![];
     info.static_files = vec![];
     info.user_database = None;
@@ -1034,13 +1036,13 @@ pub async fn update_site(
         .map_err(|e| AdminError::Internal(e.to_string()))?
         .ok_or_else(|| AdminError::NotFound(format!("Site not found: {}", name)))?;
 
-    if let Some(hostnames) = request.hostnames {
-        config.hostnames = hostnames;
-    }
-    if let Some(base_url) = request.base_url {
-        config.base_url = Some(base_url);
-    }
     if !hosted_mode {
+        if let Some(hostnames) = request.hostnames {
+            config.hostnames = hostnames;
+        }
+        if let Some(base_url) = request.base_url {
+            config.base_url = Some(base_url);
+        }
         if let Some(templates) = request.templates {
             config.templates = templates;
         }
