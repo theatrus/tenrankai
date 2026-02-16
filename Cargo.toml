@@ -65,7 +65,7 @@ image = "0.25"
 imageproc = "0.26"
 ab_glyph = "0.2"
 resvg = "0.46"
-usvg = "0.46"
+usvg = "0.47"
 ico = "0.5"
 webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.14"
