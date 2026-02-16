@@ -1601,6 +1601,13 @@ pub async fn update_site_permissions(
         return Err(AdminError::NotFound(format!("Site not found: {}", site)));
     }
 
+    // In hosted mode, prevent removing all site admins (would cause lockout)
+    if app_state.hosted_mode() && request.site_admins.is_empty() {
+        return Err(AdminError::BadRequest(
+            "At least one site admin is required".into(),
+        ));
+    }
+
     // Convert DTO to storage format
     let permission_config = tenrankai_config_storage::GalleryPermissionConfig {
         site_admins: request.site_admins.clone(),
