@@ -425,4 +425,7 @@ export const api = {
   getTheme: () => request<ThemeConfig>('GET', '/theme'),
   updateTheme: (theme: ThemeConfig) => request<ThemeConfig>('PUT', '/theme', theme),
   resetTheme: () => request<void>('DELETE', '/theme'),
+
+  // Hosted Mode
+  getHostedMode: () => request<{ hosted_mode: boolean }>('GET', '/hosted-mode'),
 };

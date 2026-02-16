@@ -123,6 +123,7 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
         email: None,
         config_storage: None,
         site_admins: Vec::new(),
+        hosted_mode: false,
     }
 }
 
@@ -1139,6 +1140,7 @@ fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> SiteConfig {
         email: None,
         config_storage: None,
         site_admins: Vec::new(),
+        hosted_mode: false,
     }
 }
 

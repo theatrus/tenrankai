@@ -139,6 +139,10 @@ impl AppState {
         self.site.theme()
     }
 
+    pub fn hosted_mode(&self) -> bool {
+        self.site.hosted_mode()
+    }
+
     pub fn is_admin(&self, username: &str) -> bool {
         // Check site-level admins first
         if self.is_site_admin(username) {
@@ -483,6 +487,11 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             .route(
                 "/_admin/api/permission-groups",
                 axum::routing::get(admin::list_permission_groups),
+            )
+            // Hosted mode
+            .route(
+                "/_admin/api/hosted-mode",
+                axum::routing::get(admin::get_hosted_mode),
             )
             // Site management (ConfigStorage mode)
             .route("/_admin/api/sites", axum::routing::get(admin::list_sites))

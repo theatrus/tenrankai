@@ -84,6 +84,7 @@ mod tests {
                 base_url: None,
                 user_database: None,
                 config_storage: Some("config.d".to_string()),
+                hosted_mode: false,
             },
             email: None,
             openai: None,

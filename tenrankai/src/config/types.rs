@@ -65,6 +65,8 @@ pub struct AppConfig {
     /// - `"s3://bucket/config"` - S3 storage
     #[serde(default)]
     pub config_storage: Option<String>,
+    #[serde(default)]
+    pub hosted_mode: bool,
 }
 
 /// Template directory configuration with custom serialization

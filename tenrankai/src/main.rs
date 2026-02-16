@@ -1001,8 +1001,8 @@ async fn run_server(
     for (site_name, mut site_config) in loaded_sites {
         info!("Building site '{}'...", site_name);
 
-        // Set the config_storage URL so the site can use it for permission writes
         site_config.config_storage = Some(config_storage_url.clone());
+        site_config.hosted_mode = config.app.hosted_mode;
 
         // Get hostnames from storage
         let hostnames = match storage.get_site_config(&site_name).await {
@@ -1187,11 +1187,10 @@ async fn run_server(
     #[cfg(unix)]
     {
         let (storage, storage_url) = config_storage_for_reload;
-        let config_reloader = Arc::new(ConfigReloader::new(
-            storage,
-            config.app.cookie_secret.clone(),
-            storage_url,
-        ));
+        let config_reloader = Arc::new(
+            ConfigReloader::new(storage, config.app.cookie_secret.clone(), storage_url)
+                .with_hosted_mode(config.app.hosted_mode),
+        );
         let manager_clone = site_manager.clone();
         let reload_token_clone = reload_token.clone();
 

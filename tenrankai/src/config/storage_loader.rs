@@ -186,6 +186,7 @@ impl ConfigStorageLoader {
             email,
             config_storage: None, // Will be set by the startup code
             site_admins,
+            hosted_mode: false, // Will be set by the startup code from AppConfig
         })
     }
 

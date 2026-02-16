@@ -89,6 +89,7 @@ fn create_admin_test_config(temp_dir: &TempDir, indexing_mode: ImageIndexingMode
         email: None,
         config_storage: None,
         site_admins: Vec::new(),
+        hosted_mode: false,
     }
 }
 

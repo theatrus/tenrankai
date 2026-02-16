@@ -152,6 +152,7 @@ This is the content of the second test post."#;
         email: None,
         config_storage: None,
         site_admins: Vec::new(),
+        hosted_mode: false,
     };
 
     let app = create_app(config, None).await;

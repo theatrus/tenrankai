@@ -245,6 +245,7 @@ impl SiteManager {
         name: &str,
         loader: &ConfigStorageLoader,
         config_storage_url: &str,
+        hosted_mode: bool,
     ) -> Result<(), String> {
         info!("Reloading site '{}' from ConfigStorage", name);
 
@@ -268,8 +269,8 @@ impl SiteManager {
             }
         };
 
-        // Set config_storage URL so the site can use it
         site_config.config_storage = Some(config_storage_url.to_string());
+        site_config.hosted_mode = hosted_mode;
 
         // Get hostnames from StoredSiteConfig (need to re-fetch)
         let hostnames = match loader
@@ -403,6 +404,7 @@ mod tests {
             config_storage_url: None,
             site_admins: Vec::new(),
             theme: None,
+            hosted_mode: false,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }
