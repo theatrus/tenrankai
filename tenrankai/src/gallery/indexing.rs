@@ -120,6 +120,10 @@ impl ImageIndexer {
         }
     }
 
+    pub fn all_source_paths(&self) -> impl Iterator<Item = &str> {
+        self.path_to_index.keys().map(|s| s.as_str())
+    }
+
     /// Get the display name for a path based on the indexing mode
     pub fn get_display_name(&self, path: &str) -> String {
         match self.mode {

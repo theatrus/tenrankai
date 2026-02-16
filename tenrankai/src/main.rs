@@ -1112,6 +1112,8 @@ async fn run_server(
             }
         }
 
+        site.rebuild_shortcode_index().await;
+
         site_manager.add_site(site, hostnames.clone()).await;
         info!("Site '{}' ready with hostnames: {:?}", site_name, hostnames);
     }

@@ -241,6 +241,8 @@ impl ConfigReloader {
             }
         }
 
+        site.rebuild_shortcode_index().await;
+
         Ok(site)
     }
 

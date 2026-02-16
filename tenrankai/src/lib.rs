@@ -16,6 +16,7 @@ pub mod openai;
 pub mod permissions;
 pub mod posts;
 pub mod robots;
+pub mod short_url;
 pub mod site;
 pub mod startup_checks;
 pub mod static_files;
@@ -372,7 +373,11 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             axum::routing::get(robots::robots_txt_handler),
         )
         .route("/theme.css", axum::routing::get(theme::serve_theme_css))
-        .route("/static/{*path}", axum::routing::get(static_file_handler));
+        .route("/static/{*path}", axum::routing::get(static_file_handler))
+        .route(
+            "/s/{shortcode}",
+            axum::routing::get(short_url::short_url_handler),
+        );
 
     // Add login routes only if user database is configured
     // In multi-site mode, check the site's user_storage; in legacy mode, check config
