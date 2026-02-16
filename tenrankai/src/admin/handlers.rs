@@ -1210,7 +1210,16 @@ pub async fn create_site_gallery(
         )));
     }
 
-    save_gallery_config(&app_state, &**config_storage, &site, &name, request, None, &admin).await
+    save_gallery_config(
+        &app_state,
+        &**config_storage,
+        &site,
+        &name,
+        request,
+        None,
+        &admin,
+    )
+    .await
 }
 
 /// Update an existing gallery
@@ -1231,13 +1240,19 @@ pub async fn update_site_gallery(
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     if existing.is_none() {
-        return Err(AdminError::NotFound(format!(
-            "Gallery not found: {}",
-            name
-        )));
+        return Err(AdminError::NotFound(format!("Gallery not found: {}", name)));
     }
 
-    save_gallery_config(&app_state, &**config_storage, &site, &name, request, existing, &admin).await
+    save_gallery_config(
+        &app_state,
+        &**config_storage,
+        &site,
+        &name,
+        request,
+        existing,
+        &admin,
+    )
+    .await
 }
 
 async fn save_gallery_config(
@@ -1301,9 +1316,11 @@ async fn save_gallery_config(
         if other_name == name || other_name.starts_with('_') {
             continue;
         }
-        if let Ok(Some(other_config)) =
-            config_storage.get_gallery_full_config(site, other_name).await
-        && other_config.url_prefix == request.url_prefix {
+        if let Ok(Some(other_config)) = config_storage
+            .get_gallery_full_config(site, other_name)
+            .await
+            && other_config.url_prefix == request.url_prefix
+        {
             return Err(AdminError::BadRequest(format!(
                 "URL prefix '{}' is already used by gallery '{}'",
                 request.url_prefix, other_name
