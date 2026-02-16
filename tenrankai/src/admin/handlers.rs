@@ -1249,6 +1249,25 @@ pub async fn upsert_site_gallery(
         )));
     }
 
+    // Check for URL prefix conflicts with other galleries
+    let gallery_names = config_storage
+        .list_galleries(&site)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+    for other_name in &gallery_names {
+        if other_name == &name || other_name.starts_with('_') {
+            continue;
+        }
+        if let Ok(Some(other_config)) =
+            config_storage.get_gallery_full_config(&site, other_name).await
+        && other_config.url_prefix == request.url_prefix {
+            return Err(AdminError::BadRequest(format!(
+                "URL prefix '{}' is already used by gallery '{}'",
+                request.url_prefix, other_name
+            )));
+        }
+    }
+
     // Try to load prototype config for new gallery defaults
     let prototype_config = if existing_config.is_none() {
         config_storage
