@@ -361,7 +361,7 @@ export const api = {
   getSiteGallery: (site: string, name: string) =>
     request<SiteGalleryInfo>('GET', `/sites/${site}/galleries/${name}`),
   createGallery: (site: string, name: string, data: CreateGalleryRequest) =>
-    request<SiteGalleryInfo>('PUT', `/sites/${site}/galleries/${name}?create=true`, data),
+    request<SiteGalleryInfo>('POST', `/sites/${site}/galleries/${name}`, data),
   updateGallery: (site: string, name: string, data: CreateGalleryRequest) =>
     request<SiteGalleryInfo>('PUT', `/sites/${site}/galleries/${name}`, data),
   deleteGallery: (site: string, name: string) =>

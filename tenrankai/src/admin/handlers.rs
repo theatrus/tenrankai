@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, Query},
+    extract::Path,
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
@@ -1186,18 +1186,69 @@ pub async fn get_site_gallery(
     Ok(Json(info))
 }
 
-/// Create or update a gallery
-pub async fn upsert_site_gallery(
+/// Create a new gallery (rejects if gallery already exists)
+pub async fn create_site_gallery(
     ResolvedState(app_state): ResolvedState,
     admin: RequireAdmin,
     Path((site, name)): Path<(String, String)>,
-    Query(query): Query<UpsertGalleryQuery>,
-    Json(mut request): Json<CreateGalleryRequest>,
+    Json(request): Json<CreateGalleryRequest>,
 ) -> Result<Json<SiteGalleryInfo>, AdminError> {
     let config_storage = app_state
         .config_storage()
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let existing = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if existing.is_some() {
+        return Err(AdminError::AlreadyExists(format!(
+            "Gallery already exists: {}",
+            name
+        )));
+    }
+
+    save_gallery_config(&app_state, &**config_storage, &site, &name, request, None, &admin).await
+}
+
+/// Update an existing gallery
+pub async fn update_site_gallery(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((site, name)): Path<(String, String)>,
+    Json(request): Json<CreateGalleryRequest>,
+) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let existing = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if existing.is_none() {
+        return Err(AdminError::NotFound(format!(
+            "Gallery not found: {}",
+            name
+        )));
+    }
+
+    save_gallery_config(&app_state, &**config_storage, &site, &name, request, existing, &admin).await
+}
+
+async fn save_gallery_config(
+    app_state: &crate::AppState,
+    config_storage: &dyn tenrankai_config_storage::ConfigStorage,
+    site: &str,
+    name: &str,
+    mut request: CreateGalleryRequest,
+    existing_config: Option<tenrankai_config_storage::StoredGalleryConfig>,
+    admin: &RequireAdmin,
+) -> Result<Json<SiteGalleryInfo>, AdminError> {
     let hosted_mode = app_state.hosted_mode();
 
     if hosted_mode {
@@ -1207,7 +1258,7 @@ pub async fn upsert_site_gallery(
 
     // Verify site exists
     if config_storage
-        .get_site_config(&site)
+        .get_site_config(site)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?
         .is_none()
@@ -1236,30 +1287,17 @@ pub async fn upsert_site_gallery(
         ));
     }
 
-    // Try to load existing config to preserve settings not exposed via API
-    let existing_config = config_storage
-        .get_gallery_full_config(&site, &name)
-        .await
-        .map_err(|e| AdminError::Internal(e.to_string()))?;
-
-    if query.create.unwrap_or(false) && existing_config.is_some() {
-        return Err(AdminError::AlreadyExists(format!(
-            "Gallery already exists: {}",
-            name
-        )));
-    }
-
     // Check for URL prefix conflicts with other galleries
     let gallery_names = config_storage
-        .list_galleries(&site)
+        .list_galleries(site)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
     for other_name in &gallery_names {
-        if other_name == &name || other_name.starts_with('_') {
+        if other_name == name || other_name.starts_with('_') {
             continue;
         }
         if let Ok(Some(other_config)) =
-            config_storage.get_gallery_full_config(&site, other_name).await
+            config_storage.get_gallery_full_config(site, other_name).await
         && other_config.url_prefix == request.url_prefix {
             return Err(AdminError::BadRequest(format!(
                 "URL prefix '{}' is already used by gallery '{}'",
@@ -1271,7 +1309,7 @@ pub async fn upsert_site_gallery(
     // Try to load prototype config for new gallery defaults
     let prototype_config = if existing_config.is_none() {
         config_storage
-            .get_gallery_full_config(&site, "_prototype")
+            .get_gallery_full_config(site, "_prototype")
             .await
             .ok()
             .flatten()
@@ -1288,7 +1326,7 @@ pub async fn upsert_site_gallery(
     let stored_config = if let Some(existing) = existing_config {
         // Update only the fields exposed via the API, preserve everything else
         tenrankai_config_storage::StoredGalleryConfig {
-            name: name.clone(),
+            name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
             cache_directory: request.cache_directory.clone(),
@@ -1324,7 +1362,7 @@ pub async fn upsert_site_gallery(
     } else if let Some(proto) = prototype_config {
         // New gallery - use prototype config as template
         tenrankai_config_storage::StoredGalleryConfig {
-            name: name.clone(),
+            name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
             cache_directory: request.cache_directory.clone(),
@@ -1360,7 +1398,7 @@ pub async fn upsert_site_gallery(
     } else {
         // New gallery - use hardcoded defaults (no prototype available)
         tenrankai_config_storage::StoredGalleryConfig {
-            name: name.clone(),
+            name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
             cache_directory: request.cache_directory.clone(),
@@ -1404,17 +1442,17 @@ pub async fn upsert_site_gallery(
 
     // Save the gallery config
     config_storage
-        .set_gallery_full_config(&site, &name, &stored_config, &admin.0.username)
+        .set_gallery_full_config(site, name, &stored_config, &admin.0.username)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     // Reload site so gallery changes (especially watermark) take effect immediately
-    reload_site_after_change(&app_state, &site).await;
+    reload_site_after_change(app_state, site).await;
 
     let response_grid_mode = stored_config.grid_mode.as_str();
 
     let mut info = SiteGalleryInfo {
-        name,
+        name: name.to_string(),
         url_prefix: request.url_prefix,
         source_directory: request.source_directory,
         cache_directory: request.cache_directory,

@@ -506,7 +506,8 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             .route(
                 "/_admin/api/sites/{site}/galleries/{name}",
                 axum::routing::get(admin::get_site_gallery)
-                    .put(admin::upsert_site_gallery)
+                    .post(admin::create_site_gallery)
+                    .put(admin::update_site_gallery)
                     .delete(admin::delete_site_gallery),
             )
             .route(
