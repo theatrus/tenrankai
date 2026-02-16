@@ -7,31 +7,40 @@ Tenrankai is a Rust/Axum photo gallery server with React/TypeScript frontend. Fe
 
 ### Essential Commands
 ```bash
-# Development (use --no-default-features for faster builds)
-cargo run --no-default-features -- serve          # Start server
-cargo run --no-default-features -- serve --quit-after 5  # Auto-shutdown test
+# Full builds (frontend + backend via Makefile)
+make                   # Dev build (frontend + backend, with AVIF)
+make dev-no-avif       # Dev build without AVIF (faster compile)
+make release           # Production frontend + release binary
+make check             # Lint + test (pre-commit)
+
+# Individual steps
+cargo run -- serve                                 # Start server
 npm run dev                                        # Frontend hot-reload (port 5173)
+npm run build                                      # Build frontend assets
+cargo build                                        # Build backend only
+cargo build --no-default-features                  # Build backend without AVIF (faster)
 
 # Testing
-cargo test --no-default-features                   # Fast tests (~180)
 cargo test                                         # Full tests with AVIF (~235)
-cargo clippy --no-default-features -- -D warnings  # Linting
-npm run type-check && npm run build               # Frontend checks
-
-# Production
-cargo build --release --no-default-features       # Release build
-npm run build:prod                                 # Production frontend
+cargo test --no-default-features                   # Fast tests without AVIF (~180)
+make lint                                          # Lint frontend + backend
 ```
 
+**Important:** Frontend assets are served from disk, not embedded in the binary.
+Changing frontend code does NOT require a Rust recompile. Use `npm run build` or
+`make frontend` to rebuild frontend assets independently.
+
 ### Development Workflow
-1. Terminal 1: `cargo run --no-default-features -- serve` (port 3000)
-2. Terminal 2: `npm run dev` (port 5173 with hot-reload, proxies to 3000)
-3. Visit http://localhost:5173/
+1. `make` (first time — builds frontend + backend)
+2. Terminal 1: `cargo run -- serve` (port 3000)
+3. Terminal 2: `npm run dev` (port 5173 with hot-reload, proxies to 3000)
+4. Visit http://localhost:5173/
 
 ### Pre-Commit Checklist
-- `npm run type-check && npm run build`
-- `cargo clippy --no-default-features -- -D warnings && cargo fmt --check`
-- `cargo test --no-default-features`
+- `make check` (or individually:)
+- `npm run lint`
+- `cargo clippy -- -D warnings && cargo fmt --check`
+- `cargo test`
 
 ## Code Style Guidelines
 - No comments unless explicitly requested
@@ -188,7 +197,6 @@ alice = "viewer"
 
 ```bash
 docker build -t tenrankai:latest .                    # With AVIF (~168 MB)
-docker build -f Dockerfile.no-avif -t tenrankai .     # Without AVIF (~130 MB)
 ```
 
 Multi-arch support (amd64/arm64), runs as non-root user (UID 1001).
@@ -197,7 +205,7 @@ Multi-arch support (amd64/arm64), runs as non-root user (UID 1001).
 
 | Issue | Solution |
 |-------|----------|
-| Build issues | `npm run clean && cargo clean && npm run build && cargo build --no-default-features` |
+| Build issues | `make clean-all && make` |
 | Port conflict | `cargo run --no-default-features -- serve --port 3001` |
 | Email not sending | Check `config.toml`, verify AWS credentials, check SES sender verification |
 | Login links not working | Verify `base_url` matches actual URL, check token expiry (10 min) |

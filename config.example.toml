@@ -18,6 +18,7 @@ name = "Tenrankai"
 log_level = "info"
 # Change this in production - use a long random string
 cookie_secret = "change-me-in-production-use-a-long-random-string"
+# hosted_mode = true  # Hide infrastructure settings (storage paths, etc.) from admin UI
 
 # ConfigStorage location (required)
 # Options:

@@ -83,7 +83,13 @@ jobs:
       with:
         node-version: '20'
         cache: 'npm'
-    
+
+    - name: Build frontend
+      run: |
+        npm ci
+        cd admin && npm ci && cd ..
+        npm run build:prod
+
     - name: Install Rust (use rust-toolchain.toml)
       uses: dtolnay/rust-toolchain@stable
       with:

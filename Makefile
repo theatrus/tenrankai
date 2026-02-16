@@ -1,22 +1,120 @@
-# DynServer Build and Package Makefile
+# Tenrankai Build Makefile
+#
+# Frontend assets are served from disk at runtime and are NOT embedded in the
+# Rust binary. The frontend and backend can be built independently — this
+# Makefile orchestrates them for convenience.
 
-.PHONY: all build test clean package install-deps deb-build deb-clean
+CARGO_FLAGS ?=
+NPM_FLAGS ?=
 
-# Build the binary in release mode
+# Default: full dev build (with AVIF)
+.PHONY: all
+all: frontend build
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+
+.PHONY: frontend frontend-deps frontend-admin-deps frontend-build
+
+frontend: frontend-deps frontend-admin-deps frontend-build
+
+frontend-deps:
+	@if [ ! -d node_modules ]; then \
+		echo "Installing frontend dependencies..."; \
+		npm install $(NPM_FLAGS); \
+	fi
+
+frontend-admin-deps:
+	@if [ -d admin ] && [ ! -d admin/node_modules ]; then \
+		echo "Installing admin dependencies..."; \
+		cd admin && npm install $(NPM_FLAGS); \
+	fi
+
+frontend-build: frontend-deps frontend-admin-deps
+	npm run build
+
+frontend-prod: frontend-deps frontend-admin-deps
+	npm run build:prod
+
+frontend-clean:
+	npm run clean
+
+# ---------------------------------------------------------------------------
+# Backend (Rust)
+# ---------------------------------------------------------------------------
+
+.PHONY: build build-no-avif build-release build-release-no-avif
+
 build:
-	cargo build --release
+	cargo build $(CARGO_FLAGS)
 
-# Run tests
+build-no-avif:
+	cargo build --no-default-features $(CARGO_FLAGS)
+
+build-release:
+	cargo build --release $(CARGO_FLAGS)
+
+build-release-no-avif:
+	cargo build --release --no-default-features $(CARGO_FLAGS)
+
+# ---------------------------------------------------------------------------
+# Combined builds
+# ---------------------------------------------------------------------------
+
+.PHONY: dev dev-no-avif release release-no-avif
+
+dev: frontend build
+
+dev-no-avif: frontend build-no-avif
+
+release: frontend-prod build-release
+
+release-no-avif: frontend-prod build-release-no-avif
+
+# ---------------------------------------------------------------------------
+# Testing & linting
+# ---------------------------------------------------------------------------
+
+.PHONY: test test-all lint lint-frontend lint-backend check
+
 test:
-	cargo test
+	cargo test $(CARGO_FLAGS)
 
-# Clean build artifacts
+test-no-avif:
+	cargo test --no-default-features $(CARGO_FLAGS)
+
+lint: lint-frontend lint-backend
+
+lint-frontend: frontend-deps frontend-admin-deps
+	npm run lint
+
+lint-backend:
+	cargo clippy -- -D warnings
+	cargo fmt --check
+
+check: lint test
+	@echo "All checks passed."
+
+# ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
+
+.PHONY: clean clean-all
+
 clean:
 	cargo clean
-	rm -rf debian/tenrankai
-	rm -rf target/
+	npm run clean
 
-# Install dependencies for Debian packaging
+clean-all: clean
+	rm -rf node_modules admin/node_modules
+
+# ---------------------------------------------------------------------------
+# Debian packaging (existing)
+# ---------------------------------------------------------------------------
+
+.PHONY: install-deps deb-build deb-clean check-systemd package-lint
+
 install-deps:
 	sudo apt-get update
 	sudo apt-get install -y \
@@ -28,12 +126,10 @@ install-deps:
 		pkg-config \
 		libssl-dev
 
-# Build Debian package
 deb-build: clean
 	@echo "Building Debian package..."
 	dpkg-buildpackage -us -uc -b
 
-# Clean Debian build artifacts
 deb-clean:
 	rm -rf debian/tenrankai
 	rm -rf debian/.debhelper
@@ -43,27 +139,41 @@ deb-clean:
 	rm -f debian/tenrankai.debhelper.log
 	rm -f debian/tenrankai.substvars
 
-# Quick test of the systemd service file
 check-systemd:
 	systemd-analyze verify tenrankai.service
 
-# Lint the package
 package-lint:
 	lintian ../tenrankai_*.deb
 
-# All build tasks
-all: build test
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
 
-# Help target
+.PHONY: help
 help:
-	@echo "Available targets:"
-	@echo "  build        - Build the release binary"
-	@echo "  test         - Run cargo tests"
-	@echo "  clean        - Clean all build artifacts"
-	@echo "  install-deps - Install Debian packaging dependencies"
-	@echo "  deb-build    - Build Debian package"
-	@echo "  deb-clean    - Clean Debian build artifacts"
-	@echo "  check-systemd - Verify systemd service file"
-	@echo "  package-lint - Lint the built package"
-	@echo "  all          - Build and test"
-	@echo "  help         - Show this help"
+	@echo "Development:"
+	@echo "  make                - Build frontend + backend (with AVIF)"
+	@echo "  make dev            - Same as above"
+	@echo "  make dev-no-avif    - Build frontend + backend (no AVIF, faster)"
+	@echo "  make build          - Build backend only (with AVIF)"
+	@echo "  make build-no-avif  - Build backend only (no AVIF)"
+	@echo "  make frontend       - Build frontend only"
+	@echo ""
+	@echo "Release:"
+	@echo "  make release           - Production frontend + release binary"
+	@echo "  make release-no-avif   - Production frontend + release binary (no AVIF)"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test           - Run Rust tests (with AVIF)"
+	@echo "  make test-no-avif   - Run Rust tests (no AVIF, faster)"
+	@echo "  make lint           - Lint frontend + backend"
+	@echo "  make check          - Lint + test (pre-commit)"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  make clean          - Clean build artifacts"
+	@echo "  make clean-all      - Clean everything including node_modules"
+	@echo ""
+	@echo "Debian packaging:"
+	@echo "  make install-deps   - Install Debian packaging dependencies"
+	@echo "  make deb-build      - Build Debian package"
+	@echo "  make deb-clean      - Clean Debian build artifacts"
