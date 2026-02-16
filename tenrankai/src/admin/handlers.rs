@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::Path,
+    extract::{Path, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
@@ -1191,6 +1191,7 @@ pub async fn upsert_site_gallery(
     ResolvedState(app_state): ResolvedState,
     admin: RequireAdmin,
     Path((site, name)): Path<(String, String)>,
+    Query(query): Query<UpsertGalleryQuery>,
     Json(mut request): Json<CreateGalleryRequest>,
 ) -> Result<Json<SiteGalleryInfo>, AdminError> {
     let config_storage = app_state
@@ -1240,6 +1241,13 @@ pub async fn upsert_site_gallery(
         .get_gallery_full_config(&site, &name)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if query.create.unwrap_or(false) && existing_config.is_some() {
+        return Err(AdminError::AlreadyExists(format!(
+            "Gallery already exists: {}",
+            name
+        )));
+    }
 
     // Try to load prototype config for new gallery defaults
     let prototype_config = if existing_config.is_none() {
@@ -1432,6 +1440,7 @@ pub async fn delete_site_gallery(
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     if deleted {
+        reload_site_after_change(&app_state, &site).await;
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AdminError::NotFound(format!("Gallery not found: {}", name)))

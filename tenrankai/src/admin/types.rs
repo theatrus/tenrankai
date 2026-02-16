@@ -405,6 +405,11 @@ pub struct SiteGalleryListResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpsertGalleryQuery {
+    pub create: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateGalleryRequest {
     pub name: String,
     pub url_prefix: String,
