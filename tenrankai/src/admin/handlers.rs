@@ -114,22 +114,34 @@ async fn find_version_files(
     version_files
 }
 
-/// Serve the admin SPA HTML
-pub async fn admin_spa_handler(ResolvedState(app_state): ResolvedState) -> Response {
-    // Try to serve the admin index.html from static files
-    let response = app_state
-        .static_handler()
-        .serve("admin/index.html", false)
-        .await;
+/// Serve the admin SPA HTML (requires admin authentication)
+pub async fn admin_spa_handler(
+    ResolvedState(app_state): ResolvedState,
+    uri: axum::http::Uri,
+    admin: Result<RequireAdmin, StatusCode>,
+) -> Response {
+    match admin {
+        Err(StatusCode::UNAUTHORIZED) => {
+            let return_path = uri.path();
+            axum::response::Redirect::temporary(&format!(
+                "/_login?return={}",
+                urlencoding::encode(return_path)
+            ))
+            .into_response()
+        }
+        Err(status) => status.into_response(),
+        Ok(_) => {
+            let response = app_state
+                .static_handler()
+                .serve("admin/index.html", false)
+                .await;
 
-    // Check if file was found (not 404)
-    if response.status() != StatusCode::NOT_FOUND {
-        return response;
-    }
+            if response.status() != StatusCode::NOT_FOUND {
+                return response;
+            }
 
-    // Fallback HTML if admin app not built
-    Html(
-        r#"<!DOCTYPE html>
+            Html(
+                r#"<!DOCTYPE html>
 <html>
 <head><title>Admin UI Not Found</title></head>
 <body>
@@ -137,8 +149,10 @@ pub async fn admin_spa_handler(ResolvedState(app_state): ResolvedState) -> Respo
 <p>The admin UI has not been built. Run <code>npm run build:admin</code> to build it.</p>
 </body>
 </html>"#,
-    )
-    .into_response()
+            )
+            .into_response()
+        }
+    }
 }
 
 // ============================================================================
@@ -1032,7 +1046,12 @@ pub async fn update_site(
         .config_storage()
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
-    let hosted_mode = app_state.hosted_mode();
+
+    if app_state.hosted_mode() {
+        return Err(AdminError::Forbidden(
+            "Site settings cannot be modified in hosted mode".into(),
+        ));
+    }
 
     let mut config = config_storage
         .get_site_config(&name)
@@ -1040,25 +1059,23 @@ pub async fn update_site(
         .map_err(|e| AdminError::Internal(e.to_string()))?
         .ok_or_else(|| AdminError::NotFound(format!("Site not found: {}", name)))?;
 
-    if !hosted_mode {
-        if let Some(hostnames) = request.hostnames {
-            config.hostnames = hostnames;
-        }
-        if let Some(base_url) = request.base_url {
-            config.base_url = Some(base_url);
-        }
-        if let Some(templates) = request.templates {
-            config.templates = templates;
-        }
-        if let Some(static_files) = request.static_files {
-            config.static_files = static_files;
-        }
-        if let Some(user_database) = request.user_database {
-            config.user_database = Some(user_database);
-        }
-        if let Some(static_use_redirects) = request.static_use_redirects {
-            config.static_use_redirects = static_use_redirects;
-        }
+    if let Some(hostnames) = request.hostnames {
+        config.hostnames = hostnames;
+    }
+    if let Some(base_url) = request.base_url {
+        config.base_url = Some(base_url);
+    }
+    if let Some(templates) = request.templates {
+        config.templates = templates;
+    }
+    if let Some(static_files) = request.static_files {
+        config.static_files = static_files;
+    }
+    if let Some(user_database) = request.user_database {
+        config.user_database = Some(user_database);
+    }
+    if let Some(static_use_redirects) = request.static_use_redirects {
+        config.static_use_redirects = static_use_redirects;
     }
 
     config_storage
@@ -1077,7 +1094,7 @@ pub async fn update_site(
         .map(|p| p.len())
         .unwrap_or(0);
 
-    let mut info = SiteInfo {
+    let info = SiteInfo {
         name,
         hostnames: config.hostnames,
         base_url: config.base_url,
@@ -1090,10 +1107,6 @@ pub async fn update_site(
         gallery_count,
         posts_count,
     };
-
-    if hosted_mode {
-        redact_site_info(&mut info);
-    }
 
     Ok(Json(info))
 }
