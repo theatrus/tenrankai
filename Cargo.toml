@@ -97,7 +97,7 @@ mime_guess = "2.0"
 rand = "0.9"
 fnv = "1.0"
 lru = "0.16"
-zip = { version = "7", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 num_cpus = "1.16"
 
 # Logging
