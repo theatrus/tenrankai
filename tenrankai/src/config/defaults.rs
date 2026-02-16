@@ -177,6 +177,7 @@ impl Default for Config {
                 base_url: None,
                 user_database: None,
                 config_storage: None,
+                hosted_mode: false,
             },
             email: None,
             openai: None,

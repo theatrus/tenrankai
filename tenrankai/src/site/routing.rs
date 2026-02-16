@@ -138,6 +138,7 @@ mod tests {
             config_storage_url: None,
             site_admins: Vec::new(),
             theme: None,
+            hosted_mode: false,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }

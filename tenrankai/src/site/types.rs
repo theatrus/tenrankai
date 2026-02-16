@@ -22,6 +22,7 @@ pub struct SiteConfig {
     pub email: Option<SiteEmailConfig>,
     pub config_storage: Option<String>,
     pub site_admins: Vec<String>,
+    pub hosted_mode: bool,
 }
 
 /// Resources for a single site - encapsulates all site-specific components
@@ -40,6 +41,7 @@ pub struct SiteResources {
     pub config_storage_url: Option<String>,
     pub site_admins: Vec<String>,
     pub theme: Option<StoredThemeConfig>,
+    pub hosted_mode: bool,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -122,6 +124,10 @@ impl Site {
     pub fn theme(&self) -> Option<&StoredThemeConfig> {
         self.resources.theme.as_ref()
     }
+
+    pub fn hosted_mode(&self) -> bool {
+        self.resources.hosted_mode
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +151,7 @@ mod tests {
             config_storage_url: None,
             site_admins: Vec::new(),
             theme: None,
+            hosted_mode: false,
         };
         Site::new(name.to_string(), resources)
     }

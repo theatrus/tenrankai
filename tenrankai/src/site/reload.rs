@@ -66,14 +66,11 @@ impl Default for ReloadResult {
 
 /// Handles hot reloading of site configurations from ConfigStorage
 pub struct ConfigReloader {
-    /// Lock to prevent concurrent reloads
     reload_lock: Mutex<()>,
-    /// ConfigStorage backend
     storage: DynConfigStorage,
-    /// Cookie secret for sites (shared across all sites)
     cookie_secret: String,
-    /// ConfigStorage URL for sites to use when writing permissions
     config_storage_url: String,
+    hosted_mode: bool,
 }
 
 impl ConfigReloader {
@@ -87,7 +84,13 @@ impl ConfigReloader {
             storage,
             cookie_secret,
             config_storage_url,
+            hosted_mode: false,
         }
+    }
+
+    pub fn with_hosted_mode(mut self, hosted_mode: bool) -> Self {
+        self.hosted_mode = hosted_mode;
+        self
     }
 
     /// Reload configuration from ConfigStorage and update the SiteManager
@@ -151,8 +154,8 @@ impl ConfigReloader {
 
             info!("Adding new site '{}'", site_name);
 
-            // Set config_storage URL for permission writes
             site_config.config_storage = Some(self.config_storage_url.clone());
+            site_config.hosted_mode = self.hosted_mode;
 
             // Get hostnames from storage
             let hostnames = match self.storage.get_site_config(&site_name).await {
@@ -184,8 +187,8 @@ impl ConfigReloader {
 
             info!("Updating site '{}'", site_name);
 
-            // Set config_storage URL for permission writes
             site_config.config_storage = Some(self.config_storage_url.clone());
+            site_config.hosted_mode = self.hosted_mode;
 
             // Get hostnames from storage
             let hostnames = match self.storage.get_site_config(&site_name).await {

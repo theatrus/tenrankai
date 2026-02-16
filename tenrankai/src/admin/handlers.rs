@@ -114,22 +114,34 @@ async fn find_version_files(
     version_files
 }
 
-/// Serve the admin SPA HTML
-pub async fn admin_spa_handler(ResolvedState(app_state): ResolvedState) -> Response {
-    // Try to serve the admin index.html from static files
-    let response = app_state
-        .static_handler()
-        .serve("admin/index.html", false)
-        .await;
+/// Serve the admin SPA HTML (requires admin authentication)
+pub async fn admin_spa_handler(
+    ResolvedState(app_state): ResolvedState,
+    uri: axum::http::Uri,
+    admin: Result<RequireAdmin, StatusCode>,
+) -> Response {
+    match admin {
+        Err(StatusCode::UNAUTHORIZED) => {
+            let return_path = uri.path();
+            axum::response::Redirect::temporary(&format!(
+                "/_login?return={}",
+                urlencoding::encode(return_path)
+            ))
+            .into_response()
+        }
+        Err(status) => status.into_response(),
+        Ok(_) => {
+            let response = app_state
+                .static_handler()
+                .serve("admin/index.html", false)
+                .await;
 
-    // Check if file was found (not 404)
-    if response.status() != StatusCode::NOT_FOUND {
-        return response;
-    }
+            if response.status() != StatusCode::NOT_FOUND {
+                return response;
+            }
 
-    // Fallback HTML if admin app not built
-    Html(
-        r#"<!DOCTYPE html>
+            Html(
+                r#"<!DOCTYPE html>
 <html>
 <head><title>Admin UI Not Found</title></head>
 <body>
@@ -137,8 +149,10 @@ pub async fn admin_spa_handler(ResolvedState(app_state): ResolvedState) -> Respo
 <p>The admin UI has not been built. Run <code>npm run build:admin</code> to build it.</p>
 </body>
 </html>"#,
-    )
-    .into_response()
+            )
+            .into_response()
+        }
+    }
 }
 
 // ============================================================================
@@ -883,6 +897,36 @@ pub async fn get_user_gallery_roles(
 }
 
 // ============================================================================
+// Hosted Mode
+// ============================================================================
+
+/// Check whether the server is running in hosted mode
+pub async fn get_hosted_mode(
+    _admin: RequireAdmin,
+    ResolvedState(app_state): ResolvedState,
+) -> Json<HostedModeResponse> {
+    Json(HostedModeResponse {
+        hosted_mode: app_state.hosted_mode(),
+    })
+}
+
+fn redact_site_info(info: &mut SiteInfo) {
+    info.hostnames = vec![];
+    info.base_url = None;
+    info.templates = vec![];
+    info.static_files = vec![];
+    info.static_use_redirects = false;
+    info.user_database = None;
+    info.storage_prefix = None;
+    info.cache_prefix = None;
+}
+
+fn redact_gallery_info(info: &mut SiteGalleryInfo) {
+    info.source_directory = "(managed)".to_string();
+    info.cache_directory = "(managed)".to_string();
+}
+
+// ============================================================================
 // Site Management
 // ============================================================================
 
@@ -895,6 +939,7 @@ pub async fn list_sites(
         .config_storage()
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+    let hosted_mode = app_state.hosted_mode();
 
     let site_names = config_storage
         .list_sites()
@@ -915,7 +960,7 @@ pub async fn list_sites(
                 .map(|p| p.len())
                 .unwrap_or(0);
 
-            sites.push(SiteInfo {
+            let mut info = SiteInfo {
                 name,
                 hostnames: config.hostnames,
                 base_url: config.base_url,
@@ -927,7 +972,13 @@ pub async fn list_sites(
                 cache_prefix: config.cache_prefix,
                 gallery_count,
                 posts_count,
-            });
+            };
+
+            if hosted_mode {
+                redact_site_info(&mut info);
+            }
+
+            sites.push(info);
         }
     }
 
@@ -944,6 +995,7 @@ pub async fn get_site(
         .config_storage()
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+    let hosted_mode = app_state.hosted_mode();
 
     let config = config_storage
         .get_site_config(&name)
@@ -962,7 +1014,7 @@ pub async fn get_site(
         .map(|p| p.len())
         .unwrap_or(0);
 
-    Ok(Json(SiteInfo {
+    let mut info = SiteInfo {
         name,
         hostnames: config.hostnames,
         base_url: config.base_url,
@@ -974,7 +1026,13 @@ pub async fn get_site(
         cache_prefix: config.cache_prefix,
         gallery_count,
         posts_count,
-    }))
+    };
+
+    if hosted_mode {
+        redact_site_info(&mut info);
+    }
+
+    Ok(Json(info))
 }
 
 /// Update a site (NOTE: storage_prefix and cache_prefix cannot be edited via API)
@@ -989,14 +1047,18 @@ pub async fn update_site(
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
 
-    // Get existing config
+    if app_state.hosted_mode() {
+        return Err(AdminError::Forbidden(
+            "Site settings cannot be modified in hosted mode".into(),
+        ));
+    }
+
     let mut config = config_storage
         .get_site_config(&name)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?
         .ok_or_else(|| AdminError::NotFound(format!("Site not found: {}", name)))?;
 
-    // Update fields (storage_prefix is NOT updated)
     if let Some(hostnames) = request.hostnames {
         config.hostnames = hostnames;
     }
@@ -1009,14 +1071,13 @@ pub async fn update_site(
     if let Some(static_files) = request.static_files {
         config.static_files = static_files;
     }
-    if let Some(static_use_redirects) = request.static_use_redirects {
-        config.static_use_redirects = static_use_redirects;
-    }
     if let Some(user_database) = request.user_database {
         config.user_database = Some(user_database);
     }
+    if let Some(static_use_redirects) = request.static_use_redirects {
+        config.static_use_redirects = static_use_redirects;
+    }
 
-    // Save the updated config
     config_storage
         .set_site_config(&name, &config, &admin.0.username)
         .await
@@ -1033,7 +1094,7 @@ pub async fn update_site(
         .map(|p| p.len())
         .unwrap_or(0);
 
-    Ok(Json(SiteInfo {
+    let info = SiteInfo {
         name,
         hostnames: config.hostnames,
         base_url: config.base_url,
@@ -1045,7 +1106,9 @@ pub async fn update_site(
         cache_prefix: config.cache_prefix,
         gallery_count,
         posts_count,
-    }))
+    };
+
+    Ok(Json(info))
 }
 
 /// List galleries for a site
@@ -1058,6 +1121,7 @@ pub async fn list_site_galleries(
         .config_storage()
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+    let hosted_mode = app_state.hosted_mode();
 
     let gallery_names = config_storage
         .list_galleries(&site)
@@ -1066,13 +1130,12 @@ pub async fn list_site_galleries(
 
     let mut galleries = Vec::new();
     for name in gallery_names {
-        // Skip hidden/prototype galleries (those starting with underscore)
         if name.starts_with('_') {
             continue;
         }
         if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
             let grid_mode_str = config.grid_mode.as_str();
-            galleries.push(SiteGalleryInfo {
+            let mut info = SiteGalleryInfo {
                 name,
                 url_prefix: config.url_prefix,
                 source_directory: config.source_directory,
@@ -1082,7 +1145,11 @@ pub async fn list_site_galleries(
                 enable_tile_zoom: Some(config.tiles.is_some()),
                 grid_mode: Some(grid_mode_str.to_string()),
                 max_columns: config.max_columns,
-            });
+            };
+            if hosted_mode {
+                redact_gallery_info(&mut info);
+            }
+            galleries.push(info);
         }
     }
 
@@ -1095,7 +1162,6 @@ pub async fn get_site_gallery(
     _admin: RequireAdmin,
     Path((site, name)): Path<(String, String)>,
 ) -> Result<Json<SiteGalleryInfo>, AdminError> {
-    // Prevent access to hidden/prototype galleries
     if name.starts_with('_') {
         return Err(AdminError::NotFound(format!("Gallery not found: {}", name)));
     }
@@ -1104,6 +1170,7 @@ pub async fn get_site_gallery(
         .config_storage()
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+    let hosted_mode = app_state.hosted_mode();
 
     let config = config_storage
         .get_gallery_full_config(&site, &name)
@@ -1113,7 +1180,7 @@ pub async fn get_site_gallery(
 
     let grid_mode_str = config.grid_mode.as_str();
 
-    Ok(Json(SiteGalleryInfo {
+    let mut info = SiteGalleryInfo {
         name,
         url_prefix: config.url_prefix,
         source_directory: config.source_directory,
@@ -1123,11 +1190,17 @@ pub async fn get_site_gallery(
         enable_tile_zoom: Some(config.tiles.is_some()),
         grid_mode: Some(grid_mode_str.to_string()),
         max_columns: config.max_columns,
-    }))
+    };
+
+    if hosted_mode {
+        redact_gallery_info(&mut info);
+    }
+
+    Ok(Json(info))
 }
 
-/// Create or update a gallery
-pub async fn upsert_site_gallery(
+/// Create a new gallery (rejects if gallery already exists)
+pub async fn create_site_gallery(
     ResolvedState(app_state): ResolvedState,
     admin: RequireAdmin,
     Path((site, name)): Path<(String, String)>,
@@ -1138,9 +1211,87 @@ pub async fn upsert_site_gallery(
         .as_ref()
         .ok_or(AdminError::Internal("Config storage not configured".into()))?;
 
+    let existing = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if existing.is_some() {
+        return Err(AdminError::AlreadyExists(format!(
+            "Gallery already exists: {}",
+            name
+        )));
+    }
+
+    save_gallery_config(
+        &app_state,
+        &**config_storage,
+        &site,
+        &name,
+        request,
+        None,
+        &admin,
+    )
+    .await
+}
+
+/// Update an existing gallery
+pub async fn update_site_gallery(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((site, name)): Path<(String, String)>,
+    Json(request): Json<CreateGalleryRequest>,
+) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    let config_storage = app_state
+        .config_storage()
+        .as_ref()
+        .ok_or(AdminError::Internal("Config storage not configured".into()))?;
+
+    let existing = config_storage
+        .get_gallery_full_config(&site, &name)
+        .await
+        .map_err(|e| AdminError::Internal(e.to_string()))?;
+
+    if existing.is_none() {
+        return Err(AdminError::NotFound(format!("Gallery not found: {}", name)));
+    }
+
+    save_gallery_config(
+        &app_state,
+        &**config_storage,
+        &site,
+        &name,
+        request,
+        existing,
+        &admin,
+    )
+    .await
+}
+
+async fn save_gallery_config(
+    app_state: &crate::AppState,
+    config_storage: &dyn tenrankai_config_storage::ConfigStorage,
+    site: &str,
+    name: &str,
+    mut request: CreateGalleryRequest,
+    existing_config: Option<tenrankai_config_storage::StoredGalleryConfig>,
+    admin: &RequireAdmin,
+) -> Result<Json<SiteGalleryInfo>, AdminError> {
+    let hosted_mode = app_state.hosted_mode();
+
+    if hosted_mode {
+        if let Some(ref existing) = existing_config {
+            request.source_directory = existing.source_directory.clone();
+            request.cache_directory = existing.cache_directory.clone();
+        } else {
+            request.source_directory = format!("galleries/{}", name);
+            request.cache_directory = format!("cache/{}", name);
+        }
+    }
+
     // Verify site exists
     if config_storage
-        .get_site_config(&site)
+        .get_site_config(site)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?
         .is_none()
@@ -1169,16 +1320,31 @@ pub async fn upsert_site_gallery(
         ));
     }
 
-    // Try to load existing config to preserve settings not exposed via API
-    let existing_config = config_storage
-        .get_gallery_full_config(&site, &name)
+    // Check for URL prefix conflicts with other galleries
+    let gallery_names = config_storage
+        .list_galleries(site)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
+    for other_name in &gallery_names {
+        if other_name == name || other_name.starts_with('_') {
+            continue;
+        }
+        if let Ok(Some(other_config)) = config_storage
+            .get_gallery_full_config(site, other_name)
+            .await
+            && other_config.url_prefix == request.url_prefix
+        {
+            return Err(AdminError::BadRequest(format!(
+                "URL prefix '{}' is already used by gallery '{}'",
+                request.url_prefix, other_name
+            )));
+        }
+    }
 
     // Try to load prototype config for new gallery defaults
     let prototype_config = if existing_config.is_none() {
         config_storage
-            .get_gallery_full_config(&site, "_prototype")
+            .get_gallery_full_config(site, "_prototype")
             .await
             .ok()
             .flatten()
@@ -1195,7 +1361,7 @@ pub async fn upsert_site_gallery(
     let stored_config = if let Some(existing) = existing_config {
         // Update only the fields exposed via the API, preserve everything else
         tenrankai_config_storage::StoredGalleryConfig {
-            name: name.clone(),
+            name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
             cache_directory: request.cache_directory.clone(),
@@ -1231,7 +1397,7 @@ pub async fn upsert_site_gallery(
     } else if let Some(proto) = prototype_config {
         // New gallery - use prototype config as template
         tenrankai_config_storage::StoredGalleryConfig {
-            name: name.clone(),
+            name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
             cache_directory: request.cache_directory.clone(),
@@ -1267,7 +1433,7 @@ pub async fn upsert_site_gallery(
     } else {
         // New gallery - use hardcoded defaults (no prototype available)
         tenrankai_config_storage::StoredGalleryConfig {
-            name: name.clone(),
+            name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
             cache_directory: request.cache_directory.clone(),
@@ -1311,17 +1477,17 @@ pub async fn upsert_site_gallery(
 
     // Save the gallery config
     config_storage
-        .set_gallery_full_config(&site, &name, &stored_config, &admin.0.username)
+        .set_gallery_full_config(site, name, &stored_config, &admin.0.username)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     // Reload site so gallery changes (especially watermark) take effect immediately
-    reload_site_after_change(&app_state, &site).await;
+    reload_site_after_change(app_state, site).await;
 
     let response_grid_mode = stored_config.grid_mode.as_str();
 
-    Ok(Json(SiteGalleryInfo {
-        name,
+    let mut info = SiteGalleryInfo {
+        name: name.to_string(),
         url_prefix: request.url_prefix,
         source_directory: request.source_directory,
         cache_directory: request.cache_directory,
@@ -1330,7 +1496,13 @@ pub async fn upsert_site_gallery(
         enable_tile_zoom: Some(stored_config.tiles.is_some()),
         grid_mode: Some(response_grid_mode.to_string()),
         max_columns: stored_config.max_columns,
-    }))
+    };
+
+    if hosted_mode {
+        redact_gallery_info(&mut info);
+    }
+
+    Ok(Json(info))
 }
 
 /// Delete a gallery
@@ -1354,12 +1526,29 @@ pub async fn delete_site_gallery(
         return Err(AdminError::NotFound(format!("Site not found: {}", site)));
     }
 
+    // Reject deletion if the gallery still has images
+    if let Some(gallery) = app_state.galleries().get(&name) {
+        let image_count = gallery
+            .folder_cache
+            .get("")
+            .await
+            .map(|cache| cache.recursive_image_count)
+            .unwrap_or(0);
+        if image_count > 0 {
+            return Err(AdminError::BadRequest(format!(
+                "Cannot delete gallery '{}': it still contains {} image(s). Remove all images first.",
+                name, image_count
+            )));
+        }
+    }
+
     let deleted = config_storage
         .delete_gallery(&site, &name, &admin.0.username)
         .await
         .map_err(|e| AdminError::Internal(e.to_string()))?;
 
     if deleted {
+        reload_site_after_change(&app_state, &site).await;
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AdminError::NotFound(format!("Gallery not found: {}", name)))
@@ -1396,9 +1585,8 @@ pub async fn reload_site(
         app_state.cookie_secret().to_string(),
     );
 
-    // Reload the site
     match site_manager
-        .reload_site(&site, &loader, config_storage_url)
+        .reload_site(&site, &loader, config_storage_url, app_state.hosted_mode())
         .await
     {
         Ok(()) => Ok(Json(ReloadSiteResponse {
@@ -1533,6 +1721,13 @@ pub async fn update_site_permissions(
         .is_none()
     {
         return Err(AdminError::NotFound(format!("Site not found: {}", site)));
+    }
+
+    // In hosted mode, prevent removing all site admins (would cause lockout)
+    if app_state.hosted_mode() && request.site_admins.is_empty() {
+        return Err(AdminError::BadRequest(
+            "At least one site admin is required".into(),
+        ));
     }
 
     // Convert DTO to storage format
@@ -3250,30 +3445,27 @@ pub async fn ensure_watermark_folder(
     let folder_md_path = format!("{}/_folder.md", WATERMARK_FOLDER);
     let mut created = false;
 
-    // Check if folder exists
+    // Try to create the folder if it doesn't exist (best-effort)
     if !gallery_obj
         .source_storage()
         .exists(&folder_md_path)
         .await
         .unwrap_or(false)
     {
-        // Create the folder with hidden=true
         let content = "+++\nhidden = true\n+++\n\nWatermark images for this gallery.\n";
-        gallery_obj
+        match gallery_obj
             .source_storage()
             .write(&folder_md_path, bytes::Bytes::from(content))
             .await
-            .map_err(|e| {
-                AdminError::Internal(format!("Failed to create watermark folder: {}", e))
-            })?;
-
-        // Refresh folder cache
-        gallery_obj
-            .refresh_folder_cache()
-            .await
-            .map_err(|e| AdminError::Internal(format!("Failed to refresh cache: {}", e)))?;
-
-        created = true;
+        {
+            Ok(()) => {
+                let _ = gallery_obj.refresh_folder_cache().await;
+                created = true;
+            }
+            Err(e) => {
+                tracing::warn!("Could not create watermark folder: {}", e);
+            }
+        }
     }
 
     // List images in the watermark folder
@@ -4116,7 +4308,12 @@ async fn reload_site_after_change(app_state: &crate::AppState, site_name: &str) 
         app_state.cookie_secret().to_string(),
     );
     if let Err(e) = site_manager
-        .reload_site(site_name, &loader, config_storage_url)
+        .reload_site(
+            site_name,
+            &loader,
+            config_storage_url,
+            app_state.hosted_mode(),
+        )
         .await
     {
         tracing::warn!("Failed to reload site after config change: {}", e);

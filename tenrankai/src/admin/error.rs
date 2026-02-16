@@ -8,7 +8,7 @@ use serde::Serialize;
 #[derive(Debug)]
 pub enum AdminError {
     Unauthorized,
-    Forbidden,
+    Forbidden(String),
     NotFound(String),
     AlreadyExists(String),
     BadRequest(String),
@@ -24,10 +24,7 @@ impl IntoResponse for AdminError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AdminError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-            AdminError::Forbidden => (
-                StatusCode::FORBIDDEN,
-                "Access denied. Owner permission required.".to_string(),
-            ),
+            AdminError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             AdminError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AdminError::AlreadyExists(msg) => (StatusCode::CONFLICT, msg),
             AdminError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),

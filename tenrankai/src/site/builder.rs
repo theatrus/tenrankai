@@ -89,6 +89,7 @@ impl SiteBuilder {
             config_storage_url: self.config.config_storage.clone(),
             site_admins: self.config.site_admins.clone(),
             theme,
+            hosted_mode: self.config.hosted_mode,
         };
 
         info!("Site '{}' built successfully", self.config.name);

@@ -13,12 +13,14 @@ import {
   WatermarkPosition,
   WatermarkImageInfo,
 } from '@api/client';
+import { useHostedMode } from '@hooks/useHostedMode';
 
 const DEFAULT_SITE = 'default';
 
 export function Galleries() {
   const { name, '*': folderPath } = useParams<{ name: string; '*': string }>();
   const queryClient = useQueryClient();
+  const hostedMode = useHostedMode();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGallery, setNewGallery] = useState<CreateGalleryRequest>({
     name: '',
@@ -99,7 +101,7 @@ export function Galleries() {
   }
 
   if (name) {
-    return <GalleryDetail name={name} initialFolderPath={folderPath} />;
+    return <GalleryDetail name={name} initialFolderPath={folderPath} hostedMode={hostedMode} />;
   }
 
   const isLoading = runtimeLoading || (hasConfigStorage && siteLoading);
@@ -155,7 +157,7 @@ export function Galleries() {
               <tr>
                 <th>Name</th>
                 <th>URL Prefix</th>
-                {hasConfigStorage && <th>Source Directory</th>}
+                {hasConfigStorage && !hostedMode && <th>Source Directory</th>}
                 <th>Images</th>
                 <th>Size</th>
                 <th>Public Role</th>
@@ -171,7 +173,7 @@ export function Galleries() {
                     <td>
                       <code>{gallery.url_prefix}</code>
                     </td>
-                    {hasConfigStorage && (
+                    {hasConfigStorage && !hostedMode && (
                       <td>
                         <code>{siteGallery?.source_directory || '-'}</code>
                       </td>
@@ -246,34 +248,38 @@ export function Galleries() {
                   placeholder="/gallery"
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Source Directory</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={newGallery.source_directory}
-                  onChange={(e) => setNewGallery({ ...newGallery, source_directory: e.target.value })}
-                  required
-                  placeholder="photos"
-                />
-                <small style={{ color: 'var(--color-text-muted)' }}>
-                  Relative to the site's storage prefix
-                </small>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Cache Directory</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={newGallery.cache_directory}
-                  onChange={(e) => setNewGallery({ ...newGallery, cache_directory: e.target.value })}
-                  required
-                  placeholder="cache/main"
-                />
-                <small style={{ color: 'var(--color-text-muted)' }}>
-                  Relative to the site's storage prefix
-                </small>
-              </div>
+              {!hostedMode && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Source Directory</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={newGallery.source_directory}
+                      onChange={(e) => setNewGallery({ ...newGallery, source_directory: e.target.value })}
+                      required
+                      placeholder="photos"
+                    />
+                    <small style={{ color: 'var(--color-text-muted)' }}>
+                      Relative to the site's storage prefix
+                    </small>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Cache Directory</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={newGallery.cache_directory}
+                      onChange={(e) => setNewGallery({ ...newGallery, cache_directory: e.target.value })}
+                      required
+                      placeholder="cache/main"
+                    />
+                    <small style={{ color: 'var(--color-text-muted)' }}>
+                      Relative to the site's storage prefix
+                    </small>
+                  </div>
+                </>
+              )}
               <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '0.5rem', paddingTop: '0.75rem' }}>
                 <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Layout</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -341,7 +347,7 @@ function getAvailableRoles(customRoles: Record<string, RoleInfo>): string[] {
   return Array.from(roleSet);
 }
 
-function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolderPath?: string }) {
+function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; initialFolderPath?: string; hostedMode: boolean }) {
   const queryClient = useQueryClient();
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserAssignment, setNewUserAssignment] = useState({ username: '', roles: ['viewer'] });
@@ -361,6 +367,7 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
   const [enableTileZoom, setEnableTileZoom] = useState(false);
   const [watermarkImages, setWatermarkImages] = useState<WatermarkImageInfo[]>([]);
   const [watermarkFolderLoading, setWatermarkFolderLoading] = useState(false);
+  const [watermarkFolderError, setWatermarkFolderError] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['gallery', name],
@@ -461,11 +468,13 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
 
   const loadWatermarkFolder = useCallback(async () => {
     setWatermarkFolderLoading(true);
+    setWatermarkFolderError(false);
     try {
       const result = await api.ensureWatermarkFolder(name);
       setWatermarkImages(result.images);
     } catch (err) {
       console.error('Failed to load watermark folder:', err);
+      setWatermarkFolderError(true);
     } finally {
       setWatermarkFolderLoading(false);
     }
@@ -473,10 +482,10 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
 
   // Load watermark images when image watermark is enabled and settings are shown
   useEffect(() => {
-    if (enableImageWatermark && showWatermarkSettings && watermarkImages.length === 0 && !watermarkFolderLoading) {
+    if (enableImageWatermark && showWatermarkSettings && watermarkImages.length === 0 && !watermarkFolderLoading && !watermarkFolderError) {
       loadWatermarkFolder();
     }
-  }, [enableImageWatermark, showWatermarkSettings, watermarkImages.length, watermarkFolderLoading, loadWatermarkFolder]);
+  }, [enableImageWatermark, showWatermarkSettings, watermarkImages.length, watermarkFolderLoading, watermarkFolderError, loadWatermarkFolder]);
 
   // Auto-open folder modal if initialFolderPath is provided via URL
   useEffect(() => {
@@ -632,26 +641,29 @@ function GalleryDetail({ name, initialFolderPath }: { name: string; initialFolde
                 title="Must start with / (e.g., /gallery, /photos)"
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">Source Directory</label>
-              <input
-                type="text"
-                className="form-input"
-                value={gallerySettings.source_directory}
-                onChange={(e) => updateGallerySettings({ source_directory: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Cache Directory</label>
-              <input
-                type="text"
-                className="form-input"
-                value={gallerySettings.cache_directory}
-                onChange={(e) => updateGallerySettings({ cache_directory: e.target.value })}
-              />
-            </div>
+            {!hostedMode && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Source Directory</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={gallerySettings.source_directory}
+                    onChange={(e) => updateGallerySettings({ source_directory: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cache Directory</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={gallerySettings.cache_directory}
+                    onChange={(e) => updateGallerySettings({ cache_directory: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
           </div>
-
           {/* Layout Settings */}
           <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '1rem', paddingTop: '1rem' }}>
             <h4 style={{ margin: '0 0 0.75rem 0' }}>Layout Settings</h4>

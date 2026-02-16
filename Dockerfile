@@ -66,7 +66,10 @@ COPY templates ./templates
 COPY static ./static
 COPY scripts ./scripts
 
-# Build the application with all features in release mode (will trigger frontend build)
+# Build frontend assets (served from disk, not embedded in binary)
+RUN npm ci && cd admin && npm ci && cd .. && npm run build:prod
+
+# Build the Rust binary (frontend is already built above)
 RUN cargo build --release -p tenrankai
 
 # Runtime stage

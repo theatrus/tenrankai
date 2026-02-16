@@ -2424,6 +2424,7 @@ roles = ["viewer"]
             config_storage_url: None,
             site_admins: Vec::new(),
             theme: None,
+            hosted_mode: false,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);

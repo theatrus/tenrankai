@@ -361,7 +361,7 @@ export const api = {
   getSiteGallery: (site: string, name: string) =>
     request<SiteGalleryInfo>('GET', `/sites/${site}/galleries/${name}`),
   createGallery: (site: string, name: string, data: CreateGalleryRequest) =>
-    request<SiteGalleryInfo>('PUT', `/sites/${site}/galleries/${name}`, data),
+    request<SiteGalleryInfo>('POST', `/sites/${site}/galleries/${name}`, data),
   updateGallery: (site: string, name: string, data: CreateGalleryRequest) =>
     request<SiteGalleryInfo>('PUT', `/sites/${site}/galleries/${name}`, data),
   deleteGallery: (site: string, name: string) =>
@@ -425,4 +425,7 @@ export const api = {
   getTheme: () => request<ThemeConfig>('GET', '/theme'),
   updateTheme: (theme: ThemeConfig) => request<ThemeConfig>('PUT', '/theme', theme),
   resetTheme: () => request<void>('DELETE', '/theme'),
+
+  // Hosted Mode
+  getHostedMode: () => request<{ hosted_mode: boolean }>('GET', '/hosted-mode'),
 };
