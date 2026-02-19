@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use tenrankai::{
@@ -1233,7 +1233,7 @@ async fn run_server(
                             None => std::future::pending().await,
                         }
                     } => {
-                        debug!("Config reload poll triggered");
+                        tracing::debug!("Config reload poll triggered");
                         if let Some(result) = config_reloader.poll_and_reload_if_changed(&manager_clone).await {
                             if !result.is_success() {
                                 tracing::warn!("Periodic config reload had failures: {}", result.summary());
