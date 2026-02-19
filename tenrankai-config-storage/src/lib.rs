@@ -1,6 +1,8 @@
 mod error;
 mod types;
 
+#[cfg(feature = "dynamodb")]
+pub mod dynamodb;
 pub mod file_dir;
 pub mod storage;
 pub mod url;
@@ -34,6 +36,7 @@ pub use types::{
 pub use url::ConfigStorageUrl;
 
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, ConfigStorageError>;
@@ -125,6 +128,23 @@ pub trait ConfigStorage: Send + Sync + 'static {
     ) -> Result<()>;
 
     // ========================================================================
+    // Change Detection
+    // ========================================================================
+
+    /// Get config version numbers for change detection.
+    ///
+    /// Returns a map of shard ID to version number. Backends that support
+    /// versioning bump the shard version atomically after every mutation.
+    /// The poll loop compares this against a cached snapshot to skip full
+    /// reloads when nothing has changed.
+    ///
+    /// Returns an empty map by default (backends without versioning), which
+    /// causes the poll loop to fall back to a full reload every cycle.
+    async fn get_config_versions(&self) -> Result<HashMap<String, u64>> {
+        Ok(HashMap::new())
+    }
+
+    // ========================================================================
     // Metadata
     // ========================================================================
 
@@ -144,5 +164,25 @@ pub async fn create_config_storage(url: &ConfigStorageUrl) -> Result<DynConfigSt
             let backend = storage::StorageConfigStorage::new(url.clone()).await?;
             Ok(Arc::new(backend))
         }
+        #[cfg(feature = "dynamodb")]
+        ConfigStorageUrl::DynamoDb {
+            table_name,
+            region,
+            endpoint,
+            shard,
+        } => {
+            let backend = dynamodb::DynamoConfigStorage::new(
+                table_name.clone(),
+                region.clone(),
+                endpoint.clone(),
+                shard.clone(),
+            )
+            .await?;
+            Ok(Arc::new(backend))
+        }
+        #[cfg(not(feature = "dynamodb"))]
+        ConfigStorageUrl::DynamoDb { .. } => Err(ConfigStorageError::BackendNotAvailable(
+            "DynamoDB support requires the 'dynamodb' feature".to_string(),
+        )),
     }
 }

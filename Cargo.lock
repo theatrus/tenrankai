@@ -5092,6 +5092,8 @@ name = "tenrankai-config-storage"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "aws-config",
+ "aws-sdk-dynamodb",
  "chrono",
  "fs2",
  "serde",
@@ -5102,6 +5104,8 @@ dependencies = [
  "tokio",
  "toml_edit",
  "tracing",
+ "urlencoding",
+ "uuid",
 ]
 
 [[package]]

@@ -25,6 +25,7 @@ heif = ["tenrankai-image/heif", "tenrankai-image/avif"]
 # User storage backend features (forwarded to tenrankai-users)
 users-sql = ["tenrankai-users/sql"]
 users-dynamodb = ["tenrankai-users/dynamodb"]
+config-storage-dynamodb = ["tenrankai-config-storage/dynamodb"]
 
 [dependencies]
 # Internal crates

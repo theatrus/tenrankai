@@ -34,6 +34,9 @@ node_modules/
 # Development planning (keep local)
 TODO.md
 
+# Terraform
+**/.terraform/
+
 # Compiled JavaScript output
 /static/js/
 /static/dist/

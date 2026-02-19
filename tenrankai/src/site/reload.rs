@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::ConfigStorageLoader;
 use crate::gallery::Gallery;
@@ -71,6 +71,7 @@ pub struct ConfigReloader {
     cookie_secret: String,
     config_storage_url: String,
     hosted_mode: bool,
+    cached_versions: Mutex<HashMap<String, u64>>,
 }
 
 impl ConfigReloader {
@@ -85,12 +86,54 @@ impl ConfigReloader {
             cookie_secret,
             config_storage_url,
             hosted_mode: false,
+            cached_versions: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn with_hosted_mode(mut self, hosted_mode: bool) -> Self {
         self.hosted_mode = hosted_mode;
         self
+    }
+
+    /// Check config versions and only reload if something changed.
+    ///
+    /// Returns `Some(result)` if a reload was performed, `None` if skipped.
+    pub async fn poll_and_reload_if_changed(
+        &self,
+        site_manager: &Arc<SiteManager>,
+    ) -> Option<ReloadResult> {
+        let current_versions = match self.storage.get_config_versions().await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Failed to check config versions: {}", e);
+                return Some(self.reload(site_manager).await);
+            }
+        };
+
+        if current_versions.is_empty() {
+            debug!("Backend does not support versioning, falling back to full reload");
+            return Some(self.reload(site_manager).await);
+        }
+
+        {
+            let cached = self.cached_versions.lock().await;
+            if *cached == current_versions {
+                debug!("Config versions unchanged, skipping reload");
+                return None;
+            }
+
+            debug!(
+                "Config versions changed (cached={:?}, current={:?}), reloading",
+                *cached, current_versions
+            );
+        }
+
+        let result = self.reload(site_manager).await;
+
+        let mut cached = self.cached_versions.lock().await;
+        *cached = current_versions;
+
+        Some(result)
     }
 
     /// Reload configuration from ConfigStorage and update the SiteManager

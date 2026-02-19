@@ -23,6 +23,9 @@ pub enum ConfigStorageError {
     #[error("Storage error: {0}")]
     Storage(#[from] tenrankai_storage::StorageError),
 
+    #[error("DynamoDB error: {0}")]
+    DynamoDb(String),
+
     #[error("Invalid URL: {0}")]
     InvalidUrl(String),
 
