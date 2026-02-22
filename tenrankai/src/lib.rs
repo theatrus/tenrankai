@@ -61,7 +61,6 @@ pub struct AppState {
     pub site_manager: Option<Arc<site::SiteManager>>,
     // Global resources (shared across all sites)
     pub email_provider: Option<email::DynEmailProvider>,
-    pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub cache_queue: Option<cache::queue::DynCacheQueue>,
 }
@@ -73,7 +72,6 @@ impl AppState {
             site,
             site_manager: self.site_manager.clone(),
             email_provider: self.email_provider.clone(),
-            webauthn: self.webauthn.clone(),
             openai_client: self.openai_client.clone(),
             cache_queue: self.cache_queue.clone(),
         }
@@ -142,6 +140,10 @@ impl AppState {
 
     pub fn hosted_mode(&self) -> bool {
         self.site.hosted_mode()
+    }
+
+    pub fn webauthn(&self) -> Option<&Arc<webauthn_rs::Webauthn>> {
+        self.site.webauthn()
     }
 
     pub fn is_admin(&self, username: &str) -> bool {
@@ -247,12 +249,11 @@ pub async fn create_app(
         login::start_periodic_cleanup(built_site.login_state().clone());
     }
 
-    // Create minimal AppState for testing (no email, webauthn, openai, cache_queue)
+    // Create minimal AppState for testing (no email, openai, cache_queue)
     let app_state = AppState {
         site: built_site.clone(),
         site_manager: None,
         email_provider: None,
-        webauthn: None,
         openai_client: None,
         cache_queue: None,
     };
@@ -302,22 +303,6 @@ pub async fn create_app_with_site_manager(
         None
     };
 
-    // Initialize WebAuthn if base_url is configured
-    let webauthn = if config.app.base_url.is_some() {
-        match login::webauthn::create_webauthn(&config) {
-            Ok(wa) => {
-                info!("WebAuthn initialized");
-                Some(wa)
-            }
-            Err(e) => {
-                error!("Failed to initialize WebAuthn: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
     // Initialize OpenAI client if configured
     let openai_client = if let Some(openai_config) = config.openai.clone() {
         match openai::OpenAIClient::new(openai_config) {
@@ -338,7 +323,6 @@ pub async fn create_app_with_site_manager(
         site: built_site.clone(),
         site_manager: Some(site_manager.clone()),
         email_provider,
-        webauthn,
         openai_client,
         cache_queue,
     };
@@ -402,42 +386,40 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
                 axum::routing::post(api::refresh_static_versions),
             );
 
-        // Add WebAuthn routes if available
-        if app_state.webauthn.is_some() {
-            router = router
-                .route(
-                    "/api/webauthn/check-passkeys",
-                    axum::routing::post(login::webauthn::check_user_has_passkeys),
-                )
-                .route(
-                    "/api/webauthn/register/start",
-                    axum::routing::post(login::webauthn::start_passkey_registration),
-                )
-                .route(
-                    "/api/webauthn/register/finish/{reg_id}",
-                    axum::routing::post(login::webauthn::finish_passkey_registration),
-                )
-                .route(
-                    "/api/webauthn/authenticate/start",
-                    axum::routing::post(login::webauthn::start_passkey_authentication),
-                )
-                .route(
-                    "/api/webauthn/authenticate/finish/{auth_id}",
-                    axum::routing::post(login::webauthn::finish_passkey_authentication),
-                )
-                .route(
-                    "/api/webauthn/passkeys",
-                    axum::routing::get(login::webauthn::list_passkeys),
-                )
-                .route(
-                    "/api/webauthn/passkeys/{passkey_id}",
-                    axum::routing::delete(login::webauthn::delete_passkey),
-                )
-                .route(
-                    "/api/webauthn/passkeys/{passkey_id}/name",
-                    axum::routing::put(login::webauthn::update_passkey_name),
-                );
-        }
+        // WebAuthn routes are always registered; handlers guard on webauthn().is_some()
+        router = router
+            .route(
+                "/api/webauthn/check-passkeys",
+                axum::routing::post(login::webauthn::check_user_has_passkeys),
+            )
+            .route(
+                "/api/webauthn/register/start",
+                axum::routing::post(login::webauthn::start_passkey_registration),
+            )
+            .route(
+                "/api/webauthn/register/finish/{reg_id}",
+                axum::routing::post(login::webauthn::finish_passkey_registration),
+            )
+            .route(
+                "/api/webauthn/authenticate/start",
+                axum::routing::post(login::webauthn::start_passkey_authentication),
+            )
+            .route(
+                "/api/webauthn/authenticate/finish/{auth_id}",
+                axum::routing::post(login::webauthn::finish_passkey_authentication),
+            )
+            .route(
+                "/api/webauthn/passkeys",
+                axum::routing::get(login::webauthn::list_passkeys),
+            )
+            .route(
+                "/api/webauthn/passkeys/{passkey_id}",
+                axum::routing::delete(login::webauthn::delete_passkey),
+            )
+            .route(
+                "/api/webauthn/passkeys/{passkey_id}/name",
+                axum::routing::put(login::webauthn::update_passkey_name),
+            );
 
         // Admin routes (require owner_access permission)
         router = router

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 use tenrankai_config_storage::{DynConfigStorage, StoredThemeConfig};
 use tokio::sync::RwLock;
+use webauthn_rs::Webauthn;
 
 use crate::{
     GallerySystemConfig, PostsSystemConfig, StaticConfig, TemplateConfig, email::SiteEmailConfig,
@@ -44,6 +45,7 @@ pub struct SiteResources {
     pub theme: Option<StoredThemeConfig>,
     pub hosted_mode: bool,
     pub shortcode_index: Arc<RwLock<ShortcodeIndex>>,
+    pub webauthn: Option<Arc<Webauthn>>,
 }
 
 /// A Site represents a virtual host with its own resources
@@ -165,6 +167,10 @@ impl Site {
     pub fn hosted_mode(&self) -> bool {
         self.resources.hosted_mode
     }
+
+    pub fn webauthn(&self) -> Option<&Arc<Webauthn>> {
+        self.resources.webauthn.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +196,7 @@ mod tests {
             theme: None,
             hosted_mode: false,
             shortcode_index: Arc::new(RwLock::new(ShortcodeIndex::new())),
+            webauthn: None,
         };
         Site::new(name.to_string(), resources)
     }

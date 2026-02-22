@@ -32,10 +32,7 @@ pub async fn start_passkey_registration(
     info!("Passkey registration for user: {}", username);
 
     // Get WebAuthn instance
-    let webauthn = app_state
-        .webauthn
-        .as_ref()
-        .ok_or(StatusCode::NOT_IMPLEMENTED)?;
+    let webauthn = app_state.webauthn().ok_or(StatusCode::NOT_IMPLEMENTED)?;
 
     // Get user storage
     let user_storage = app_state
@@ -139,7 +136,7 @@ pub async fn finish_passkey_registration(
     info!("Finishing registration for user: {}", username);
 
     // Get WebAuthn instance
-    let webauthn = app_state.webauthn.as_ref().ok_or_else(|| {
+    let webauthn = app_state.webauthn().ok_or_else(|| {
         error!("WebAuthn not configured");
         StatusCode::NOT_IMPLEMENTED
     })?;
@@ -211,10 +208,7 @@ pub async fn start_passkey_authentication(
     Json(request): Json<StartAuthenticationRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Get WebAuthn instance
-    let webauthn = app_state
-        .webauthn
-        .as_ref()
-        .ok_or(StatusCode::NOT_IMPLEMENTED)?;
+    let webauthn = app_state.webauthn().ok_or(StatusCode::NOT_IMPLEMENTED)?;
 
     // Get user storage
     let user_storage = app_state
@@ -297,10 +291,7 @@ pub async fn finish_passkey_authentication(
     Json(auth_data): Json<PublicKeyCredential>,
 ) -> Result<(HeaderMap, StatusCode), StatusCode> {
     // Get WebAuthn instance
-    let webauthn = app_state
-        .webauthn
-        .as_ref()
-        .ok_or(StatusCode::NOT_IMPLEMENTED)?;
+    let webauthn = app_state.webauthn().ok_or(StatusCode::NOT_IMPLEMENTED)?;
 
     // Get authentication state
     let authentication_state = {
