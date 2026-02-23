@@ -432,6 +432,7 @@ impl ConfigStorage for StorageConfigStorage {
 
     #[instrument(skip(self), fields(backend = "storage"))]
     async fn get_config_versions(&self) -> Result<HashMap<String, u64>> {
+        use std::collections::BTreeMap;
         use std::hash::{Hash, Hasher};
 
         let entries = match self.storage.list_recursive("sites/").await {
@@ -440,21 +441,31 @@ impl ConfigStorage for StorageConfigStorage {
             Err(e) => return Err(ConfigStorageError::Storage(e)),
         };
 
-        let mut hasher = std::hash::DefaultHasher::new();
+        let mut sorted = BTreeMap::new();
         for entry in &entries {
-            entry.path.hash(&mut hasher);
-            if let Some(ref meta) = entry.metadata {
-                if let Some(mtime) = meta.last_modified {
-                    let millis = mtime
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    millis.hash(&mut hasher);
-                }
-                if let Some(ref etag) = meta.etag {
-                    etag.hash(&mut hasher);
-                }
+            if entry.is_dir {
+                continue;
             }
+            let mtime = entry
+                .metadata
+                .as_ref()
+                .and_then(|m| m.last_modified)
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let etag = entry
+                .metadata
+                .as_ref()
+                .and_then(|m| m.etag.clone())
+                .unwrap_or_default();
+            sorted.insert(entry.path.clone(), (mtime, etag));
+        }
+
+        let mut hasher = std::hash::DefaultHasher::new();
+        for (path, (mtime, etag)) in &sorted {
+            path.hash(&mut hasher);
+            mtime.hash(&mut hasher);
+            etag.hash(&mut hasher);
         }
 
         let mut versions = HashMap::new();
