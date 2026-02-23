@@ -15,7 +15,7 @@ name = "tenrankai"
 path = "src/lib.rs"
 
 [features]
-default = ["avif", "heif"]
+default = ["avif", "heif", "config-storage-dynamodb"]
 # AVIF support - can be disabled on platforms where it's hard to build
 # To build without AVIF support (e.g., on Windows), use: cargo build --no-default-features
 avif = ["dep:libavif", "dep:libavif-sys", "tenrankai-image/avif"]
