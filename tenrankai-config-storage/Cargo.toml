@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "Pluggable configuration storage for Tenrankai admin"
 
+[features]
+default = []
+dynamodb = ["dep:aws-sdk-dynamodb", "dep:aws-config", "dep:uuid"]
+
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
@@ -15,12 +19,27 @@ thiserror.workspace = true
 tokio.workspace = true
 toml_edit.workspace = true
 tracing.workspace = true
+urlencoding.workspace = true
 
 # For Storage trait adapter
 tenrankai-storage.workspace = true
 
 # For file locking
 fs2 = "0.4"
+
+# DynamoDB backend (optional)
+[dependencies.aws-sdk-dynamodb]
+workspace = true
+optional = true
+
+[dependencies.aws-config]
+workspace = true
+optional = true
+
+[dependencies.uuid]
+workspace = true
+optional = true
+features = ["v4"]
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -65,6 +65,11 @@ pub struct AppConfig {
     /// - `"s3://bucket/config"` - S3 storage
     #[serde(default)]
     pub config_storage: Option<String>,
+    /// Interval in seconds to poll ConfigStorage for changes.
+    /// When set, the server periodically reloads configuration, allowing
+    /// changes made by other instances to propagate automatically.
+    #[serde(default)]
+    pub config_reload_interval_seconds: Option<u64>,
     #[serde(default)]
     pub hosted_mode: bool,
 }

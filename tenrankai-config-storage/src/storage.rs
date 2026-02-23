@@ -3,6 +3,7 @@ use crate::{
     StoredGalleryConfig, StoredPostsConfig, StoredSiteConfig,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tenrankai_storage::{Storage, StorageUrl};
 use tracing::{debug, instrument, warn};
@@ -423,5 +424,118 @@ impl ConfigStorage for StorageConfigStorage {
         }
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Change Detection
+    // ========================================================================
+
+    #[instrument(skip(self), fields(backend = "storage"))]
+    async fn get_config_versions(&self) -> Result<HashMap<String, u64>> {
+        use std::collections::BTreeMap;
+        use std::hash::{Hash, Hasher};
+
+        let entries = match self.storage.list_recursive("sites/").await {
+            Ok(entries) => entries,
+            Err(tenrankai_storage::StorageError::NotFound(_)) => Vec::new(),
+            Err(e) => return Err(ConfigStorageError::Storage(e)),
+        };
+
+        let mut sorted = BTreeMap::new();
+        for entry in &entries {
+            if entry.is_dir {
+                continue;
+            }
+            let mtime = entry
+                .metadata
+                .as_ref()
+                .and_then(|m| m.last_modified)
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let etag = entry
+                .metadata
+                .as_ref()
+                .and_then(|m| m.etag.clone())
+                .unwrap_or_default();
+            sorted.insert(entry.path.clone(), (mtime, etag));
+        }
+
+        let mut hasher = std::hash::DefaultHasher::new();
+        for (path, (mtime, etag)) in &sorted {
+            path.hash(&mut hasher);
+            mtime.hash(&mut hasher);
+            etag.hash(&mut hasher);
+        }
+
+        let mut versions = HashMap::new();
+        versions.insert("storage".to_string(), hasher.finish());
+        Ok(versions)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::StoredSiteConfig;
+    use tempfile::TempDir;
+
+    async fn create_test_storage() -> (StorageConfigStorage, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let url = StorageUrl::parse(temp_dir.path().to_str().unwrap()).unwrap();
+        let storage = StorageConfigStorage::new(url).await.unwrap();
+        (storage, temp_dir)
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_write() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let v1 = storage.get_config_versions().await.unwrap();
+        assert!(!v1.is_empty());
+
+        let config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("default", &config, "alice")
+            .await
+            .unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
+
+        // Same state should return same version
+        let v3 = storage.get_config_versions().await.unwrap();
+        assert_eq!(v2, v3);
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_second_site() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config1 = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("site1", &config1, "alice")
+            .await
+            .unwrap();
+
+        let v1 = storage.get_config_versions().await.unwrap();
+
+        let config2 = StoredSiteConfig {
+            hostnames: vec!["other.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("site2", &config2, "alice")
+            .await
+            .unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
     }
 }

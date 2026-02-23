@@ -1184,7 +1184,7 @@ async fn run_server(
         }
     }
 
-    // Set up SIGHUP handler for config reload (Unix only)
+    // Set up SIGHUP handler and/or periodic config reload (Unix only)
     #[cfg(unix)]
     let reload_token = tokio_util::sync::CancellationToken::new();
     #[cfg(unix)]
@@ -1196,6 +1196,7 @@ async fn run_server(
         );
         let manager_clone = site_manager.clone();
         let reload_token_clone = reload_token.clone();
+        let reload_interval_seconds = config.app.config_reload_interval_seconds;
 
         tokio::spawn(async move {
             use tokio::signal::unix::{SignalKind, signal};
@@ -1207,6 +1208,11 @@ async fn run_server(
                     return;
                 }
             };
+
+            let mut poll_interval = reload_interval_seconds.map(|secs| {
+                info!("Config reload polling enabled: every {} seconds", secs);
+                tokio::time::interval(std::time::Duration::from_secs(secs))
+            });
 
             info!("SIGHUP handler installed - send SIGHUP to reload configuration");
 
@@ -1221,8 +1227,23 @@ async fn run_server(
                             tracing::warn!("Configuration reload had failures: {}", result.summary());
                         }
                     }
+                    _ = async {
+                        match poll_interval.as_mut() {
+                            Some(interval) => interval.tick().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        tracing::debug!("Config reload poll triggered");
+                        if let Some(result) = config_reloader.poll_and_reload_if_changed(&manager_clone).await {
+                            if !result.is_success() {
+                                tracing::warn!("Periodic config reload had failures: {}", result.summary());
+                            } else if !result.added.is_empty() || !result.updated.is_empty() || !result.removed.is_empty() {
+                                info!("Periodic config reload: {}", result.summary());
+                            }
+                        }
+                    }
                     _ = reload_token_clone.cancelled() => {
-                        info!("SIGHUP handler shutting down");
+                        info!("Config reload handler shutting down");
                         break;
                     }
                 }
