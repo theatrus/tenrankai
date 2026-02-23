@@ -77,6 +77,24 @@ impl SiteBuilder {
 
         let shortcode_index = Arc::new(RwLock::new(ShortcodeIndex::build(&galleries).await));
 
+        let webauthn = if let Some(ref base_url) = self.config.base_url {
+            match crate::login::webauthn::create_webauthn(base_url, &self.config.name) {
+                Ok(wa) => {
+                    info!("WebAuthn initialized for site '{}'", self.config.name);
+                    Some(wa)
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to initialize WebAuthn for site '{}': {}",
+                        self.config.name, e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let resources = SiteResources {
             base_url: self.config.base_url.clone(),
             cookie_secret: self.config.cookie_secret.clone(),
@@ -94,6 +112,7 @@ impl SiteBuilder {
             theme,
             hosted_mode: self.config.hosted_mode,
             shortcode_index,
+            webauthn,
         };
 
         info!("Site '{}' built successfully", self.config.name);

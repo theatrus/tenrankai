@@ -228,7 +228,7 @@ pub async fn verify_login(
     info!("User {} logged in successfully", username);
 
     // Check if WebAuthn is available and if user has passkeys
-    let should_enroll = if app_state.webauthn.is_some() {
+    let should_enroll = if app_state.webauthn().is_some() {
         // Check if user has passkeys
         if let Some(user_storage) = app_state.user_storage().as_ref() {
             match user_storage.get_user(&username).await {
@@ -399,7 +399,7 @@ pub async fn profile_page(
     let (email, passkey_count) = user_info.unwrap_or(("Unknown".to_string(), 0));
 
     // Check if WebAuthn is available
-    let webauthn_available = app_state.webauthn.is_some();
+    let webauthn_available = app_state.webauthn().is_some();
 
     let globals = liquid::object!({
         "username": username,

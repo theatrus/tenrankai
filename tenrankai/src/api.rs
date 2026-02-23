@@ -2462,6 +2462,7 @@ roles = ["viewer"]
             shortcode_index: Arc::new(tokio::sync::RwLock::new(
                 crate::short_url::ShortcodeIndex::new(),
             )),
+            webauthn: None,
         };
 
         let site = crate::site::Site::new("test".to_string(), site_resources);
@@ -2470,7 +2471,6 @@ roles = ["viewer"]
             site: Arc::new(site),
             site_manager: None,
             email_provider: None,
-            webauthn: None,
             openai_client: None,
             cache_queue: None,
         };

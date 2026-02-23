@@ -6,15 +6,10 @@ pub use error::*;
 pub use handlers::*;
 pub use types::*;
 
-use crate::Config;
 use std::sync::Arc;
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 
-pub fn create_webauthn(config: &Config) -> Result<Arc<Webauthn>, WebauthnError> {
-    let base_url = config.app.base_url.as_ref().ok_or_else(|| {
-        WebauthnError::ConfigError("base_url must be set for WebAuthn".to_string())
-    })?;
-
+pub fn create_webauthn(base_url: &str, rp_name: &str) -> Result<Arc<Webauthn>, WebauthnError> {
     let url = url::Url::parse(base_url)
         .map_err(|e| WebauthnError::ConfigError(format!("Invalid base_url: {}", e)))?;
 
@@ -22,7 +17,7 @@ pub fn create_webauthn(config: &Config) -> Result<Arc<Webauthn>, WebauthnError> 
         .host_str()
         .ok_or_else(|| WebauthnError::ConfigError("base_url must have a host".to_string()))?;
 
-    let builder = WebauthnBuilder::new(rp_id, &url)?.rp_name(&config.app.name);
+    let builder = WebauthnBuilder::new(rp_id, &url)?.rp_name(rp_name);
 
     Ok(Arc::new(builder.build()?))
 }

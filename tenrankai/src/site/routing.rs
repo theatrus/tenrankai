@@ -142,6 +142,7 @@ mod tests {
             shortcode_index: Arc::new(tokio::sync::RwLock::new(
                 crate::short_url::ShortcodeIndex::new(),
             )),
+            webauthn: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
     }
@@ -170,7 +171,6 @@ mod tests {
             site: default_site,
             site_manager: Some(site_manager),
             email_provider: None,
-            webauthn: None,
             openai_client: None,
             cache_queue: None,
         };
@@ -213,7 +213,6 @@ mod tests {
             site: default_site,
             site_manager: Some(site_manager),
             email_provider: None,
-            webauthn: None,
             openai_client: None,
             cache_queue: None,
         };
@@ -259,7 +258,6 @@ mod tests {
             site: default_site,
             site_manager: Some(site_manager),
             email_provider: None,
-            webauthn: None,
             openai_client: None,
             cache_queue: None,
         };
@@ -292,7 +290,6 @@ mod tests {
             site: default_site,
             site_manager: None,
             email_provider: None,
-            webauthn: None,
             openai_client: None,
             cache_queue: None,
         };
