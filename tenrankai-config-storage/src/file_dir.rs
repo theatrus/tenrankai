@@ -749,6 +749,7 @@ mod tests {
         let (storage, _dir) = create_test_storage().await;
 
         let v1 = storage.get_config_versions().await.unwrap();
+        assert!(!v1.is_empty());
 
         let config = StoredSiteConfig {
             hostnames: vec!["example.com".to_string()],
@@ -765,5 +766,55 @@ mod tests {
         // Same state should return same version
         let v3 = storage.get_config_versions().await.unwrap();
         assert_eq!(v2, v3);
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_delete() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("mysite", &config, "alice")
+            .await
+            .unwrap();
+
+        let v1 = storage.get_config_versions().await.unwrap();
+
+        storage.delete_site("mysite", "alice").await.unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_gallery_write() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let site_config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("default", &site_config, "alice")
+            .await
+            .unwrap();
+
+        let v1 = storage.get_config_versions().await.unwrap();
+
+        // Need to sleep briefly so mtime changes (filesystem resolution is ~1s)
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
+        let gallery_config =
+            create_test_gallery_config("photos", "/gallery", "photos", "cache/photos");
+        storage
+            .set_gallery_full_config("default", "photos", &gallery_config, "alice")
+            .await
+            .unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
     }
 }

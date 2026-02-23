@@ -434,11 +434,11 @@ impl ConfigStorage for StorageConfigStorage {
     async fn get_config_versions(&self) -> Result<HashMap<String, u64>> {
         use std::hash::{Hash, Hasher};
 
-        let entries = self
-            .storage
-            .list("sites/")
-            .await
-            .map_err(ConfigStorageError::Storage)?;
+        let entries = match self.storage.list_recursive("sites/").await {
+            Ok(entries) => entries,
+            Err(tenrankai_storage::StorageError::NotFound(_)) => Vec::new(),
+            Err(e) => return Err(ConfigStorageError::Storage(e)),
+        };
 
         let mut hasher = std::hash::DefaultHasher::new();
         for entry in &entries {
@@ -460,5 +460,71 @@ impl ConfigStorage for StorageConfigStorage {
         let mut versions = HashMap::new();
         versions.insert("storage".to_string(), hasher.finish());
         Ok(versions)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::StoredSiteConfig;
+    use tempfile::TempDir;
+
+    async fn create_test_storage() -> (StorageConfigStorage, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let url = StorageUrl::parse(temp_dir.path().to_str().unwrap()).unwrap();
+        let storage = StorageConfigStorage::new(url).await.unwrap();
+        (storage, temp_dir)
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_write() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let v1 = storage.get_config_versions().await.unwrap();
+        assert!(!v1.is_empty());
+
+        let config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("default", &config, "alice")
+            .await
+            .unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
+
+        // Same state should return same version
+        let v3 = storage.get_config_versions().await.unwrap();
+        assert_eq!(v2, v3);
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_second_site() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let config1 = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("site1", &config1, "alice")
+            .await
+            .unwrap();
+
+        let v1 = storage.get_config_versions().await.unwrap();
+
+        let config2 = StoredSiteConfig {
+            hostnames: vec!["other.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("site2", &config2, "alice")
+            .await
+            .unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
     }
 }
