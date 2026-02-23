@@ -3,6 +3,7 @@ use crate::{
     StoredGalleryConfig, StoredPostsConfig, StoredSiteConfig,
 };
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tenrankai_storage::{Storage, StorageUrl};
 use tracing::{debug, instrument, warn};
@@ -423,5 +424,41 @@ impl ConfigStorage for StorageConfigStorage {
         }
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Change Detection
+    // ========================================================================
+
+    #[instrument(skip(self), fields(backend = "storage"))]
+    async fn get_config_versions(&self) -> Result<HashMap<String, u64>> {
+        use std::hash::{Hash, Hasher};
+
+        let entries = self
+            .storage
+            .list("sites/")
+            .await
+            .map_err(ConfigStorageError::Storage)?;
+
+        let mut hasher = std::hash::DefaultHasher::new();
+        for entry in &entries {
+            entry.path.hash(&mut hasher);
+            if let Some(ref meta) = entry.metadata {
+                if let Some(mtime) = meta.last_modified {
+                    let millis = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    millis.hash(&mut hasher);
+                }
+                if let Some(ref etag) = meta.etag {
+                    etag.hash(&mut hasher);
+                }
+            }
+        }
+
+        let mut versions = HashMap::new();
+        versions.insert("storage".to_string(), hasher.finish());
+        Ok(versions)
     }
 }

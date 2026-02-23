@@ -4,6 +4,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use fs2::FileExt;
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -470,6 +471,63 @@ impl ConfigStorage for FileDirConfigStorage {
 
         Ok(())
     }
+
+    // ========================================================================
+    // Change Detection
+    // ========================================================================
+
+    #[instrument(skip(self), fields(backend = "file_dir"))]
+    async fn get_config_versions(&self) -> Result<HashMap<String, u64>> {
+        let sites_path = self.sites_path();
+
+        let hash = task::spawn_blocking(move || -> Result<u64> {
+            use std::collections::BTreeMap;
+            use std::hash::{Hash, Hasher};
+
+            if !sites_path.exists() {
+                return Ok(0);
+            }
+
+            let mut entries = BTreeMap::new();
+
+            fn walk(dir: &std::path::Path, entries: &mut BTreeMap<String, u64>) {
+                let Ok(read_dir) = fs::read_dir(dir) else {
+                    return;
+                };
+                for entry in read_dir.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        walk(&path, entries);
+                    } else if let Ok(meta) = path.metadata() {
+                        let mtime = meta
+                            .modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        if let Some(key) = path.to_str() {
+                            entries.insert(key.to_string(), mtime);
+                        }
+                    }
+                }
+            }
+
+            walk(&sites_path, &mut entries);
+
+            let mut hasher = std::hash::DefaultHasher::new();
+            for (path, mtime) in &entries {
+                path.hash(&mut hasher);
+                mtime.hash(&mut hasher);
+            }
+            Ok(hasher.finish())
+        })
+        .await
+        .map_err(|e| ConfigStorageError::Io(std::io::Error::other(e.to_string())))??;
+
+        let mut versions = HashMap::new();
+        versions.insert("file_dir".to_string(), hash);
+        Ok(versions)
+    }
 }
 
 #[cfg(test)]
@@ -684,5 +742,28 @@ mod tests {
         let content = fs::read_to_string(&audit_path).unwrap();
         assert!(content.contains("alice"));
         assert!(content.contains("set_gallery_config"));
+    }
+
+    #[tokio::test]
+    async fn test_config_versions_changes_on_write() {
+        let (storage, _dir) = create_test_storage().await;
+
+        let v1 = storage.get_config_versions().await.unwrap();
+
+        let config = StoredSiteConfig {
+            hostnames: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        storage
+            .set_site_config("default", &config, "alice")
+            .await
+            .unwrap();
+
+        let v2 = storage.get_config_versions().await.unwrap();
+        assert_ne!(v1, v2);
+
+        // Same state should return same version
+        let v3 = storage.get_config_versions().await.unwrap();
+        assert_eq!(v2, v3);
     }
 }
