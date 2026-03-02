@@ -105,7 +105,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 env_logger = "0.11"
 
 # Testing
-axum-test = "18.7"
+axum-test = "19.0"
 regex = "1"
 
 # Internal crates
