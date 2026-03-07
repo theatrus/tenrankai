@@ -43,6 +43,19 @@ export interface DeleteFolderResponse {
   message: string;
 }
 
+export interface UpdateSortOrderRequest {
+  sort_order: string;
+  sort_direction?: string;
+  custom_order?: string[];
+}
+
+export interface UpdateSortOrderResponse {
+  success: boolean;
+  sort_order: string;
+  sort_direction: string;
+  custom_order: string[];
+}
+
 class ApiError extends Error {
   constructor(public message: string, public status: number) {
     super(message);
@@ -120,5 +133,12 @@ export const galleryManageApi = {
     adminRequest<DeleteFolderResponse>(
       'DELETE',
       `/galleries/${encodeURIComponent(galleryName)}/folders/${encodeURIComponent(folderPath || '_root')}`
+    ),
+
+  updateSortOrder: (galleryName: string, folderPath: string, data: UpdateSortOrderRequest) =>
+    adminRequest<UpdateSortOrderResponse>(
+      'PUT',
+      `/galleries/${encodeURIComponent(galleryName)}/folders/${encodeURIComponent(folderPath || '_root')}/sort-order`,
+      data
     ),
 };

@@ -553,6 +553,10 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
                 axum::routing::post(admin::copy_gallery_images_resolved),
             )
             .route(
+                "/_admin/api/galleries/{gallery}/folders/{folder_path}/sort-order",
+                axum::routing::put(admin::update_sort_order_resolved),
+            )
+            .route(
                 "/_admin/api/galleries/{gallery}/watermark-folder",
                 axum::routing::post(admin::ensure_watermark_folder),
             )

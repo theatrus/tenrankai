@@ -268,8 +268,9 @@ impl Gallery {
             });
         }
 
-        // Sort items
-        self.sort_gallery_items(&mut items);
+        // Sort items using folder config for sort order
+        let folder_config = cached.metadata.as_ref().map(|m| &m.config);
+        self.sort_gallery_items(&mut items, folder_config);
 
         // Reassign sequential display names after sorting so numbering matches
         // the display order (capture date), not the alphabetical filename order
@@ -297,28 +298,69 @@ impl Gallery {
         Ok(items)
     }
 
-    /// Sort gallery items: directories first, then by name/date
-    fn sort_gallery_items(&self, items: &mut [GalleryItem]) {
-        items.sort_by(|a, b| match (a.is_directory, b.is_directory) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => {
-                if a.is_directory && b.is_directory {
-                    let a_sort_name = a.display_name.as_ref().unwrap_or(&a.name);
-                    let b_sort_name = b.display_name.as_ref().unwrap_or(&b.name);
-                    a_sort_name.cmp(b_sort_name)
-                } else {
-                    match (&a.capture_date, &b.capture_date) {
-                        (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+    fn sort_gallery_items(
+        &self,
+        items: &mut [GalleryItem],
+        folder_config: Option<&super::FolderConfig>,
+    ) {
+        use super::types::{SortDirection, SortOrder};
+        use std::collections::HashMap;
+
+        let sort_order = folder_config.and_then(|c| c.sort_order).unwrap_or_default();
+        let sort_direction = folder_config
+            .and_then(|c| c.sort_direction)
+            .unwrap_or_default();
+
+        let custom_positions: HashMap<&str, usize> = if sort_order == SortOrder::Custom {
+            folder_config
+                .map(|c| {
+                    c.custom_order
+                        .iter()
+                        .enumerate()
+                        .map(|(i, name)| (name.as_str(), i))
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+
+        items.sort_by(|a, b| {
+            match (a.is_directory, b.is_directory) {
+                (true, false) => return std::cmp::Ordering::Less,
+                (false, true) => return std::cmp::Ordering::Greater,
+                (true, true) => {
+                    let a_name = a.display_name.as_ref().unwrap_or(&a.name);
+                    let b_name = b.display_name.as_ref().unwrap_or(&b.name);
+                    return a_name.cmp(b_name);
+                }
+                _ => {}
+            }
+
+            let ordering = match sort_order {
+                SortOrder::CaptureTime => Self::compare_by_capture_time(a, b),
+                SortOrder::Filename => {
+                    let a_file = Self::sort_filename(a);
+                    let b_file = Self::sort_filename(b);
+                    a_file.cmp(b_file)
+                }
+                SortOrder::Custom => {
+                    let a_file = Self::sort_filename(a);
+                    let b_file = Self::sort_filename(b);
+                    let a_pos = custom_positions.get(a_file);
+                    let b_pos = custom_positions.get(b_file);
+                    match (a_pos, b_pos) {
+                        (Some(a_i), Some(b_i)) => a_i.cmp(b_i),
                         (Some(_), None) => std::cmp::Ordering::Less,
                         (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => {
-                            let a_key = a.file_path.as_ref().unwrap_or(&a.name);
-                            let b_key = b.file_path.as_ref().unwrap_or(&b.name);
-                            a_key.cmp(b_key)
-                        }
+                        (None, None) => Self::compare_by_capture_time(a, b),
                     }
                 }
+            };
+
+            match sort_direction {
+                SortDirection::Asc => ordering,
+                SortDirection::Desc => ordering.reverse(),
             }
         });
     }
@@ -350,6 +392,22 @@ impl Gallery {
 
         let indexer = self.image_indexer.read().await;
         indexer.get_display_name(image_path)
+    }
+
+    fn sort_filename(item: &GalleryItem) -> &str {
+        item.file_path
+            .as_ref()
+            .and_then(|p| p.rsplit('/').next())
+            .unwrap_or(&item.name)
+    }
+
+    fn compare_by_capture_time(a: &GalleryItem, b: &GalleryItem) -> std::cmp::Ordering {
+        match (&a.capture_date, &b.capture_date) {
+            (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.name.cmp(&b.name),
+        }
     }
 
     pub async fn list_directory(
@@ -848,6 +906,9 @@ impl Gallery {
                         permissions: Default::default(),
                         grid_mode: None,
                         max_columns: None,
+                        sort_order: None,
+                        sort_direction: None,
+                        custom_order: vec![],
                     },
                     description_markdown: content,
                 })

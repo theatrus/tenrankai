@@ -312,6 +312,42 @@ pub(crate) struct ImageMetadata {
     pub preview_ready: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    #[default]
+    CaptureTime,
+    Filename,
+    Custom,
+}
+
+impl std::fmt::Display for SortOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SortOrder::CaptureTime => write!(f, "capture_time"),
+            SortOrder::Filename => write!(f, "filename"),
+            SortOrder::Custom => write!(f, "custom"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SortDirection {
+    #[default]
+    Asc,
+    Desc,
+}
+
+impl std::fmt::Display for SortDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SortDirection::Asc => write!(f, "asc"),
+            SortDirection::Desc => write!(f, "desc"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct FolderConfig {
     #[serde(default)]
@@ -328,6 +364,15 @@ pub(crate) struct FolderConfig {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_columns: Option<u8>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<SortOrder>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_direction: Option<SortDirection>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_order: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

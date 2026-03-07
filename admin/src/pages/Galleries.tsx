@@ -1323,6 +1323,9 @@ function FolderPermissionsModal({
   const [description, setDescription] = useState('');
   const [gridMode, setGridMode] = useState<string | undefined>(undefined);
   const [maxColumns, setMaxColumns] = useState<number | undefined>(undefined);
+  const [sortOrder, setSortOrder] = useState<string | undefined>(undefined);
+  const [sortDirection, setSortDirection] = useState<string | undefined>(undefined);
+  const [customOrder, setCustomOrder] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1360,6 +1363,9 @@ function FolderPermissionsModal({
         setDescription(data.description);
         setGridMode(data.grid_mode);
         setMaxColumns(data.max_columns);
+        setSortOrder(data.sort_order);
+        setSortDirection(data.sort_direction);
+        setCustomOrder(data.custom_order || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -1378,6 +1384,9 @@ function FolderPermissionsModal({
         description,
         grid_mode: gridMode,
         max_columns: maxColumns,
+        sort_order: sortOrder,
+        sort_direction: sortDirection,
+        custom_order: sortOrder === 'custom' ? customOrder : undefined,
       });
       onSaved();
     } catch (err) {
@@ -1558,6 +1567,51 @@ function FolderPermissionsModal({
                 />
               </div>
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Sort Order</label>
+                <select
+                  className="form-input"
+                  value={sortOrder || ''}
+                  onChange={(e) => setSortOrder(e.target.value || undefined)}
+                >
+                  <option value="">Default (Capture Time)</option>
+                  <option value="capture_time">Capture Time</option>
+                  <option value="filename">Filename</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Sort Direction</label>
+                <select
+                  className="form-input"
+                  value={sortDirection || ''}
+                  onChange={(e) => setSortDirection(e.target.value || undefined)}
+                >
+                  <option value="">Default (Ascending)</option>
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
+            </div>
+
+            {sortOrder === 'custom' && (
+              <div className="form-group">
+                <label className="form-label">Custom Order (one filename per line)</label>
+                <textarea
+                  className="form-input"
+                  value={customOrder.join('\n')}
+                  onChange={(e) => setCustomOrder(e.target.value.split('\n').filter(Boolean))}
+                  rows={8}
+                  placeholder="IMG_1234.jpg&#10;IMG_5678.jpg&#10;vacation_photo.png"
+                  style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                />
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  Images not listed will appear after the listed ones, sorted by capture time.
+                </small>
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
