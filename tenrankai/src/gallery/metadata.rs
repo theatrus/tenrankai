@@ -25,6 +25,221 @@ struct FolderEntryClassification {
     total_size: u64,
 }
 
+fn extract_camera_info(exif: &rexif::ExifData) -> Option<CameraInfo> {
+    let mut camera_info = CameraInfo {
+        camera_make: None,
+        camera_model: None,
+        lens_model: None,
+        iso: None,
+        aperture: None,
+        shutter_speed: None,
+        focal_length: None,
+        telescope: None,
+        mount: None,
+        filters: None,
+        total_exposure_time: None,
+        ra: None,
+        dec: None,
+        additional_details: None,
+    };
+
+    let mut has_data = false;
+
+    for entry in &exif.entries {
+        match entry.tag {
+            rexif::ExifTag::Make => {
+                camera_info.camera_make = Some(entry.value_more_readable.trim().to_string());
+                has_data = true;
+            }
+            rexif::ExifTag::Model => {
+                camera_info.camera_model = Some(entry.value_more_readable.trim().to_string());
+                has_data = true;
+            }
+            rexif::ExifTag::LensModel => {
+                camera_info.lens_model = Some(entry.value_more_readable.trim().to_string());
+                has_data = true;
+            }
+            rexif::ExifTag::ISOSpeedRatings => {
+                let iso_str = entry
+                    .value_more_readable
+                    .strip_prefix("ISO ")
+                    .unwrap_or(&entry.value_more_readable);
+                if let Ok(iso) = iso_str.parse::<u32>() {
+                    camera_info.iso = Some(iso);
+                    has_data = true;
+                }
+            }
+            rexif::ExifTag::FNumber => {
+                let aperture_str = entry.value_more_readable.to_string();
+                camera_info.aperture = if aperture_str.starts_with("f/") {
+                    Some(aperture_str)
+                } else {
+                    Some(format!("f/{}", aperture_str))
+                };
+                has_data = true;
+            }
+            rexif::ExifTag::ExposureTime => {
+                camera_info.shutter_speed = Some(entry.value_more_readable.to_string());
+                has_data = true;
+            }
+            rexif::ExifTag::FocalLength => {
+                let focal_str = entry.value_more_readable.to_string();
+                camera_info.focal_length = if focal_str.ends_with("mm") {
+                    Some(focal_str)
+                } else {
+                    Some(format!("{}mm", focal_str))
+                };
+                has_data = true;
+            }
+            _ => {}
+        }
+    }
+
+    if has_data { Some(camera_info) } else { None }
+}
+
+fn extract_capture_date(exif: &rexif::ExifData) -> Option<SystemTime> {
+    let date_fields = [
+        rexif::ExifTag::DateTimeOriginal,
+        rexif::ExifTag::DateTimeDigitized,
+        rexif::ExifTag::DateTime,
+    ];
+
+    for field in &date_fields {
+        if let Some(entry) = exif.entries.iter().find(|e| e.tag == *field)
+            && let Some(date) = parse_exif_datetime(&entry.value_more_readable)
+        {
+            debug!("Found capture date in {:?}: {:?}", field, date);
+            return Some(date);
+        }
+    }
+
+    None
+}
+
+fn parse_exif_datetime(datetime_str: &str) -> Option<SystemTime> {
+    if let Ok(naive_dt) = NaiveDateTime::parse_from_str(datetime_str, "%Y:%m:%d %H:%M:%S") {
+        let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
+        return Some(SystemTime::from(datetime_utc));
+    }
+
+    if let Ok(naive_date) =
+        NaiveDateTime::parse_from_str(&format!("{} 00:00:00", datetime_str), "%Y:%m:%d %H:%M:%S")
+    {
+        let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_date, Utc);
+        return Some(SystemTime::from(datetime_utc));
+    }
+
+    let formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y:%m:%d",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+    ];
+
+    for format in &formats {
+        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(datetime_str, format) {
+            let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
+            return Some(SystemTime::from(datetime_utc));
+        }
+
+        if !format.contains("%H") {
+            let with_time = format!("{} 00:00:00", datetime_str);
+            let format_with_time = format!("{} %H:%M:%S", format);
+            if let Ok(naive_dt) = NaiveDateTime::parse_from_str(&with_time, &format_with_time) {
+                let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
+                return Some(SystemTime::from(datetime_utc));
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_location_info(exif: &rexif::ExifData) -> Option<LocationInfo> {
+    let mut latitude: Option<f64> = None;
+    let mut longitude: Option<f64> = None;
+    let mut lat_ref: Option<String> = None;
+    let mut lon_ref: Option<String> = None;
+
+    for entry in &exif.entries {
+        match entry.tag {
+            rexif::ExifTag::GPSLatitude => {
+                if let Ok(lat) = parse_gps_coordinate(&entry.value_more_readable) {
+                    latitude = Some(lat);
+                }
+            }
+            rexif::ExifTag::GPSLongitude => {
+                if let Ok(lon) = parse_gps_coordinate(&entry.value_more_readable) {
+                    longitude = Some(lon);
+                }
+            }
+            rexif::ExifTag::GPSLatitudeRef => {
+                lat_ref = Some(entry.value_more_readable.to_string());
+            }
+            rexif::ExifTag::GPSLongitudeRef => {
+                lon_ref = Some(entry.value_more_readable.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    if let (Some(mut lat), Some(mut lon), Some(lat_r), Some(lon_r)) =
+        (latitude, longitude, lat_ref, lon_ref)
+    {
+        if lat_r == "S" {
+            lat = -lat;
+        }
+        if lon_r == "W" {
+            lon = -lon;
+        }
+
+        Some(LocationInfo {
+            latitude: lat,
+            longitude: lon,
+            google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
+            apple_maps_url: format!("https://maps.apple.com/?ll={},{}", lat, lon),
+        })
+    } else {
+        None
+    }
+}
+
+fn parse_gps_coordinate(coord_str: &str) -> Result<f64, String> {
+    let cleaned = coord_str.trim_end_matches(|c: char| c.is_alphabetic() || c.is_whitespace());
+
+    if cleaned.contains('°') {
+        let parts: Vec<&str> = cleaned.split('°').collect();
+        if parts.len() == 2 {
+            let degrees = parts[0]
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| "Invalid degrees")?;
+            let minutes_str = parts[1].trim_end_matches('\'').trim();
+            let minutes = minutes_str.parse::<f64>().map_err(|_| "Invalid minutes")?;
+            return Ok(degrees + minutes / 60.0);
+        }
+    }
+
+    let parts: Vec<&str> = coord_str.split_whitespace().collect();
+    if parts.len() >= 6 {
+        let degrees = parts[0].parse::<f64>().map_err(|_| "Invalid degrees")?;
+        let minutes = parts[2]
+            .trim_end_matches('\'')
+            .parse::<f64>()
+            .map_err(|_| "Invalid minutes")?;
+        let seconds = parts[4]
+            .trim_end_matches('"')
+            .parse::<f64>()
+            .map_err(|_| "Invalid seconds")?;
+
+        Ok(degrees + minutes / 60.0 + seconds / 3600.0)
+    } else {
+        Err(format!("Invalid GPS coordinate format: {}", coord_str))
+    }
+}
+
 impl Gallery {
     /// Classify a folder's entries into subdirectories, images, and groupable files.
     /// This shared logic is used by both single-folder and full refresh operations.
@@ -137,9 +352,9 @@ impl Gallery {
                         let (result, _warnings) = rexif::parse_buffer_quiet(&exif_bytes);
                         match result {
                             Ok(exif_data) => {
-                                let capture_date = self.extract_capture_date(&exif_data);
-                                let camera_info = self.extract_camera_info(&exif_data);
-                                let location_info = self.extract_location_info(&exif_data);
+                                let capture_date = extract_capture_date(&exif_data);
+                                let camera_info = extract_camera_info(&exif_data);
+                                let location_info = extract_location_info(&exif_data);
                                 debug!("Successfully extracted EXIF from AVIF: {}", relative_path);
                                 (capture_date, camera_info, location_info)
                             }
@@ -166,9 +381,9 @@ impl Gallery {
                         let (result, _warnings) = rexif::parse_buffer_quiet(&exif_bytes);
                         match result {
                             Ok(exif_data) => {
-                                let capture_date = self.extract_capture_date(&exif_data);
-                                let camera_info = self.extract_camera_info(&exif_data);
-                                let location_info = self.extract_location_info(&exif_data);
+                                let capture_date = extract_capture_date(&exif_data);
+                                let camera_info = extract_camera_info(&exif_data);
+                                let location_info = extract_location_info(&exif_data);
                                 debug!("Successfully extracted EXIF from HEIC: {}", relative_path);
                                 (capture_date, camera_info, location_info)
                             }
@@ -193,9 +408,9 @@ impl Gallery {
                 let (result, _warnings) = rexif::parse_buffer_quiet(image_data);
                 match result {
                     Ok(exif_data) => {
-                        let capture_date = self.extract_capture_date(&exif_data);
-                        let camera_info = self.extract_camera_info(&exif_data);
-                        let location_info = self.extract_location_info(&exif_data);
+                        let capture_date = extract_capture_date(&exif_data);
+                        let camera_info = extract_camera_info(&exif_data);
+                        let location_info = extract_location_info(&exif_data);
                         (capture_date, camera_info, location_info)
                     }
                     Err(e) => {
@@ -204,232 +419,6 @@ impl Gallery {
                     }
                 }
             }
-        }
-    }
-
-    fn extract_capture_date(&self, exif: &rexif::ExifData) -> Option<SystemTime> {
-        // Try different date fields in order of preference
-        let date_fields = [
-            rexif::ExifTag::DateTimeOriginal,
-            rexif::ExifTag::DateTimeDigitized,
-            rexif::ExifTag::DateTime,
-        ];
-
-        for field in &date_fields {
-            if let Some(entry) = exif.entries.iter().find(|e| e.tag == *field)
-                && let Some(date) = self.parse_exif_datetime(&entry.value_more_readable)
-            {
-                debug!("Found capture date in {:?}: {:?}", field, date);
-                return Some(date);
-            }
-        }
-
-        None
-    }
-
-    fn parse_exif_datetime(&self, datetime_str: &str) -> Option<SystemTime> {
-        // EXIF datetime format: "2005:07:30 07:22:46"
-        // First try the standard format
-        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(datetime_str, "%Y:%m:%d %H:%M:%S") {
-            let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
-            return Some(SystemTime::from(datetime_utc));
-        }
-
-        // Try with just date
-        if let Ok(naive_date) = NaiveDateTime::parse_from_str(
-            &format!("{} 00:00:00", datetime_str),
-            "%Y:%m:%d %H:%M:%S",
-        ) {
-            let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_date, Utc);
-            return Some(SystemTime::from(datetime_utc));
-        }
-
-        // Try alternative formats
-        let formats = [
-            "%Y-%m-%d %H:%M:%S",
-            "%Y/%m/%d %H:%M:%S",
-            "%Y:%m:%d",
-            "%Y-%m-%d",
-            "%Y/%m/%d",
-        ];
-
-        for format in &formats {
-            if let Ok(naive_dt) = NaiveDateTime::parse_from_str(datetime_str, format) {
-                let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
-                return Some(SystemTime::from(datetime_utc));
-            }
-
-            // Try parsing just as date and adding time
-            if !format.contains("%H") {
-                let with_time = format!("{} 00:00:00", datetime_str);
-                let format_with_time = format!("{} %H:%M:%S", format);
-                if let Ok(naive_dt) = NaiveDateTime::parse_from_str(&with_time, &format_with_time) {
-                    let datetime_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
-                    return Some(SystemTime::from(datetime_utc));
-                }
-            }
-        }
-
-        None
-    }
-
-    fn extract_camera_info(&self, exif: &rexif::ExifData) -> Option<CameraInfo> {
-        let mut camera_info = CameraInfo {
-            camera_make: None,
-            camera_model: None,
-            lens_model: None,
-            iso: None,
-            aperture: None,
-            shutter_speed: None,
-            focal_length: None,
-            telescope: None,
-            mount: None,
-            filters: None,
-            total_exposure_time: None,
-            ra: None,
-            dec: None,
-            additional_details: None,
-        };
-
-        let mut has_data = false;
-
-        for entry in &exif.entries {
-            match entry.tag {
-                rexif::ExifTag::Make => {
-                    camera_info.camera_make = Some(entry.value_more_readable.trim().to_string());
-                    has_data = true;
-                }
-                rexif::ExifTag::Model => {
-                    camera_info.camera_model = Some(entry.value_more_readable.trim().to_string());
-                    has_data = true;
-                }
-                rexif::ExifTag::LensModel => {
-                    camera_info.lens_model = Some(entry.value_more_readable.trim().to_string());
-                    has_data = true;
-                }
-                rexif::ExifTag::ISOSpeedRatings => {
-                    if let Ok(iso) = entry.value_more_readable.parse::<u32>() {
-                        camera_info.iso = Some(iso);
-                        has_data = true;
-                    }
-                }
-                rexif::ExifTag::FNumber => {
-                    let aperture_str = entry.value_more_readable.to_string();
-                    camera_info.aperture = if aperture_str.starts_with("f/") {
-                        Some(aperture_str)
-                    } else {
-                        Some(format!("f/{}", aperture_str))
-                    };
-                    has_data = true;
-                }
-                rexif::ExifTag::ExposureTime => {
-                    camera_info.shutter_speed = Some(entry.value_more_readable.to_string());
-                    has_data = true;
-                }
-                rexif::ExifTag::FocalLength => {
-                    let focal_str = entry.value_more_readable.to_string();
-                    camera_info.focal_length = if focal_str.ends_with("mm") {
-                        Some(focal_str)
-                    } else {
-                        Some(format!("{}mm", focal_str))
-                    };
-                    has_data = true;
-                }
-                _ => {}
-            }
-        }
-
-        if has_data { Some(camera_info) } else { None }
-    }
-
-    fn extract_location_info(&self, exif: &rexif::ExifData) -> Option<LocationInfo> {
-        let mut latitude: Option<f64> = None;
-        let mut longitude: Option<f64> = None;
-        let mut lat_ref: Option<String> = None;
-        let mut lon_ref: Option<String> = None;
-
-        for entry in &exif.entries {
-            match entry.tag {
-                rexif::ExifTag::GPSLatitude => {
-                    if let Ok(lat) = self.parse_gps_coordinate(&entry.value_more_readable) {
-                        latitude = Some(lat);
-                    }
-                }
-                rexif::ExifTag::GPSLongitude => {
-                    if let Ok(lon) = self.parse_gps_coordinate(&entry.value_more_readable) {
-                        longitude = Some(lon);
-                    }
-                }
-                rexif::ExifTag::GPSLatitudeRef => {
-                    lat_ref = Some(entry.value_more_readable.to_string());
-                }
-                rexif::ExifTag::GPSLongitudeRef => {
-                    lon_ref = Some(entry.value_more_readable.to_string());
-                }
-                _ => {}
-            }
-        }
-
-        if let (Some(mut lat), Some(mut lon), Some(lat_r), Some(lon_r)) =
-            (latitude, longitude, lat_ref, lon_ref)
-        {
-            // Apply reference direction
-            if lat_r == "S" {
-                lat = -lat;
-            }
-            if lon_r == "W" {
-                lon = -lon;
-            }
-
-            Some(LocationInfo {
-                latitude: lat,
-                longitude: lon,
-                google_maps_url: format!("https://maps.google.com/?q={},{}", lat, lon),
-                apple_maps_url: format!("https://maps.apple.com/?ll={},{}", lat, lon),
-            })
-        } else {
-            None
-        }
-    }
-
-    fn parse_gps_coordinate(&self, coord_str: &str) -> Result<f64, String> {
-        // GPS coordinates can be in various formats:
-        // Format 1: "51 deg 30' 45.60\""
-        // Format 2: "34°39.0643' N"
-
-        // Remove direction indicators (N, S, E, W) for parsing
-        let cleaned = coord_str.trim_end_matches(|c: char| c.is_alphabetic() || c.is_whitespace());
-
-        // Try format with degree symbol (°)
-        if cleaned.contains('°') {
-            let parts: Vec<&str> = cleaned.split('°').collect();
-            if parts.len() == 2 {
-                let degrees = parts[0]
-                    .trim()
-                    .parse::<f64>()
-                    .map_err(|_| "Invalid degrees")?;
-                let minutes_str = parts[1].trim_end_matches('\'').trim();
-                let minutes = minutes_str.parse::<f64>().map_err(|_| "Invalid minutes")?;
-                return Ok(degrees + minutes / 60.0);
-            }
-        }
-
-        // Try original format with "deg"
-        let parts: Vec<&str> = coord_str.split_whitespace().collect();
-        if parts.len() >= 6 {
-            let degrees = parts[0].parse::<f64>().map_err(|_| "Invalid degrees")?;
-            let minutes = parts[2]
-                .trim_end_matches('\'')
-                .parse::<f64>()
-                .map_err(|_| "Invalid minutes")?;
-            let seconds = parts[4]
-                .trim_end_matches('"')
-                .parse::<f64>()
-                .map_err(|_| "Invalid seconds")?;
-
-            Ok(degrees + minutes / 60.0 + seconds / 3600.0)
-        } else {
-            Err(format!("Invalid GPS coordinate format: {}", coord_str))
         }
     }
 
@@ -1743,6 +1732,61 @@ mod tests {
             println!("  Aperture: {:?}", camera.aperture);
             println!("  Shutter Speed: {:?}", camera.shutter_speed);
             println!("  Focal Length: {:?}", camera.focal_length);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires specific test image that isn't in repository"]
+    fn test_exif_extraction() {
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let path = std::path::Path::new(&manifest)
+            .parent()
+            .unwrap()
+            .join("photos/landscapes/_A7C5795.jpg");
+        let data = std::fs::read(&path).expect("reference image");
+        let exif = rexif::parse_buffer(&data).expect("EXIF parse");
+
+        // Camera info
+        let camera = extract_camera_info(&exif).expect("should extract camera info");
+        assert_eq!(camera.camera_make.as_deref(), Some("SONY"));
+        assert_eq!(camera.camera_model.as_deref(), Some("ILCE-7CR"));
+        assert_eq!(camera.lens_model.as_deref(), Some("FE 24-50mm F2.8 G"));
+        assert_eq!(camera.iso, Some(500));
+        assert_eq!(camera.aperture.as_deref(), Some("f/4.0"));
+        assert_eq!(camera.shutter_speed.as_deref(), Some("1/100 s"));
+        assert!(
+            camera.focal_length.as_deref().unwrap().starts_with("41"),
+            "focal length should start with 41, got {:?}",
+            camera.focal_length
+        );
+
+        // Capture date (2025:05:25 19:20:59 from EXIF)
+        let capture_date = extract_capture_date(&exif).expect("should extract capture date");
+        let datetime: DateTime<Utc> = capture_date.into();
+        assert_eq!(datetime.format("%Y-%m-%d").to_string(), "2025-05-25");
+
+        // Location info (this image has GPS data)
+        if let Some(location) = extract_location_info(&exif) {
+            assert!(
+                location.latitude >= -90.0 && location.latitude <= 90.0,
+                "latitude out of range: {}",
+                location.latitude
+            );
+            assert!(
+                location.longitude >= -180.0 && location.longitude <= 180.0,
+                "longitude out of range: {}",
+                location.longitude
+            );
+            assert!(
+                location
+                    .google_maps_url
+                    .starts_with("https://maps.google.com/")
+            );
+            assert!(
+                location
+                    .apple_maps_url
+                    .starts_with("https://maps.apple.com/")
+            );
         }
     }
 }
