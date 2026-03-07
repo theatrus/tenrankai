@@ -165,7 +165,7 @@ async fn test_gallery_root_renders_correctly() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test main gallery
     let response = server.get("/gallery").await;
@@ -207,7 +207,7 @@ async fn test_portfolio_gallery_renders_with_custom_prefix() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test portfolio gallery with custom URL prefix
     let response = server.get("/my-portfolio").await;
@@ -239,7 +239,7 @@ async fn test_gallery_with_folder_metadata() {
     create_test_images(&vacation_dir, 4);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test subfolder with metadata
     let response = server.get("/gallery/vacation").await;
@@ -276,7 +276,7 @@ async fn test_gallery_opengraph_with_composite_image() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/gallery").await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -303,7 +303,7 @@ async fn test_gallery_opengraph_with_single_image() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/gallery").await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -328,7 +328,7 @@ async fn test_gallery_preview_api() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test preview API for main gallery
     let response = server.get("/api/gallery/main/preview").await;
@@ -373,7 +373,7 @@ async fn test_composite_api_endpoint() {
     }
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test composite endpoint for subdirectory
     let response = server.get("/api/gallery/main/composite/2008-eureka").await;
@@ -423,7 +423,7 @@ async fn test_composite_api_not_found() {
     let config = create_test_config(&temp_dir);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test composite endpoint for non-existent directory
     let response = server.get("/api/gallery/main/composite/non-existent").await;
@@ -470,7 +470,7 @@ async fn test_composite_api_with_avif_images() {
     }
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test composite endpoint for AVIF directory
     let response = server.get("/api/gallery/main/composite/avif-test").await;
@@ -509,7 +509,7 @@ async fn test_image_detail_page() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test image detail page
     let response = server.get("/gallery/detail/test_001.jpg").await;
@@ -577,7 +577,7 @@ async fn test_gallery_breadcrumbs() {
     create_test_images(&europe_dir, 2);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/gallery/travel/europe").await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -608,7 +608,7 @@ async fn test_nonexistent_gallery_returns_404() {
     let config = create_test_config(&temp_dir);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test nonexistent gallery name in API
     let response = server.get("/api/gallery/nonexistent/preview").await;
@@ -629,7 +629,7 @@ async fn test_gallery_preview_partial_in_template() {
     );
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test home page which includes gallery preview
     let response = server.get("/").await;
@@ -720,7 +720,7 @@ Gallery showing full technical details.
     visible_img.save(&visible_img_path).unwrap();
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test image detail page in folder with hidden technical details
     let response = server
@@ -793,7 +793,7 @@ async fn test_gallery_download_requires_permission() {
     create_test_images(photos_dir, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Default viewer role does NOT have can_download_gallery
     // Attempt to download should return 403
@@ -822,7 +822,7 @@ async fn test_gallery_download_with_permission() {
     create_test_images(photos_dir, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // With can_download_gallery permission, download should work
     let response = server.get("/gallery/_download").await;
@@ -904,7 +904,7 @@ async fn test_gallery_download_zip_file_dates() {
     create_test_images(photos_dir, 2);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/gallery/_download").await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -963,7 +963,7 @@ async fn test_gallery_download_subfolder() {
     create_test_images(&vacation_dir, 2);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Download the subfolder
     let response = server.get("/gallery/_download/vacation").await;
@@ -1014,7 +1014,7 @@ async fn test_gallery_download_empty_folder() {
     std::fs::create_dir_all(&empty_dir).unwrap();
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Download empty folder should return 404
     let response = server.get("/gallery/_download/empty").await;
@@ -1050,7 +1050,7 @@ async fn test_gallery_download_recursive() {
     create_test_images(&folder_b, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Download from root should recursively include all images from subfolders
     let response = server.get("/gallery/_download").await;
@@ -1161,7 +1161,7 @@ async fn test_raw_download_with_permission() {
     create_dummy_raw_file(&photos_dir.join("test_000.dng"));
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test RAW download endpoint
     let response = server.get("/gallery/_raw/test_000.dng").await;
@@ -1207,7 +1207,7 @@ async fn test_raw_download_denied_without_permission() {
     create_dummy_raw_file(&photos_dir.join("test_000.dng"));
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test RAW download endpoint - should be forbidden
     let response = server.get("/gallery/_raw/test_000.dng").await;
@@ -1229,7 +1229,7 @@ async fn test_raw_download_not_found() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test RAW download for non-existent file
     let response = server.get("/gallery/_raw/test_000.dng").await;
@@ -1252,7 +1252,7 @@ async fn test_image_api_includes_raw_files_with_permission() {
     create_dummy_raw_file(&photos_dir.join("test_000.dng"));
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Get image detail via API
     let response = server.get("/api/gallery/main/image/test_000.jpg").await;
@@ -1295,7 +1295,7 @@ async fn test_image_api_excludes_raw_files_without_permission() {
     create_dummy_raw_file(&photos_dir.join("test_000.dng"));
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Get image detail via API
     let response = server.get("/api/gallery/main/image/test_000.jpg").await;
@@ -1330,7 +1330,7 @@ async fn test_version_grouping_shows_latest_as_primary() {
     }
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Gallery listing should show only _v2 (highest version = primary)
     let response = server.get("/gallery").await;
@@ -1378,7 +1378,7 @@ async fn test_image_api_includes_versions() {
     }
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Get the primary image (_v2) via API
     let response = server.get("/api/gallery/main/image/IMG_0001_v2.jpg").await;
@@ -1468,7 +1468,7 @@ async fn run_older_version_navigation_test(indexing_mode: ImageIndexingMode) {
     img.save(photos_dir.join("CCC_0003.jpg")).unwrap();
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // For Filename mode, we know the URL identifier is the filename itself.
     // For UniqueId mode, we need to discover it from the API.
@@ -1617,7 +1617,7 @@ async fn test_hidden_folder_not_shown_in_gallery() {
     create_test_images(&visible_dir, 2);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Gallery listing should show visible folder but not __hidden
     let response = server.get("/gallery").await;
