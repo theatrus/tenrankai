@@ -94,7 +94,7 @@ reqwest = { version = "0.13", features = ["json"] }
 
 # Utilities
 mime_guess = "2.0"
-rand = "0.9"
+rand = "0.10"
 fnv = "1.0"
 lru = "0.16"
 zip = { version = "8", default-features = false, features = ["deflate"] }
