@@ -145,7 +145,7 @@ async fn test_hidden_images_not_visible_in_gallery_listing() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[1]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Gallery listing should not show hidden image for unauthenticated users
     let response = server.get("/gallery").await;
@@ -173,7 +173,7 @@ async fn test_hidden_images_in_subfolder() {
     create_folder_with_hidden_images(&subfolder, &[&filenames[1]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Gallery listing for subfolder should not show hidden image
     let response = server.get("/gallery/vacation").await;
@@ -200,7 +200,7 @@ async fn test_hidden_image_direct_access_blocked() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[1]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Direct access to hidden image should return 404 for unauthenticated users
     let response = server
@@ -236,7 +236,7 @@ async fn test_hidden_image_in_subfolder_direct_access_blocked() {
     create_folder_with_hidden_images(&subfolder, &[&filenames[1]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Direct access to hidden image in subfolder should be blocked
     let response = server
@@ -261,7 +261,7 @@ async fn test_hidden_images_filtered_from_navigation() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[1]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // View image 0, next should be image 2 (skipping hidden image 1)
     let response = server
@@ -293,7 +293,7 @@ async fn test_prev_navigation_skips_hidden() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[1]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // View image 2, prev should be image 0 (skipping hidden image 1)
     let response = server
@@ -325,7 +325,7 @@ async fn test_first_image_hidden_navigation() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[0]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // View image 1, prev should be None (image 0 is hidden)
     let response = server
@@ -353,7 +353,7 @@ async fn test_last_image_hidden_navigation() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[2]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // View image 1, next should be None (image 2 is hidden)
     let response = server
@@ -382,7 +382,7 @@ async fn test_image_detail_api_basic() {
     let filenames = create_test_images(photos_dir, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server
         .get(&format!("/api/gallery/main/image/{}", filenames[1]))
@@ -425,7 +425,7 @@ async fn test_image_detail_api_permissions() {
     let filenames = create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server
         .get(&format!("/api/gallery/main/image/{}", filenames[0]))
@@ -467,7 +467,7 @@ async fn test_filename_indexing_mode() {
     let filenames = create_test_images(photos_dir, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Access by filename
     for filename in &filenames {
@@ -504,7 +504,7 @@ public_role = "none"
     std::fs::write(private_folder.join("_folder.md"), config_content).unwrap();
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Unauthenticated access should be forbidden or redirect to login
     let response = server.get("/gallery/private").await;
@@ -527,7 +527,7 @@ async fn test_nonexistent_image() {
     let config = create_admin_test_config(&temp_dir, ImageIndexingMode::Filename);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/gallery/detail/nonexistent.jpg").await;
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
@@ -539,7 +539,7 @@ async fn test_nonexistent_subfolder() {
     let config = create_admin_test_config(&temp_dir, ImageIndexingMode::Filename);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/gallery/nonexistent-folder").await;
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
@@ -557,7 +557,7 @@ async fn test_hidden_image_multiple_in_folder() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[1], &filenames[3]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Gallery listing should only show images 0, 2, 4
     let response = server.get("/gallery").await;
@@ -589,7 +589,7 @@ async fn test_navigation_with_multiple_hidden_images() {
     create_folder_with_hidden_images(photos_dir, &[&filenames[1], &filenames[2]]);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // View image 0, next should be image 3 (skipping hidden 1 and 2)
     let response = server
@@ -664,7 +664,7 @@ async fn test_admin_api_requires_authentication() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Admin endpoints should require authentication
     let response = server.get("/_admin/api/galleries").await;
@@ -695,7 +695,7 @@ async fn test_admin_api_requires_admin_role() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Authenticated but non-admin user should be forbidden
     let cookie = create_auth_cookie("regularuser", TEST_COOKIE_SECRET);
@@ -719,7 +719,7 @@ async fn test_admin_api_allows_admin_user() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Admin user should have access
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
@@ -747,7 +747,7 @@ async fn test_admin_list_galleries() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -771,7 +771,7 @@ async fn test_admin_get_gallery() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -794,7 +794,7 @@ async fn test_admin_get_nonexistent_gallery() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -817,7 +817,7 @@ async fn test_admin_list_roles() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -848,7 +848,7 @@ async fn test_admin_get_role() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -872,7 +872,7 @@ async fn test_admin_get_nonexistent_role() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -895,7 +895,7 @@ async fn test_admin_list_permission_groups() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -929,7 +929,7 @@ async fn test_admin_hide_images_api_accepts_json() {
     let filenames = create_test_images(photos_dir, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
 
@@ -968,7 +968,7 @@ async fn test_admin_hide_images_requires_auth() {
     let filenames = create_test_images(photos_dir, 3);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let hide_request = serde_json::json!({
         "paths": [filenames[1].clone()],
@@ -1001,7 +1001,7 @@ async fn test_admin_gallery_permissions_include_user_roles() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server
@@ -1030,7 +1030,7 @@ async fn test_admin_gallery_permissions_include_roles() {
     create_test_images(photos_dir, 1);
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let cookie = create_auth_cookie("testadmin", TEST_COOKIE_SECRET);
     let response = server

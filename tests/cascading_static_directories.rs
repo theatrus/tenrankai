@@ -64,7 +64,7 @@ async fn test_cascading_static_directories() {
 
     // Create the app
     let app = tenrankai::create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test that shared.css comes from static_dir1 (first in list)
     let shared_response = server.get("/static/shared.css").await;
@@ -147,7 +147,7 @@ async fn test_favicon_cascading_directories() {
 
     // Create the app
     let app = tenrankai::create_app(config, None).await;
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Test that favicon.ico can be generated from the favicon.svg in static_dir2
     let favicon_response = server.get("/favicon.ico").await;

@@ -88,7 +88,7 @@ async fn setup_test_server() -> (TempDir, TestServer) {
     };
 
     let app = create_app(config, None).await;
-    let server = TestServer::new(app.into_make_service()).unwrap();
+    let server = TestServer::new(app.into_make_service());
 
     (temp_dir, server)
 }
