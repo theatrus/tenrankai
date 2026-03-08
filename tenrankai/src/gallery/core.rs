@@ -813,7 +813,7 @@ impl Gallery {
         user: Option<&str>,
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         use rand::seq::SliceRandom;
-        use rand::{Rng, rng};
+        use rand::{RngExt, rng};
 
         // Use pre-computed preview items from root folder cache (mandatory)
         let cached = self.get_cached_folder_data("").await.ok_or_else(|| {

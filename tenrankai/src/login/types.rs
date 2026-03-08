@@ -40,7 +40,7 @@ impl LoginState {
     }
 
     fn create_token_with_expiry(&mut self, username: String, expiry_seconds: i64) -> String {
-        use rand::{Rng, rng};
+        use rand::{RngExt, rng};
 
         let token: String = rng()
             .random::<[u8; 32]>()
