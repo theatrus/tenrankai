@@ -359,8 +359,8 @@ pub async fn invalidate_folder(
         gallery_config.name
     );
 
-    // List all files in the source folder
-    let entries = source_storage.list(folder_path).await?;
+    // List all files recursively in the source folder
+    let entries = source_storage.list_recursive(folder_path).await?;
 
     // Filter to image files only
     let image_extensions = ["jpg", "jpeg", "png", "webp", "avif", "gif", "heic", "heif"];
@@ -377,7 +377,14 @@ pub async fn invalidate_folder(
         .collect();
 
     if image_files.is_empty() {
-        println!("No images found in folder '{}'", folder_path);
+        println!(
+            "No images found in '{}'",
+            if folder_path.is_empty() {
+                "gallery"
+            } else {
+                folder_path
+            }
+        );
         return Ok(());
     }
 
