@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::GallerySystemConfig;
 use crate::gallery::Gallery;
+use crate::gallery::ImageSize;
 use crate::storage;
 
 /// Report format coverage for a gallery's image cache
@@ -131,9 +132,9 @@ pub async fn invalidate_composite(
 pub async fn invalidate_image(
     gallery_config: &GallerySystemConfig,
     path: &str,
+    size_filter: Option<&[ImageSize]>,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::gallery::ImageSize;
     use crate::gallery::generate_tile_cache_filename;
     use std::collections::HashSet;
 
@@ -145,7 +146,18 @@ pub async fn invalidate_image(
         cache_storage.clone(),
     ));
 
-    println!("Looking for image cache files for '{}'...", path);
+    let sizes: &[ImageSize] = size_filter.unwrap_or(ImageSize::ALL);
+
+    if let Some(filter) = size_filter {
+        let names: Vec<_> = filter.iter().map(|s| s.as_str()).collect();
+        println!(
+            "Looking for image cache files for '{}' (sizes: {})...",
+            path,
+            names.join(", ")
+        );
+    } else {
+        println!("Looking for image cache files for '{}'...", path);
+    }
 
     // Generate all possible cache hashes for this image
     // Use the same method as the serving code (generate_image_cache_key)
@@ -153,7 +165,7 @@ pub async fn invalidate_image(
     let mut tile_filenames_to_delete: HashSet<String> = HashSet::new();
 
     // Standard sizes (thumbnail, gallery, medium, large + retina variants)
-    for size in ImageSize::ALL {
+    for size in sizes {
         for format in &["jpg", "webp", "png", "avif"] {
             // Non-watermarked variant
             let hash = gallery.generate_image_cache_key(path, &size.as_str(), format, false);
@@ -167,8 +179,10 @@ pub async fn invalidate_image(
         }
     }
 
-    // Handle tiles if configured
-    if let Some(ref tile_config) = gallery_config.tiles {
+    // Handle tiles if configured (only when no size filter, since tiles are their own size class)
+    if size_filter.is_none()
+        && let Some(ref tile_config) = gallery_config.tiles
+    {
         let tile_size = tile_config.tile_size;
 
         // Try to get image dimensions from source to calculate tile coordinates
@@ -318,9 +332,9 @@ pub async fn invalidate_image(
 pub async fn invalidate_folder(
     gallery_config: &GallerySystemConfig,
     folder_path: &str,
+    size_filter: Option<&[ImageSize]>,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::gallery::ImageSize;
     use crate::gallery::generate_tile_cache_filename;
     use std::collections::HashSet;
 
@@ -367,7 +381,18 @@ pub async fn invalidate_folder(
         return Ok(());
     }
 
-    println!("Found {} image(s) in folder", image_files.len());
+    let sizes: &[ImageSize] = size_filter.unwrap_or(ImageSize::ALL);
+
+    if let Some(filter) = size_filter {
+        let names: Vec<_> = filter.iter().map(|s| s.as_str()).collect();
+        println!(
+            "Found {} image(s) in folder (filtering sizes: {})",
+            image_files.len(),
+            names.join(", ")
+        );
+    } else {
+        println!("Found {} image(s) in folder", image_files.len());
+    }
 
     // Generate all possible cache hashes for each image
     let mut hashes_to_delete: HashSet<String> = HashSet::new();
@@ -387,7 +412,7 @@ pub async fn invalidate_folder(
 
         // Generate hashes for all size/format/watermark combinations
         // Use the same method as the serving code (generate_image_cache_key)
-        for size in ImageSize::ALL {
+        for size in sizes {
             for format in &["jpg", "webp", "png", "avif"] {
                 // Non-watermarked variant
                 let hash =
@@ -403,8 +428,10 @@ pub async fn invalidate_folder(
             }
         }
 
-        // Handle tiles if configured
-        if let Some(tc) = tile_config {
+        // Handle tiles if configured (only when no size filter)
+        if size_filter.is_none()
+            && let Some(tc) = tile_config
+        {
             let tile_size = tc.tile_size;
 
             // Try to get image dimensions from source to calculate tile coordinates

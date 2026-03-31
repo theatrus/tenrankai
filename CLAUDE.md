@@ -144,6 +144,22 @@ cargo run -- config list-posts default         # List posts configs
 cargo run -- config add-posts blog --site default --source posts/blog --url-prefix /blog
 ```
 
+### CLI Cache Commands
+```bash
+cargo run -- cache report -g main                 # Report format coverage
+cargo run -- cache cleanup -g main                # Clean up outdated entries
+cargo run -- cache list-composites -g main         # List composite preview images
+
+# Invalidate cache (force regeneration)
+cargo run -- cache invalidate -g main -t composite -p ""           # All composite previews
+cargo run -- cache invalidate -g main -t image -p "folder/img.jpg" # Single image, all sizes
+cargo run -- cache invalidate -g main -t folder -p "vacation"      # All images in folder
+
+# Invalidate only specific size classes (thumbnail, gallery, medium, large)
+cargo run -- cache invalidate -g main -t folder -p "" --size gallery --size medium
+cargo run -- cache invalidate -g main -t image -p "img.jpg" --size thumbnail --dry-run
+```
+
 ### Gallery Configuration (in ConfigStorage)
 ```toml
 # config.d/sites/default/galleries/main.toml

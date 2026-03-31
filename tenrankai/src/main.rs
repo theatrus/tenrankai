@@ -240,6 +240,12 @@ enum CacheCommands {
         #[arg(short, long)]
         path: String,
 
+        /// Only invalidate specific size classes (e.g., "thumbnail", "gallery", "medium", "large")
+        /// Can be specified multiple times. Includes retina (@2x) variants automatically.
+        /// If omitted, all sizes are invalidated.
+        #[arg(long = "size")]
+        sizes: Vec<String>,
+
         /// Dry run - show what would be deleted without deleting
         #[arg(long)]
         dry_run: bool,
@@ -754,19 +760,66 @@ async fn handle_cache_command(
             site,
             cache_type,
             path,
+            sizes,
             dry_run,
         } => {
             let gallery_config = find_gallery(&site, &gallery_name).await?;
 
+            // Parse size filter if provided
+            let size_filter = if sizes.is_empty() {
+                None
+            } else {
+                let mut parsed: Vec<tenrankai::gallery::ImageSize> = Vec::new();
+                for s in &sizes {
+                    match tenrankai::gallery::ImageSize::parse(s) {
+                        Some(size) => {
+                            let base = size.base_size();
+                            if !parsed.contains(&base) {
+                                parsed.push(base);
+                            }
+                            let retina = base.retina_variant();
+                            if !parsed.contains(&retina) {
+                                parsed.push(retina);
+                            }
+                        }
+                        None => {
+                            eprintln!(
+                                "Unknown size '{}'. Valid sizes: thumbnail, gallery, medium, large",
+                                s
+                            );
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Some(parsed)
+            };
+
             match cache_type.as_str() {
                 "composite" => {
+                    if size_filter.is_some() {
+                        eprintln!(
+                            "Warning: --size filter is not applicable to composite cache type, ignoring"
+                        );
+                    }
                     commands::cache::invalidate_composite(&gallery_config, &path, dry_run).await?;
                 }
                 "image" => {
-                    commands::cache::invalidate_image(&gallery_config, &path, dry_run).await?;
+                    commands::cache::invalidate_image(
+                        &gallery_config,
+                        &path,
+                        size_filter.as_deref(),
+                        dry_run,
+                    )
+                    .await?;
                 }
                 "folder" => {
-                    commands::cache::invalidate_folder(&gallery_config, &path, dry_run).await?;
+                    commands::cache::invalidate_folder(
+                        &gallery_config,
+                        &path,
+                        size_filter.as_deref(),
+                        dry_run,
+                    )
+                    .await?;
                 }
                 _ => {
                     eprintln!(
