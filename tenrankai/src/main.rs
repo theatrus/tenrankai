@@ -232,13 +232,14 @@ enum CacheCommands {
         #[arg(short, long, default_value = "default")]
         site: String,
 
-        /// Type of cache to invalidate: "composite", "image", or "folder"
-        #[arg(short = 't', long, default_value = "composite")]
+        /// Type of cache to invalidate: "folder", "image", or "composite"
+        #[arg(short = 't', long, default_value = "folder")]
         cache_type: String,
 
-        /// Path within the gallery (folder path for composite/folder, image filename for image)
+        /// Path within the gallery (folder path for composite/folder, image filename for image).
+        /// If omitted, invalidates the entire gallery.
         #[arg(short, long)]
-        path: String,
+        path: Option<String>,
 
         /// Only invalidate specific size classes (e.g., "thumbnail", "gallery", "medium", "large")
         /// Can be specified multiple times. Includes retina (@2x) variants automatically.
@@ -794,6 +795,8 @@ async fn handle_cache_command(
                 Some(parsed)
             };
 
+            let path = path.unwrap_or_default();
+
             match cache_type.as_str() {
                 "composite" => {
                     if size_filter.is_some() {
@@ -804,6 +807,10 @@ async fn handle_cache_command(
                     commands::cache::invalidate_composite(&gallery_config, &path, dry_run).await?;
                 }
                 "image" => {
+                    if path.is_empty() {
+                        eprintln!("Error: --path is required for image cache type");
+                        std::process::exit(1);
+                    }
                     commands::cache::invalidate_image(
                         &gallery_config,
                         &path,

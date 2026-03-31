@@ -150,13 +150,14 @@ cargo run -- cache report -g main                 # Report format coverage
 cargo run -- cache cleanup -g main                # Clean up outdated entries
 cargo run -- cache list-composites -g main         # List composite preview images
 
-# Invalidate cache (force regeneration)
-cargo run -- cache invalidate -g main -t composite -p ""           # All composite previews
-cargo run -- cache invalidate -g main -t image -p "folder/img.jpg" # Single image, all sizes
-cargo run -- cache invalidate -g main -t folder -p "vacation"      # All images in folder
+# Invalidate cache (force regeneration) - recursive by default
+cargo run -- cache invalidate -g main                              # Entire gallery, all sizes
+cargo run -- cache invalidate -g main -p "vacation"                # Folder and subfolders
+cargo run -- cache invalidate -g main -t image -p "folder/img.jpg" # Single image
+cargo run -- cache invalidate -g main -t composite -p ""           # Composite previews
 
 # Invalidate only specific size classes (thumbnail, gallery, medium, large)
-cargo run -- cache invalidate -g main -t folder -p "" --size gallery --size medium
+cargo run -- cache invalidate -g main --size gallery --size medium
 cargo run -- cache invalidate -g main -t image -p "img.jpg" --size thumbnail --dry-run
 ```
 
