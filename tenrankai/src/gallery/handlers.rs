@@ -387,11 +387,8 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    // Update the name to use the display name from the indexer
-    {
-        let indexer = gallery.image_indexer.read().await;
-        image_info.name = indexer.get_display_name(&resolved_path);
-    }
+    // Update the name to use the sorted display name
+    image_info.name = gallery.get_sorted_display_name(&resolved_path).await;
 
     // Get permission resolver for the image path
     let parent_path_for_perms = std::path::Path::new(&resolved_path)
