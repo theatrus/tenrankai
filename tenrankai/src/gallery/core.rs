@@ -221,8 +221,7 @@ impl Gallery {
         // used by the indexer. Only needed for modes that use "Image N" names.
         if matches!(
             self.config.image_indexing,
-            crate::config::ImageIndexingMode::UniqueId
-                | crate::config::ImageIndexingMode::Sequence
+            crate::config::ImageIndexingMode::UniqueId | crate::config::ImageIndexingMode::Sequence
         ) {
             let mut image_num = 1u64;
             for item in items.iter_mut() {
