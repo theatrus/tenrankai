@@ -257,11 +257,44 @@ impl Gallery {
                         (Some(a_date), Some(b_date)) => a_date.cmp(b_date),
                         (Some(_), None) => std::cmp::Ordering::Less,
                         (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => a.name.cmp(&b.name),
+                        (None, None) => {
+                            let a_key = a.file_path.as_ref().unwrap_or(&a.name);
+                            let b_key = b.file_path.as_ref().unwrap_or(&b.name);
+                            a_key.cmp(b_key)
+                        }
                     }
                 }
             }
         });
+    }
+
+    /// Get the display name for an image path, consistent with the sorted listing order.
+    /// For unique_id/sequence modes, returns "Image N" where N reflects the image's
+    /// position in the capture-date-sorted folder listing.
+    pub async fn get_sorted_display_name(&self, image_path: &str) -> String {
+        if !matches!(
+            self.config.image_indexing,
+            crate::config::ImageIndexingMode::UniqueId | crate::config::ImageIndexingMode::Sequence
+        ) {
+            let indexer = self.image_indexer.read().await;
+            return indexer.get_display_name(image_path);
+        }
+
+        let folder = std::path::Path::new(image_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("");
+
+        if let Ok(items) = self.scan_directory_with_user(folder, None).await {
+            for item in &items {
+                if item.file_path.as_deref() == Some(image_path) {
+                    return item.name.clone();
+                }
+            }
+        }
+
+        let indexer = self.image_indexer.read().await;
+        indexer.get_display_name(image_path)
     }
 
     pub async fn list_directory(

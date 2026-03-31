@@ -387,11 +387,8 @@ pub async fn image_detail_handler_for_named(
         }
     };
 
-    // Update the name to use the display name from the indexer
-    {
-        let indexer = gallery.image_indexer.read().await;
-        image_info.name = indexer.get_display_name(&resolved_path);
-    }
+    // Update the name to use the sorted display name
+    image_info.name = gallery.get_sorted_display_name(&resolved_path).await;
 
     // Get permission resolver for the image path
     let parent_path_for_perms = std::path::Path::new(&resolved_path)
@@ -744,7 +741,8 @@ pub async fn download_folder_handler(
     let include_versions = query.include_versions;
     let can_see_hidden = user_permissions.permissions.can_see_hidden;
 
-    // Helper to recursively collect images with their capture dates
+    // Helper to recursively collect images with their capture dates,
+    // using the gallery's sorted listing for consistent display names.
     async fn collect_images_recursive(
         gallery: &super::SharedGallery,
         folder_path: &str,
@@ -753,17 +751,26 @@ pub async fn download_folder_handler(
         can_see_hidden: bool,
     ) {
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
-            // Read the image metadata cache once for this folder's images
+            // Use the gallery's sorted listing for display names
+            let sorted_items = gallery
+                .scan_directory_with_user(folder_path, None)
+                .await
+                .unwrap_or_default();
+
+            // Build a map from file_path to sorted display name
+            let sorted_names: std::collections::HashMap<&str, &str> = sorted_items
+                .iter()
+                .filter_map(|item| item.file_path.as_deref().map(|fp| (fp, item.name.as_str())))
+                .collect();
+
             let metadata_cache = gallery.image_cache.read_all().await;
 
-            // Get hidden images list for this folder
             let hidden_images: Vec<String> = cached
                 .metadata
                 .as_ref()
                 .map(|m| m.config.hidden_images.clone())
                 .unwrap_or_default();
 
-            // Helper to check if an image is hidden
             let is_hidden = |image_path: &str| -> bool {
                 if hidden_images.is_empty() {
                     return false;
@@ -772,19 +779,28 @@ pub async fn download_folder_handler(
                 hidden_images.contains(&filename.to_string())
             };
 
+            // Helper to get display name from sorted listing, falling back to indexer
+            let get_display_name = |image_path: &str| -> String {
+                if let Some(name) = sorted_names.get(image_path) {
+                    name.to_string()
+                } else {
+                    // Fallback for version files or unlisted images
+                    image_path
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(image_path)
+                        .to_string()
+                }
+            };
+
             if include_versions {
-                // Include all images (primary + versions)
                 for image_path in &cached.images {
-                    // Skip hidden images if user doesn't have permission
                     if !can_see_hidden && is_hidden(image_path) {
                         continue;
                     }
 
-                    // Get base display name and append version suffix if present
                     let display_name = {
-                        let indexer = gallery.image_indexer.read().await;
-                        let base_name = indexer.get_display_name(image_path);
-                        // If this is a version file, append the version suffix
+                        let base_name = get_display_name(image_path);
                         let filename = image_path.rsplit('/').next().unwrap_or(image_path);
                         if let Some(version_num) = super::grouping::extract_version_number(filename)
                         {
@@ -796,41 +812,29 @@ pub async fn download_folder_handler(
                     let capture_date = metadata_cache.get(image_path).and_then(|m| m.capture_date);
                     images.push((image_path.clone(), display_name, capture_date));
                 }
-            } else {
-                // Only include primary images from each group
-                if !cached.image_groups.is_empty() {
-                    for group in &cached.image_groups {
-                        // Skip hidden images if user doesn't have permission
-                        if !can_see_hidden && is_hidden(&group.primary_path) {
-                            continue;
-                        }
-
-                        let display_name = {
-                            let indexer = gallery.image_indexer.read().await;
-                            indexer.get_display_name(&group.primary_path)
-                        };
-                        let capture_date = metadata_cache
-                            .get(&group.primary_path)
-                            .and_then(|m| m.capture_date);
-                        images.push((group.primary_path.clone(), display_name, capture_date));
+            } else if !cached.image_groups.is_empty() {
+                for group in &cached.image_groups {
+                    if !can_see_hidden && is_hidden(&group.primary_path) {
+                        continue;
                     }
-                } else {
-                    // Fallback: filter out version files manually
-                    for image_path in &cached.images {
-                        // Skip hidden images if user doesn't have permission
-                        if !can_see_hidden && is_hidden(image_path) {
-                            continue;
-                        }
 
-                        if !super::grouping::is_version_file(image_path) {
-                            let display_name = {
-                                let indexer = gallery.image_indexer.read().await;
-                                indexer.get_display_name(image_path)
-                            };
-                            let capture_date =
-                                metadata_cache.get(image_path).and_then(|m| m.capture_date);
-                            images.push((image_path.clone(), display_name, capture_date));
-                        }
+                    let display_name = get_display_name(&group.primary_path);
+                    let capture_date = metadata_cache
+                        .get(&group.primary_path)
+                        .and_then(|m| m.capture_date);
+                    images.push((group.primary_path.clone(), display_name, capture_date));
+                }
+            } else {
+                for image_path in &cached.images {
+                    if !can_see_hidden && is_hidden(image_path) {
+                        continue;
+                    }
+
+                    if !super::grouping::is_version_file(image_path) {
+                        let display_name = get_display_name(image_path);
+                        let capture_date =
+                            metadata_cache.get(image_path).and_then(|m| m.capture_date);
+                        images.push((image_path.clone(), display_name, capture_date));
                     }
                 }
             }
