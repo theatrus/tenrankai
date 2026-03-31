@@ -216,6 +216,23 @@ impl Gallery {
         // Sort items
         self.sort_gallery_items(&mut items);
 
+        // Reassign sequential display names after sorting so numbering matches
+        // the display order (capture date), not the alphabetical filename order
+        // used by the indexer. Only needed for modes that use "Image N" names.
+        if matches!(
+            self.config.image_indexing,
+            crate::config::ImageIndexingMode::UniqueId
+                | crate::config::ImageIndexingMode::Sequence
+        ) {
+            let mut image_num = 1u64;
+            for item in items.iter_mut() {
+                if !item.is_directory {
+                    item.name = format!("Image {}", image_num);
+                    image_num += 1;
+                }
+            }
+        }
+
         debug!(
             "Built {} items from cache ({} directories, {} images)",
             items.len(),
