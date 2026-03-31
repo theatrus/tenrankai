@@ -77,6 +77,15 @@ impl Gallery {
             let cache_path = self.cache_path.clone();
             let runtime_handle = Handle::current();
 
+            // Acquire semaphore permit to limit concurrent image processing
+            let _permit = self
+                .image_processing_semaphore
+                .acquire()
+                .await
+                .map_err(|_| {
+                    GalleryError::ProcessingError("Image processing semaphore closed".to_string())
+                })?;
+
             // Track this blocking task for graceful shutdown
             let _task_guard = self.track_blocking_task();
 
