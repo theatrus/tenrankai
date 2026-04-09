@@ -82,7 +82,7 @@ quick-xml = "0.39"
 pulldown-cmark = "0.13"
 
 # Crypto and encoding
-hmac = "0.12"
+hmac = "0.13"
 sha2 = "0.10"
 flate2 = "1.1"
 
