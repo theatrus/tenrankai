@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.89-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 # Install build dependencies for image processing libraries (AVIF and HEIF)
 RUN apt-get update && apt-get install -y \
