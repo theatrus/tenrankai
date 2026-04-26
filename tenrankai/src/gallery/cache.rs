@@ -411,13 +411,17 @@ impl Gallery {
         }
 
         let sizes = self.get_pregenerate_sizes();
-        if sizes.is_empty() {
+        let allowed_formats = self.get_pregenerate_formats();
+        if sizes.is_empty() || allowed_formats.is_empty() {
             return true;
         }
 
         let is_ready = sizes.iter().all(|size| {
             let coverage = self.check_format_coverage_fast(relative_path, *size, cache_files);
-            coverage.is_complete(relative_path)
+            coverage
+                .missing_formats(relative_path)
+                .into_iter()
+                .all(|format| !allowed_formats.contains(&format))
         });
 
         let mut cache = self.image_cache.write_all().await;
@@ -1232,6 +1236,82 @@ mod tests {
         // Verify the hash part is consistent
         let hash = gallery.generate_image_cache_key("test.jpg", "thumbnail", "webp", false);
         assert_eq!(filename, format!("{}.webp", hash));
+    }
+
+    #[tokio::test]
+    async fn test_preview_readiness_respects_configured_formats() {
+        use super::super::ImageMetadata;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            pregenerate: Some(crate::PregenerateConfig {
+                formats: crate::config::defaults::default_pregenerate_formats(),
+                sizes: crate::config::defaults::default_pregenerate_sizes(),
+                tiles: false,
+            }),
+            ..Default::default()
+        };
+
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
+
+        gallery
+            .image_cache
+            .insert(
+                "test.jpg".to_string(),
+                ImageMetadata {
+                    dimensions: (100, 100),
+                    capture_date: None,
+                    camera_info: None,
+                    location_info: None,
+                    modification_date: None,
+                    color_profile: None,
+                    preview_ready: false,
+                },
+            )
+            .await;
+
+        let mut cache_files = HashSet::new();
+        for size in [
+            super::ImageSize::Thumbnail,
+            super::ImageSize::ThumbnailRetina,
+            super::ImageSize::Gallery,
+            super::ImageSize::GalleryRetina,
+            super::ImageSize::Medium,
+            super::ImageSize::MediumRetina,
+        ] {
+            for format in ["jpg", "webp"] {
+                cache_files.insert(gallery.generate_cache_filename(
+                    "test.jpg",
+                    &size.as_str(),
+                    format,
+                    false,
+                ));
+            }
+        }
+
+        assert!(
+            gallery
+                .update_preview_readiness("test.jpg", &cache_files)
+                .await
+        );
+
+        let cache = gallery.image_cache.read_all().await;
+        assert!(cache.get("test.jpg").unwrap().preview_ready);
     }
 
     #[tokio::test]
