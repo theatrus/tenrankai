@@ -395,6 +395,43 @@ impl Gallery {
             && self.config.tiles.is_some()
     }
 
+    pub fn is_pregeneration_enabled(&self) -> bool {
+        self.config.pregenerate.is_some()
+    }
+
+    /// Check format coverage for an image and update its preview_ready flag.
+    /// Returns the new readiness value.
+    pub async fn update_preview_readiness(
+        &self,
+        relative_path: &str,
+        cache_files: &HashSet<String>,
+    ) -> bool {
+        if !self.is_pregeneration_enabled() {
+            return true;
+        }
+
+        let sizes = self.get_pregenerate_sizes();
+        if sizes.is_empty() {
+            return true;
+        }
+
+        let is_ready = sizes.iter().all(|size| {
+            let coverage = self.check_format_coverage_fast(relative_path, *size, cache_files);
+            coverage.is_complete(relative_path)
+        });
+
+        let mut cache = self.image_cache.write_all().await;
+        if let Some(metadata) = cache.get_mut(relative_path)
+            && metadata.preview_ready != is_ready
+        {
+            metadata.preview_ready = is_ready;
+            drop(cache);
+            self.image_cache.mark_dirty();
+        }
+
+        is_ready
+    }
+
     /// Pre-generate cache for a single image (only generates missing formats)
     pub async fn pregenerate_image_cache(
         &self,
@@ -707,6 +744,36 @@ impl Gallery {
 
         if total_failed > 0 && !was_cancelled {
             warn!("{} images failed during cache pre-generation", total_failed);
+        }
+
+        // Update preview readiness flags for all images
+        if self.is_pregeneration_enabled() && !was_cancelled {
+            info!("Updating preview readiness flags...");
+            let fresh_cache_files = self.load_cache_file_set().await;
+            let all_paths: Vec<String> = {
+                let cache = self.image_cache.read_all().await;
+                cache.keys().cloned().collect()
+            };
+            let mut ready_count = 0usize;
+            let mut not_ready_count = 0usize;
+            for path in &all_paths {
+                if self
+                    .update_preview_readiness(path, &fresh_cache_files)
+                    .await
+                {
+                    ready_count += 1;
+                } else {
+                    not_ready_count += 1;
+                }
+            }
+            info!(
+                "Preview readiness: {} ready, {} not ready",
+                ready_count, not_ready_count
+            );
+
+            if let Err(e) = self.save_metadata_cache().await {
+                error!("Failed to save readiness flags: {}", e);
+            }
         }
 
         Ok(())
@@ -1310,6 +1377,7 @@ Hidden folder
             location_info: None,
             modification_date: None,
             color_profile: None,
+            preview_ready: false,
         };
 
         {
@@ -1369,6 +1437,7 @@ Hidden folder
             location_info: None,
             modification_date: None,
             color_profile: None,
+            preview_ready: false,
         };
 
         {
@@ -1467,6 +1536,7 @@ Hidden folder
             location_info: None,
             modification_date: None,
             color_profile: None,
+            preview_ready: false,
         };
 
         {

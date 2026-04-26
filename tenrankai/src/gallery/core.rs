@@ -41,6 +41,21 @@ impl Gallery {
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         let mut items = Vec::new();
 
+        // Pre-compute set of ready images when pregeneration is enabled
+        let ready_images: Option<std::collections::HashSet<String>> =
+            if self.is_pregeneration_enabled() {
+                let cache = self.image_cache.read_all().await;
+                Some(
+                    cache
+                        .iter()
+                        .filter(|(_, m)| m.preview_ready)
+                        .map(|(k, _)| k.clone())
+                        .collect(),
+                )
+            } else {
+                None
+            };
+
         // Add subdirectories from cache
         for subdir_name in &cached.subdirectories {
             let subdir_path = if relative_path.is_empty() {
@@ -69,6 +84,11 @@ impl Gallery {
                 .map(|sc| {
                     sc.preview_items
                         .iter()
+                        .filter(|p| {
+                            ready_images
+                                .as_ref()
+                                .is_none_or(|ready| ready.contains(&p.path))
+                        })
                         .map(|p| p.thumbnail_url.clone())
                         .collect()
                 })
@@ -105,6 +125,16 @@ impl Gallery {
         } else {
             // Fall back to flat image list for backward compatibility
             cached.images.iter().map(|s| s.as_str()).collect()
+        };
+
+        // Filter out non-ready images when pregeneration is enabled
+        let image_paths: Vec<&str> = if let Some(ref ready) = ready_images {
+            image_paths
+                .into_iter()
+                .filter(|path| ready.contains(*path))
+                .collect()
+        } else {
+            image_paths
         };
 
         // Get hidden images list and check user permissions
@@ -879,9 +909,20 @@ impl Gallery {
         if let Ok(perms) = resolver.resolve_user_permissions(user)
             && perms.can_view
         {
+            // Filter out non-ready images when pregeneration is enabled
+            let preview_items: Vec<_> = if self.is_pregeneration_enabled() {
+                let cache = self.image_cache.read_all().await;
+                cached
+                    .preview_items
+                    .iter()
+                    .filter(|p| cache.get(&p.path).map(|m| m.preview_ready).unwrap_or(false))
+                    .collect()
+            } else {
+                cached.preview_items.iter().collect()
+            };
+
             // Convert cached preview items to GalleryItem (minimal conversion)
-            let mut items: Vec<GalleryItem> = cached
-                .preview_items
+            let mut items: Vec<GalleryItem> = preview_items
                 .iter()
                 .map(|p| GalleryItem {
                     name: p.path.rsplit('/').next().unwrap_or(&p.path).to_string(),

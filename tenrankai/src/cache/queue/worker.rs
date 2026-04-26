@@ -120,6 +120,11 @@ impl CacheQueueWorker {
             error!("Failed to generate cache for {}: {}", request.image_path, e);
         } else {
             debug!("Generated cache for {}", request.image_path);
+            // Update readiness after generation
+            let fresh_cache_files = gallery.load_cache_file_set().await;
+            gallery
+                .update_preview_readiness(&request.image_path, &fresh_cache_files)
+                .await;
         }
     }
 

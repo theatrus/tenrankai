@@ -308,6 +308,8 @@ pub(crate) struct ImageMetadata {
     pub location_info: Option<LocationInfo>,
     pub modification_date: Option<SystemTime>,
     pub color_profile: Option<String>,
+    #[serde(default)]
+    pub preview_ready: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
