@@ -20,13 +20,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
 
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["frontend/react/*"],
-      "@components/*": ["frontend/react/components/*"],
-      "@hooks/*": ["frontend/react/hooks/*"],
-      "@api/*": ["frontend/react/api/*"],
-      "@types/*": ["frontend/react/types/*"]
+      "@/*": ["./frontend/react/*"],
+      "@components/*": ["./frontend/react/components/*"],
+      "@hooks/*": ["./frontend/react/hooks/*"],
+      "@api/*": ["./frontend/react/api/*"],
+      "@types/*": ["./frontend/react/types/*"]
     }
   },
   "include": [
