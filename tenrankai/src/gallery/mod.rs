@@ -356,6 +356,34 @@ impl Gallery {
 
         self.metadata_generation.notify_waiters();
 
+        // Validate preview readiness flags against current cache state
+        if self.is_pregeneration_enabled() {
+            info!("Validating preview readiness flags...");
+            let cache_files = self.load_cache_file_set().await;
+            let all_paths: Vec<String> = {
+                let cache = self.image_cache.read_all().await;
+                cache.keys().cloned().collect()
+            };
+            let mut ready = 0usize;
+            let mut not_ready = 0usize;
+            for path in &all_paths {
+                if self.update_preview_readiness(path, &cache_files).await {
+                    ready += 1;
+                } else {
+                    not_ready += 1;
+                }
+            }
+            info!(
+                "Preview readiness validation: {} ready, {} not ready out of {} images",
+                ready,
+                not_ready,
+                all_paths.len()
+            );
+            if let Err(e) = self.save_metadata_cache().await {
+                error!("Failed to save readiness flags: {}", e);
+            }
+        }
+
         // Report format coverage status
         if let Err(e) = self.report_format_coverage().await {
             error!("Failed to report format coverage: {}", e);

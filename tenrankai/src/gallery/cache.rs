@@ -395,6 +395,51 @@ impl Gallery {
             && self.config.tiles.is_some()
     }
 
+    pub fn is_pregeneration_enabled(&self) -> bool {
+        self.config.pregenerate.is_some()
+    }
+
+    /// Check format coverage for an image and update its preview_ready flag.
+    /// Returns the new readiness value.
+    pub async fn update_preview_readiness(
+        &self,
+        relative_path: &str,
+        cache_files: &HashSet<String>,
+    ) -> bool {
+        if !self.is_pregeneration_enabled() {
+            return true;
+        }
+
+        let sizes: Vec<_> = self
+            .get_pregenerate_sizes()
+            .into_iter()
+            .filter(|s| !s.is_tile())
+            .collect();
+        let allowed_formats = self.get_pregenerate_formats();
+        if sizes.is_empty() || allowed_formats.is_empty() {
+            return true;
+        }
+
+        let is_ready = sizes.iter().all(|size| {
+            let coverage = self.check_format_coverage_fast(relative_path, *size, cache_files);
+            coverage
+                .missing_formats(relative_path)
+                .into_iter()
+                .all(|format| !allowed_formats.contains(&format))
+        });
+
+        let mut cache = self.image_cache.write_all().await;
+        if let Some(metadata) = cache.get_mut(relative_path)
+            && metadata.preview_ready != is_ready
+        {
+            metadata.preview_ready = is_ready;
+            drop(cache);
+            self.image_cache.mark_dirty();
+        }
+
+        is_ready
+    }
+
     /// Pre-generate cache for a single image (only generates missing formats)
     pub async fn pregenerate_image_cache(
         &self,
@@ -481,13 +526,13 @@ impl Gallery {
                     relative_path,
                     elapsed.as_secs_f32()
                 );
+                Ok(())
             }
             Err(e) => {
                 error!("Failed to generate cache for {}: {}", relative_path, e);
+                Err(e)
             }
         }
-
-        Ok(())
     }
 
     /// Pre-generate tiles for a single image
@@ -662,6 +707,16 @@ impl Gallery {
 
                     match &result {
                         Ok(_) => {
+                            // Mark image as preview-ready immediately so it appears in listings
+                            let mut cache = gallery.image_cache.write_all().await;
+                            if let Some(metadata) = cache.get_mut(&image_path)
+                                && !metadata.preview_ready
+                            {
+                                metadata.preview_ready = true;
+                                drop(cache);
+                                gallery.image_cache.mark_dirty();
+                            }
+
                             let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
                             if count.is_multiple_of(10) || count == total_images {
                                 info!("Pre-generated cache for {}/{} images", count, total_images);
@@ -707,6 +762,36 @@ impl Gallery {
 
         if total_failed > 0 && !was_cancelled {
             warn!("{} images failed during cache pre-generation", total_failed);
+        }
+
+        // Update preview readiness flags for all images
+        if self.is_pregeneration_enabled() && !was_cancelled {
+            info!("Updating preview readiness flags...");
+            let fresh_cache_files = self.load_cache_file_set().await;
+            let all_paths: Vec<String> = {
+                let cache = self.image_cache.read_all().await;
+                cache.keys().cloned().collect()
+            };
+            let mut ready_count = 0usize;
+            let mut not_ready_count = 0usize;
+            for path in &all_paths {
+                if self
+                    .update_preview_readiness(path, &fresh_cache_files)
+                    .await
+                {
+                    ready_count += 1;
+                } else {
+                    not_ready_count += 1;
+                }
+            }
+            info!(
+                "Preview readiness: {} ready, {} not ready",
+                ready_count, not_ready_count
+            );
+
+            if let Err(e) = self.save_metadata_cache().await {
+                error!("Failed to save readiness flags: {}", e);
+            }
         }
 
         Ok(())
@@ -1168,6 +1253,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_preview_readiness_respects_configured_formats() {
+        use super::super::ImageMetadata;
+        use std::collections::HashSet;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            pregenerate: Some(crate::PregenerateConfig {
+                formats: crate::config::defaults::default_pregenerate_formats(),
+                sizes: crate::config::defaults::default_pregenerate_sizes(),
+                tiles: false,
+            }),
+            ..Default::default()
+        };
+
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
+
+        gallery
+            .image_cache
+            .insert(
+                "test.jpg".to_string(),
+                ImageMetadata {
+                    dimensions: (100, 100),
+                    capture_date: None,
+                    camera_info: None,
+                    location_info: None,
+                    modification_date: None,
+                    color_profile: None,
+                    preview_ready: false,
+                },
+            )
+            .await;
+
+        let mut cache_files = HashSet::new();
+        for size in [
+            super::ImageSize::Thumbnail,
+            super::ImageSize::ThumbnailRetina,
+            super::ImageSize::Gallery,
+            super::ImageSize::GalleryRetina,
+            super::ImageSize::Medium,
+            super::ImageSize::MediumRetina,
+        ] {
+            for format in ["jpg", "webp"] {
+                cache_files.insert(gallery.generate_cache_filename(
+                    "test.jpg",
+                    &size.as_str(),
+                    format,
+                    false,
+                ));
+            }
+        }
+
+        assert!(
+            gallery
+                .update_preview_readiness("test.jpg", &cache_files)
+                .await
+        );
+
+        let cache = gallery.image_cache.read_all().await;
+        assert!(cache.get("test.jpg").unwrap().preview_ready);
+    }
+
+    #[tokio::test]
     async fn test_hidden_folder_not_in_listing() {
         use std::fs;
         use tempfile::TempDir;
@@ -1310,6 +1471,7 @@ Hidden folder
             location_info: None,
             modification_date: None,
             color_profile: None,
+            preview_ready: false,
         };
 
         {
@@ -1369,6 +1531,7 @@ Hidden folder
             location_info: None,
             modification_date: None,
             color_profile: None,
+            preview_ready: false,
         };
 
         {
@@ -1467,6 +1630,7 @@ Hidden folder
             location_info: None,
             modification_date: None,
             color_profile: None,
+            preview_ready: false,
         };
 
         {

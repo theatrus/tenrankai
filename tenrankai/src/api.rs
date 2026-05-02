@@ -2616,6 +2616,7 @@ roles = ["viewer"]
                         }),
                         modification_date: None,
                         color_profile: Some("sRGB".to_string()),
+                        preview_ready: true,
                     },
                 )
                 .await;
@@ -2691,6 +2692,7 @@ roles = ["viewer"]
                         }),
                         modification_date: None,
                         color_profile: Some("sRGB".to_string()),
+                        preview_ready: true,
                     },
                 )
                 .await;

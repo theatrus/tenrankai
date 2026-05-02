@@ -1484,6 +1484,7 @@ impl Gallery {
             location_info,
             modification_date,
             color_profile,
+            preview_ready: false,
         })
     }
 

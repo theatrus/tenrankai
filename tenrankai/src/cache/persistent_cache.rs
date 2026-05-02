@@ -195,6 +195,11 @@ where
         self.dirty.store(true, Ordering::Relaxed);
     }
 
+    /// Explicitly mark the cache as dirty (has unsaved changes).
+    pub fn mark_dirty(&self) {
+        self.dirty.store(true, Ordering::Relaxed);
+    }
+
     /// Check if the cache has unsaved changes.
     pub fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)
