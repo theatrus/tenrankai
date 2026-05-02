@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ImageDetailData } from '../types/index.ts';
 import { useImageDetail } from '../hooks/useImageDetail.ts';
@@ -145,6 +145,23 @@ export function ImageDetailPage({
       }
     }
   });
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const detailPrefix = `${galleryUrl}/detail/`;
+      const path = window.location.pathname;
+      if (path.startsWith(detailPrefix)) {
+        const imagePath = decodeURIComponent(path.slice(detailPrefix.length));
+        if (imagePath && imagePath !== currentData?.image.path) {
+          loadImage(imagePath);
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [galleryUrl, loadImage, currentData?.image.path]);
 
   // Preload previous and next images for faster navigation
   useImagePreload(currentData?.prev_image, currentData?.next_image);
