@@ -526,13 +526,13 @@ impl Gallery {
                     relative_path,
                     elapsed.as_secs_f32()
                 );
+                Ok(())
             }
             Err(e) => {
                 error!("Failed to generate cache for {}: {}", relative_path, e);
+                Err(e)
             }
         }
-
-        Ok(())
     }
 
     /// Pre-generate tiles for a single image
@@ -707,6 +707,16 @@ impl Gallery {
 
                     match &result {
                         Ok(_) => {
+                            // Mark image as preview-ready immediately so it appears in listings
+                            let mut cache = gallery.image_cache.write_all().await;
+                            if let Some(metadata) = cache.get_mut(&image_path)
+                                && !metadata.preview_ready
+                            {
+                                metadata.preview_ready = true;
+                                drop(cache);
+                                gallery.image_cache.mark_dirty();
+                            }
+
                             let count = completed.fetch_add(1, Ordering::Relaxed) + 1;
                             if count.is_multiple_of(10) || count == total_images {
                                 info!("Pre-generated cache for {}/{} images", count, total_images);
