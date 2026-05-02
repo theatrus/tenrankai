@@ -14,18 +14,14 @@ export default defineConfig({
     emptyOutDir: true,
     // We intentionally bundle into a single file, so increase the warning limit
     chunkSizeWarningLimit: 1000,
-    rollupOptions: {
+    rolldownOptions: {
       input: resolve(__dirname, 'frontend/react/app.ts'),
       output: {
         entryFileNames: 'tenrankai.js',
         format: 'iife',
         name: 'Tenrankai',
-        // Bundle everything into a single file
-        inlineDynamicImports: true,
-        manualChunks: undefined
       }
     },
-    // Target modern browsers for better performance
     target: 'es2020',
     // Enable source maps for debugging
     sourcemap: true,
