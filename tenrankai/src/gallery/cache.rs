@@ -410,7 +410,11 @@ impl Gallery {
             return true;
         }
 
-        let sizes = self.get_pregenerate_sizes();
+        let sizes: Vec<_> = self
+            .get_pregenerate_sizes()
+            .into_iter()
+            .filter(|s| !s.is_tile())
+            .collect();
         let allowed_formats = self.get_pregenerate_formats();
         if sizes.is_empty() || allowed_formats.is_empty() {
             return true;

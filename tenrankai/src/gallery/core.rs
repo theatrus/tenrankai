@@ -41,7 +41,7 @@ impl Gallery {
     ) -> Result<Vec<GalleryItem>, GalleryError> {
         let mut items = Vec::new();
 
-        // Pre-compute set of ready images when pregeneration is enabled
+        // Pre-compute set of ready images and per-folder ready counts
         let ready_images: Option<std::collections::HashSet<String>> =
             if self.is_pregeneration_enabled() {
                 let cache = self.image_cache.read_all().await;
@@ -55,6 +55,27 @@ impl Gallery {
             } else {
                 None
             };
+
+        let ready_folder_counts: Option<std::collections::HashMap<String, usize>> =
+            ready_images.as_ref().map(|ready| {
+                let mut counts: std::collections::HashMap<String, usize> =
+                    std::collections::HashMap::new();
+                for path in ready {
+                    let mut folder = path
+                        .rfind('/')
+                        .map(|i| path[..i].to_string())
+                        .unwrap_or_default();
+                    *counts.entry(folder.clone()).or_default() += 1;
+                    while let Some(slash) = folder.rfind('/') {
+                        folder.truncate(slash);
+                        *counts.entry(folder.clone()).or_default() += 1;
+                    }
+                    if !folder.is_empty() {
+                        *counts.entry(String::new()).or_default() += 1;
+                    }
+                }
+                counts
+            });
 
         // Add subdirectories from cache
         for subdir_name in &cached.subdirectories {
@@ -74,10 +95,14 @@ impl Gallery {
                     (None, None, None)
                 };
 
-            let item_count = subdir_cached
-                .as_ref()
-                .map(|sc| sc.recursive_image_count)
-                .unwrap_or(0);
+            let item_count = if let Some(ref counts) = ready_folder_counts {
+                counts.get(&subdir_path).copied().unwrap_or(0)
+            } else {
+                subdir_cached
+                    .as_ref()
+                    .map(|sc| sc.recursive_image_count)
+                    .unwrap_or(0)
+            };
 
             let preview_images: Vec<String> = subdir_cached
                 .as_ref()
