@@ -96,7 +96,7 @@ reqwest = { version = "0.13", features = ["json"] }
 mime_guess = "2.0"
 rand = "0.10"
 fnv = "1.0"
-lru = "0.16"
+lru = "0.18"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 num_cpus = "1.16"
 
