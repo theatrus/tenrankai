@@ -260,7 +260,6 @@ impl PermissionConfig {
                 "viewer".to_string(),
                 RolePermissions {
                     can_view: true,
-                    can_download_medium: true,
                     ..Default::default()
                 },
             ),
@@ -361,7 +360,7 @@ mod tests {
         // Check viewer role
         let viewer = roles.get("viewer").unwrap();
         assert!(viewer.permissions.can_view);
-        assert!(viewer.permissions.can_download_medium);
+        assert!(!viewer.permissions.can_download_medium);
         assert!(!viewer.permissions.can_see_technical_details);
 
         // Check contributor role

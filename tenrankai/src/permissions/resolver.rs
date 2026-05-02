@@ -217,7 +217,6 @@ impl<'a> PermissionResolver<'a> {
     fn default_viewer_permissions(&self) -> RolePermissions {
         RolePermissions {
             can_view: true,
-            can_download_medium: true,
             ..Default::default()
         }
     }
@@ -254,7 +253,7 @@ mod tests {
 
         let perms = resolver.resolve_user_permissions(None).unwrap();
         assert!(perms.can_view);
-        assert!(perms.can_download_medium);
+        assert!(!perms.can_download_medium);
         assert!(!perms.can_see_technical_details);
     }
 
