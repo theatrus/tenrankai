@@ -37,11 +37,11 @@ urlencoding = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 walkdir = "2.5"
 
-# AWS SDKs
+# AWS SDKs (disable legacy `rustls` feature to avoid pulling in rustls 0.21)
 aws-config = "1"
-aws-sdk-dynamodb = "1"
-aws-sdk-s3 = "1"
-aws-sdk-sesv2 = "1"
+aws-sdk-dynamodb = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-sdk-sesv2 = { version = "1", default-features = false, features = ["sigv4a", "default-https-client", "rt-tokio"] }
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite", "postgres", "uuid", "chrono"] }
