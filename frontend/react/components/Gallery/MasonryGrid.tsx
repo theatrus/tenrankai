@@ -53,7 +53,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   const [columnWidth, setColumnWidth] = useState(400);
   const [numColumns, setNumColumns] = useState(2);
   const gridRef = useRef<HTMLDivElement>(null);
-  const resizeTimeoutRef = useRef<number>();
+  const resizeTimeoutRef = useRef<number>(undefined);
 
   const calculateColumnWidth = useCallback(() => {
     const viewportWidth = window.innerWidth;

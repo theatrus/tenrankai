@@ -14,7 +14,7 @@ interface TouchPoint {
 }
 
 export function useSwipeGestures(
-  elementRef: React.RefObject<HTMLElement>,
+  elementRef: React.RefObject<HTMLElement | null>,
   handlers: SwipeHandlers,
   options: {
     minSwipeDistance?: number;

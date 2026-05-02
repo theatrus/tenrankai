@@ -75,11 +75,13 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   );
 
   const editor = useEditor({
+    shouldRerenderOnTransaction: true,
     extensions: [
       StarterKit.configure({
         heading: {
           levels: [1, 2, 3],
         },
+        link: false,
       }),
       Link.configure({
         openOnClick: false,

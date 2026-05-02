@@ -836,7 +836,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     if (!tileConfig || !pinchZoom.isZoomed) return null;
 
     const imageId = getImageIdentifierFromUrl(image.medium_url);
-    const tiles: JSX.Element[] = [];
+    const tiles: React.JSX.Element[] = [];
 
     // Calculate base image display size (before zoom scale)
     // Use tiled image aspect ratio since tiles are in that coordinate space
