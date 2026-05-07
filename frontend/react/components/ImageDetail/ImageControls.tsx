@@ -15,12 +15,23 @@ export function ImageControls({ image, permissions, onEditClick, shareUrl, baseU
   const imageBaseUrl = image.medium_url.replace(/\/medium$/, '');
   const largeUrl = `${imageBaseUrl}/large`;
 
-  const canDownloadLarge = permissions.can_download_large;
+  const canDownloadOriginal = permissions.can_download_original;
+  const canDownloadLarge = permissions.can_download_large || canDownloadOriginal;
   const canDownloadMedium = permissions.can_download_medium || canDownloadLarge;
 
   // Determine best available download option
-  const downloadUrl = canDownloadLarge ? largeUrl : `${imageBaseUrl}/medium`;
-  const downloadLabel = canDownloadLarge ? 'Download Large' : 'Download';
+  let downloadUrl: string;
+  let downloadLabel: string;
+  if (canDownloadOriginal) {
+    downloadUrl = imageBaseUrl;
+    downloadLabel = 'Download Original';
+  } else if (canDownloadLarge) {
+    downloadUrl = largeUrl;
+    downloadLabel = 'Download Large';
+  } else {
+    downloadUrl = `${imageBaseUrl}/medium`;
+    downloadLabel = 'Download';
+  }
 
   // Show edit button when user can edit and there's no title/description
   const showEditButton = permissions.can_edit_content && !image.title && !image.description && onEditClick;
