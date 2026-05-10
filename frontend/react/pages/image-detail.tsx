@@ -250,7 +250,6 @@ export function ImageDetailPage({
             onNavigate={handleNavigation}
             onNavigateToImage={handleNavigateToImage}
             title={currentData.image.title}
-            description={currentData.image.description}
             canEditContent={currentData.permissions.can_edit_content}
             onEditClick={() => setIsEditModalOpen(true)}
           />
@@ -277,6 +276,16 @@ export function ImageDetailPage({
           )}
         </div>
         
+        {/* Image description - shown when description exists */}
+        {currentData.image.description && (
+          <div className="image-description-section hide-mobile">
+            <div
+              className="image-description-content"
+              dangerouslySetInnerHTML={{ __html: currentData.image.description }}
+            />
+          </div>
+        )}
+
         {/* Info section - below the image viewer */}
         <div className="image-info-section">
           {/* Hidden image indicator */}
