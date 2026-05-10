@@ -910,13 +910,19 @@ Simple name content
         let loaded = backend.load("astro.jpg").await.unwrap().unwrap();
         assert_eq!(loaded.title, Some("Andromeda Galaxy".to_string()));
         assert_eq!(loaded.description, Some("M31 from my backyard".to_string()));
-        assert_eq!(loaded.telescope, Some("William Optics RedCat 51".to_string()));
+        assert_eq!(
+            loaded.telescope,
+            Some("William Optics RedCat 51".to_string())
+        );
         assert_eq!(loaded.mount, Some("Sky-Watcher EQ6-R Pro".to_string()));
         assert_eq!(loaded.filters, Some("Optolong L-eXtreme".to_string()));
         assert_eq!(loaded.total_exposure_time, Some(4.5));
         assert_eq!(loaded.ra, Some("00h 42m 44s".to_string()));
         assert_eq!(loaded.dec, Some("+41° 16' 09\"".to_string()));
-        assert_eq!(loaded.additional_details, Some("120x120s subs, Bortle 4".to_string()));
+        assert_eq!(
+            loaded.additional_details,
+            Some("120x120s subs, Bortle 4".to_string())
+        );
         assert_eq!(loaded.camera_make, Some("ZWO".to_string()));
         assert_eq!(loaded.camera_model, Some("ASI2600MC Pro".to_string()));
         assert_eq!(loaded.iso, Some(100));
@@ -952,19 +958,31 @@ This is a beautiful capture of the Andromeda Galaxy (M31).
 
         let loaded = backend.load("astro.jpg").await.unwrap().unwrap();
         assert_eq!(loaded.title, Some("Andromeda Galaxy".to_string()));
-        assert_eq!(loaded.telescope, Some("William Optics RedCat 51".to_string()));
+        assert_eq!(
+            loaded.telescope,
+            Some("William Optics RedCat 51".to_string())
+        );
         assert_eq!(loaded.mount, Some("Sky-Watcher EQ6-R Pro".to_string()));
         assert_eq!(loaded.filters, Some("Optolong L-eXtreme".to_string()));
         assert_eq!(loaded.total_exposure_time, Some(4.5));
         assert_eq!(loaded.ra, Some("00h 42m 44s".to_string()));
         assert_eq!(loaded.dec, Some("+41° 16' 09\"".to_string()));
-        assert_eq!(loaded.additional_details, Some("120x120s subs, Bortle 4".to_string()));
+        assert_eq!(
+            loaded.additional_details,
+            Some("120x120s subs, Bortle 4".to_string())
+        );
         assert_eq!(loaded.camera_make, Some("ZWO".to_string()));
         assert_eq!(loaded.camera_model, Some("ASI2600MC Pro".to_string()));
         assert_eq!(loaded.iso, Some(100));
         assert_eq!(loaded.latitude, Some(45.5231));
         assert_eq!(loaded.longitude, Some(-122.6765));
-        assert!(loaded.description.as_ref().unwrap().contains("beautiful capture"));
+        assert!(
+            loaded
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("beautiful capture")
+        );
     }
 
     #[tokio::test]
