@@ -9,7 +9,6 @@ interface ImageNavigationProps {
   onNavigate?: (direction: 'prev' | 'next') => void;
   onNavigateToImage?: (image: NavigationImage) => void;
   title?: string;
-  description?: string;
   canEditContent?: boolean;
   onEditClick?: () => void;
 }
@@ -23,7 +22,6 @@ export function ImageNavigation({
   onNavigate,
   onNavigateToImage,
   title,
-  description,
   canEditContent,
   onEditClick
 }: ImageNavigationProps) {
@@ -118,11 +116,11 @@ export function ImageNavigation({
         )}
       </div>
 
-      {/* Image title and description - desktop only (only show when there's content) */}
-      {(title || description) && (
+      {/* Image title - desktop only */}
+      {title ? (
         <div className="nav-image-info hide-mobile">
           <div className="image-title-row">
-            {title && <h2 className="nav-image-title">{title}</h2>}
+            <h2 className="nav-image-title">{title}</h2>
             {canEditContent && onEditClick && (
               <button
                 type="button"
@@ -137,17 +135,10 @@ export function ImageNavigation({
               </button>
             )}
           </div>
-          {description && (
-            <div
-              className="nav-image-description"
-              dangerouslySetInnerHTML={{ __html: description }}
-            />
-          )}
         </div>
+      ) : (
+        <div className="nav-spacer"></div>
       )}
-
-      {/* Spacer when no title/description */}
-      {!title && !description && <div className="nav-spacer"></div>}
 
       {/* Next images strip */}
       <div className="nav-strip nav-strip-next">

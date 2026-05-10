@@ -339,17 +339,25 @@ body {
     color: var(--text-primary);
 }
 
-.nav-image-description {
-    font-size: 0.95rem;
-    color: var(--text-secondary);
-    line-height: 1.5;
+/* Image description section - between navigation and metadata */
+.image-description-section {
+    max-width: 800px;
+    margin: var(--spacing-lg) auto 0;
+    padding: 0 var(--spacing-xl);
+    text-align: center;
 }
 
-.nav-image-description p {
+.image-description-content {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.image-description-content p {
     margin: 0 0 0.5rem 0;
 }
 
-.nav-image-description p:last-child {
+.image-description-content p:last-child {
     margin-bottom: 0;
 }
 
