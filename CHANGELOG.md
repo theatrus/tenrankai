@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Automatic `sitemap.xml`**: Generated per site at `/sitemap.xml` covering all publicly visible resources
+  - Includes static pages (`pages/*.html.liquid`), publicly viewable gallery folders and image detail pages, and posts
+  - Respects per-folder permissions — folders requiring authentication (and their images) are excluded; hidden folders are never listed
+  - Splits into a `<sitemapindex>` with `/sitemap/<chunk>.xml` files when the URL count exceeds the 50,000-per-file limit
+  - Result is cached per site (rebuilt at most every 5 minutes) so crawler traffic doesn't re-walk the gallery tree on every request
+  - `robots.txt` now advertises the sitemap location when `base_url` is configured
+
 - **Pluggable Storage Abstraction**: Full S3 support for all storage operations
   - Unified `Storage` trait with async read, write, list, delete, and metadata operations
   - Filesystem backend (default) and S3 backend with presigned URL support

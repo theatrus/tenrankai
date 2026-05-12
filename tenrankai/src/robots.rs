@@ -33,16 +33,22 @@ pub async fn robots_txt_handler(ResolvedState(app_state): ResolvedState) -> Resp
     }
 
     // Return default permissive robots.txt
-    let default_robots = r#"# robots.txt for Tenrankai Gallery
-# This file allows all web crawlers to access all content
+    let mut default_robots = String::from(
+        "# robots.txt for Tenrankai Gallery\n\
+         # This file allows all web crawlers to access all content\n\
+         \n\
+         User-agent: *\n\
+         Allow: /\n\
+         Crawl-delay: 1\n",
+    );
 
-User-agent: *
-Allow: /
-Crawl-delay: 1
-
-# Sitemap location (if you have one)
-# Sitemap: /sitemap.xml
-"#;
+    // Advertise the auto-generated sitemap when an absolute base URL is known.
+    if let Some(base_url) = app_state.base_url() {
+        let base_url = base_url.trim_end_matches('/');
+        if !base_url.is_empty() {
+            default_robots.push_str(&format!("\nSitemap: {base_url}/sitemap.xml\n"));
+        }
+    }
 
     (
         StatusCode::OK,

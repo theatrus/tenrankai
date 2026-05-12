@@ -116,13 +116,13 @@ zip.workspace = true
 num_cpus.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
+tempfile.workspace = true
 
 # Logging
 tracing-subscriber.workspace = true
 env_logger.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 axum-test.workspace = true
 regex.workspace = true
 zip.workspace = true
@@ -172,3 +172,7 @@ required-features = ["avif"]
 [[test]]
 name = "admin_and_hidden_images_tests"
 path = "../tests/admin_and_hidden_images_tests.rs"
+
+[[test]]
+name = "sitemap_integration"
+path = "../tests/sitemap_integration.rs"

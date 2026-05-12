@@ -18,6 +18,7 @@ pub mod posts;
 pub mod robots;
 pub mod short_url;
 pub mod site;
+pub mod sitemap;
 pub mod startup_checks;
 pub mod static_files;
 pub mod template_system;
@@ -355,6 +356,14 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
         .route(
             "/robots.txt",
             axum::routing::get(robots::robots_txt_handler),
+        )
+        .route(
+            "/sitemap.xml",
+            axum::routing::get(sitemap::sitemap_index_handler),
+        )
+        .route(
+            "/sitemap/{file}",
+            axum::routing::get(sitemap::sitemap_chunk_handler),
         )
         .route("/theme.css", axum::routing::get(theme::serve_theme_css))
         .route("/static/{*path}", axum::routing::get(static_file_handler))
