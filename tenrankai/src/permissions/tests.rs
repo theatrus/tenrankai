@@ -717,4 +717,82 @@ mod scenario_tests {
         assert!(pr_perms.can_download_original);
         assert!(pr_perms.can_set_picks);
     }
+
+    #[test]
+    fn test_folder_grants_location_via_public_role() {
+        // Scenario: Gallery hides location by default, but a specific folder
+        // defines a new role that grants location and sets it as the public role
+        let mut gallery_config = create_test_gallery_config("travel");
+
+        let mut gallery_roles = HashMap::new();
+        gallery_roles.insert(
+            "viewer".to_string(),
+            Role {
+                name: "viewer".to_string(),
+                permissions: RolePermissions {
+                    can_view: true,
+                    can_download_medium: true,
+                    can_see_location: false,
+                    ..Default::default()
+                },
+                inherits: None,
+            },
+        );
+
+        gallery_config.permissions = PermissionConfig {
+            site_admins: Vec::new(),
+            public_role: Some("viewer".to_string()),
+            default_authenticated_role: Some("viewer".to_string()),
+            roles: gallery_roles,
+            user_roles: Vec::new(),
+        };
+
+        // Verify gallery-level public user cannot see location
+        let gallery_resolver = PermissionResolver::new(&gallery_config.permissions, None);
+        let gallery_public = gallery_resolver.resolve_user_permissions(None).unwrap();
+        assert!(gallery_public.can_view);
+        assert!(!gallery_public.can_see_location);
+
+        // Folder defines a new role that grants location and uses it as public_role
+        let mut folder_roles = HashMap::new();
+        folder_roles.insert(
+            "location_viewer".to_string(),
+            Role {
+                name: "location_viewer".to_string(),
+                permissions: RolePermissions {
+                    can_view: true,
+                    can_download_medium: true,
+                    can_see_location: true,
+                    ..Default::default()
+                },
+                inherits: None,
+            },
+        );
+
+        let folder_config = FolderConfig {
+            hidden: false,
+            hidden_images: vec![],
+            permissions: PermissionConfig {
+                site_admins: Vec::new(),
+                public_role: Some("location_viewer".to_string()),
+                default_authenticated_role: Some("location_viewer".to_string()),
+                roles: folder_roles,
+                user_roles: Vec::new(),
+            },
+            grid_mode: None,
+            max_columns: None,
+        };
+
+        let folder_resolver = PermissionResolver::new(
+            &gallery_config.permissions,
+            Some(&folder_config.permissions),
+        );
+
+        // Public (unauthenticated) user in this folder should see location
+        let folder_public = folder_resolver.resolve_user_permissions(None).unwrap();
+        assert!(folder_public.can_view);
+        assert!(folder_public.can_see_location);
+        assert!(folder_public.can_download_medium);
+        assert!(!folder_public.can_download_original);
+    }
 }

@@ -883,6 +883,109 @@ Simple name content
     }
 
     #[tokio::test]
+    async fn test_astronomical_and_location_roundtrip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        let backend = StorageMetadataBackend::new(storage);
+
+        let mut metadata = ImageUserMetadata::new();
+        metadata.title = Some("Andromeda Galaxy".to_string());
+        metadata.description = Some("M31 from my backyard".to_string());
+        metadata.telescope = Some("William Optics RedCat 51".to_string());
+        metadata.mount = Some("Sky-Watcher EQ6-R Pro".to_string());
+        metadata.filters = Some("Optolong L-eXtreme".to_string());
+        metadata.total_exposure_time = Some(4.5);
+        metadata.ra = Some("00h 42m 44s".to_string());
+        metadata.dec = Some("+41° 16' 09\"".to_string());
+        metadata.additional_details = Some("120x120s subs, Bortle 4".to_string());
+        metadata.camera_make = Some("ZWO".to_string());
+        metadata.camera_model = Some("ASI2600MC Pro".to_string());
+        metadata.iso = Some(100);
+        metadata.latitude = Some(45.5231);
+        metadata.longitude = Some(-122.6765);
+
+        backend.save("astro.jpg", &metadata).await.unwrap();
+        backend.clear_cache();
+
+        let loaded = backend.load("astro.jpg").await.unwrap().unwrap();
+        assert_eq!(loaded.title, Some("Andromeda Galaxy".to_string()));
+        assert_eq!(loaded.description, Some("M31 from my backyard".to_string()));
+        assert_eq!(
+            loaded.telescope,
+            Some("William Optics RedCat 51".to_string())
+        );
+        assert_eq!(loaded.mount, Some("Sky-Watcher EQ6-R Pro".to_string()));
+        assert_eq!(loaded.filters, Some("Optolong L-eXtreme".to_string()));
+        assert_eq!(loaded.total_exposure_time, Some(4.5));
+        assert_eq!(loaded.ra, Some("00h 42m 44s".to_string()));
+        assert_eq!(loaded.dec, Some("+41° 16' 09\"".to_string()));
+        assert_eq!(
+            loaded.additional_details,
+            Some("120x120s subs, Bortle 4".to_string())
+        );
+        assert_eq!(loaded.camera_make, Some("ZWO".to_string()));
+        assert_eq!(loaded.camera_model, Some("ASI2600MC Pro".to_string()));
+        assert_eq!(loaded.iso, Some(100));
+        assert_eq!(loaded.latitude, Some(45.5231));
+        assert_eq!(loaded.longitude, Some(-122.6765));
+    }
+
+    #[tokio::test]
+    async fn test_read_existing_md_with_astronomical_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage = create_test_storage(temp_dir.path());
+        let backend = StorageMetadataBackend::new(storage);
+
+        let md_content = r#"+++
+title = "Andromeda Galaxy"
+telescope = "William Optics RedCat 51"
+mount = "Sky-Watcher EQ6-R Pro"
+filters = "Optolong L-eXtreme"
+total_exposure_time = 4.5
+ra = "00h 42m 44s"
+dec = "+41° 16' 09\""
+additional_details = "120x120s subs, Bortle 4"
+camera_make = "ZWO"
+camera_model = "ASI2600MC Pro"
+iso = 100
+latitude = 45.5231
+longitude = -122.6765
++++
+
+This is a beautiful capture of the Andromeda Galaxy (M31).
+"#;
+        std::fs::write(temp_dir.path().join("astro.md"), md_content).unwrap();
+
+        let loaded = backend.load("astro.jpg").await.unwrap().unwrap();
+        assert_eq!(loaded.title, Some("Andromeda Galaxy".to_string()));
+        assert_eq!(
+            loaded.telescope,
+            Some("William Optics RedCat 51".to_string())
+        );
+        assert_eq!(loaded.mount, Some("Sky-Watcher EQ6-R Pro".to_string()));
+        assert_eq!(loaded.filters, Some("Optolong L-eXtreme".to_string()));
+        assert_eq!(loaded.total_exposure_time, Some(4.5));
+        assert_eq!(loaded.ra, Some("00h 42m 44s".to_string()));
+        assert_eq!(loaded.dec, Some("+41° 16' 09\"".to_string()));
+        assert_eq!(
+            loaded.additional_details,
+            Some("120x120s subs, Bortle 4".to_string())
+        );
+        assert_eq!(loaded.camera_make, Some("ZWO".to_string()));
+        assert_eq!(loaded.camera_model, Some("ASI2600MC Pro".to_string()));
+        assert_eq!(loaded.iso, Some(100));
+        assert_eq!(loaded.latitude, Some(45.5231));
+        assert_eq!(loaded.longitude, Some(-122.6765));
+        assert!(
+            loaded
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("beautiful capture")
+        );
+    }
+
+    #[tokio::test]
     async fn test_custom_cache_size() {
         let temp_dir = tempfile::tempdir().unwrap();
         let storage = create_test_storage(temp_dir.path());
