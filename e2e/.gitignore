@@ -1,4 +1,4 @@
-# Generated at test time by global-setup.ts
+# Generated at test time by prepare-fixtures.mjs
 fixtures/photos/**/*.png
 
 # Rewritten by the sort API during the interactive test (generated each run)

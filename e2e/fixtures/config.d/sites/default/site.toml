@@ -7,6 +7,6 @@ static_files = ["static"]
 storage_prefix = "e2e/fixtures"
 cache_prefix = "e2e/.cache"
 
-# Generated fresh each run by global-setup.ts (gitignored under .cache). The
+# Generated fresh each run by prepare-fixtures.mjs (gitignored under .cache). The
 # TOML backend watches the file and reloads on change.
 user_database = "e2e/.cache/users.toml"

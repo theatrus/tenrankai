@@ -21,7 +21,7 @@ the DOM order is no longer the visual order.
   (`/g`) using `image_indexing = "filename"`.
 - `fixtures/photos/<folder>/_folder.md` — committed; sets `grid_mode` and the
   sort config per folder.
-- Image bytes are **generated at test time** by `global-setup.ts` (a
+- Image bytes are **generated at test time** by `prepare-fixtures.mjs` (a
   dependency-free PNG writer), so no binaries are committed and ordering is
   deterministic.
 

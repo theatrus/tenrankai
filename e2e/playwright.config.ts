@@ -12,7 +12,6 @@ const PORT = 4319;
  */
 export default defineConfig({
   testDir: './tests',
-  globalSetup: './global-setup.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -33,9 +32,11 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 
   webServer: {
-    // No AVIF needed for PNG fixtures; --no-default-features keeps the build fast.
+    // Generate fixtures BEFORE the server starts — its folder cache is built at
+    // startup, so fixtures must exist first. No AVIF needed for PNG fixtures;
+    // --no-default-features keeps the build fast.
     command:
-      'cargo run --no-default-features -- serve --config e2e/fixtures/config.toml --log-level warn',
+      'node e2e/prepare-fixtures.mjs && cargo run --no-default-features -- serve --config e2e/fixtures/config.toml --log-level warn',
     cwd: '..',
     port: PORT,
     reuseExistingServer: !process.env.CI,

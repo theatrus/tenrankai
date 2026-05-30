@@ -20,7 +20,7 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
-function crc32(buf: Buffer): number {
+function crc32(buf) {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) {
     c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
@@ -28,7 +28,7 @@ function crc32(buf: Buffer): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function chunk(type: string, data: Buffer): Buffer {
+function chunk(type, data) {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(data.length, 0);
   const typeBuf = Buffer.from(type, 'ascii');
@@ -38,7 +38,7 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 /** Encode a solid-color RGB PNG with no external dependencies. */
-function solidPng(width: number, height: number, rgb: [number, number, number]): Buffer {
+function solidPng(width, height, rgb) {
   const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
   const ihdr = Buffer.alloc(13);
@@ -71,7 +71,7 @@ function solidPng(width: number, height: number, rgb: [number, number, number]):
 
 // Five images shared by every test folder. Distinct colors so failures are
 // visually obvious in traces; filenames chosen so alphabetical order is clear.
-const IMAGES: Array<{ name: string; rgb: [number, number, number] }> = [
+const IMAGES = [
   { name: '01-alpha.png', rgb: [220, 60, 60] },
   { name: '02-bravo.png', rgb: [60, 180, 75] },
   { name: '03-charlie.png', rgb: [60, 100, 220] },
@@ -79,7 +79,7 @@ const IMAGES: Array<{ name: string; rgb: [number, number, number] }> = [
   { name: '05-echo.png', rgb: [150, 70, 200] },
 ];
 
-function writeFolderImages(folder: string) {
+function writeFolderImages(folder) {
   const dir = join(PHOTOS, folder);
   mkdirSync(dir, { recursive: true });
   for (const img of IMAGES) {
@@ -115,7 +115,11 @@ roles = ["owner"]
 # Manage (interactive)
 `;
 
-async function globalSetup() {
+// Generate everything the server reads at startup. This runs from the
+// Playwright `webServer.command` *before* `cargo run`, so the fresh server's
+// folder scan always sees the fixtures (globalSetup runs after the web server
+// starts, which is too late — the folder cache is built at startup).
+function prepareFixtures() {
   // Start from a clean cache so freshly generated fixtures are never served
   // from a stale resize cache, and so the user database (with any passkeys
   // registered by a previous run) starts empty.
@@ -137,4 +141,4 @@ async function globalSetup() {
   );
 }
 
-export default globalSetup;
+prepareFixtures();
