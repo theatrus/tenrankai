@@ -782,6 +782,23 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             }),
         );
 
+        // Same JSON endpoint for the gallery root (the wildcard above does not
+        // match an empty path).
+        router = router.route(
+            &format!("/api/gallery/{}/data", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, query, auth| {
+                    api::gallery_api_handler_for_named_http(
+                        state,
+                        Path((name, String::new())),
+                        query,
+                        auth,
+                    )
+                }
+            }),
+        );
+
         // API route for image detail data (JSON response)
         router = router.route(
             &format!("/api/gallery/{}/image/{{*path}}", name),

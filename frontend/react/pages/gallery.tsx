@@ -124,11 +124,14 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       window.location.reload();
       return;
     }
-    const galleryUrlElement = document.querySelector('[data-gallery-url]');
-    const baseGalleryUrl = galleryUrlElement?.getAttribute('data-gallery-url') || '/gallery';
-    const apiUrl = `/api${baseGalleryUrl}${galleryData.gallery_path ? '/' + galleryData.gallery_path : ''}`;
+    // The gallery data JSON endpoint is keyed by gallery name (not its URL
+    // prefix): /api/gallery/{name}/data[/{path}].
+    const apiUrl = `/api/gallery/${encodeURIComponent(galleryData.gallery_name)}/data${galleryData.gallery_path ? '/' + galleryData.gallery_path : ''}`;
     fetch(apiUrl, { credentials: 'same-origin' })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`Gallery data request failed: ${res.status}`);
+        return res.json();
+      })
       .then((data: GalleryData) => {
         setImages(data.images || []);
         setHiddenImages(data.hidden_images || []);
@@ -138,7 +141,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       .catch(() => {
         window.location.reload();
       });
-  }, [galleryData.gallery_path]);
+  }, [galleryData.gallery_name, galleryData.gallery_path]);
 
   return (
     <GalleryWithFilter

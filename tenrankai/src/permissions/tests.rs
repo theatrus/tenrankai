@@ -790,6 +790,9 @@ mod scenario_tests {
             },
             grid_mode: None,
             max_columns: None,
+            sort_order: None,
+            sort_direction: None,
+            custom_order: Vec::new(),
         };
 
         let folder_resolver = PermissionResolver::new(

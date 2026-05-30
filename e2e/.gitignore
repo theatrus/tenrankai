@@ -1,0 +1,19 @@
+# Generated at test time by global-setup.ts
+fixtures/photos/**/*.png
+
+# Rewritten by the sort API during the interactive test (generated each run)
+fixtures/photos/manage/_folder.md
+
+# Server resize cache for the fixture gallery
+.cache/
+
+# Playwright artifacts
+test-results/
+playwright-report/
+screenshots/
+
+# The repo-root .gitignore ignores config.toml and config.d/ (the real configs).
+# These are committed E2E fixtures, so re-include them.
+!fixtures/config.toml
+!fixtures/config.d/
+!fixtures/config.d/**

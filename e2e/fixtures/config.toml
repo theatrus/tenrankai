@@ -1,0 +1,13 @@
+# Bootstrap config for the Playwright E2E suite.
+# Paths are relative to the repository root (the cwd when Playwright launches
+# `cargo run`).
+
+[server]
+host = "127.0.0.1"
+port = 4319
+
+[app]
+name = "Tenrankai E2E"
+log_level = "warn"
+cookie_secret = "e2e-test-cookie-secret-not-a-real-secret"
+config_storage = "e2e/fixtures/config.d"

@@ -146,6 +146,72 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: cargo test --workspace --verbose --no-default-features
 
+  # End-to-end browser tests (gallery display + image ordering)
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install npm dependencies
+      run: npm ci
+
+    - name: Install admin npm dependencies
+      run: cd admin && npm ci
+
+    - name: Build frontend
+      run: npm run build
+
+    - name: Install Rust (use rust-toolchain.toml)
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v5
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v5
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-e2e-target-${{ hashFiles('**/Cargo.lock') }}
+
+    # E2E uses PNG fixtures only, so build without AVIF/HEIF to skip the heavy
+    # system dependencies and keep the job fast.
+    - name: Build server (no AVIF/HEIF)
+      run: cargo build --no-default-features
+
+    - name: Install Playwright browser
+      run: npx playwright install --with-deps chromium
+
+    - name: Run Playwright E2E tests
+      run: npm run test:e2e
+
+    - name: Upload Playwright artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-artifacts
+        path: |
+          e2e/screenshots/
+          e2e/playwright-report/
+          e2e/test-results/
+        retention-days: 14
+        if-no-files-found: ignore
+
   # Security audit
   security-audit:
     name: Security audit
