@@ -1039,6 +1039,20 @@ Place the following in one of your static directories:
 
 The system will search all configured directories in order to find these files.
 
+## Sitemap
+
+A `sitemap.xml` is generated automatically (per site) at `/sitemap.xml`. It lists
+all publicly visible resources: static pages (`pages/*.html.liquid`), publicly
+viewable gallery folders and image detail pages, and posts. Folders that require
+authentication — and the images inside them — are omitted, and hidden folders are
+never listed.
+
+When a site has more URLs than fit in a single sitemap file (the protocol limit is
+50,000), `/sitemap.xml` becomes a sitemap index that references `/sitemap/<chunk>.xml`
+files. The generated sitemap is cached per site and rebuilt at most every five minutes.
+The default `robots.txt` advertises the sitemap when `base_url` is configured; the
+sitemap endpoint is only served when `base_url` is set, since it requires absolute URLs.
+
 ## Logging
 
 Control logging verbosity with the `RUST_LOG` environment variable or `--log-level` flag:

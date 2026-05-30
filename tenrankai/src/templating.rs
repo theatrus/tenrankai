@@ -10,7 +10,7 @@ use axum::{
 use liquid::Parser;
 use liquid_core::{Filter, FilterReflection, ParseFilter, Runtime, Value, ValueView};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
@@ -240,6 +240,40 @@ impl TemplateEngine {
             }
         }
         false
+    }
+
+    /// List the relative route paths backed by `pages/*.html.liquid` templates,
+    /// excluding the homepage (`index`) and the error page (`404`).
+    ///
+    /// Paths are returned without the `pages/` prefix or `.html.liquid` suffix,
+    /// e.g. `about` or `legal/privacy`. Results are de-duplicated across all
+    /// template storage backends and sorted for deterministic output.
+    pub async fn list_page_routes(&self) -> Vec<String> {
+        let mut seen = HashSet::new();
+        let mut routes = Vec::new();
+        for storage in &self.storages {
+            let entries = match storage.list_recursive("pages").await {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+            for entry in entries {
+                if entry.is_dir {
+                    continue;
+                }
+                let rel = entry.path.replace('\\', "/");
+                let Some(rel) = rel.strip_suffix(".html.liquid") else {
+                    continue;
+                };
+                if rel == "index" || rel == "404" {
+                    continue;
+                }
+                if seen.insert(rel.to_string()) {
+                    routes.push(rel.to_string());
+                }
+            }
+        }
+        routes.sort();
+        routes
     }
 
     pub fn set_static_handler(&mut self, handler: crate::static_files::StaticFileHandler) {
