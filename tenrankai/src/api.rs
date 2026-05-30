@@ -138,6 +138,8 @@ pub struct GalleryApiResponse {
     pub hidden_images: Vec<String>,
     pub grid_mode: String,
     pub max_columns: u8,
+    pub sort_order: String,
+    pub sort_direction: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub share_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -394,6 +396,15 @@ pub async fn gallery_api_handler_for_named(
         .or(gallery.config.max_columns)
         .or(Some(2));
 
+    let sort_order = folder_metadata
+        .as_ref()
+        .and_then(|m| m.config.sort_order)
+        .unwrap_or_default();
+    let sort_direction = folder_metadata
+        .as_ref()
+        .and_then(|m| m.config.sort_direction)
+        .unwrap_or_default();
+
     let shortcode_index = app_state.site.shortcode_index();
     let share_url = {
         let index = shortcode_index.read().await;
@@ -423,6 +434,8 @@ pub async fn gallery_api_handler_for_named(
         hidden_images,
         grid_mode: grid_mode.to_string(),
         max_columns: max_columns.unwrap_or(2),
+        sort_order: sort_order.to_string(),
+        sort_direction: sort_direction.to_string(),
         share_url,
         base_url: app_state.base_url().map(String::from),
     }))
@@ -2080,6 +2093,19 @@ pub async fn update_folder_description_handler(
                     .metadata
                     .as_ref()
                     .and_then(|m| m.config.max_columns),
+                sort_order: cached_entry
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.config.sort_order),
+                sort_direction: cached_entry
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.config.sort_direction),
+                custom_order: cached_entry
+                    .metadata
+                    .as_ref()
+                    .map(|m| m.config.custom_order.clone())
+                    .unwrap_or_default(),
             },
             description_markdown: markdown_content.clone(),
         };

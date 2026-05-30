@@ -4,7 +4,7 @@ import { MasonryGrid } from './MasonryGrid';
 import { FilterBar, FilterType } from './FilterBar';
 import { ManageToolbar } from './ManageToolbar';
 import type { GalleryImage, GridMode } from './MasonryGrid';
-import type { RolePermissions } from '../../types';
+import type { RolePermissions, SortOrder, SortDirection } from '../../types';
 
 interface GalleryWithFilterProps {
   images: GalleryImage[];
@@ -25,6 +25,9 @@ interface GalleryWithFilterProps {
   toolbarMount?: HTMLElement | null;
   gridMode?: GridMode;
   maxColumns?: number;
+  sortOrder?: SortOrder;
+  sortDirection?: SortDirection;
+  onSortChanged?: () => void;
 }
 
 export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
@@ -46,6 +49,9 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   toolbarMount,
   gridMode = 'masonry',
   maxColumns,
+  sortOrder,
+  sortDirection,
+  onSortChanged,
 }) => {
   const getInitialFilter = (): FilterType => {
     if (typeof window !== 'undefined') {
@@ -185,6 +191,10 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
           onMoveSuccess={onMoveSuccess}
           onCopySuccess={onCopySuccess}
           onCancel={onCancelManage}
+          sortOrder={sortOrder}
+          sortDirection={sortDirection}
+          images={images}
+          onSortChanged={onSortChanged}
         />,
         toolbarMount
       )}

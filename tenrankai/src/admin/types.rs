@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::gallery::{SortDirection, SortOrder};
 use crate::permissions::types::RolePermissions;
 
 /// Format bytes as human-readable size (KiB, MiB, GiB, TiB)
@@ -609,6 +610,12 @@ pub struct FolderPermissionsResponse {
     pub grid_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_columns: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_order: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -622,6 +629,12 @@ pub struct UpdateFolderPermissionsRequest {
     pub grid_mode: Option<String>,
     #[serde(default)]
     pub max_columns: Option<u8>,
+    #[serde(default)]
+    pub sort_order: Option<SortOrder>,
+    #[serde(default)]
+    pub sort_direction: Option<SortDirection>,
+    #[serde(default)]
+    pub custom_order: Option<Vec<String>>,
 }
 
 // ============================================================================
@@ -718,6 +731,29 @@ pub struct FolderImageInfo {
 #[derive(Debug, Serialize)]
 pub struct FolderImagesResponse {
     pub images: Vec<FolderImageInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_order: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSortOrderRequest {
+    pub sort_order: SortOrder,
+    #[serde(default)]
+    pub sort_direction: Option<SortDirection>,
+    #[serde(default)]
+    pub custom_order: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateSortOrderResponse {
+    pub success: bool,
+    pub sort_order: String,
+    pub sort_direction: String,
+    pub custom_order: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -602,10 +602,14 @@ permissions = {
 [roles.admin]
 permissions = { owner_access = true }  # Full access
 
-# Assign roles to users
-[user_roles]
-alice = "admin"
-bob = "contributor"
+# Assign roles to users (array of tables: { username, roles = [...] })
+[[user_roles]]
+username = "alice"
+roles = ["admin"]
+
+[[user_roles]]
+username = "bob"
+roles = ["contributor"]
 ```
 
 Permissions can also be managed via the admin API at `/_admin/api/sites/{site}/permissions`.

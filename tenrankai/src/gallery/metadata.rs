@@ -537,15 +537,19 @@ impl Gallery {
             .collect();
         drop(indexer);
 
-        // Get existing folder metadata (from _folder.md) or use defaults
-        let (metadata, metadata_last_modified) =
-            if let Some(existing) = self.folder_cache.get(folder_path).await {
-                (existing.metadata, existing.metadata_last_modified)
-            } else {
-                // Try to read _folder.md for new folders
-                let folder_meta = self.read_folder_metadata_from_storage(folder_path).await;
-                (folder_meta, None)
-            };
+        // Always re-read _folder.md from storage so changes (sort order, grid
+        // mode, permissions, description) are picked up — a refresh that kept the
+        // cached copy would silently ignore edits made via the admin API. Fall
+        // back to any cached metadata only if the file can't be read right now.
+        let metadata = match self.read_folder_metadata_from_storage(folder_path).await {
+            Some(meta) => Some(meta),
+            None => self
+                .folder_cache
+                .get(folder_path)
+                .await
+                .and_then(|existing| existing.metadata),
+        };
+        let metadata_last_modified = None;
 
         // Calculate direct counts and sizes for this folder
         let direct_count = classified.images.len();

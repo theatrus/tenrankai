@@ -1,0 +1,12 @@
+hostnames = ["*"]
+base_url = "http://localhost:4319"
+templates = ["templates"]
+static_files = ["static"]
+
+# Relative to the repository root (cwd when the server starts under Playwright).
+storage_prefix = "e2e/fixtures"
+cache_prefix = "e2e/.cache"
+
+# Generated fresh each run by prepare-fixtures.mjs (gitignored under .cache). The
+# TOML backend watches the file and reloads on change.
+user_database = "e2e/.cache/users.toml"

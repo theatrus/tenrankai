@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { galleryManageApi, FolderInfo } from '../../api/gallery-manage';
+import { SortOrderControl } from './SortOrderControl';
+import type { SortOrder, SortDirection } from '../../types';
 
 function formatFolderHierarchy(folders: FolderInfo[], excludePath?: string): { path: string; label: string; imageCount: number }[] {
   const filtered = folders.filter((f) => f.path !== excludePath);
@@ -32,6 +34,10 @@ interface ManageToolbarProps {
   onMoveSuccess: (movedCount: number) => void;
   onCopySuccess: (copiedCount: number) => void;
   onCancel: () => void;
+  sortOrder?: SortOrder;
+  sortDirection?: SortDirection;
+  images?: { path: string; name: string; thumbnail_url?: string }[];
+  onSortChanged?: () => void;
 }
 
 export const ManageToolbar: React.FC<ManageToolbarProps> = ({
@@ -43,6 +49,10 @@ export const ManageToolbar: React.FC<ManageToolbarProps> = ({
   onMoveSuccess,
   onCopySuccess,
   onCancel,
+  sortOrder,
+  sortDirection,
+  images: imagesList,
+  onSortChanged,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isHiding, setIsHiding] = useState(false);
@@ -152,6 +162,16 @@ export const ManageToolbar: React.FC<ManageToolbarProps> = ({
 
   return (
     <>
+      {sortOrder && sortDirection && imagesList && onSortChanged && (
+        <SortOrderControl
+          galleryName={galleryName}
+          folderPath={galleryPath}
+          currentSortOrder={sortOrder}
+          currentSortDirection={sortDirection}
+          images={imagesList}
+          onSortChanged={onSortChanged}
+        />
+      )}
       <div className="manage-toolbar">
         <span className="manage-count">{count} selected</span>
         <button

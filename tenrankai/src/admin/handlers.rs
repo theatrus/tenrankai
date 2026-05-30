@@ -10,6 +10,7 @@ use super::extractors::RequireAdmin;
 use super::types::*;
 use crate::cache::queue::{CacheCleanupRequest, CacheGenerationRequest};
 use crate::gallery::path_utils::{self, SidecarPaths};
+use crate::gallery::{SortDirection, SortOrder};
 use crate::permissions::types::RolePermissions;
 use crate::site::ResolvedState;
 use crate::storage::DynStorage;
@@ -1916,7 +1917,17 @@ pub async fn get_folder_permissions(
     // read_folder_metadata_full returns Option<FolderMetadata>
     let metadata = gallery_obj.read_folder_metadata_full(&folder_path).await;
 
-    let (hidden, hidden_images, permissions, description, grid_mode, max_columns) = match metadata {
+    let (
+        hidden,
+        hidden_images,
+        permissions,
+        description,
+        grid_mode,
+        max_columns,
+        sort_order,
+        sort_direction,
+        custom_order,
+    ) = match metadata {
         Some(meta) => {
             let perms = &meta.config.permissions;
             (
@@ -1953,6 +1964,9 @@ pub async fn get_folder_permissions(
                 meta.description_markdown,
                 meta.config.grid_mode,
                 meta.config.max_columns,
+                meta.config.sort_order.map(|s| s.to_string()),
+                meta.config.sort_direction.map(|s| s.to_string()),
+                meta.config.custom_order,
             )
         }
         None => {
@@ -1976,6 +1990,9 @@ pub async fn get_folder_permissions(
                 String::new(),
                 None,
                 None,
+                None,
+                None,
+                vec![],
             )
         }
     };
@@ -1987,6 +2004,9 @@ pub async fn get_folder_permissions(
         description,
         grid_mode,
         max_columns,
+        sort_order,
+        sort_direction,
+        custom_order,
     }))
 }
 
@@ -2182,6 +2202,38 @@ pub async fn update_folder_permissions(
         toml_content["max_columns"] = toml_edit::value(i64::from(mc));
     }
 
+    if let Some(ref so) = request.sort_order
+        && *so != SortOrder::CaptureTime
+    {
+        toml_content["sort_order"] = toml_edit::value(so.to_string());
+    }
+    if let Some(ref sd) = request.sort_direction
+        && *sd != SortDirection::Asc
+    {
+        toml_content["sort_direction"] = toml_edit::value(sd.to_string());
+    }
+    if let Some(ref co) = request.custom_order {
+        for entry in co {
+            if entry.is_empty()
+                || entry.contains('/')
+                || entry.contains('\\')
+                || entry.contains("..")
+            {
+                return Err(AdminError::BadRequest(format!(
+                    "Invalid custom_order entry: {}",
+                    entry
+                )));
+            }
+        }
+        if !co.is_empty() {
+            let custom_array: toml_edit::Array = co
+                .iter()
+                .map(|img| toml_edit::Value::from(img.clone()))
+                .collect();
+            toml_content["custom_order"] = toml_edit::value(custom_array);
+        }
+    }
+
     // Build the full _folder.md content
     let toml_str = toml_content.to_string();
     let content = if toml_str.trim().is_empty() && request.description.is_empty() {
@@ -2218,6 +2270,9 @@ pub async fn update_folder_permissions(
         description: request.description,
         grid_mode: request.grid_mode,
         max_columns: request.max_columns,
+        sort_order: request.sort_order.map(|s| s.to_string()),
+        sort_direction: request.sort_direction.map(|s| s.to_string()),
+        custom_order: request.custom_order.unwrap_or_default(),
     }))
 }
 
@@ -2297,7 +2352,163 @@ pub async fn list_folder_images(
         })
         .collect();
 
-    Ok(Json(FolderImagesResponse { images }))
+    let (sort_order, sort_direction, custom_order) = cached
+        .metadata
+        .as_ref()
+        .map(|m| {
+            (
+                m.config.sort_order.map(|s| s.to_string()),
+                m.config.sort_direction.map(|s| s.to_string()),
+                m.config.custom_order.clone(),
+            )
+        })
+        .unwrap_or((None, None, vec![]));
+
+    Ok(Json(FolderImagesResponse {
+        images,
+        sort_order,
+        sort_direction,
+        custom_order,
+    }))
+}
+
+pub async fn update_sort_order(
+    ResolvedState(app_state): ResolvedState,
+    _admin: RequireAdmin,
+    Path((gallery, folder_path)): Path<(String, String)>,
+    Json(request): Json<UpdateSortOrderRequest>,
+) -> Result<Json<UpdateSortOrderResponse>, AdminError> {
+    let gallery_obj = app_state
+        .galleries()
+        .get(&gallery)
+        .ok_or_else(|| AdminError::NotFound(format!("Gallery not found: {}", gallery)))?
+        .clone();
+
+    let folder_path = urlencoding::decode(&folder_path)
+        .map_err(|e| AdminError::BadRequest(format!("Invalid folder path encoding: {}", e)))?
+        .to_string();
+
+    let folder_path = if folder_path == "_root" {
+        String::new()
+    } else {
+        folder_path
+    };
+
+    let folder_md_path = if folder_path.is_empty() {
+        "_folder.md".to_string()
+    } else {
+        format!("{}/_folder.md", folder_path)
+    };
+
+    let existing_content = gallery_obj
+        .source_storage()
+        .read_to_string(&folder_md_path)
+        .await
+        .ok();
+
+    let (mut toml_doc, markdown_content) = if let Some(ref content) = existing_content
+        && content.trim_start().starts_with("+++")
+    {
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
+        if parts.len() >= 3 {
+            let doc = parts[1]
+                .parse::<toml_edit::DocumentMut>()
+                .unwrap_or_default();
+            let md = parts[2].trim().to_string();
+            (doc, md)
+        } else {
+            (toml_edit::DocumentMut::new(), String::new())
+        }
+    } else {
+        (
+            toml_edit::DocumentMut::new(),
+            existing_content.unwrap_or_default(),
+        )
+    };
+
+    // Validate custom_order filenames
+    if let Some(ref custom_order) = request.custom_order {
+        for entry in custom_order {
+            if entry.is_empty()
+                || entry.contains('/')
+                || entry.contains('\\')
+                || entry.contains("..")
+            {
+                return Err(AdminError::BadRequest(format!(
+                    "Invalid custom_order entry: {}",
+                    entry
+                )));
+            }
+        }
+    }
+
+    if request.sort_order == SortOrder::CaptureTime {
+        toml_doc.remove("sort_order");
+    } else {
+        toml_doc["sort_order"] = toml_edit::value(request.sort_order.to_string());
+    }
+
+    let sort_direction = request.sort_direction.unwrap_or_default();
+    if sort_direction == SortDirection::Asc {
+        toml_doc.remove("sort_direction");
+    } else {
+        toml_doc["sort_direction"] = toml_edit::value(sort_direction.to_string());
+    }
+
+    let custom_order = request.custom_order.clone().unwrap_or_default();
+    if custom_order.is_empty() {
+        toml_doc.remove("custom_order");
+    } else {
+        let custom_array: toml_edit::Array = custom_order
+            .iter()
+            .map(|img| toml_edit::Value::from(img.clone()))
+            .collect();
+        toml_doc["custom_order"] = toml_edit::value(custom_array);
+    }
+
+    let toml_str = toml_doc.to_string();
+    let content = if toml_str.trim().is_empty() && markdown_content.is_empty() {
+        String::new()
+    } else if toml_str.trim().is_empty() {
+        markdown_content
+    } else if markdown_content.is_empty() {
+        format!("+++\n{}+++\n", toml_str)
+    } else {
+        format!("+++\n{}+++\n{}", toml_str, markdown_content)
+    };
+
+    gallery_obj
+        .source_storage()
+        .write(&folder_md_path, bytes::Bytes::from(content))
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to write _folder.md: {}", e)))?;
+
+    gallery_obj
+        .refresh_single_folder_cache(&folder_path)
+        .await
+        .map_err(|e| AdminError::Internal(format!("Failed to refresh folder cache: {}", e)))?;
+
+    Ok(Json(UpdateSortOrderResponse {
+        success: true,
+        sort_order: request.sort_order.to_string(),
+        sort_direction: sort_direction.to_string(),
+        custom_order,
+    }))
+}
+
+pub async fn update_sort_order_resolved(
+    ResolvedState(app_state): ResolvedState,
+    admin: RequireAdmin,
+    Path((gallery, folder_path)): Path<(String, String)>,
+    Json(request): Json<UpdateSortOrderRequest>,
+) -> Result<Json<UpdateSortOrderResponse>, AdminError> {
+    update_sort_order(
+        ResolvedState(app_state),
+        admin,
+        Path((gallery, folder_path)),
+        Json(request),
+    )
+    .await
 }
 
 /// Share a folder with a user by email
@@ -2456,6 +2667,9 @@ pub async fn share_folder(
         description,
         existing_grid_mode,
         existing_max_columns,
+        existing_sort_order,
+        existing_sort_direction,
+        existing_custom_order,
     ) = match current_metadata {
         Some(meta) => {
             let perms = &meta.config.permissions;
@@ -2493,6 +2707,9 @@ pub async fn share_folder(
                 meta.description_markdown,
                 meta.config.grid_mode,
                 meta.config.max_columns,
+                meta.config.sort_order,
+                meta.config.sort_direction,
+                meta.config.custom_order,
             )
         }
         None => (
@@ -2508,6 +2725,9 @@ pub async fn share_folder(
             String::new(),
             None,
             None,
+            None,
+            None,
+            vec![],
         ),
     };
 
@@ -2537,6 +2757,13 @@ pub async fn share_folder(
         description,
         grid_mode: existing_grid_mode,
         max_columns: existing_max_columns,
+        sort_order: existing_sort_order,
+        sort_direction: existing_sort_direction,
+        custom_order: if existing_custom_order.is_empty() {
+            None
+        } else {
+            Some(existing_custom_order)
+        },
     };
 
     // Build the _folder.md content (reuse logic from update_folder_permissions)
@@ -2665,6 +2892,26 @@ pub async fn share_folder(
 
     if !permissions_table.is_empty() {
         toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
+    }
+
+    if let Some(ref so) = update_request.sort_order
+        && *so != SortOrder::CaptureTime
+    {
+        toml_content["sort_order"] = toml_edit::value(so.to_string());
+    }
+    if let Some(ref sd) = update_request.sort_direction
+        && *sd != SortDirection::Asc
+    {
+        toml_content["sort_direction"] = toml_edit::value(sd.to_string());
+    }
+    if let Some(ref co) = update_request.custom_order
+        && !co.is_empty()
+    {
+        let custom_array: toml_edit::Array = co
+            .iter()
+            .map(|img| toml_edit::Value::from(img.clone()))
+            .collect();
+        toml_content["custom_order"] = toml_edit::value(custom_array);
     }
 
     let toml_str = toml_content.to_string();
@@ -2982,59 +3229,73 @@ pub async fn hide_gallery_images(
         hidden_images.retain(|f| !filenames.contains(f));
     }
 
-    let (hidden, permissions, description, existing_grid_mode, existing_max_columns) =
-        match &current_metadata {
-            Some(meta) => {
-                let perms = &meta.config.permissions;
-                (
-                    meta.config.hidden,
-                    PermissionConfigDto {
-                        site_admins: perms.site_admins.clone(),
-                        public_role: perms.public_role.clone(),
-                        default_authenticated_role: perms.default_authenticated_role.clone(),
-                        roles: perms
-                            .roles
-                            .iter()
-                            .map(|(name, role)| {
-                                (
-                                    name.clone(),
-                                    RoleDto {
-                                        name: name.clone(),
-                                        permissions: RolePermissionsDto::from(&role.permissions),
-                                        inherits: role.inherits.clone(),
-                                        is_builtin: false,
-                                    },
-                                )
-                            })
-                            .collect(),
-                        user_roles: perms
-                            .user_roles
-                            .iter()
-                            .map(|user_role| UserRoleAssignment {
-                                username: user_role.username.clone(),
-                                roles: user_role.roles.clone(),
-                            })
-                            .collect(),
-                    },
-                    meta.description_markdown.clone(),
-                    meta.config.grid_mode.clone(),
-                    meta.config.max_columns,
-                )
-            }
-            None => (
-                false,
+    let (
+        hidden,
+        permissions,
+        description,
+        existing_grid_mode,
+        existing_max_columns,
+        existing_sort_order,
+        existing_sort_direction,
+        existing_custom_order,
+    ) = match &current_metadata {
+        Some(meta) => {
+            let perms = &meta.config.permissions;
+            (
+                meta.config.hidden,
                 PermissionConfigDto {
-                    site_admins: Vec::new(),
-                    public_role: None,
-                    default_authenticated_role: None,
-                    roles: std::collections::HashMap::new(),
-                    user_roles: vec![],
+                    site_admins: perms.site_admins.clone(),
+                    public_role: perms.public_role.clone(),
+                    default_authenticated_role: perms.default_authenticated_role.clone(),
+                    roles: perms
+                        .roles
+                        .iter()
+                        .map(|(name, role)| {
+                            (
+                                name.clone(),
+                                RoleDto {
+                                    name: name.clone(),
+                                    permissions: RolePermissionsDto::from(&role.permissions),
+                                    inherits: role.inherits.clone(),
+                                    is_builtin: false,
+                                },
+                            )
+                        })
+                        .collect(),
+                    user_roles: perms
+                        .user_roles
+                        .iter()
+                        .map(|user_role| UserRoleAssignment {
+                            username: user_role.username.clone(),
+                            roles: user_role.roles.clone(),
+                        })
+                        .collect(),
                 },
-                String::new(),
-                None,
-                None,
-            ),
-        };
+                meta.description_markdown.clone(),
+                meta.config.grid_mode.clone(),
+                meta.config.max_columns,
+                meta.config.sort_order,
+                meta.config.sort_direction,
+                meta.config.custom_order.clone(),
+            )
+        }
+        None => (
+            false,
+            PermissionConfigDto {
+                site_admins: Vec::new(),
+                public_role: None,
+                default_authenticated_role: None,
+                roles: std::collections::HashMap::new(),
+                user_roles: vec![],
+            },
+            String::new(),
+            None,
+            None,
+            None,
+            None,
+            vec![],
+        ),
+    };
 
     let update_request = UpdateFolderPermissionsRequest {
         hidden,
@@ -3043,6 +3304,13 @@ pub async fn hide_gallery_images(
         description,
         grid_mode: existing_grid_mode,
         max_columns: existing_max_columns,
+        sort_order: existing_sort_order,
+        sort_direction: existing_sort_direction,
+        custom_order: if existing_custom_order.is_empty() {
+            None
+        } else {
+            Some(existing_custom_order)
+        },
     };
 
     // Build the TOML content
@@ -3115,6 +3383,26 @@ pub async fn hide_gallery_images(
 
     if !permissions_table.is_empty() {
         toml_content["permissions"] = toml_edit::Item::Table(permissions_table);
+    }
+
+    if let Some(ref so) = update_request.sort_order
+        && *so != SortOrder::CaptureTime
+    {
+        toml_content["sort_order"] = toml_edit::value(so.to_string());
+    }
+    if let Some(ref sd) = update_request.sort_direction
+        && *sd != SortDirection::Asc
+    {
+        toml_content["sort_direction"] = toml_edit::value(sd.to_string());
+    }
+    if let Some(ref co) = update_request.custom_order
+        && !co.is_empty()
+    {
+        let custom_array: toml_edit::Array = co
+            .iter()
+            .map(|img| toml_edit::Value::from(img.clone()))
+            .collect();
+        toml_content["custom_order"] = toml_edit::value(custom_array);
     }
 
     // Build the full _folder.md content

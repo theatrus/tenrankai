@@ -209,9 +209,14 @@ export interface GalleryData {
   hidden_images?: string[];
   grid_mode?: string;
   max_columns: number;
+  sort_order?: SortOrder;
+  sort_direction?: SortDirection;
   share_url?: string;
   base_url?: string;
 }
+
+export type SortOrder = 'capture_time' | 'filename' | 'custom';
+export type SortDirection = 'asc' | 'desc';
 
 export interface ApiError {
   message: string;

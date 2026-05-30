@@ -170,6 +170,9 @@ export interface FolderPermissions {
   description: string;
   grid_mode?: string;
   max_columns?: number;
+  sort_order?: string;
+  sort_direction?: string;
+  custom_order?: string[];
 }
 
 export interface UpdateFolderPermissionsRequest {
@@ -178,6 +181,9 @@ export interface UpdateFolderPermissionsRequest {
   description: string;
   grid_mode?: string;
   max_columns?: number;
+  sort_order?: string;
+  sort_direction?: string;
+  custom_order?: string[];
 }
 
 export interface ShareFolderRequest {

@@ -1,0 +1,4 @@
+# Site-level permissions for the E2E fixture site.
+# `e2euser` is a site admin so the admin API (RequireAdmin) accepts its session;
+# folder-level permissions in _folder.md grant owner_access for the manage UI.
+site_admins = ["e2euser"]

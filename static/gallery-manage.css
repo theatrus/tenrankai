@@ -195,3 +195,117 @@
     justify-content: center;
     margin-top: 20px;
 }
+
+/* Sort Order Control */
+.sort-order-control {
+    position: fixed;
+    bottom: 68px;
+    left: 0;
+    right: 0;
+    background: #2a2a2a;
+    color: white;
+    padding: 12px 24px;
+    z-index: 99;
+    box-shadow: 0 -1px 6px rgba(0,0,0,0.2);
+}
+
+.sort-order-selectors {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.sort-order-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.sort-order-select {
+    background: #444;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 14px;
+}
+
+.sort-order-saving {
+    font-size: 13px;
+    color: #aaa;
+    font-style: italic;
+}
+
+.sort-order-custom {
+    margin-top: 12px;
+    border-top: 1px solid #444;
+    padding-top: 12px;
+}
+
+.sort-order-custom-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.sort-order-custom-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.sort-order-drag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.sort-order-drag-item {
+    position: relative;
+    background: #444;
+    border-radius: 4px;
+    padding: 4px;
+    cursor: grab;
+    text-align: center;
+    user-select: none;
+}
+
+.sort-order-drag-item:active {
+    cursor: grabbing;
+    opacity: 0.7;
+}
+
+.sort-order-drag-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    background-size: cover;
+    background-position: center;
+    background-color: #555;
+    border-radius: 2px;
+}
+
+.sort-order-drag-label {
+    display: block;
+    font-size: 11px;
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sort-order-drag-index {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 3px;
+}

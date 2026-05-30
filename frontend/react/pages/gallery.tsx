@@ -6,7 +6,7 @@ import { UploadModal, NewDropdown } from '../components/Upload/index.ts';
 import { ShareButton } from '../components/ShareModal.tsx';
 import { contentEditorApi } from '../api/content-editor.ts';
 import { galleryManageApi } from '../api/gallery-manage.ts';
-import type { GalleryData, GalleryItem } from '../types/index.ts';
+import type { GalleryData, GalleryItem, SortOrder, SortDirection } from '../types/index.ts';
 
 interface GalleryPageProps {
   galleryData: GalleryData;
@@ -29,6 +29,8 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
   const [hiddenImages, setHiddenImages] = useState<string[]>(galleryData.hidden_images || []);
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+  const [sortOrder, setSortOrder] = useState<SortOrder>(galleryData.sort_order || 'capture_time');
+  const [sortDirection, setSortDirection] = useState<SortDirection>(galleryData.sort_direction || 'asc');
 
   const canManageImages = galleryData.permissions?.can_manage_images;
 
@@ -107,7 +109,6 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
   }, [manageButton, selectedImages]);
 
   const handleCopySuccess = useCallback((copiedCount: number) => {
-    // Images stay in current view after copy
     setSelectedImages(new Set());
     setIsManageMode(false);
     if (manageButton) {
@@ -116,6 +117,31 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     }
     alert(`Successfully copied ${copiedCount} image(s)`);
   }, [manageButton]);
+
+  const handleSortChanged = useCallback(() => {
+    const galleryDataElement = document.getElementById('gallery-data');
+    if (!galleryDataElement) {
+      window.location.reload();
+      return;
+    }
+    // The gallery data JSON endpoint is keyed by gallery name (not its URL
+    // prefix): /api/gallery/{name}/data[/{path}].
+    const apiUrl = `/api/gallery/${encodeURIComponent(galleryData.gallery_name)}/data${galleryData.gallery_path ? '/' + galleryData.gallery_path : ''}`;
+    fetch(apiUrl, { credentials: 'same-origin' })
+      .then(res => {
+        if (!res.ok) throw new Error(`Gallery data request failed: ${res.status}`);
+        return res.json();
+      })
+      .then((data: GalleryData) => {
+        setImages(data.images || []);
+        setHiddenImages(data.hidden_images || []);
+        setSortOrder(data.sort_order || 'capture_time');
+        setSortDirection(data.sort_direction || 'asc');
+      })
+      .catch(() => {
+        window.location.reload();
+      });
+  }, [galleryData.gallery_name, galleryData.gallery_path]);
 
   return (
     <GalleryWithFilter
@@ -137,6 +163,9 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       toolbarMount={toolbarMount}
       gridMode={galleryData.grid_mode === 'square' ? 'square' : 'masonry'}
       maxColumns={galleryData.max_columns}
+      sortOrder={sortOrder}
+      sortDirection={sortDirection}
+      onSortChanged={handleSortChanged}
     />
   );
 };

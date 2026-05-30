@@ -202,11 +202,17 @@ region = "us-east-1"
 # In _folder.md frontmatter
 +++
 [permissions]
-public_role = "none"  # Require authentication
+public_role = "none"  # Require authentication (no role for anonymous users)
+
+# Roles require an explicit `name` matching the table key.
 [permissions.roles.viewer]
+name = "viewer"
 permissions = { can_view = true }
-[permissions.user_roles]
-alice = "viewer"
+
+# user_roles is an array of tables: { username, roles = [...] }.
+[[permissions.user_roles]]
+username = "alice"
+roles = ["viewer"]
 +++
 ```
 

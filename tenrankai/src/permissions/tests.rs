@@ -388,6 +388,9 @@ mod scenario_tests {
             permissions: Default::default(),
             grid_mode: None,
             max_columns: None,
+            sort_order: None,
+            sort_direction: None,
+            custom_order: vec![],
         };
 
         // Override viewer role for this folder
@@ -577,6 +580,9 @@ mod scenario_tests {
             permissions: Default::default(),
             grid_mode: None,
             max_columns: None,
+            sort_order: None,
+            sort_direction: None,
+            custom_order: vec![],
         };
 
         let mut wedding_roles = HashMap::new();
@@ -635,6 +641,9 @@ mod scenario_tests {
             permissions: Default::default(),
             grid_mode: None,
             max_columns: None,
+            sort_order: None,
+            sort_direction: None,
+            custom_order: vec![],
         };
 
         let mut corp_roles = HashMap::new();
@@ -781,6 +790,9 @@ mod scenario_tests {
             },
             grid_mode: None,
             max_columns: None,
+            sort_order: None,
+            sort_direction: None,
+            custom_order: Vec::new(),
         };
 
         let folder_resolver = PermissionResolver::new(
