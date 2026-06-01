@@ -44,7 +44,7 @@ aws-sdk-s3 = { version = "1", default-features = false, features = ["sigv4a", "h
 aws-sdk-sesv2 = { version = "1", default-features = false, features = ["sigv4a", "default-https-client", "rt-tokio"] }
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "any", "sqlite", "postgres", "uuid", "chrono"] }
 
 # WebAuthn
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
