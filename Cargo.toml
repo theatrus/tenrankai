@@ -76,7 +76,7 @@ rgb = "0.8"
 
 # EXIF and metadata
 rexif = "0.7"
-quick-xml = "0.39"
+quick-xml = "0.40"
 
 # Markdown
 pulldown-cmark = "0.13"
