@@ -1,7 +1,7 @@
 use axum::http::{HeaderValue, StatusCode, header};
 use axum_test::TestServer;
 use base64::{Engine, engine::general_purpose};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use tempfile::TempDir;
 use tenrankai::{

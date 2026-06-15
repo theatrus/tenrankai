@@ -211,7 +211,7 @@ impl Gallery {
         hasher.update(config.padding.to_le_bytes());
         hasher.update([config.adaptive as u8]);
 
-        let hash = format!("{:x}", hasher.finalize());
+        let hash = hex::encode(hasher.finalize());
         Some(hash[..8].to_string())
     }
 

@@ -32,7 +32,7 @@ pub fn generate_tile_cache_filename(
     let mut hasher = Sha256::new();
     hasher.update(path);
     hasher.update(&cache_key);
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hex::encode(hasher.finalize());
 
     // Make the filename somewhat readable
     format!(
@@ -247,7 +247,7 @@ impl Gallery {
         let mut hasher = Sha256::new();
         hasher.update(path);
         hasher.update(size);
-        format!("{:x}", hasher.finalize())
+        hex::encode(hasher.finalize())
     }
 
     /// Generate a cache key for regular images with size, format, and watermark status
@@ -323,7 +323,7 @@ impl Gallery {
             if encoded_path.len() > 40 {
                 let mut hasher = Sha256::new();
                 hasher.update(gallery_path);
-                let hash_suffix = &format!("{:x}", hasher.finalize())[..8];
+                let hash_suffix = &hex::encode(hasher.finalize())[..8];
                 format!("{}_{}", &encoded_path[..32], hash_suffix)
             } else {
                 encoded_path
