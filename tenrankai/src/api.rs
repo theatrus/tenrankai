@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use base64::{Engine, engine::general_purpose};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sha2::Sha256;

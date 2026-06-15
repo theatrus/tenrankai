@@ -140,12 +140,6 @@ pub fn compute_theme_etag(css: &str) -> String {
     format!("\"{}\"", hex::encode(&hash[..8]))
 }
 
-mod hex {
-    pub fn encode(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{:02x}", b)).collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
