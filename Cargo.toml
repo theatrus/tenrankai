@@ -53,7 +53,7 @@ webauthn-rs-proto = "0.5"
 # Web framework
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace"] }
+tower-http = { version = "0.7", features = ["fs", "trace"] }
 httpdate = "1.0"
 
 # Templating
