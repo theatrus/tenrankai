@@ -52,7 +52,7 @@ jobs:
           archive-name: tenrankai-windows-x86_64.zip
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install build dependencies (Ubuntu/Linux)
       if: matrix.os == 'ubuntu-latest'
