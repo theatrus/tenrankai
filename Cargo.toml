@@ -62,7 +62,7 @@ liquid-core = "0.26"
 
 # Image processing
 image = "0.25"
-imageproc = "0.26"
+imageproc = "0.27"
 ab_glyph = "0.2"
 resvg = "0.47"
 usvg = "0.47"
