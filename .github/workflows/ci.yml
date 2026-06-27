@@ -12,6 +12,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Fetch git dependencies (libavif/libavif-sys) with the system git CLI instead
+  # of libgit2. Avoids intermittent macOS "SecureTransport error: connection
+  # closed via error" failures from the libgit2 fetch backend.
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
   test:
