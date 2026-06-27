@@ -30,7 +30,7 @@ jobs:
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo apt-get clean
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install build dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-22.04'
@@ -151,7 +151,7 @@ jobs:
     name: E2E (Playwright)
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Setup Node.js
       uses: actions/setup-node@v6
@@ -217,7 +217,7 @@ jobs:
     name: Security audit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install cargo-audit
       run: cargo install cargo-audit
