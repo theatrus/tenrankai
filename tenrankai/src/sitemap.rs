@@ -396,7 +396,8 @@ async fn collect_gallery_urls(
             }
             let url_id = gallery.build_url_identifier(image_path).await;
             image_urls.push(UrlEntry::new(format!(
-                "{base_url}{url_prefix}/detail/{url_id}"
+                "{base_url}{url_prefix}/detail/{}",
+                encode_path_segments(&url_id)
             )));
         }
     }

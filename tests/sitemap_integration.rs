@@ -52,6 +52,12 @@ async fn setup_test_server() -> (TempDir, TestServer) {
     .unwrap();
     write_image(&secret_dir.join("delta.jpg"));
 
+    // A public subfolder whose name contains a space, to exercise URL encoding
+    // of both folder and image-detail sitemap URLs.
+    let spaced_dir = photos_dir.join("big sur");
+    fs::create_dir_all(&spaced_dir).unwrap();
+    write_image(&spaced_dir.join("epsilon.jpg"));
+
     // A blog post.
     fs::write(
         posts_dir.join("hello-world.md"),
@@ -146,6 +152,31 @@ async fn sitemap_lists_public_resources() {
     // The restricted folder and its images must not be exposed.
     assert!(!xml.contains("/gallery/secret"));
     assert!(!xml.contains("delta.jpg"));
+}
+
+#[tokio::test]
+async fn sitemap_percent_encodes_urls_with_spaces() {
+    let (_temp_dir, server) = setup_test_server().await;
+
+    let response = server.get("/sitemap.xml").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let xml = response.text();
+
+    // Folder URLs are percent-encoded.
+    assert!(
+        xml.contains("<loc>https://example.com/gallery/big%20sur</loc>"),
+        "folder URL with a space should be percent-encoded:\n{xml}"
+    );
+    // Regression: image-detail URLs must be percent-encoded too, matching folders.
+    assert!(
+        xml.contains("https://example.com/gallery/detail/big%20sur/"),
+        "image-detail URL with a space should be percent-encoded:\n{xml}"
+    );
+    // No <loc> may contain a raw space, which is invalid in a sitemap and 404s.
+    assert!(
+        !xml.contains("/gallery/detail/big sur/"),
+        "image-detail URL must not contain a raw space:\n{xml}"
+    );
 }
 
 #[tokio::test]
