@@ -412,10 +412,12 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_permissions_for_path_public() {
         // Create minimal app state for testing
-        let mut gallery_config = crate::GallerySystemConfig::default();
-        gallery_config.name = "test".to_string();
-        gallery_config.source_directory = ".".to_string();
-        gallery_config.cache_directory = ".".to_string();
+        let gallery_config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: ".".to_string(),
+            cache_directory: ".".to_string(),
+            ..Default::default()
+        };
 
         let source_storage = create_test_storage(&gallery_config.source_directory);
         let cache_storage = create_test_storage(&gallery_config.cache_directory);

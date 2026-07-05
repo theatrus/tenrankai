@@ -72,15 +72,16 @@ mod scenario_tests {
             },
         );
 
-        let mut user_roles = Vec::new();
-        user_roles.push(UserRole {
-            username: "alice".to_string(),
-            roles: vec!["client".to_string()],
-        });
-        user_roles.push(UserRole {
-            username: "bob".to_string(),
-            roles: vec!["photographer".to_string()],
-        });
+        let user_roles = vec![
+            UserRole {
+                username: "alice".to_string(),
+                roles: vec!["client".to_string()],
+            },
+            UserRole {
+                username: "bob".to_string(),
+                roles: vec!["photographer".to_string()],
+            },
+        ];
 
         gallery_config.permissions = PermissionConfig {
             site_admins: Vec::new(),
@@ -175,19 +176,20 @@ mod scenario_tests {
             },
         );
 
-        let mut user_roles = Vec::new();
-        user_roles.push(UserRole {
-            username: "mom".to_string(),
-            roles: vec!["family".to_string()],
-        });
-        user_roles.push(UserRole {
-            username: "uncle_joe".to_string(),
-            roles: vec!["extended_family".to_string()],
-        });
-        user_roles.push(UserRole {
-            username: "timmy".to_string(),
-            roles: vec!["kids".to_string()],
-        });
+        let user_roles = vec![
+            UserRole {
+                username: "mom".to_string(),
+                roles: vec!["family".to_string()],
+            },
+            UserRole {
+                username: "uncle_joe".to_string(),
+                roles: vec!["extended_family".to_string()],
+            },
+            UserRole {
+                username: "timmy".to_string(),
+                roles: vec!["kids".to_string()],
+            },
+        ];
 
         gallery_config.permissions = PermissionConfig {
             site_admins: Vec::new(),
@@ -299,19 +301,20 @@ mod scenario_tests {
             },
         );
 
-        let mut user_roles = Vec::new();
-        user_roles.push(UserRole {
-            username: "alice".to_string(),
-            roles: vec!["team_member".to_string()],
-        });
-        user_roles.push(UserRole {
-            username: "bob".to_string(),
-            roles: vec!["team_lead".to_string()],
-        });
-        user_roles.push(UserRole {
-            username: "carol".to_string(),
-            roles: vec!["admin".to_string()],
-        });
+        let user_roles = vec![
+            UserRole {
+                username: "alice".to_string(),
+                roles: vec!["team_member".to_string()],
+            },
+            UserRole {
+                username: "bob".to_string(),
+                roles: vec!["team_lead".to_string()],
+            },
+            UserRole {
+                username: "carol".to_string(),
+                roles: vec!["admin".to_string()],
+            },
+        ];
 
         gallery_config.permissions = PermissionConfig {
             site_admins: Vec::new(),
@@ -429,11 +432,10 @@ mod scenario_tests {
             },
         );
 
-        let mut folder_user_roles = Vec::new();
-        folder_user_roles.push(UserRole {
+        let folder_user_roles = vec![UserRole {
             username: "trusted_friend".to_string(),
             roles: vec!["trusted".to_string()],
-        });
+        }];
 
         folder_config.permissions = PermissionConfig {
             site_admins: Vec::new(),
@@ -524,16 +526,15 @@ mod scenario_tests {
             },
         );
 
-        let mut user_roles = Vec::new();
         // User with multiple roles
-        user_roles.push(UserRole {
+        let user_roles = vec![UserRole {
             username: "power_user".to_string(),
             roles: vec![
                 "contributor".to_string(),
                 "moderator".to_string(),
                 "downloader".to_string(),
             ],
-        });
+        }];
 
         gallery_config.permissions = PermissionConfig {
             site_admins: Vec::new(),
@@ -615,15 +616,16 @@ mod scenario_tests {
             },
         );
 
-        let mut wedding_users = Vec::new();
-        wedding_users.push(UserRole {
-            username: "john_smith".to_string(),
-            roles: vec!["bride_groom".to_string()],
-        });
-        wedding_users.push(UserRole {
-            username: "jane_smith".to_string(),
-            roles: vec!["bride_groom".to_string()],
-        });
+        let wedding_users = vec![
+            UserRole {
+                username: "john_smith".to_string(),
+                roles: vec!["bride_groom".to_string()],
+            },
+            UserRole {
+                username: "jane_smith".to_string(),
+                roles: vec!["bride_groom".to_string()],
+            },
+        ];
         // All wedding guests would be added here
 
         wedding_folder.permissions = PermissionConfig {
@@ -674,11 +676,10 @@ mod scenario_tests {
             },
         );
 
-        let mut corp_users = Vec::new();
-        corp_users.push(UserRole {
+        let corp_users = vec![UserRole {
             username: "pr_manager".to_string(),
             roles: vec!["corp_pr".to_string()],
-        });
+        }];
 
         corporate_folder.permissions = PermissionConfig {
             site_admins: Vec::new(),

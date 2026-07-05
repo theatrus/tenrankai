@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_group_files_simple() {
-        let entries = vec![
+        let entries = [
             ("photos/IMG_0001.jpg", None, 1000u64),
             ("photos/IMG_0001.dng", None, 5000u64),
         ];
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_group_files_with_versions() {
-        let entries = vec![
+        let entries = [
             ("photos/IMG_0001.jpg", None, 1000u64),
             ("photos/IMG_0001_v1.jpg", None, 1100u64),
             ("photos/IMG_0001_v2.jpg", None, 1200u64),
@@ -400,7 +400,7 @@ mod tests {
         let now = SystemTime::now();
         let older = now - std::time::Duration::from_secs(3600);
 
-        let entries = vec![
+        let entries = [
             ("photos/IMG_0001.jpg", Some(older), 1000u64),
             ("photos/__versions/IMG_0001.jpg", Some(now), 1100u64),
         ];
