@@ -85,6 +85,8 @@ async fn setup_test_server() -> (TempDir, TestServer) {
         config_storage: None,
         site_admins: Vec::new(),
         hosted_mode: false,
+        site_title: None,
+        copyright_holder: None,
     };
 
     let app = create_app(config, None).await;

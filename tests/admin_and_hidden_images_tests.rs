@@ -90,6 +90,8 @@ fn create_admin_test_config(temp_dir: &TempDir, indexing_mode: ImageIndexingMode
         config_storage: None,
         site_admins: Vec::new(),
         hosted_mode: false,
+        site_title: None,
+        copyright_holder: None,
     }
 }
 
@@ -436,22 +438,15 @@ async fn test_image_detail_api_permissions() {
     let permissions = json.get("permissions").unwrap();
 
     // Public viewer role permissions
-    assert_eq!(
-        permissions.get("can_view").unwrap().as_bool().unwrap(),
-        true
-    );
-    assert_eq!(
-        permissions
+    assert!(permissions.get("can_view").unwrap().as_bool().unwrap());
+    assert!(
+        !permissions
             .get("can_see_hidden")
             .unwrap()
             .as_bool()
-            .unwrap(),
-        false
+            .unwrap()
     );
-    assert_eq!(
-        permissions.get("owner_access").unwrap().as_bool().unwrap(),
-        false
-    );
+    assert!(!permissions.get("owner_access").unwrap().as_bool().unwrap());
 }
 
 // ============================================================================
@@ -860,7 +855,7 @@ async fn test_admin_get_role() {
     let json: serde_json::Value = response.json();
     assert_eq!(json.get("name").unwrap().as_str().unwrap(), "viewer");
     assert!(json.get("permissions").is_some());
-    assert_eq!(json.get("is_builtin").unwrap().as_bool().unwrap(), true);
+    assert!(json.get("is_builtin").unwrap().as_bool().unwrap());
 }
 
 #[tokio::test]

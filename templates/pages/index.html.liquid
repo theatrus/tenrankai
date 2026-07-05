@@ -1,36 +1,13 @@
 {% assign page_title = "Home" %}
-{% assign meta_description = "theatr.us - A gallery of photographs and visual stories" %}
+{% assign meta_description = "A photo gallery powered by tenrankai" %}
 {% assign page_css = "home.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <div class="container container-md home-container">
-    <h2>Welcome to theatr.us</h2> <p>Do you like pictures? I do. Here are some
-    of them. </p>
-    
-    <!-- Gallery preview will be available when component data is loaded -->
+    <h2>Welcome to {{ site_title }}</h2>
+    <p>A collection of photographs. Browse the gallery below.</p>
+
     {% include "_gallery_preview.html.liquid" gallery_name: "main", gallery_url: "/gallery" %}
-    
-    <!--
-    <section class="about-section">
-        <h3>About</h3>
-        <p>This gallery showcases a collection of photography work spanning multiple years and subjects. Each image tells a story, captured with attention to composition, lighting, and technical excellence.</p>
-        
-        <div class="feature-grid">
-            <div class="feature">
-                <h4>Professional Quality</h4>
-                <p>High-resolution images with detailed EXIF data and technical information.</p>
-            </div>
-            <div class="feature">
-                <h4>Organized Collections</h4>
-                <p>Carefully curated folders with descriptions and context for each series.</p>
-            </div>
-            <div class="feature">
-                <h4>Technical Excellence</h4>
-                <p>Built with modern web technologies for fast loading and responsive design.</p>
-            </div>
-        </div>
-    </section>
-    -->
 </div>
 
 {% include "_footer.html.liquid" %}

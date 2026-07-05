@@ -153,6 +153,8 @@ This is the content of the second test post."#;
         config_storage: None,
         site_admins: Vec::new(),
         hosted_mode: false,
+        site_title: None,
+        copyright_holder: None,
     };
 
     let app = create_app(config, None).await;

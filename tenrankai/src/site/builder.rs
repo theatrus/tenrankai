@@ -137,6 +137,8 @@ impl SiteBuilder {
         static_handler.refresh_file_versions().await;
         template_engine.set_static_handler(static_handler.clone());
         template_engine.set_has_user_auth(self.config.user_database.is_some());
+        template_engine.set_site_title(self.config.site_title.clone());
+        template_engine.set_copyright_holder(self.config.copyright_holder.clone());
         template_engine.update_file_versions().await;
 
         Ok((template_engine, static_handler))

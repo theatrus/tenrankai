@@ -262,6 +262,16 @@ pub struct StoredSiteConfig {
     /// Theme customization configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme: Option<StoredThemeConfig>,
+
+    /// Display title for the site, used in the page `<title>`, header heading,
+    /// and Open Graph `site_name`. Falls back to the app name when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub site_title: Option<String>,
+
+    /// Copyright holder shown in the site footer.
+    /// Falls back to the site title when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copyright_holder: Option<String>,
 }
 
 /// Per-site email sender configuration

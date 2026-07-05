@@ -124,6 +124,8 @@ fn create_test_config(temp_dir: &TempDir) -> SiteConfig {
         config_storage: None,
         site_admins: Vec::new(),
         hosted_mode: false,
+        site_title: None,
+        copyright_holder: None,
     }
 }
 
@@ -811,10 +813,10 @@ async fn test_gallery_download_with_permission() {
     let mut config = create_test_config(&temp_dir);
 
     // Update the viewer role to include can_download_gallery
-    if let Some(ref mut galleries) = config.galleries {
-        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
-            viewer_role.permissions.can_download_gallery = true;
-        }
+    if let Some(ref mut galleries) = config.galleries
+        && let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer")
+    {
+        viewer_role.permissions.can_download_gallery = true;
     }
 
     // Create test images in main gallery
@@ -893,10 +895,10 @@ async fn test_gallery_download_zip_file_dates() {
     let mut config = create_test_config(&temp_dir);
 
     // Update the viewer role to include can_download_gallery
-    if let Some(ref mut galleries) = config.galleries {
-        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
-            viewer_role.permissions.can_download_gallery = true;
-        }
+    if let Some(ref mut galleries) = config.galleries
+        && let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer")
+    {
+        viewer_role.permissions.can_download_gallery = true;
     }
 
     // Create test images
@@ -950,10 +952,10 @@ async fn test_gallery_download_subfolder() {
     let mut config = create_test_config(&temp_dir);
 
     // Update the viewer role to include can_download_gallery
-    if let Some(ref mut galleries) = config.galleries {
-        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
-            viewer_role.permissions.can_download_gallery = true;
-        }
+    if let Some(ref mut galleries) = config.galleries
+        && let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer")
+    {
+        viewer_role.permissions.can_download_gallery = true;
     }
 
     // Create a subfolder with images
@@ -1002,10 +1004,10 @@ async fn test_gallery_download_empty_folder() {
     let mut config = create_test_config(&temp_dir);
 
     // Update the viewer role to include can_download_gallery
-    if let Some(ref mut galleries) = config.galleries {
-        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
-            viewer_role.permissions.can_download_gallery = true;
-        }
+    if let Some(ref mut galleries) = config.galleries
+        && let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer")
+    {
+        viewer_role.permissions.can_download_gallery = true;
     }
 
     // Create an empty subfolder
@@ -1031,10 +1033,10 @@ async fn test_gallery_download_recursive() {
     let mut config = create_test_config(&temp_dir);
 
     // Update the viewer role to include can_download_gallery
-    if let Some(ref mut galleries) = config.galleries {
-        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
-            viewer_role.permissions.can_download_gallery = true;
-        }
+    if let Some(ref mut galleries) = config.galleries
+        && let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer")
+    {
+        viewer_role.permissions.can_download_gallery = true;
     }
 
     // Create a folder structure with images in subfolders only (not at root)
@@ -1141,6 +1143,8 @@ fn create_test_config_with_raw_permission(temp_dir: &TempDir) -> SiteConfig {
         config_storage: None,
         site_admins: Vec::new(),
         hosted_mode: false,
+        site_title: None,
+        copyright_holder: None,
     }
 }
 
@@ -1358,10 +1362,10 @@ async fn test_image_api_includes_versions() {
     let mut config = create_test_config(&temp_dir);
 
     // Set can_see_versions permission for viewer role
-    if let Some(ref mut galleries) = config.galleries {
-        if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
-            viewer_role.permissions.can_see_versions = true;
-        }
+    if let Some(ref mut galleries) = config.galleries
+        && let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer")
+    {
+        viewer_role.permissions.can_see_versions = true;
     }
 
     let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
@@ -1438,7 +1442,7 @@ async fn run_older_version_navigation_test(indexing_mode: ImageIndexingMode) {
 
     // Set the indexing mode and add can_see_versions permission
     if let Some(ref mut galleries) = config.galleries {
-        galleries[0].image_indexing = indexing_mode.clone();
+        galleries[0].image_indexing = indexing_mode;
         if let Some(ref mut viewer_role) = galleries[0].permissions.roles.get_mut("viewer") {
             viewer_role.permissions.can_see_versions = true;
         }

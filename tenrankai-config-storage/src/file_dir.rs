@@ -609,6 +609,8 @@ mod tests {
             cache_prefix: Some("/var/cache/sites/default".to_string()),
             email: None,
             theme: None,
+            site_title: None,
+            copyright_holder: None,
         };
 
         storage
