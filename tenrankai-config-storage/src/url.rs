@@ -166,7 +166,7 @@ mod tests {
     fn test_parse_relative_path() {
         let url = ConfigStorageUrl::parse("config.d").unwrap();
         assert!(
-            matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("config.d"))
+            matches!(url, ConfigStorageUrl::FileDir { path } if path == std::path::Path::new("config.d"))
         );
     }
 
@@ -174,7 +174,7 @@ mod tests {
     fn test_parse_absolute_path() {
         let url = ConfigStorageUrl::parse("/var/lib/tenrankai/config.d").unwrap();
         assert!(
-            matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("/var/lib/tenrankai/config.d"))
+            matches!(url, ConfigStorageUrl::FileDir { path } if path == std::path::Path::new("/var/lib/tenrankai/config.d"))
         );
     }
 
@@ -182,7 +182,7 @@ mod tests {
     fn test_parse_file_url() {
         let url = ConfigStorageUrl::parse("file:///var/lib/config.d").unwrap();
         assert!(
-            matches!(url, ConfigStorageUrl::FileDir { path } if path == PathBuf::from("/var/lib/config.d"))
+            matches!(url, ConfigStorageUrl::FileDir { path } if path == std::path::Path::new("/var/lib/config.d"))
         );
     }
 

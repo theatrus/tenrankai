@@ -370,7 +370,7 @@ mod tests {
         assert!(folder_id.starts_with("folder/"));
         let id_part = folder_id.strip_prefix("folder/").unwrap();
         assert_eq!(id_part.len(), 6);
-        assert_eq!(indexer.get_path(&folder_id), Some("folder/image.jpg"));
+        assert_eq!(indexer.get_path(folder_id), Some("folder/image.jpg"));
     }
 
     #[test]

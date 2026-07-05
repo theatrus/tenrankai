@@ -3,7 +3,8 @@
 {% if image.user_metadata.ai_alt_text %}
     {% assign meta_description = image.user_metadata.ai_alt_text | strip_html | truncate: 160 %}
 {% else %}
-    {% assign meta_description = image.description | default: "View this image on theatr.us gallery" | strip_html | truncate: 160 %}
+    {% assign default_image_description = "View this image on " | append: site_title | append: " gallery" %}
+        {% assign meta_description = image.description | default: default_image_description | strip_html | truncate: 160 %}
 {% endif %}
 
 {% comment %} Open Graph tags for image {% endcomment %}

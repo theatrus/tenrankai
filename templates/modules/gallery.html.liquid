@@ -3,7 +3,8 @@
 {% else %}
     {% assign page_title = "Gallery" %}
 {% endif %}
-{% assign meta_description = folder_description | default: "Browse the photo gallery on theatr.us" | strip_html | truncate: 160 %}
+{% assign default_gallery_description = "Browse the photo gallery on " | append: site_title %}
+{% assign meta_description = folder_description | default: default_gallery_description | strip_html | truncate: 160 %}
 {% assign page_css = "gallery-filters.css,editor.css,gallery-manage.css,share-modal.css" | split: "," %}
 {% include "_header.html.liquid" %}
 

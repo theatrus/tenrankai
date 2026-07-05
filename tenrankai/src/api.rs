@@ -2440,7 +2440,7 @@ roles = ["viewer"]
         let static_handler = crate::static_files::StaticFileHandler::from_paths(static_paths);
 
         // Convert template directories to storage backends
-        let template_storages: Vec<crate::storage::DynStorage> = vec!["templates"]
+        let template_storages: Vec<crate::storage::DynStorage> = ["templates"]
             .iter()
             .map(|dir| {
                 Arc::new(crate::storage::FilesystemStorage::new(

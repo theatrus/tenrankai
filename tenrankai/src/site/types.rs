@@ -25,6 +25,10 @@ pub struct SiteConfig {
     pub config_storage: Option<String>,
     pub site_admins: Vec<String>,
     pub hosted_mode: bool,
+    /// Display title for the site (page title, header heading, OG site_name).
+    pub site_title: Option<String>,
+    /// Copyright holder shown in the site footer.
+    pub copyright_holder: Option<String>,
 }
 
 /// Resources for a single site - encapsulates all site-specific components

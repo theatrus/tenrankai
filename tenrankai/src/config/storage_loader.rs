@@ -187,6 +187,8 @@ impl ConfigStorageLoader {
             config_storage: None, // Will be set by the startup code
             site_admins,
             hosted_mode: false, // Will be set by the startup code from AppConfig
+            site_title: stored.site_title,
+            copyright_holder: stored.copyright_holder,
         })
     }
 

@@ -197,6 +197,12 @@ pub struct TemplateEngine {
     has_user_auth: bool,
     force_color_scheme: Option<String>,
     google_fonts: Vec<tenrankai_config_storage::GoogleFontConfig>,
+    /// Display title exposed to templates as `site_title`. Falls back to
+    /// "Tenrankai" when unset.
+    site_title: Option<String>,
+    /// Copyright holder exposed to templates as `copyright_holder`. Falls back
+    /// to the resolved site title when unset.
+    copyright_holder: Option<String>,
     file_versions: Arc<RwLock<HashMap<String, u64>>>,
     /// TTL for cached templates. Within this duration, cached templates are
     /// returned without checking file modification time (useful for S3 backends).
@@ -219,6 +225,8 @@ impl TemplateEngine {
             has_user_auth: false,
             force_color_scheme: None,
             google_fonts: Vec::new(),
+            site_title: None,
+            copyright_holder: None,
             file_versions: Arc::new(RwLock::new(HashMap::new())),
             cache_ttl: DEFAULT_TEMPLATE_CACHE_TTL,
         }
@@ -304,6 +312,14 @@ impl TemplateEngine {
 
     pub fn set_google_fonts(&mut self, fonts: Vec<tenrankai_config_storage::GoogleFontConfig>) {
         self.google_fonts = fonts;
+    }
+
+    pub fn set_site_title(&mut self, site_title: Option<String>) {
+        self.site_title = site_title;
+    }
+
+    pub fn set_copyright_holder(&mut self, copyright_holder: Option<String>) {
+        self.copyright_holder = copyright_holder;
     }
 
     fn create_parser_with_filters(
@@ -467,6 +483,25 @@ impl TemplateEngine {
         globals.insert(
             "current_year".into(),
             liquid::model::Value::scalar(current_year as i64),
+        );
+
+        // Add site identity for header/footer branding. `site_title` falls back
+        // to "Tenrankai"; `copyright_holder` falls back to the resolved title.
+        let site_title = self
+            .site_title
+            .clone()
+            .unwrap_or_else(|| "Tenrankai".to_string());
+        let copyright_holder = self
+            .copyright_holder
+            .clone()
+            .unwrap_or_else(|| site_title.clone());
+        globals.insert(
+            "site_title".into(),
+            liquid::model::Value::scalar(site_title),
+        );
+        globals.insert(
+            "copyright_holder".into(),
+            liquid::model::Value::scalar(copyright_holder),
         );
 
         // Add user auth flag
@@ -685,7 +720,7 @@ mod tests {
     #[tokio::test]
     async fn test_template_with_asset_url_filter() {
         // Create a template engine with file versions
-        let storage = Arc::new(FilesystemStorage::new(&PathBuf::from("templates")));
+        let storage = Arc::new(FilesystemStorage::new(PathBuf::from("templates")));
         let mut template_engine = TemplateEngine::new(vec![storage]);
 
         // Set up file versions

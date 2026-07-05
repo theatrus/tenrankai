@@ -1,20 +1,17 @@
 {% assign page_title = "About" %}
-{% assign meta_description = "Learn more about theatr.us and the person behind the photography" %}
+{% assign meta_description = "About this gallery" %}
 {% include "_header.html.liquid" %}
 
 <div class="container">
-    <h2>About theatr.us</h2> 
-    
-    <p>Hi, my name is Yann. I nominally do software and have done that since the
-    late 1990s. I'm really good at embedded systems, Rust, C, C++, distributed
-    systems, infrastructure, and have worked at various places including
-    Twitter, Lyft, and Airbnb. 
+    <h2>About {{ site_title }}</h2>
 
-    <p>I'm an expert in Observability and Reliability systems.
-    <p>And I like doing hardware projects, software projects, fish (reef and fresh water), pictures (of things), and space (and pictures of space). And more importantly, the intersection of all of those.
-    
-    <p>Need to get in contact? Try the Contact tab. 
-    <!-- Example of using the gallery preview component with custom parameters -->
+    <p>Welcome to {{ site_title }}, a photo gallery built with
+    <a href="https://github.com/theatrus/tenrankai">tenrankai</a>.</p>
+
+    <p>Edit this page to introduce yourself and your work.</p>
+
+    <p>Need to get in contact? Try the Contact tab.</p>
+
     <div style="margin-top: 3rem;">
         {% include "_gallery_preview.html.liquid" gallery_name: "main", gallery_url: "/gallery" %}
     </div>
