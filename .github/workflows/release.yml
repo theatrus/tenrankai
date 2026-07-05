@@ -11,6 +11,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  AOM_VERSION: v3.12.1
+  AOM_COMMIT: 10aece4157eb79315da205f39e19bf6ab3ee30d0
   # Fetch git dependencies (libavif/libavif-sys) with the system git CLI instead
   # of libgit2. Avoids intermittent macOS "SecureTransport error: connection
   # closed via error" failures from the libgit2 fetch backend.
@@ -68,6 +70,27 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: |
         brew install nasm meson
+
+    - name: Cache AOM source
+      if: matrix.os != 'windows-latest'
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.tool_cache }}/aom/${{ env.AOM_VERSION }}
+        key: ${{ runner.os }}-aom-source-${{ env.AOM_VERSION }}-${{ env.AOM_COMMIT }}
+
+    - name: Prepare AOM source for libavif
+      if: matrix.os != 'windows-latest'
+      run: |
+        AOM_SOURCE_DIR="${RUNNER_TOOL_CACHE}/aom/${AOM_VERSION}"
+
+        if [ ! -f "${AOM_SOURCE_DIR}/CMakeLists.txt" ]; then
+          rm -rf "${AOM_SOURCE_DIR}"
+          git clone --depth 1 --branch "${AOM_VERSION}" https://aomedia.googlesource.com/aom "${AOM_SOURCE_DIR}"
+        fi
+        test "$(git -C "${AOM_SOURCE_DIR}" rev-parse HEAD)" = "${AOM_COMMIT}"
+
+        echo "AOM_SOURCE_DIR=${AOM_SOURCE_DIR}" >> "${GITHUB_ENV}"
+        echo "CMAKE_TOOLCHAIN_FILE=${GITHUB_WORKSPACE}/.github/cmake/aom-fetchcontent-cache.cmake" >> "${GITHUB_ENV}"
 
     - name: Install build dependencies (Windows - no AVIF)
       if: matrix.os == 'windows-latest'
