@@ -24,7 +24,12 @@ export async function openGallery(page: Page, folder: string) {
   const grid = page.locator('.image-grid.square-grid');
   await expect(grid).toBeVisible();
   await expect(grid.locator('.image-item')).toHaveCount(IMAGE_FILES.length);
-  // Let thumbnail background-images resolve so screenshots show real pixels.
+  await expect(grid.locator('img.gallery-image-container')).toHaveCount(IMAGE_FILES.length);
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll<HTMLImageElement>('.image-grid.square-grid img.gallery-image-container'))
+      .every((img) => img.complete && img.naturalWidth > 0),
+  );
+  // Let thumbnail images resolve so screenshots show real pixels.
   await page.waitForLoadState('networkidle');
 }
 

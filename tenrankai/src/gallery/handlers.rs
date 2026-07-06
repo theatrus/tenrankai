@@ -603,9 +603,17 @@ pub async fn image_handler_for_named(
         "Serving image with resolved_path: {}, size: {:?}",
         resolved_path, query.size
     );
-    gallery
-        .serve_image(&resolved_path, query.size, accept_header, &headers)
-        .await
+    let gallery_key = format!("{}:{}", app_state.site.name, gallery_name);
+    crate::gallery::image_processing::serve_image_with_generation_queue(
+        gallery.clone(),
+        gallery_key,
+        &resolved_path,
+        query.size,
+        accept_header,
+        &headers,
+        app_state.generation_manager(),
+    )
+    .await
 }
 
 /// New image handler that uses path-based URLs instead of query parameters

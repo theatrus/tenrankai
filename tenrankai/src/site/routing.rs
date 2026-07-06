@@ -173,6 +173,9 @@ mod tests {
             email_provider: None,
             openai_client: None,
             cache_queue: None,
+            generation_manager: crate::generation::GenerationManager::new(
+                crate::concurrency::WorkerPolicy::default(),
+            ),
         };
 
         // Create router with middleware
@@ -215,6 +218,9 @@ mod tests {
             email_provider: None,
             openai_client: None,
             cache_queue: None,
+            generation_manager: crate::generation::GenerationManager::new(
+                crate::concurrency::WorkerPolicy::default(),
+            ),
         };
 
         let app = Router::new()
@@ -260,6 +266,9 @@ mod tests {
             email_provider: None,
             openai_client: None,
             cache_queue: None,
+            generation_manager: crate::generation::GenerationManager::new(
+                crate::concurrency::WorkerPolicy::default(),
+            ),
         };
 
         let app = Router::new()
@@ -292,6 +301,9 @@ mod tests {
             email_provider: None,
             openai_client: None,
             cache_queue: None,
+            generation_manager: crate::generation::GenerationManager::new(
+                crate::concurrency::WorkerPolicy::default(),
+            ),
         };
 
         let app = Router::new()

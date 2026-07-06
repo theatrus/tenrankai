@@ -1,19 +1,24 @@
 import { useEffect, useRef } from 'react';
 import { NavigationImage } from '../types/index.ts';
+import { withImageSize, withRetryFragment } from '../utils/imageUrls.ts';
 
-/**
- * Convert a thumbnail URL to a medium URL.
- * URL format: {url_prefix}/_image/{url_id}/thumbnail -> {url_prefix}/_image/{url_id}/medium
- */
-function thumbnailToMediumUrl(thumbnailUrl: string): string {
-  return thumbnailUrl.replace(/\/thumbnail$/, '/medium');
-}
+function preloadImageWithRetry(url: string, attempt = 0) {
+  const img = new Image();
+  img.onerror = () => {
+    if (attempt >= 30) {
+      console.warn('[Preload] Failed to load:', url);
+      return;
+    }
 
-/**
- * Get the @2x version of a medium URL.
- */
-function getMedium2xUrl(mediumUrl: string): string {
-  return mediumUrl.replace(/\/medium$/, '/medium@2x');
+    const delay = Math.min(750 * Math.max(1, attempt + 1), 5000);
+    window.setTimeout(() => {
+      preloadImageWithRetry(url, attempt + 1);
+    }, delay);
+  };
+  img.onload = () => {
+    console.log('[Preload] Loaded:', url);
+  };
+  img.src = withRetryFragment(url, attempt);
 }
 
 /**
@@ -36,22 +41,22 @@ export function useImagePreload(
 
     // Add next image first (more likely to be navigated to)
     if (nextImage?.thumbnail_url) {
-      const mediumUrl = thumbnailToMediumUrl(nextImage.thumbnail_url);
+      const mediumUrl = withImageSize(nextImage.thumbnail_url, 'medium');
       if (!preloadedRef.current.has(mediumUrl)) {
         imagesToPreload.push(mediumUrl);
         if (shouldLoad2x) {
-          imagesToPreload.push(getMedium2xUrl(mediumUrl));
+          imagesToPreload.push(withImageSize(mediumUrl, 'medium@2x'));
         }
       }
     }
 
     // Add previous image
     if (prevImage?.thumbnail_url) {
-      const mediumUrl = thumbnailToMediumUrl(prevImage.thumbnail_url);
+      const mediumUrl = withImageSize(prevImage.thumbnail_url, 'medium');
       if (!preloadedRef.current.has(mediumUrl)) {
         imagesToPreload.push(mediumUrl);
         if (shouldLoad2x) {
-          imagesToPreload.push(getMedium2xUrl(mediumUrl));
+          imagesToPreload.push(withImageSize(mediumUrl, 'medium@2x'));
         }
       }
     }
@@ -60,15 +65,8 @@ export function useImagePreload(
     if (imagesToPreload.length > 0) {
       console.log('[Preload] Loading adjacent images:', imagesToPreload);
 
-      imagesToPreload.forEach(url => {
-        const img = new Image();
-        img.onload = () => {
-          console.log('[Preload] Loaded:', url);
-        };
-        img.onerror = () => {
-          console.warn('[Preload] Failed to load:', url);
-        };
-        img.src = url;
+      imagesToPreload.forEach((url) => {
+        preloadImageWithRetry(url);
         preloadedRef.current.add(url);
       });
     }

@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { RetryableImage } from '../common/RetryableImage.tsx';
+import { imageSrcSet } from '../../utils/imageUrls.ts';
 
 export type GridMode = 'masonry' | 'square';
 
@@ -271,10 +273,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
     const imageUrl = isSquare
       ? (image.thumbnail_url || image.gallery_url || '')
       : (image.gallery_url || image.thumbnail_url || '');
-    const retinaUrl = imageUrl.replace(
-      isSquare ? '?size=thumbnail' : '?size=gallery',
-      isSquare ? '?size=thumbnail@2x' : '?size=gallery@2x',
-    );
+    const retinaSize = isSquare ? 'thumbnail@2x' : 'gallery@2x';
 
     if (isSquare) {
       return (
@@ -297,16 +296,12 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
             onDragStart={(e) => e.preventDefault()}
             onClick={isManageMode ? (e) => e.preventDefault() : undefined}
           >
-            <div
+            <RetryableImage
               className="gallery-image-container"
-              style={{
-                backgroundImage: `image-set(
-                  url("${imageUrl}") 1x,
-                  url("${retinaUrl}") 2x
-                )`,
-              }}
-              role="img"
-              aria-label={image.name}
+              src={imageUrl}
+              srcSet={imageSrcSet(imageUrl, retinaSize)}
+              alt={image.name}
+              draggable={false}
             />
             {renderBadges(image)}
           </a>
@@ -342,24 +337,20 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
           onDragStart={(e) => e.preventDefault()}
           onClick={isManageMode ? (e) => e.preventDefault() : undefined}
         >
-          <div
+          <RetryableImage
             className="gallery-image-container"
+            src={imageUrl}
+            srcSet={imageSrcSet(imageUrl, retinaSize)}
+            alt={image.name}
+            draggable={false}
             style={{
               position: 'absolute',
               top: 0,
               left: 0,
               width: '100%',
               height: '100%',
-              backgroundImage: `image-set(
-                url("${imageUrl}") 1x,
-                url("${retinaUrl}") 2x
-              )`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
+              objectFit: 'cover',
             }}
-            role="img"
-            aria-label={image.name}
           />
           {renderBadges(image)}
         </a>
