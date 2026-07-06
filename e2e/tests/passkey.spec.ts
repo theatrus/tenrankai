@@ -10,6 +10,25 @@ import {
 import { shot } from './helpers';
 
 test.describe('passkey login', () => {
+  test('renders the signed-out and signed-in user menu states', async ({ page, context }) => {
+    await page.goto('/g/display');
+    await page.getByRole('button', { name: 'User menu' }).click();
+    await expect(page.locator('#userMenuDropdown')).toHaveClass(/show/);
+    await expect(page.locator('#userMenuContent')).toContainText('Sign in');
+    await shot(page, 'user-menu-signed-out');
+
+    await bootstrapSession(context);
+    await page.goto('/g/display');
+    await page.getByRole('button', { name: 'User menu' }).click();
+    await expect(page.locator('#userMenuDropdown')).toHaveClass(/show/);
+    await expect(page.locator('#userMenuContent')).toContainText('Signed in as');
+    await expect(page.locator('#userMenuContent')).toContainText(ADMIN_USER);
+    await expect(page.locator('#userMenuContent')).toContainText('Admin');
+    await expect(page.locator('#userMenuContent')).toContainText('Profile');
+    await expect(page.locator('#userMenuContent')).toContainText('Sign out');
+    await shot(page, 'user-menu-signed-in');
+  });
+
   test('register a passkey, then sign in with it through the UI', async ({ page, context }) => {
     await enableVirtualAuthenticator(page);
 

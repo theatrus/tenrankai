@@ -74,21 +74,20 @@ npm run dev
 ### File Watching
 
 The Rust build system automatically detects changes in:
-- `src/frontend/**` (React components)
-- `src/js/**` (Legacy TypeScript)
-- `package.json`, `tsconfig.json`, `vite.config.ts`
+- `frontend/react/**` (Vite frontend)
+- `package.json`, `tsconfig.json`, `vite.config.js`
 
 ### Troubleshooting
 
 #### React Bundle Not Loading
 1. Check if Vite dev server is running on port 5173
-2. Verify proxy settings in vite.config.ts
+2. Verify proxy settings in vite.config.js
 3. Check browser console for loading errors
 
 #### HMR Not Working
 1. Ensure both servers are running
 2. Check that you're accessing via http://localhost:5173
-3. Verify React components are in src/frontend/
+3. Verify frontend code is in frontend/react/
 
 #### Build Errors
 ```bash

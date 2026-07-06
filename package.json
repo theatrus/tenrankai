@@ -3,16 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run build:legacy && vite build && npm run build:admin",
-    "build:prod": "npm run build:legacy && vite build --mode production && npm run build:admin",
-    "build:legacy": "tsc -p tsconfig.legacy.json",
+    "build": "vite build && npm run build:admin",
+    "build:prod": "vite build --mode production && npm run build:admin",
     "build:admin": "cd admin && npm install --silent && npm run build",
-    "watch:legacy": "tsc -p tsconfig.legacy.json --watch",
     "dev": "vite",
     "dev:admin": "cd admin && npm run dev",
     "dev:open": "vite --open",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit && tsc -p tsconfig.legacy.json --noEmit",
+    "type-check": "tsc --noEmit",
     "lint:css": "stylelint \"static/**/*.css\"",
     "lint:css-vars": "node scripts/validate-css-variables.js",
     "lint": "npm run type-check && npm run lint:css && npm run lint:css-vars",
@@ -20,7 +18,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui",
-    "clean": "node -e \"const fs = require('fs'); ['static/dist', 'static/js', 'static/admin', 'node_modules/.vite'].forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));\"",
+    "clean": "node -e \"const fs = require('fs'); ['static/dist', 'static/admin', 'node_modules/.vite'].forEach(dir => fs.rmSync(dir, { recursive: true, force: true }));\"",
     "help": "echo 'Development: npm run dev (+ cargo run in another terminal)'"
   },
   "dependencies": {

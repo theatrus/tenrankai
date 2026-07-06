@@ -1,5 +1,5 @@
 <li class="user-menu">
-    <button class="user-menu-toggle" onclick="toggleUserMenu(event)" aria-label="User menu">
+    <button class="user-menu-toggle" aria-label="User menu">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="8" r="3"/>
             <path d="M12 14c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/>
@@ -11,10 +11,3 @@
         </div>
     </div>
 </li>
-
-<script type="module">
-  import '{{ "js/components/ui/user-menu.js" | asset_url }}';
-  
-  // UserMenu module handles initialization automatically
-  // The global toggleUserMenu function is available from the module
-</script>

@@ -44,7 +44,7 @@
             </div>
             
             <div class="action-buttons">
-                <button id="setupPasskeyBtn" class="btn-primary btn-large">
+                <button id="setupPasskeyBtn" class="btn-primary btn-large" data-redirect-url="{{ redirect_url | default: '/gallery' }}">
                     Set up passkey
                 </button>
                 <a href="{{ redirect_url | default: '/gallery' }}" class="btn-secondary">
@@ -59,50 +59,5 @@
         <div id="successMessage" class="message success" style="display: none;"></div>
     </div>
 </div>
-
-<!-- Load TypeScript modules for passkey enrollment -->
-<script type="module">
-  import { WebAuthnUtils } from '{{ "js/components/auth/webauthn.js" | asset_url }}';
-  import { Toast } from '{{ "js/components/ui/toast.js" | asset_url }}';
-  
-  document.addEventListener('DOMContentLoaded', function() {
-    // Check if WebAuthn is supported
-    if (!WebAuthnUtils.isSupported()) {
-        document.getElementById('setupPasskeyBtn').disabled = true;
-        document.getElementById('setupPasskeyBtn').textContent = 'Passkeys not supported';
-        document.querySelector('.setup-note').textContent = 'Your browser does not support passkeys.';
-    }
-
-    // Handle passkey setup
-    document.getElementById('setupPasskeyBtn').addEventListener('click', async function() {
-        const button = this;
-        const redirectUrl = '{{ redirect_url | default: "/gallery" }}';
-        
-        button.disabled = true;
-        button.textContent = 'Setting up...';
-        
-        try {
-            await WebAuthnUtils.registerPasskey('Passkey');
-            
-            Toast.success('Passkey set up successfully! Redirecting...');
-            
-            // Redirect after a short delay
-            setTimeout(() => {
-                window.location.href = redirectUrl;
-            }, 1500);
-            
-        } catch (error) {
-            if (error.name === 'NotAllowedError') {
-                Toast.error('Passkey setup was cancelled or timed out. Please try again.');
-            } else {
-                Toast.error(error.message || 'Failed to set up passkey. Please try again.');
-            }
-            
-            button.disabled = false;
-            button.textContent = 'Set up passkey';
-        }
-    });
-  });
-</script>
 
 {% include "_footer.html.liquid" %}
