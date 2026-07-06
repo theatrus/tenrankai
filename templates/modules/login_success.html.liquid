@@ -4,7 +4,7 @@
 {% include "_header.html.liquid" %}
 
 <div class="container">
-    <div class="success-container">
+    <div class="success-container" id="login-success-redirect" data-redirect-url="/gallery" data-redirect-delay-ms="3000">
         <h1>Login Successful!</h1>
         <p>You have been successfully logged in.</p>
         <p>You will be redirected to the gallery in a few seconds...</p>
@@ -12,13 +12,5 @@
         <a href="/gallery" class="btn-primary">Go to Gallery</a>
     </div>
 </div>
-
-
-<script>
-// Redirect to gallery after 3 seconds
-setTimeout(function() {
-    window.location.href = '/gallery';
-}, 3000);
-</script>
 
 {% include "_footer.html.liquid" %}

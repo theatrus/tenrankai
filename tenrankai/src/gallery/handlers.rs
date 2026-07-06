@@ -142,9 +142,6 @@ pub async fn gallery_handler_for_named(
     // Check if this is the root path
     let is_root = path.is_empty() || path == "/";
 
-    // Convert images to JSON for client-side rendering (legacy)
-    let images_json = serde_json::to_string(&images).unwrap_or_else(|_| "[]".to_string());
-
     // Combine directories and images for the template's items array
     let mut items = directories.clone();
     items.extend(images.clone());
@@ -186,7 +183,6 @@ pub async fn gallery_handler_for_named(
         "breadcrumbs": breadcrumbs,
         "images": images,
         "items": items,
-        "images_json": images_json,
         "gallery_data_json": gallery_data_json,
         "folder_title": folder_title,
         "folder_description": folder_description,
