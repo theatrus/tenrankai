@@ -18,6 +18,14 @@ RUN apt-get update && apt-get install -y \
     libaom-dev \
     && rm -rf /var/lib/apt/lists/*
 
+ARG AOM_VERSION=v3.12.1
+ARG AOM_COMMIT=10aece4157eb79315da205f39e19bf6ab3ee30d0
+
+# Preload the AOM source tree used by libavif-sys so CMake FetchContent does
+# not fetch the flaky googlesource archive during the Rust build.
+RUN git clone --depth 1 --branch "${AOM_VERSION}" https://aomedia.googlesource.com/aom /opt/aom \
+    && test "$(git -C /opt/aom rev-parse HEAD)" = "${AOM_COMMIT}"
+
 # Build and install libheif from source (need >= 1.21 for libheif-rs)
 # Use limited parallelism to avoid OOM during cross-compilation
 RUN git clone --depth 1 --branch v1.21.1 https://github.com/strukturag/libheif.git /tmp/libheif \
@@ -35,6 +43,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 
 # Set working directory
 WORKDIR /app
+
+COPY .github/cmake/aom-fetchcontent-cache.cmake /opt/aom-fetchcontent-cache.cmake
+ENV AOM_SOURCE_DIR=/opt/aom
+ENV CMAKE_TOOLCHAIN_FILE=/opt/aom-fetchcontent-cache.cmake
 
 # Copy workspace manifests and all crate Cargo.toml files first (for caching)
 COPY Cargo.toml Cargo.lock ./
