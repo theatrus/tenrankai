@@ -59,29 +59,39 @@ class UserMenu {
       const data = await response.json() as VerifyResponse;
 
       if (data.authorized && data.username) {
-        const adminLink = data.is_admin ? '<a href="/_admin">Admin</a>' : '';
-        contentDiv.innerHTML = `
-          <div class="user-info">
-            Signed in as
-            <span class="username">${this.escapeHtml(data.username)}</span>
-          </div>
-          ${adminLink}
-          <a href="/_login/profile">Profile</a>
-          <a href="/_login/logout">Sign out</a>
-        `;
+        contentDiv.replaceChildren(...this.createSignedInMenu(data.username, Boolean(data.is_admin)));
       } else {
-        contentDiv.innerHTML = '<a href="/_login">Sign in</a>';
+        contentDiv.replaceChildren(this.createLink('/_login', 'Sign in'));
       }
     } catch (error) {
       console.error('Error checking auth status:', error);
-      contentDiv.innerHTML = '<a href="/_login">Sign in</a>';
+      contentDiv.replaceChildren(this.createLink('/_login', 'Sign in'));
     }
   }
 
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  private createSignedInMenu(username: string, isAdmin: boolean): HTMLElement[] {
+    const userInfo = document.createElement('div');
+    userInfo.className = 'user-info';
+    userInfo.append('Signed in as');
+
+    const usernameElement = document.createElement('span');
+    usernameElement.className = 'username';
+    usernameElement.textContent = username;
+    userInfo.append(usernameElement);
+
+    return [
+      userInfo,
+      ...(isAdmin ? [this.createLink('/_admin', 'Admin')] : []),
+      this.createLink('/_login/profile', 'Profile'),
+      this.createLink('/_login/logout', 'Sign out'),
+    ];
+  }
+
+  private createLink(href: string, text: string): HTMLAnchorElement {
+    const link = document.createElement('a');
+    link.href = href;
+    link.textContent = text;
+    return link;
   }
 }
 

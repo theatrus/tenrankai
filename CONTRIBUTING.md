@@ -190,10 +190,11 @@ cargo test -- --test-threads=4
 - Maintain responsive design principles
 - Test on mobile and desktop viewports
 
-### JavaScript Guidelines
+### Frontend Guidelines
 
-- Use modern JavaScript (ES6+) features
-- Export utilities via `window` object for template access
+- Keep behavior in the Vite TypeScript/React bundle under `frontend/react`
+- Do not add inline JavaScript behavior to Liquid templates
+- Avoid exporting browser globals for template access
 - Handle errors gracefully with user-friendly messages
 - Follow async/await patterns for API calls
 

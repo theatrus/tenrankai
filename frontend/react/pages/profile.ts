@@ -1,5 +1,5 @@
-import { AuthUtils } from '../auth/auth-utils.ts';
 import { PasskeyManager } from '../auth/webauthn.ts';
+import type { PasskeyInfo } from '../auth/webauthn.ts';
 
 class ProfilePasskeys {
   private passkeyList: HTMLElement | null;
@@ -23,34 +23,58 @@ class ProfilePasskeys {
       const passkeys = await PasskeyManager.loadPasskeys();
 
       if (passkeys.length === 0) {
-        this.passkeyList.innerHTML = '<div class="loading">No passkeys found</div>';
+        this.passkeyList.replaceChildren(this.createMessage('loading', 'No passkeys found'));
         return;
       }
 
-      this.passkeyList.innerHTML = passkeys.map((passkey) => `
-        <div class="passkey-item" data-id="${AuthUtils.escapeHtml(passkey.id)}">
-          <div class="passkey-info">
-            <div class="passkey-name">${AuthUtils.escapeHtml(passkey.name || 'Unnamed Passkey')}</div>
-            <div class="passkey-created">Created: ${PasskeyManager.formatDate(passkey.created_at)}</div>
-          </div>
-          <div class="passkey-actions">
-            <button type="button" class="btn-danger" data-passkey-id="${AuthUtils.escapeHtml(passkey.id)}">Remove</button>
-          </div>
-        </div>
-      `).join('');
-
-      this.passkeyList.querySelectorAll<HTMLElement>('[data-passkey-id]').forEach((button) => {
-        const passkeyId = button.dataset.passkeyId;
-        if (passkeyId) {
-          button.addEventListener('click', () => {
-            void this.removePasskey(passkeyId);
-          });
-        }
-      });
+      this.passkeyList.replaceChildren(...passkeys.map((passkey) => this.createPasskeyItem(passkey)));
     } catch (error) {
       console.error('Error loading passkeys:', error);
-      this.passkeyList.innerHTML = '<div class="error">Failed to load passkeys</div>';
+      this.passkeyList.replaceChildren(this.createMessage('error', 'Failed to load passkeys'));
     }
+  }
+
+  private createPasskeyItem(passkey: PasskeyInfo): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'passkey-item';
+    item.dataset.id = passkey.id;
+
+    const info = document.createElement('div');
+    info.className = 'passkey-info';
+
+    const name = document.createElement('div');
+    name.className = 'passkey-name';
+    name.textContent = passkey.name || 'Unnamed Passkey';
+
+    const created = document.createElement('div');
+    created.className = 'passkey-created';
+    created.textContent = `Created: ${PasskeyManager.formatDate(passkey.created_at)}`;
+
+    info.append(name, created);
+
+    const actions = document.createElement('div');
+    actions.className = 'passkey-actions';
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'btn-danger';
+    removeButton.dataset.passkeyId = passkey.id;
+    removeButton.textContent = 'Remove';
+    removeButton.addEventListener('click', () => {
+      void this.removePasskey(passkey.id);
+    });
+
+    actions.append(removeButton);
+    item.append(info, actions);
+
+    return item;
+  }
+
+  private createMessage(className: string, text: string): HTMLElement {
+    const message = document.createElement('div');
+    message.className = className;
+    message.textContent = text;
+    return message;
   }
 
   private async removePasskey(passkeyId: string): Promise<void> {

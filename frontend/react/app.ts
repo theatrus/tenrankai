@@ -11,6 +11,7 @@ import './pages/gallery.tsx';
 import './pages/image-detail.tsx';
 import './pages/gallery-preview-template.ts';
 import './pages/login.ts';
+import './pages/login-success.ts';
 import './pages/passkey-enrollment.ts';
 import './pages/passkeys.ts';
 import './pages/profile.ts';

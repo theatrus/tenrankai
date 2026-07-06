@@ -30,6 +30,32 @@ interface Breadcrumb {
   is_current: boolean;
 }
 
+function createMountErrorFallback(): HTMLElement {
+  const fallback = document.createElement('div');
+  Object.assign(fallback.style, {
+    padding: '2rem',
+    textAlign: 'center',
+    border: '2px solid #dc3545',
+    background: '#f8d7da',
+    color: '#721c24',
+    borderRadius: '4px',
+  });
+
+  const title = document.createElement('h3');
+  title.textContent = 'React Enhancement Failed';
+
+  const message = document.createElement('p');
+  message.textContent = 'The image detail page could not be loaded properly.';
+
+  const reloadButton = document.createElement('button');
+  reloadButton.type = 'button';
+  reloadButton.textContent = 'Reload Page';
+  reloadButton.addEventListener('click', () => window.location.reload());
+
+  fallback.append(title, message, reloadButton);
+  return fallback;
+}
+
 function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle, imagePath }: {
   breadcrumbs: Breadcrumb[] | any;
   galleryUrl: string;
@@ -414,14 +440,6 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   } catch (error) {
     console.error('Failed to mount React image detail component:', error);
-    
-    // Show fallback message
-    container.innerHTML = `
-      <div style="padding: 2rem; text-align: center; border: 2px solid #dc3545; background: #f8d7da; color: #721c24; border-radius: 4px;">
-        <h3>React Enhancement Failed</h3>
-        <p>The image detail page could not be loaded properly.</p>
-        <button onclick="window.location.reload()">Reload Page</button>
-      </div>
-    `;
+    container.replaceChildren(createMountErrorFallback());
   }
 });

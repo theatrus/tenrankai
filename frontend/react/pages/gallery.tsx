@@ -172,14 +172,11 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
 
 // Mount React masonry gallery on server-rendered page
 document.addEventListener('DOMContentLoaded', () => {
-  // Try to use the full gallery data first (includes metadata)
   const galleryDataElement = document.getElementById('gallery-data');
-  const imagesDataElement = document.getElementById('gallery-images');
 
   let galleryData: GalleryData | null = null;
   let images: GalleryItem[] = [];
 
-  // Try to parse the full gallery data
   if (galleryDataElement) {
     try {
       const jsonText = galleryDataElement.textContent || '{}';
@@ -187,16 +184,6 @@ document.addEventListener('DOMContentLoaded', () => {
       images = galleryData?.images || [];
     } catch (e) {
       console.error('Failed to parse gallery data:', e);
-    }
-  }
-
-  // Fall back to legacy images-only data if needed
-  if (!galleryData && imagesDataElement) {
-    try {
-      const jsonText = imagesDataElement.textContent || '[]';
-      images = JSON.parse(jsonText);
-    } catch (e) {
-      console.error('Failed to parse gallery images data:', e);
     }
   }
 
@@ -532,23 +519,12 @@ function mountFolderDescriptionEditor(galleryData: GalleryData | null) {
 }
 
 /**
- * Mount the "New" dropdown with Upload and New Folder options
- * This replaces the old "+ Folder" button with a dropdown
+ * Mount the "New" dropdown with Upload and New Folder options.
  */
 function mountNewDropdown(galleryData: GalleryData | null) {
-  // Look for either the new mount point or fall back to old button
-  let dropdownMount = document.getElementById('new-dropdown-mount');
-  const legacyButton = document.getElementById('create-folder-btn');
+  const dropdownMount = document.getElementById('new-dropdown-mount');
 
   if (!galleryData) return;
-
-  // If there's no mount point but there's a legacy button, replace it
-  if (!dropdownMount && legacyButton) {
-    dropdownMount = document.createElement('div');
-    dropdownMount.id = 'new-dropdown-mount';
-    dropdownMount.style.display = 'inline-block';
-    legacyButton.parentNode?.replaceChild(dropdownMount, legacyButton);
-  }
 
   if (!dropdownMount) return;
 
