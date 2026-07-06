@@ -29,7 +29,9 @@ users.toml
 LICENSE
 
 # CI/CD
-.github/
+.github/*
+!.github/cmake/
+!.github/cmake/aom-fetchcontent-cache.cmake
 
 # Test files
 tests/
