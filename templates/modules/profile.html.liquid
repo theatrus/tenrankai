@@ -58,16 +58,4 @@
     </div>
 </div>
 
-<!-- Load the new TypeScript module that handles profile functionality -->
-<script type="module">
-  import { LoginPage } from '{{ "js/pages/login-page.js" | asset_url }}';
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    {% if webauthn_available %}
-    // Initialize profile page functionality (handles both passkey list and enrollment button)
-    new LoginPage();
-    {% endif %}
-  });
-</script>
-
 {% include "_footer.html.liquid" %}

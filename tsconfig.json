@@ -29,8 +29,7 @@
     }
   },
   "include": [
-    "frontend/react/**/*",
-    "frontend/legacy/**/*"
+    "frontend/react/**/*"
   ],
   "exclude": [
     "static/**/*",

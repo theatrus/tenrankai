@@ -4,7 +4,7 @@
     - gallery_name: (required) Name of the gallery to fetch preview from
     - gallery_url: (required) URL to the gallery for the "Explore Full Gallery" link
 {% endcomment %}
-<section class="gallery-preview-component" id="gallery-preview-component">
+<section class="gallery-preview-component" id="gallery-preview-component" data-gallery-name="{{ gallery_name }}" data-gallery-url="{{ gallery_url }}">
     <div class="preview-masonry" id="gallery-preview-grid">
         <div class="masonry-column" data-column="0"></div>
         <div class="masonry-column" data-column="1"></div>
@@ -13,21 +13,3 @@
         <a href="{{ gallery_url }}" class="btn-explore">Explore Full Gallery →</a>
     </div>
 </section>
-
-
-<script type="module">
-  import { GalleryPreviewTemplate } from '{{ "js/components/gallery/gallery-preview-template.js" | asset_url }}';
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    const galleryName = '{{ gallery_name }}';
-    if (!galleryName) {
-      console.error('Gallery name is required for gallery preview');
-      return;
-    }
-    
-    new GalleryPreviewTemplate({
-      galleryName: galleryName,
-      galleryUrl: '{{ gallery_url }}'
-    });
-  });
-</script>
