@@ -1059,6 +1059,7 @@ async fn run_server(
     let site_manager = Arc::new(SiteManager::new());
     let generation_manager =
         generation::GenerationManager::new(concurrency::WorkerPolicy::default());
+    generation_manager.install_global();
     generation_manager.start();
 
     for (site_name, mut site_config) in loaded_sites {
@@ -1146,7 +1147,11 @@ async fn run_server(
                     "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
                     gallery_name, site_name, interval_minutes
                 );
-                Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+                Gallery::start_background_cache_refresh(
+                    gallery.clone(),
+                    interval_minutes,
+                    format!("{}:{}", site_name, gallery_name),
+                );
             }
 
             info!(

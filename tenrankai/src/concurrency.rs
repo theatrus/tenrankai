@@ -64,8 +64,28 @@ pub fn plan_workers(
     priority: Priority,
     frame_pixels: Option<usize>,
 ) -> WorkerBudget {
-    let cores = logical_cores();
-    let available_bytes = available_memory_bytes();
+    plan_workers_with_facts(
+        requested,
+        policy,
+        priority,
+        frame_pixels,
+        logical_cores(),
+        available_memory_bytes(),
+    )
+}
+
+/// Like [`plan_workers`] but uses caller-supplied system facts (core count and
+/// available memory) instead of probing them. Callers on hot paths — e.g. queue
+/// admission control that runs under a lock — should snapshot these once and use
+/// this to avoid a `/proc` read or `sysctl` subprocess on every call.
+pub fn plan_workers_with_facts(
+    requested: Option<usize>,
+    policy: &WorkerPolicy,
+    priority: Priority,
+    frame_pixels: Option<usize>,
+    cores: usize,
+    available_bytes: Option<u64>,
+) -> WorkerBudget {
     let (workers, rationale) = compute_worker_count(
         requested,
         cores,

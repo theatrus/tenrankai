@@ -408,13 +408,45 @@ impl Gallery {
         );
         let cache_path = self.cache_path.join(&cache_filename);
 
-        // Check if cache file exists and is newer than original (async)
+        // Fast path for serving: if this specific tile is already cached, return it
+        // without regenerating the rest of the set.
         if self
             .is_cache_valid_by_key(&cache_filename, relative_path)
             .await?
         {
             return Ok(cache_path);
         }
+
+        // Otherwise ensure the whole tile set exists, then return this tile.
+        self.generate_all_tiles(relative_path, tile_size).await?;
+
+        Ok(cache_path)
+    }
+
+    /// Generate the full tile set for an image, filling in any missing tiles.
+    ///
+    /// Unlike [`Self::get_image_tile_with_size`], this never short-circuits on a
+    /// single tile's cache validity, so a partially generated set (e.g. left by an
+    /// interrupted run or a mid-set write failure) is always completed.
+    /// `process_all_tiles_from_storage` skips tiles that already exist, so this is
+    /// cheap when the set is already complete.
+    pub(crate) async fn generate_all_tiles(
+        &self,
+        relative_path: &str,
+        tile_size: u32,
+    ) -> Result<(), GalleryError> {
+        // Check if tiles are configured
+        let _tile_config = self
+            .config
+            .tiles
+            .as_ref()
+            .ok_or(GalleryError::InvalidPath)?;
+
+        // Tiles are always AVIF for best compression and quality
+        #[cfg(feature = "avif")]
+        let output_format = OutputFormat::Avif;
+        #[cfg(not(feature = "avif"))]
+        let output_format = OutputFormat::WebP; // Fallback to WebP if AVIF is disabled
 
         // Use deduplicator to ensure we only generate tiles once per image
         let task_key = format!("tile_generation:{}:{}", relative_path, tile_size);
@@ -468,7 +500,7 @@ impl Gallery {
             handle.wait().await;
         }
 
-        Ok(cache_path)
+        Ok(())
     }
 
     /// Check if cache file is valid (exists and newer than source)
@@ -953,5 +985,84 @@ mod tests {
         let grid_height = resized_height.div_ceil(1024);
         assert_eq!(grid_width, 1);
         assert_eq!(grid_height, 1);
+    }
+
+    #[tokio::test]
+    async fn generate_all_tiles_completes_partial_set() {
+        use crate::config::defaults;
+        use crate::storage::FilesystemStorage;
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("source");
+        let cache_dir = temp_dir.path().join("cache");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        // A source image large enough to span a multi-tile grid (3x2 at tile_size 1024).
+        let img = image::RgbImage::from_fn(2200, 1200, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
+        });
+        image::DynamicImage::ImageRgb8(img)
+            .save(source_dir.join("image.png"))
+            .unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "gallery".to_string(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
+            url_prefix: "/gallery".to_string(),
+            thumbnail: defaults::default_thumbnail_size(),
+            gallery_size: defaults::default_gallery_size(),
+            medium: defaults::default_medium_size(),
+            large: defaults::default_large_size(),
+            tiles: Some(crate::TileConfig { tile_size: 1024 }),
+            ..Default::default()
+        };
+        let source_storage = Arc::new(FilesystemStorage::new(source_dir));
+        let cache_storage = Arc::new(FilesystemStorage::new(cache_dir.clone()));
+        let gallery = Arc::new(crate::gallery::Gallery::new(
+            config,
+            source_storage,
+            cache_storage,
+        ));
+
+        let count_tiles = || {
+            std::fs::read_dir(&cache_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().starts_with("tile_"))
+                .count()
+        };
+
+        // First run generates the full set.
+        gallery.generate_all_tiles("image.png", 1024).await.unwrap();
+        let full = count_tiles();
+        assert!(full > 2, "expected a multi-tile set, got {full}");
+
+        // Simulate an interrupted / partial set by deleting a non-origin tile.
+        // It must not be tile (0,0): the old short-circuit keyed on (0,0)'s
+        // validity, so deleting (0,0) would have been repaired even by the bug.
+        let victim = std::fs::read_dir(&cache_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .map(|n| {
+                        let n = n.to_string_lossy();
+                        n.starts_with("tile_") && !n.starts_with("tile_0_0")
+                    })
+                    .unwrap_or(false)
+            })
+            .expect("multi-tile grid should contain a non-origin tile");
+        std::fs::remove_file(&victim).unwrap();
+        assert_eq!(count_tiles(), full - 1);
+
+        // Re-running must complete the set. The old code short-circuited on tile
+        // (0,0)'s validity and would leave the missing tile ungenerated.
+        gallery.generate_all_tiles("image.png", 1024).await.unwrap();
+        assert_eq!(count_tiles(), full, "partial tile set was not completed");
     }
 }

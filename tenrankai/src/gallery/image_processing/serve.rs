@@ -11,7 +11,7 @@ use axum::{
 };
 use futures::TryStreamExt;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 /// Short cache duration for images (5 minutes)
 /// This allows quick updates while still benefiting from caching
@@ -172,6 +172,17 @@ pub async fn serve_image_with_generation_queue(
                 return ApiResponse::ImageNotFound.into_response();
             }
 
+            if let Some(error) = generation_manager
+                .take_recent_tile_error(&gallery_key, relative_path, tile_size, tile_format)
+                .await
+            {
+                warn!(
+                    "Tile generation failed for {}: {}; not re-enqueuing",
+                    relative_path, error
+                );
+                return ApiResponse::InternalServerError.into_response();
+            }
+
             generation_manager
                 .enqueue_tile_set(
                     gallery_key,
@@ -213,6 +224,25 @@ pub async fn serve_image_with_generation_queue(
 
         if !source_exists_for_generation(&gallery, relative_path).await {
             return ApiResponse::ImageNotFound.into_response();
+        }
+
+        if let Some(error) = generation_manager
+            .take_recent_resized_error(
+                &gallery_key,
+                relative_path,
+                size,
+                output_format,
+                apply_watermark,
+            )
+            .await
+        {
+            warn!(
+                "Resize generation failed for {}: {}; serving original",
+                relative_path, error
+            );
+            return gallery
+                .serve_from_source_storage(relative_path, request_headers)
+                .await;
         }
 
         generation_manager

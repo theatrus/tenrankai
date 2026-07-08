@@ -276,7 +276,7 @@ impl ConfigReloader {
 
         // Initialize galleries for this site
         for (gallery_name, gallery) in site.galleries().iter() {
-            if let Err(e) = Self::initialize_gallery(gallery).await {
+            if let Err(e) = Self::initialize_gallery(site_name, gallery).await {
                 warn!(
                     "Failed to initialize gallery '{}' for site '{}': {}",
                     gallery_name, site_name, e
@@ -291,9 +291,10 @@ impl ConfigReloader {
     }
 
     /// Initialize a gallery (version check, metadata refresh, background tasks)
-    async fn initialize_gallery(gallery: &Arc<Gallery>) -> Result<(), String> {
+    async fn initialize_gallery(site_name: &str, gallery: &Arc<Gallery>) -> Result<(), String> {
         let gallery_config = gallery.get_config();
         let gallery_name = &gallery_config.name;
+        let gallery_key = format!("{}:{}", site_name, gallery_name);
 
         // Initialize gallery and check for version changes
         if let Err(e) = gallery.initialize_and_check_version().await {
@@ -307,16 +308,36 @@ impl ConfigReloader {
         let metadata_empty = gallery.is_metadata_cache_empty().await;
         let pregenerate = gallery_config.pregenerate.is_some();
 
+        // Refresh metadata only; pre-generation is routed through the process-global
+        // queue below rather than the legacy unqueued parallel path.
         if (metadata_empty || pregenerate)
             && let Err(e) = gallery
                 .clone()
-                .refresh_metadata_and_pregenerate_cache(pregenerate)
+                .refresh_metadata_and_pregenerate_cache(false)
                 .await
         {
             return Err(format!(
                 "Failed to refresh metadata for gallery '{}': {}",
                 gallery_name, e
             ));
+        }
+
+        if pregenerate {
+            match crate::generation::global_manager() {
+                Some(manager) => {
+                    let queued = manager
+                        .enqueue_gallery_pregeneration(gallery_key.clone(), gallery.clone())
+                        .await;
+                    info!(
+                        "Queued {} background pre-generation job(s) for gallery '{}'",
+                        queued, gallery_name
+                    );
+                }
+                None => warn!(
+                    "Generation manager not installed; skipping pre-generation for '{}'",
+                    gallery_name
+                ),
+            }
         }
 
         // Start background cache refresh if configured
@@ -327,7 +348,11 @@ impl ConfigReloader {
                 "Starting background cache refresh for gallery '{}' every {} minutes",
                 gallery_name, interval_minutes
             );
-            Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+            Gallery::start_background_cache_refresh(
+                gallery.clone(),
+                interval_minutes,
+                gallery_key.clone(),
+            );
         }
 
         // Start periodic cache save (every 5 minutes)
