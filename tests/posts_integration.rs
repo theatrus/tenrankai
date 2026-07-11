@@ -325,3 +325,81 @@ This is a tutorial in a subdirectory."#;
     assert!(html.contains("Rust Tutorial"));
     assert!(html.contains("This is a tutorial in a subdirectory"));
 }
+
+#[tokio::test]
+async fn test_posts_rss_feed() {
+    let (_temp_dir, server) = setup_test_server_with_posts().await;
+
+    let response = server.get("/blog/feed.xml").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    assert!(
+        response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("application/rss+xml")
+    );
+
+    let xml = response.text();
+    assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+    assert!(xml.contains("<rss version=\"2.0\""));
+    assert!(xml.contains("<title>First Test Post</title>"));
+    assert!(xml.contains("<title>Second Test Post</title>"));
+    assert!(xml.contains("<link>http://localhost:3000/blog/first-post</link>"));
+    assert!(xml.contains("<description>This is the first test post</description>"));
+    assert!(xml.contains("<content:encoded><![CDATA["));
+    // Newest first
+    let first = xml.find("Second Test Post").unwrap();
+    let second = xml.find("First Test Post").unwrap();
+    assert!(first < second);
+}
+
+#[tokio::test]
+async fn test_category_pages_and_feeds() {
+    let (_temp_dir, server) = setup_test_server_with_posts().await;
+
+    // Add a categorized post and refresh
+    let blog_dir = _temp_dir.path().join("posts").join("blog");
+    let post_content = r#"+++
+title = "Rust Deep Dive"
+summary = "A post about Rust"
+date = "2024-03-01"
+categories = ["Rust & Systems"]
++++
+
+Rust content."#;
+    fs::write(blog_dir.join("rust-deep-dive.md"), post_content).unwrap();
+    server.post("/api/posts/blog/refresh").await;
+
+    // Category index page shows only matching posts
+    let response = server.get("/blog/category/rust-systems").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let html = response.text();
+    assert!(html.contains("Rust Deep Dive"));
+    assert!(!html.contains("First Test Post"));
+
+    // Legacy query-parameter URLs redirect permanently to the path form
+    let response = server
+        .get("/blog")
+        .add_query_param("category", "Rust & Systems")
+        .await;
+    assert_eq!(response.status_code(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        response.headers().get("location").unwrap(),
+        "/blog/category/rust-systems"
+    );
+
+    // Per-category feed contains only matching posts
+    let response = server.get("/blog/category/rust-systems/feed.xml").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let xml = response.text();
+    assert!(xml.contains("<title>Rust Deep Dive</title>"));
+    assert!(!xml.contains("First Test Post"));
+    assert!(xml.contains("<category>Rust &amp; Systems</category>"));
+
+    // Unknown category: 404 for both page-with-no-posts feed and index stays 200
+    let response = server.get("/blog/category/nonexistent/feed.xml").await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}

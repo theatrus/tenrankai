@@ -336,6 +336,11 @@ roles = ["owner"]
         assert!(PostsManager::validate_slug("my-post").is_ok());
         assert!(PostsManager::validate_slug("2024/travel/my_post-2").is_ok());
 
+        // "category" is reserved for category index routes
+        assert!(PostsManager::validate_slug("category").is_err());
+        assert!(PostsManager::validate_slug("category/nested").is_err());
+        assert!(PostsManager::validate_slug("categories").is_ok());
+
         assert!(PostsManager::validate_slug("").is_err());
         assert!(PostsManager::validate_slug("/leading").is_err());
         assert!(PostsManager::validate_slug("trailing/").is_err());
@@ -345,6 +350,48 @@ roles = ["owner"]
         assert!(PostsManager::validate_slug("../escape").is_err());
         assert!(PostsManager::validate_slug("has space").is_err());
         assert!(PostsManager::validate_slug("dot.md").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_posts() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        for i in 1..=5 {
+            let categories = if i % 2 == 0 {
+                r#"["Even"]"#
+            } else {
+                r#"["Odd"]"#
+            };
+            let content = format!(
+                r#"+++
+title = "Post {i}"
+summary = "Summary {i}"
+date = "2024-07-0{i}"
+categories = {categories}
++++
+
+Body {i}."#
+            );
+            fs::write(posts_dir.join(format!("post-{i}.md")), content).unwrap();
+        }
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let manager = PostsManager::new(test_config(posts_dir), storage);
+        manager.refresh_posts().await.unwrap();
+
+        // Limited, newest first, with full content
+        let recent = manager.get_recent_posts(3, None, None).await;
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0].title, "Post 5");
+        assert_eq!(recent[2].title, "Post 3");
+        assert!(recent[0].html_content.contains("Body 5."));
+
+        // Category filtering
+        let even = manager.get_recent_posts(10, Some("even"), None).await;
+        assert_eq!(even.len(), 2);
+        assert_eq!(even[0].title, "Post 4");
+        assert_eq!(even[1].title, "Post 2");
     }
 
     #[tokio::test]

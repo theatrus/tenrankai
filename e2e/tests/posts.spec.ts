@@ -32,13 +32,16 @@ test.describe('posts index', () => {
     await page.goto('/blog');
 
     const chips = page.locator('.category-bar .category-chip');
-    await expect(chips).toHaveCount(3); // All, Gear, Travel
+    await expect(chips).toHaveCount(4); // All, Gear, Travel, RSS
     await expect(chips.nth(0)).toHaveText('All');
     await expect(chips.nth(0)).toHaveClass(/active/);
     await expect(chips.nth(1)).toContainText('Gear');
     await expect(chips.nth(1).locator('.category-count')).toHaveText('2');
     await expect(chips.nth(2)).toContainText('Travel');
     await expect(chips.nth(2).locator('.category-count')).toHaveText('2');
+
+    const rss = page.locator('.category-bar .feed-chip');
+    expect(await rss.getAttribute('href')).toBe('/blog/feed.xml');
   });
 
   test('renders hero images from gallery references', async ({ page }) => {
@@ -59,7 +62,7 @@ test.describe('posts index', () => {
     await page.goto('/blog');
     await page.locator('.category-bar .category-chip', { hasText: 'Travel' }).click();
 
-    await expect(page).toHaveURL(/\?category=travel$/);
+    await expect(page).toHaveURL(/\/blog\/category\/travel$/);
     const cards = page.locator('.post-card');
     await expect(cards).toHaveCount(2);
     await expect(cards.nth(0).locator('h2')).toHaveText('Second Trip');
@@ -89,9 +92,37 @@ test.describe('posts index', () => {
     await expect(cards).not.toHaveClass(/featured/);
 
     // Filtered views fit on one page, so no pagination is rendered
-    await page.goto('/blog?category=gear');
+    await page.goto('/blog/category/gear');
     await expect(page.locator('.post-card')).toHaveCount(2);
     await expect(page.locator('.posts-pagination')).toHaveCount(0);
+  });
+
+  test('redirects legacy query-parameter category URLs', async ({ page }) => {
+    await page.goto('/blog?category=gear');
+    await expect(page).toHaveURL(/\/blog\/category\/gear$/);
+    await expect(page.locator('.post-card')).toHaveCount(2);
+  });
+
+  test('serves RSS feeds globally and per category', async ({ page }) => {
+    const feed = await page.request.get('/blog/feed.xml');
+    expect(feed.status()).toBe(200);
+    expect(feed.headers()['content-type']).toContain('application/rss+xml');
+    const xml = await feed.text();
+    expect(xml).toContain('<rss version="2.0"');
+    expect(xml).toContain('<title>Plain Note</title>');
+    expect(xml).toContain('<link>http://localhost:4319/blog/first-trip</link>');
+    // Restricted posts are excluded from anonymous feeds
+    expect(xml).not.toContain('Secret Note');
+
+    const gearFeed = await page.request.get('/blog/category/gear/feed.xml');
+    expect(gearFeed.status()).toBe(200);
+    const gearXml = await gearFeed.text();
+    expect(gearXml).toContain('<title>Camera Bag</title>');
+    expect(gearXml).toContain('<title>Second Trip</title>');
+    expect(gearXml).not.toContain('Plain Note');
+
+    const missing = await page.request.get('/blog/category/nonexistent/feed.xml');
+    expect(missing.status()).toBe(404);
   });
 
   test('shows an empty state for unknown categories', async ({ page }) => {
@@ -112,7 +143,7 @@ test.describe('post detail', () => {
     // Category labels link back to the filtered index
     const label = page.locator('.post-categories .category-label');
     await expect(label).toHaveText('Travel');
-    expect(await label.getAttribute('href')).toBe('/blog?category=travel');
+    expect(await label.getAttribute('href')).toBe('/blog/category/travel');
 
     // Open Graph tags including og:image from the hero
     const ogType = page.locator('meta[property="og:type"]');

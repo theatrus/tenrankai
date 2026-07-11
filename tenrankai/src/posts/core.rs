@@ -373,6 +373,29 @@ impl PostsManager {
             .collect()
     }
 
+    /// The most recent posts visible to the user, with full content — used
+    /// for feed generation
+    pub async fn get_recent_posts(
+        &self,
+        limit: usize,
+        category: Option<&str>,
+        username: Option<&str>,
+    ) -> Vec<Post> {
+        let posts = self.posts.read().await;
+        let slugs = self.sorted_slugs.read().await;
+        let folder_perms = self.folder_permissions.read().await;
+        let mut visibility = HashMap::new();
+
+        slugs
+            .iter()
+            .filter_map(|slug| posts.get(slug))
+            .filter(|post| Self::matches_category(post, category))
+            .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
     fn matches_category(post: &Post, category: Option<&str>) -> bool {
         match category {
             Some(wanted) => post
@@ -514,10 +537,17 @@ impl PostsManager {
     }
 
     /// Validate a slug for a new post: `/`-separated segments of letters,
-    /// digits, hyphens, and underscores, where no segment starts with `_`
+    /// digits, hyphens, and underscores, where no segment starts with `_`.
+    /// The first segment `category` is reserved for category index routes.
     pub fn validate_slug(slug: &str) -> Result<(), PostsError> {
         if slug.is_empty() {
             return Err(PostsError::InvalidSlug("slug cannot be empty".to_string()));
+        }
+
+        if slug == "category" || slug.starts_with("category/") {
+            return Err(PostsError::InvalidSlug(
+                "'category' is reserved for category index URLs".to_string(),
+            ));
         }
 
         for segment in slug.split('/') {

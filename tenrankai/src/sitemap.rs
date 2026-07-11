@@ -419,6 +419,14 @@ async fn collect_posts_urls(
 
     urls.push(UrlEntry::new(format!("{base_url}{}", config.url_prefix)));
 
+    // Publicly visible category index pages
+    for category in manager.get_categories(None).await {
+        urls.push(UrlEntry::new(format!(
+            "{base_url}{}/category/{}",
+            config.url_prefix, category.slug
+        )));
+    }
+
     let total_pages = manager.get_total_pages(None, None).await;
     for page in 0..total_pages {
         for post in manager.get_posts_page(page, None, None).await {
@@ -473,7 +481,7 @@ fn render_sitemap_index(base_url: &str, chunks: &[(String, Vec<UrlEntry>)]) -> S
     out
 }
 
-fn xml_escape(input: &str) -> String {
+pub(crate) fn xml_escape(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for c in input.chars() {
         match c {

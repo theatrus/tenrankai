@@ -318,6 +318,13 @@ impl TemplateEngine {
         self.site_title = site_title;
     }
 
+    /// The display title, with the same "Tenrankai" fallback templates see
+    pub fn site_title(&self) -> String {
+        self.site_title
+            .clone()
+            .unwrap_or_else(|| "Tenrankai".to_string())
+    }
+
     pub fn set_copyright_holder(&mut self, copyright_holder: Option<String>) {
         self.copyright_holder = copyright_holder;
     }

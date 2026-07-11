@@ -58,6 +58,10 @@ test.describe('posts editor (authenticated)', () => {
     await page.goto('/blog/private/secret-note');
     await expect(page.locator('.post-header h1')).toHaveText('Secret Note');
     await expect(page.locator('.post-edit-btn')).toBeVisible();
+
+    // Authenticated feeds include restricted posts
+    const feed = await page.request.get('/blog/feed.xml');
+    expect(await feed.text()).toContain('<title>Secret Note</title>');
   });
 
   test('creates, edits, and deletes a post through the UI', async ({ page }) => {

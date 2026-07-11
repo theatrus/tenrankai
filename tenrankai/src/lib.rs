@@ -991,6 +991,46 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             }),
         );
 
+        // RSS feed for the whole posts system
+        router = router.route(
+            &format!("{}/feed.xml", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, auth| posts::handlers::posts_feed_handler(state, Path(name), auth)
+            }),
+        );
+
+        // Category index and per-category feed ("category" is a reserved slug)
+        router = router.route(
+            &format!("{}/category/{{category}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth, query| {
+                    let category = path.0;
+                    posts::handlers::posts_category_index_handler(
+                        state,
+                        Path((name, category)),
+                        auth,
+                        query,
+                    )
+                }
+            }),
+        );
+        router = router.route(
+            &format!("{}/category/{{category}}/feed.xml", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let category = path.0;
+                    posts::handlers::posts_category_feed_handler(
+                        state,
+                        Path((name, category)),
+                        auth,
+                    )
+                }
+            }),
+        );
+
         // Detail route for individual posts
         router = router.route(
             &format!("{}/{{*slug}}", prefix),
