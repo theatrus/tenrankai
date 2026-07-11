@@ -14,7 +14,7 @@
         {% endif %}
     </header>
 
-    {% if posts.size > 0 or categories.size > 0 %}
+    {% if categories.size > 0 %}
     <nav class="category-bar" aria-label="Post categories">
         <a href="{{ url_prefix }}" class="category-chip{% unless active_category %} active{% endunless %}">All</a>
         {% for category in categories %}
@@ -22,10 +22,6 @@
             {{ category.name }}<span class="category-count">{{ category.count }}</span>
         </a>
         {% endfor %}
-        <a href="{{ rss_feed_url }}" class="category-chip feed-chip" title="RSS feed">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.18 20.82a2.18 2.18 0 1 1-4.36 0 2.18 2.18 0 0 1 4.36 0zM1.82 8.91v3.05c5.65 0 10.22 4.57 10.22 10.22h3.05c0-7.33-5.94-13.27-13.27-13.27zm0-6.09v3.05c9.01 0 16.31 7.3 16.31 16.31h3.05C21.18 11.5 12.5 2.82 1.82 2.82z"/></svg>
-            RSS
-        </a>
     </nav>
     {% endif %}
 
@@ -77,6 +73,13 @@
     {% else %}
         <p class="posts-empty">No posts found{% if active_category %} in {{ active_category }}{% endif %}.</p>
     {% endif %}
+
+    <footer class="posts-feed-footer">
+        <a href="{{ rss_feed_url }}" class="posts-feed-link" title="RSS feed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.18 20.82a2.18 2.18 0 1 1-4.36 0 2.18 2.18 0 0 1 4.36 0zM1.82 8.91v3.05c5.65 0 10.22 4.57 10.22 10.22h3.05c0-7.33-5.94-13.27-13.27-13.27zm0-6.09v3.05c9.01 0 16.31 7.3 16.31 16.31h3.05C21.18 11.5 12.5 2.82 1.82 2.82z"/></svg>
+            Subscribe via RSS{% if active_category %} — {{ active_category }}{% endif %}
+        </a>
+    </footer>
 </div>
 
 {% include "_footer.html.liquid" %}

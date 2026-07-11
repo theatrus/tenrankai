@@ -292,6 +292,11 @@ pub async fn post_detail_handler(
         }
     });
 
+    let article_modified_time = post
+        .last_modified
+        .map(|time| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339());
+    let article_section = post.categories.first().cloned();
+
     let globals = liquid::object!({
         "post": {
             "slug": post.slug,
@@ -322,6 +327,10 @@ pub async fn post_detail_handler(
         "twitter_description": post.summary,
         "twitter_image": og_image,
         "article_published_time": post.date.to_rfc3339(),
+        "article_modified_time": article_modified_time,
+        "article_author": app_state.template_engine().copyright_holder(),
+        "article_section": article_section,
+        "article_tags": post.categories,
         "share_url": full_url,
     });
 
