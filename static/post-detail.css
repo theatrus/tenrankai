@@ -48,6 +48,104 @@
     margin: var(--spacing-md) 0;
 }
 
+.post-header .breadcrumbs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+}
+
+.post-meta {
+    margin: var(--spacing-sm) 0 0 0;
+    color: var(--text-tertiary);
+    font-size: 0.9rem;
+}
+
+.post-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
+}
+
+.post-footer {
+    margin-top: var(--spacing-xxl);
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.post-footer-categories {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.post-footer-label {
+    color: var(--text-tertiary);
+    font-size: 0.85rem;
+    margin-right: var(--spacing-xs);
+}
+
+/* Share bar (React PostShare component) */
+
+.post-share {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.post-share-label {
+    color: var(--text-tertiary);
+    font-size: 0.85rem;
+    margin-right: var(--spacing-xs);
+}
+
+.post-share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.post-share-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+    background-color: var(--bg-hover);
+}
+
+.post-share-btn svg {
+    flex-shrink: 0;
+}
+
+.post-share-mastodon-form {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.post-share-mastodon-form input {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    width: 180px;
+}
+
 @media (max-width: 768px) {
     .post-content {
         font-size: 1rem;

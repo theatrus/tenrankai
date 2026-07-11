@@ -985,7 +985,9 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             prefix,
             axum::routing::get({
                 let name = name.clone();
-                move |state, query| posts::handlers::posts_index_handler(state, Path(name), query)
+                move |state, auth, query| {
+                    posts::handlers::posts_index_handler(state, Path(name), auth, query)
+                }
             }),
         );
 
@@ -994,9 +996,9 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             &format!("{}/{{*slug}}", prefix),
             axum::routing::get({
                 let name = name.clone();
-                move |state, path: Path<String>| {
+                move |state, path: Path<String>, auth| {
                     let slug = path.0;
-                    posts::handlers::post_detail_handler(state, Path((name, slug)))
+                    posts::handlers::post_detail_handler(state, Path((name, slug)), auth)
                 }
             }),
         );
@@ -1007,6 +1009,43 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             axum::routing::post({
                 let name = name.clone();
                 move |state| posts::handlers::refresh_posts_handler(state, Path(name))
+            }),
+        );
+
+        // Post creation (slug is in the request body)
+        router = router.route(
+            &format!("/api/posts/{}/source", name),
+            axum::routing::post({
+                let name = name.clone();
+                move |state, auth, request| {
+                    posts::handlers::create_post_handler(state, Path(name), auth, request)
+                }
+            }),
+        );
+
+        // Post source read/update/delete for the editor
+        router = router.route(
+            &format!("/api/posts/{}/source/{{*slug}}", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let slug = path.0;
+                    posts::handlers::get_post_source_handler(state, Path((name, slug)), auth)
+                }
+            })
+            .put({
+                let name = name.clone();
+                move |state, path: Path<String>, auth, request| {
+                    let slug = path.0;
+                    posts::handlers::update_post_handler(state, Path((name, slug)), auth, request)
+                }
+            })
+            .delete({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let slug = path.0;
+                    posts::handlers::delete_post_handler(state, Path((name, slug)), auth)
+                }
             }),
         );
     }

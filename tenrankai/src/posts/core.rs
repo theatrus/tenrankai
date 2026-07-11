@@ -1,5 +1,6 @@
 use super::{error::PostsError, types::*};
 use crate::gallery::SharedGallery;
+use crate::permissions::{PermissionConfig, PermissionResolver, RolePermissions};
 use crate::storage::DynStorage;
 use chrono::{DateTime, NaiveDate, Utc};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, html};
@@ -14,6 +15,9 @@ pub struct PostsManager {
     storage: DynStorage,
     posts: Arc<RwLock<HashMap<String, Post>>>,
     sorted_slugs: Arc<RwLock<Vec<String>>>,
+    /// Per-directory permission overrides from _folder.md files, keyed by
+    /// directory path relative to the posts root ("" for the root)
+    folder_permissions: Arc<RwLock<HashMap<String, PermissionConfig>>>,
     galleries: Option<Arc<HashMap<String, SharedGallery>>>,
 }
 
@@ -24,6 +28,7 @@ impl PostsManager {
             storage,
             posts: Arc::new(RwLock::new(HashMap::new())),
             sorted_slugs: Arc::new(RwLock::new(Vec::new())),
+            folder_permissions: Arc::new(RwLock::new(HashMap::new())),
             galleries: None,
         }
     }
@@ -40,6 +45,7 @@ impl PostsManager {
         );
 
         let mut new_posts = HashMap::new();
+        let mut new_folder_permissions = HashMap::new();
 
         // List all files recursively from storage
         let entries = self.storage.list_recursive("").await?;
@@ -47,6 +53,30 @@ impl PostsManager {
         // Filter for markdown files and load each post
         for entry in entries {
             if entry.is_dir {
+                continue;
+            }
+
+            let file_name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
+
+            // Files starting with underscore are metadata, not posts
+            if file_name == "_folder.md" {
+                match self.load_folder_permissions(&entry.path).await {
+                    Ok(Some(config)) => {
+                        let dir = entry
+                            .path
+                            .rsplit_once('/')
+                            .map(|(dir, _)| dir.to_string())
+                            .unwrap_or_default();
+                        new_folder_permissions.insert(dir, config);
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        error!("Failed to load folder metadata {}: {}", entry.path, e);
+                    }
+                }
+                continue;
+            }
+            if file_name.starts_with('_') {
                 continue;
             }
 
@@ -75,10 +105,76 @@ impl PostsManager {
 
         let mut posts = self.posts.write().await;
         let mut slugs = self.sorted_slugs.write().await;
+        let mut folder_perms = self.folder_permissions.write().await;
         *posts = new_posts;
         *slugs = sorted_slugs;
+        *folder_perms = new_folder_permissions;
 
         Ok(())
+    }
+
+    /// Parse the [permissions] table from a _folder.md file's TOML frontmatter
+    async fn load_folder_permissions(
+        &self,
+        path: &str,
+    ) -> Result<Option<PermissionConfig>, PostsError> {
+        let content = self.storage.read_to_string(path).await?;
+
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
+        if parts.len() < 3 || !parts[0].trim().is_empty() {
+            return Ok(None);
+        }
+
+        #[derive(Deserialize)]
+        struct FolderFrontMatter {
+            #[serde(default)]
+            permissions: Option<PermissionConfig>,
+        }
+
+        let front_matter: FolderFrontMatter = toml_edit::de::from_str(parts[1])?;
+        Ok(front_matter.permissions)
+    }
+
+    /// Resolve permissions for a path within the posts tree (a post slug or a
+    /// directory). The nearest _folder.md walking up the hierarchy overrides
+    /// the system-level permission config, mirroring the gallery scheme.
+    pub async fn resolve_permissions(&self, path: &str, username: Option<&str>) -> RolePermissions {
+        let folder_perms = self.folder_permissions.read().await;
+        let folder_config = Self::nearest_folder_config(&folder_perms, path);
+
+        let resolver = PermissionResolver::new(&self.config.permissions, folder_config);
+        let mut permissions = resolver
+            .resolve_user_permissions(username)
+            .unwrap_or_default();
+        permissions.apply_owner_override();
+        permissions
+    }
+
+    /// Find the closest _folder.md permission config at or above `path`
+    fn nearest_folder_config<'a>(
+        configs: &'a HashMap<String, PermissionConfig>,
+        path: &str,
+    ) -> Option<&'a PermissionConfig> {
+        // The path may be a post slug; its directory is everything before the
+        // last '/'. Walk from the deepest directory up to the root.
+        let mut dir = match path.rsplit_once('/') {
+            Some((dir, _)) => dir,
+            None => "",
+        };
+        loop {
+            if let Some(config) = configs.get(dir) {
+                return Some(config);
+            }
+            match dir.rsplit_once('/') {
+                Some((parent, _)) => dir = parent,
+                None => {
+                    if dir.is_empty() {
+                        return None;
+                    }
+                    dir = "";
+                }
+            }
+        }
     }
 
     pub fn start_background_refresh(posts_manager: Arc<PostsManager>, interval_minutes: u64) {
@@ -124,7 +220,14 @@ impl PostsManager {
         options.insert(Options::ENABLE_SMART_PUNCTUATION);
 
         let parser = Parser::new_ext(&markdown_content, options);
-        let html_content = self.process_markdown_with_gallery_refs(parser).await;
+        let (html_content, first_image) = self.process_markdown_with_gallery_refs(parser).await;
+
+        let hero_image = match &metadata.hero_image {
+            Some(reference) => self.resolve_image_reference(reference).await,
+            None => first_image,
+        };
+
+        let reading_time_minutes = (markdown_content.split_whitespace().count() / 220).max(1);
 
         Ok(Post {
             slug,
@@ -134,6 +237,9 @@ impl PostsManager {
             date: metadata.date,
             content: markdown_content,
             html_content,
+            categories: metadata.categories,
+            hero_image,
+            reading_time_minutes,
             last_modified,
         })
     }
@@ -156,22 +262,52 @@ impl PostsManager {
             title: String,
             summary: String,
             date: String,
+            #[serde(default)]
+            categories: Vec<String>,
+            #[serde(default)]
+            hero_image: Option<String>,
         }
 
         let front_matter: FrontMatter = toml_edit::de::from_str(toml_content)?;
 
-        let date = self.parse_date(&front_matter.date)?;
+        let date = Self::parse_date(&front_matter.date)?;
 
         let metadata = PostMetadata {
             title: front_matter.title,
             summary: front_matter.summary,
             date,
+            categories: front_matter
+                .categories
+                .into_iter()
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect(),
+            hero_image: front_matter.hero_image,
         };
 
         Ok((metadata, markdown_content))
     }
 
-    fn parse_date(&self, date_str: &str) -> Result<DateTime<Utc>, PostsError> {
+    /// Normalize a category label into a URL-safe slug used for filtering
+    pub fn category_slug(name: &str) -> String {
+        let mut slug = String::with_capacity(name.len());
+        let mut last_dash = true;
+        for c in name.chars() {
+            if c.is_alphanumeric() {
+                slug.extend(c.to_lowercase());
+                last_dash = false;
+            } else if !last_dash {
+                slug.push('-');
+                last_dash = true;
+            }
+        }
+        while slug.ends_with('-') {
+            slug.pop();
+        }
+        slug
+    }
+
+    pub fn parse_date(date_str: &str) -> Result<DateTime<Utc>, PostsError> {
         if let Ok(date) = DateTime::parse_from_rfc3339(date_str) {
             return Ok(date.with_timezone(&Utc));
         }
@@ -204,25 +340,105 @@ impl PostsManager {
         }
     }
 
-    pub async fn get_posts_page(&self, page: usize) -> Vec<PostSummary> {
+    pub async fn get_posts_page(
+        &self,
+        page: usize,
+        category: Option<&str>,
+        username: Option<&str>,
+    ) -> Vec<PostSummary> {
         let posts = self.posts.read().await;
         let slugs = self.sorted_slugs.read().await;
+        let folder_perms = self.folder_permissions.read().await;
+        let mut visibility = HashMap::new();
 
         let start = page * self.config.posts_per_page;
-        let end = (start + self.config.posts_per_page).min(slugs.len());
 
-        slugs[start..end]
+        slugs
             .iter()
-            .filter_map(|slug| {
-                posts.get(slug).map(|post| PostSummary {
-                    slug: post.slug.clone(),
-                    title: post.title.clone(),
-                    summary: post.summary.clone(),
-                    date: post.date,
-                    url: format!("{}/{}", self.config.url_prefix, post.slug),
-                })
+            .filter_map(|slug| posts.get(slug))
+            .filter(|post| Self::matches_category(post, category))
+            .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
+            .skip(start)
+            .take(self.config.posts_per_page)
+            .map(|post| PostSummary {
+                slug: post.slug.clone(),
+                title: post.title.clone(),
+                summary: post.summary.clone(),
+                date: post.date,
+                url: format!("{}/{}", self.config.url_prefix, post.slug),
+                categories: post.categories.clone(),
+                hero_image: post.hero_image.clone(),
+                reading_time_minutes: post.reading_time_minutes,
             })
             .collect()
+    }
+
+    fn matches_category(post: &Post, category: Option<&str>) -> bool {
+        match category {
+            Some(wanted) => post
+                .categories
+                .iter()
+                .any(|c| Self::category_slug(c) == wanted),
+            None => true,
+        }
+    }
+
+    /// Whether the user can view posts in the directory containing `path`,
+    /// memoized per directory
+    fn dir_visible(
+        &self,
+        configs: &HashMap<String, PermissionConfig>,
+        memo: &mut HashMap<String, bool>,
+        path: &str,
+        username: Option<&str>,
+    ) -> bool {
+        let dir = path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+        if let Some(visible) = memo.get(dir) {
+            return *visible;
+        }
+
+        let folder_config = Self::nearest_folder_config(configs, path);
+        let resolver = PermissionResolver::new(&self.config.permissions, folder_config);
+        let visible = resolver
+            .resolve_user_permissions(username)
+            .map(|p| p.can_view)
+            .unwrap_or(false);
+
+        memo.insert(dir.to_string(), visible);
+        visible
+    }
+
+    /// All categories across posts visible to the user, with display label,
+    /// slug, and post count, sorted alphabetically by label
+    pub async fn get_categories(&self, username: Option<&str>) -> Vec<CategoryInfo> {
+        let posts = self.posts.read().await;
+        let folder_perms = self.folder_permissions.read().await;
+        let mut visibility = HashMap::new();
+
+        let mut categories: HashMap<String, CategoryInfo> = HashMap::new();
+        for post in posts.values() {
+            if !self.dir_visible(&folder_perms, &mut visibility, &post.slug, username) {
+                continue;
+            }
+            for name in &post.categories {
+                let slug = Self::category_slug(name);
+                if slug.is_empty() {
+                    continue;
+                }
+                categories
+                    .entry(slug.clone())
+                    .or_insert_with(|| CategoryInfo {
+                        name: name.clone(),
+                        slug,
+                        count: 0,
+                    })
+                    .count += 1;
+            }
+        }
+
+        let mut result: Vec<CategoryInfo> = categories.into_values().collect();
+        result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        result
     }
 
     pub async fn get_post(&self, slug: &str) -> Option<Post> {
@@ -280,21 +496,154 @@ impl PostsManager {
         Ok(())
     }
 
-    pub async fn get_total_pages(&self) -> usize {
-        let slugs = self.sorted_slugs.read().await;
-        slugs.len().div_ceil(self.config.posts_per_page)
+    pub async fn get_total_pages(&self, category: Option<&str>, username: Option<&str>) -> usize {
+        let posts = self.posts.read().await;
+        let folder_perms = self.folder_permissions.read().await;
+        let mut visibility = HashMap::new();
+
+        let count = posts
+            .values()
+            .filter(|post| Self::matches_category(post, category))
+            .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
+            .count();
+        count.div_ceil(self.config.posts_per_page)
     }
 
     pub fn get_config(&self) -> &PostsConfig {
         &self.config
     }
 
-    async fn process_markdown_with_gallery_refs<'a>(&self, parser: Parser<'a>) -> String {
+    /// Validate a slug for a new post: `/`-separated segments of letters,
+    /// digits, hyphens, and underscores, where no segment starts with `_`
+    pub fn validate_slug(slug: &str) -> Result<(), PostsError> {
+        if slug.is_empty() {
+            return Err(PostsError::InvalidSlug("slug cannot be empty".to_string()));
+        }
+
+        for segment in slug.split('/') {
+            if segment.is_empty() {
+                return Err(PostsError::InvalidSlug(format!(
+                    "'{}' contains an empty path segment",
+                    slug
+                )));
+            }
+            if segment.starts_with('_') || segment.starts_with('.') {
+                return Err(PostsError::InvalidSlug(format!(
+                    "'{}' has a segment starting with '_' or '.'",
+                    slug
+                )));
+            }
+            if !segment
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                return Err(PostsError::InvalidSlug(format!(
+                    "'{}' may only contain letters, digits, hyphens, and underscores",
+                    slug
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Serialize front matter + markdown into the on-disk post format
+    fn render_post_file(metadata: &PostMetadata, content: &str) -> Result<String, PostsError> {
+        #[derive(serde::Serialize)]
+        struct FrontMatter<'a> {
+            title: &'a str,
+            summary: &'a str,
+            date: String,
+            #[serde(skip_serializing_if = "<[_]>::is_empty")]
+            categories: &'a [String],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            hero_image: &'a Option<String>,
+        }
+
+        let front_matter = FrontMatter {
+            title: &metadata.title,
+            summary: &metadata.summary,
+            date: metadata.date.to_rfc3339(),
+            categories: &metadata.categories,
+            hero_image: &metadata.hero_image,
+        };
+
+        let toml = toml_edit::ser::to_string(&front_matter)?;
+        Ok(format!("+++\n{}+++\n\n{}\n", toml, content.trim_end()))
+    }
+
+    /// Create a new post at `slug`. Fails if a post with that slug exists.
+    pub async fn create_post(
+        &self,
+        slug: &str,
+        metadata: &PostMetadata,
+        content: &str,
+    ) -> Result<(), PostsError> {
+        Self::validate_slug(slug)?;
+
+        let path = format!("{}.md", slug);
+        {
+            let posts = self.posts.read().await;
+            if posts.contains_key(slug) {
+                return Err(PostsError::PostAlreadyExists(slug.to_string()));
+            }
+        }
+        if self.storage.exists(&path).await.unwrap_or(false) {
+            return Err(PostsError::PostAlreadyExists(slug.to_string()));
+        }
+
+        let file = Self::render_post_file(metadata, content)?;
+        self.storage.write(&path, file.into()).await?;
+
+        self.refresh_posts().await
+    }
+
+    /// Overwrite an existing post's metadata and content
+    pub async fn update_post(
+        &self,
+        slug: &str,
+        metadata: &PostMetadata,
+        content: &str,
+    ) -> Result<(), PostsError> {
+        let path = {
+            let posts = self.posts.read().await;
+            posts
+                .get(slug)
+                .map(|p| p.path.clone())
+                .ok_or_else(|| PostsError::PostNotFound(slug.to_string()))?
+        };
+
+        let file = Self::render_post_file(metadata, content)?;
+        self.storage.write(&path, file.into()).await?;
+
+        self.refresh_posts().await
+    }
+
+    /// Delete a post from storage
+    pub async fn delete_post(&self, slug: &str) -> Result<(), PostsError> {
+        let path = {
+            let posts = self.posts.read().await;
+            posts
+                .get(slug)
+                .map(|p| p.path.clone())
+                .ok_or_else(|| PostsError::PostNotFound(slug.to_string()))?
+        };
+
+        self.storage.delete(&path).await?;
+
+        self.refresh_posts().await
+    }
+
+    async fn process_markdown_with_gallery_refs<'a>(
+        &self,
+        parser: Parser<'a>,
+    ) -> (String, Option<String>) {
         let mut events = Vec::new();
         let mut in_image = false;
         let mut current_image_alt = String::new();
         let mut current_image_url = String::new();
         let mut current_image_title = String::new();
+        let mut first_image: Option<String> = None;
 
         for event in parser {
             match event {
@@ -314,12 +663,19 @@ impl PostsManager {
 
                     // Check if this is a gallery reference
                     if current_image_alt.starts_with("gallery:")
-                        && let Some(gallery_html) = self
+                        && let Some((gallery_html, image_url)) = self
                             .process_gallery_reference(&current_image_alt, &current_image_url)
                             .await
                     {
+                        if first_image.is_none() {
+                            first_image = Some(image_url);
+                        }
                         events.push(Event::Html(gallery_html.into()));
                         continue;
+                    }
+
+                    if first_image.is_none() {
+                        first_image = Some(current_image_url.clone());
                     }
 
                     // Not a gallery reference, reconstruct the original image
@@ -338,10 +694,32 @@ impl PostsManager {
 
         let mut html_output = String::new();
         html::push_html(&mut html_output, events.into_iter());
-        html_output
+        (html_output, first_image)
     }
 
-    async fn process_gallery_reference(&self, alt_text: &str, size_hint: &str) -> Option<String> {
+    /// Resolve a hero image reference: either a `gallery:name:path` reference
+    /// (served at gallery size) or a plain URL passed through unchanged
+    async fn resolve_image_reference(&self, reference: &str) -> Option<String> {
+        if let Some(rest) = reference.strip_prefix("gallery:") {
+            let (gallery_name, image_path) = rest.split_once(':')?;
+            let galleries = self.galleries.as_ref()?;
+            let gallery = galleries.get(gallery_name)?;
+            let gallery_config = gallery.get_config();
+            let encoded_path = urlencoding::encode(image_path);
+            return Some(format!(
+                "{}/_image/{}/gallery",
+                gallery_config.url_prefix, encoded_path
+            ));
+        }
+
+        Some(reference.to_string())
+    }
+
+    async fn process_gallery_reference(
+        &self,
+        alt_text: &str,
+        size_hint: &str,
+    ) -> Option<(String, String)> {
         // Parse gallery reference format: gallery:gallery_name:path/to/image.jpg
         let parts: Vec<&str> = alt_text.splitn(3, ':').collect();
         if parts.len() != 3 {
@@ -381,6 +759,6 @@ impl PostsManager {
             size
         );
 
-        Some(html)
+        Some((html, image_url))
     }
 }

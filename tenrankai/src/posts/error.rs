@@ -22,4 +22,13 @@ pub enum PostsError {
 
     #[error("Post not found: {0}")]
     PostNotFound(String),
+
+    #[error("Invalid slug: {0}")]
+    InvalidSlug(String),
+
+    #[error("Post already exists: {0}")]
+    PostAlreadyExists(String),
+
+    #[error("TOML serialization error: {0}")]
+    TomlSerError(#[from] toml_edit::ser::Error),
 }

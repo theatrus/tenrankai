@@ -147,6 +147,7 @@ This is the content of the second test post."#;
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         }]),
         user_database: None,
         email: None,

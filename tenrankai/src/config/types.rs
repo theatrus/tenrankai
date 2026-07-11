@@ -338,4 +338,7 @@ pub struct PostsSystemConfig {
     #[serde(default = "super::defaults::default_posts_per_page")]
     pub posts_per_page: usize,
     pub refresh_interval_minutes: Option<u64>,
+    /// Permission configuration for this posts system (from site permissions)
+    #[serde(default)]
+    pub permissions: crate::permissions::types::PermissionConfig,
 }

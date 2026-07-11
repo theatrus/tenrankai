@@ -1,0 +1,12 @@
+# Posts fixture for the Playwright suite.
+# source_directory is relative to storage_prefix (e2e/fixtures).
+
+name = "blog"
+url_prefix = "/blog"
+source_directory = "posts"
+
+index_template = "modules/posts_index.html.liquid"
+post_template = "modules/post_detail.html.liquid"
+
+# Small page size so pagination is exercised with only four fixture posts.
+posts_per_page = 3

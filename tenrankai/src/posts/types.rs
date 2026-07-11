@@ -13,6 +13,13 @@ pub struct Post {
     pub date: DateTime<Utc>,
     pub content: String,
     pub html_content: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Resolved URL for the post's hero image (frontmatter or first image in content)
+    #[serde(default)]
+    pub hero_image: Option<String>,
+    #[serde(default)]
+    pub reading_time_minutes: usize,
     #[serde(skip)]
     pub last_modified: Option<SystemTime>,
 }
@@ -23,6 +30,10 @@ pub struct PostMetadata {
     pub title: String,
     pub summary: String,
     pub date: DateTime<Utc>,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub hero_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +44,18 @@ pub struct PostSummary {
     pub summary: String,
     pub date: DateTime<Utc>,
     pub url: String,
+    pub categories: Vec<String>,
+    pub hero_image: Option<String>,
+    pub reading_time_minutes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryInfo {
+    /// Display label as written in frontmatter
+    pub name: String,
+    /// URL-safe identifier used for filtering
+    pub slug: String,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +67,8 @@ pub struct PostsConfig {
     pub post_template: String,
     pub posts_per_page: usize,
     pub refresh_interval_minutes: Option<u64>,
+    /// System-level permission configuration (folder _folder.md files override)
+    pub permissions: crate::permissions::PermissionConfig,
 }
 
 impl Default for PostsConfig {
@@ -55,6 +80,7 @@ impl Default for PostsConfig {
             post_template: String::from("modules/post_detail.html.liquid"),
             posts_per_page: 20,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         }
     }
 }
@@ -68,6 +94,7 @@ impl From<&crate::config::types::PostsSystemConfig> for PostsConfig {
             post_template: config.post_template.clone(),
             posts_per_page: config.posts_per_page,
             refresh_interval_minutes: config.refresh_interval_minutes,
+            permissions: config.permissions.clone(),
         }
     }
 }

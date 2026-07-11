@@ -78,7 +78,9 @@ impl ConfigStorageLoader {
                 site_permissions.as_ref(),
             )
             .await?;
-        let posts = self.load_posts(name, storage_prefix).await?;
+        let posts = self
+            .load_posts(name, storage_prefix, site_permissions.as_ref())
+            .await?;
 
         let site_admins = site_permissions
             .as_ref()
@@ -135,13 +137,15 @@ impl ConfigStorageLoader {
         &self,
         site: &str,
         storage_prefix: Option<&str>,
+        site_permissions: Option<&PermissionConfig>,
     ) -> Result<Vec<PostsSystemConfig>> {
         let posts_names = self.storage.list_posts(site).await?;
         let mut posts = Vec::new();
 
         for posts_name in posts_names {
             if let Some(stored) = self.storage.get_posts_config(site, &posts_name).await? {
-                let posts_config = self.convert_posts_config(stored, storage_prefix)?;
+                let posts_config =
+                    self.convert_posts_config(stored, storage_prefix, site_permissions)?;
                 posts.push(posts_config);
             }
         }
@@ -319,6 +323,7 @@ impl ConfigStorageLoader {
         &self,
         stored: StoredPostsConfig,
         storage_prefix: Option<&str>,
+        site_permissions: Option<&PermissionConfig>,
     ) -> Result<PostsSystemConfig> {
         let source_directory = self.resolve_path(storage_prefix, &stored.source_directory)?;
 
@@ -330,6 +335,7 @@ impl ConfigStorageLoader {
             post_template: stored.post_template,
             posts_per_page: stored.posts_per_page,
             refresh_interval_minutes: stored.refresh_interval_minutes,
+            permissions: site_permissions.cloned().unwrap_or_default(),
         })
     }
 

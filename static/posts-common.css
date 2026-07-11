@@ -1,0 +1,53 @@
+/* Shared styles for posts index and detail pages */
+
+.category-label {
+    display: inline-block;
+    padding: 2px var(--spacing-sm);
+    border-radius: 4px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.category-label:hover {
+    color: var(--link-color);
+    border-color: var(--link-color);
+}
+
+.meta-separator {
+    margin: 0 var(--spacing-xs);
+}
+
+/* Post editor modal additions (extends editor.css edit-modal styles) */
+
+.post-editor-modal .post-editor-summary {
+    resize: vertical;
+    font-family: inherit;
+}
+
+.post-editor-hint {
+    display: block;
+    margin-top: var(--spacing-xs);
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+}
+
+.post-editor-btn-delete {
+    margin-right: auto;
+    background-color: var(--btn-danger-bg);
+    color: var(--text-white);
+    border: none;
+}
+
+.post-editor-btn-delete:hover:not(:disabled) {
+    background-color: var(--btn-danger-hover);
+}
+
+.post-edit-error {
+    color: var(--message-error-color);
+    font-size: 0.85rem;
+}
