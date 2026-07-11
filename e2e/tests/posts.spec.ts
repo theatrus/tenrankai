@@ -145,6 +145,25 @@ test.describe('posts index', () => {
     expect(response?.status()).toBe(404);
   });
 
+  test('page heading does not become a second sticky header', async ({ page }) => {
+    await page.goto('/blog');
+    // The global site-chrome header rule must not leak onto .posts-header
+    const position = await page
+      .locator('.posts-header')
+      .evaluate((el) => getComputedStyle(el).position);
+    expect(position).toBe('static');
+
+    // After scrolling, only the site header occupies the top of the viewport
+    await page.mouse.wheel(0, 600);
+    await page.waitForTimeout(200);
+    const topElement = await page.evaluate(() => {
+      const el = document.elementsFromPoint(window.innerWidth / 2, 20)[0];
+      return el?.closest('body > header') ? 'site-header' : (el?.className || el?.tagName);
+    });
+    expect(topElement).toBe('site-header');
+    await shot(page, 'posts-index-scrolled');
+  });
+
   test('whole card is clickable', async ({ page }) => {
     await page.goto('/blog');
     // Click the summary text, not the title link. The stretched link overlays
