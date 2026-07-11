@@ -240,7 +240,7 @@ h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
 }
 
-header {
+body > header {
     background-color: var(--header-bg);
     color: var(--text-primary);
     padding: 0.5rem 0;
@@ -331,7 +331,7 @@ main {
     color: var(--text-primary);
 }
 
-footer {
+body > footer {
     background-color: var(--bg-primary);
     color: var(--text-secondary);
     text-align: left;
@@ -339,7 +339,7 @@ footer {
     margin-top: auto;
 }
 
-footer p {
+body > footer p {
     margin: 0;
     font-size: 0.875rem;
 }
@@ -868,7 +868,7 @@ footer p {
         margin: 0 auto;
     }
 
-    footer {
+    body > footer {
         padding: 1rem 0.5rem;
     }
 
