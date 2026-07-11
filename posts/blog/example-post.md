@@ -2,6 +2,7 @@
 title = "Welcome to Tenrankai Blog"
 summary = "This is an example blog post showing the markdown format for Tenrankai's posts system."
 date = "2024-08-24"
+categories = ["Announcements", "Documentation"]
 +++
 
 # Welcome to Tenrankai Blog
@@ -15,6 +16,11 @@ Every post must start with TOML front matter between `+++` delimiters. The requi
 - **title**: The title of your post
 - **summary**: A brief summary that appears in the post listing
 - **date**: The publication date (supports both YYYY-MM-DD and full RFC3339 format)
+
+Optional fields:
+
+- **categories**: A list of category labels, e.g. `categories = ["Travel", "Photo Gear"]`. Categories appear as labels on the index and each post, and the index can be filtered by category (`/blog?category=photo-gear`).
+- **hero_image**: An image shown on the index card and used for social media previews. Accepts a plain URL or a gallery reference like `"gallery:main:vacation/beach.jpg"`. If omitted, the first image in the post is used.
 
 ## Markdown Features
 

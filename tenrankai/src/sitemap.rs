@@ -419,9 +419,9 @@ async fn collect_posts_urls(
 
     urls.push(UrlEntry::new(format!("{base_url}{}", config.url_prefix)));
 
-    let total_pages = manager.get_total_pages().await;
+    let total_pages = manager.get_total_pages(None, None).await;
     for page in 0..total_pages {
-        for post in manager.get_posts_page(page).await {
+        for post in manager.get_posts_page(page, None, None).await {
             urls.push(UrlEntry::with_lastmod(
                 format!("{base_url}{}", post.url),
                 post.date.to_rfc3339(),

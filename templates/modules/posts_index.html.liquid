@@ -1,42 +1,77 @@
-{% assign page_title = posts_name | capitalize %}
-{% assign meta_description = meta_description | default: "Browse " | append: posts_name | append: " posts" %}
-{% assign og_title = og_title | default: page_title %}
-{% assign og_description = og_description | default: meta_description %}
-{% assign og_url = base_url | append: url_prefix %}
-{% assign og_type = "website" %}
-{% assign page_css = "posts-index.css" | split: "," %}
+{% assign page_css = "posts-index.css,posts-common.css,editor.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
-<div class="posts-container container-sm">
-    <h1>{{ posts_name | capitalize }}</h1>
-    
+<div class="posts-container">
+    <header class="posts-header">
+        <div class="posts-header-row">
+            <h1>{{ posts_name | capitalize }}</h1>
+            {% if can_edit %}
+            <div id="post-new-mount" data-posts-name="{{ posts_name }}" data-url-prefix="{{ url_prefix }}"></div>
+            {% endif %}
+        </div>
+        {% if active_category %}
+        <p class="posts-filter-note">Showing posts in <strong>{{ active_category }}</strong> — <a href="{{ url_prefix }}">show all</a></p>
+        {% endif %}
+    </header>
+
+    {% if categories.size > 0 %}
+    <nav class="category-bar" aria-label="Post categories">
+        <a href="{{ url_prefix }}" class="category-chip{% unless active_category %} active{% endunless %}">All</a>
+        {% for category in categories %}
+        <a href="{{ category.url }}" class="category-chip{% if category.active %} active{% endif %}">
+            {{ category.name }}<span class="category-count">{{ category.count }}</span>
+        </a>
+        {% endfor %}
+    </nav>
+    {% endif %}
+
     {% if posts.size > 0 %}
-        <div class="posts-list">
+        <div class="posts-flow">
             {% for post in posts %}
-                <article class="post-summary">
-                    <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
-                    <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
-                    <p>{{ post.summary }}</p>
-                    <a href="{{ post.url }}" class="read-more">Read more →</a>
+                {% assign featured = false %}
+                {% if forloop.first and current_page == 0 %}{% assign featured = true %}{% endif %}
+                <article class="post-card{% if featured %} featured{% endif %}{% unless post.hero_image %} no-image{% endunless %}">
+                    {% if post.hero_image %}
+                    <a href="{{ post.url }}" class="post-card-image" aria-hidden="true" tabindex="-1">
+                        <img src="{{ post.hero_image }}" alt="" loading="lazy">
+                    </a>
+                    {% endif %}
+                    <div class="post-card-body">
+                        {% if post.categories.size > 0 %}
+                        <div class="post-card-categories">
+                            {% for category in post.categories %}
+                            <a href="{{ category.url }}" class="category-label">{{ category.name }}</a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+                        <p class="post-card-meta">
+                            <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
+                            <span class="meta-separator">·</span>
+                            <span>{{ post.reading_time_minutes }} min read</span>
+                        </p>
+                        <p class="post-card-summary">{{ post.summary }}</p>
+                        <a href="{{ post.url }}" class="read-more">Read more →</a>
+                    </div>
                 </article>
             {% endfor %}
         </div>
-        
+
         {% if total_pages > 1 %}
-            <nav class="pagination">
+            <nav class="posts-pagination">
                 {% if has_prev %}
-                    <a href="{{ url_prefix }}?page={{ prev_page }}" class="prev">← Previous</a>
+                    <a href="{{ url_prefix }}?page={{ prev_page }}{{ category_query }}" class="prev">← Previous</a>
                 {% endif %}
-                
+
                 <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
-                
+
                 {% if has_next %}
-                    <a href="{{ url_prefix }}?page={{ next_page }}" class="next">Next →</a>
+                    <a href="{{ url_prefix }}?page={{ next_page }}{{ category_query }}" class="next">Next →</a>
                 {% endif %}
             </nav>
         {% endif %}
     {% else %}
-        <p>No posts found.</p>
+        <p class="posts-empty">No posts found{% if active_category %} in {{ active_category }}{% endif %}.</p>
     {% endif %}
 </div>
 

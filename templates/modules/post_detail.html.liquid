@@ -1,25 +1,50 @@
-{% assign page_title = post.title %}
-{% assign meta_description = post.summary %}
-{% assign og_title = post.title %}
-{% assign og_description = post.summary %}
-{% assign og_url = base_url | append: url_prefix | append: "/" | append: post.slug %}
-{% assign og_type = "article" %}
-{% assign article_published_time = post.date | date: "%Y-%m-%dT%H:%M:%S%z" %}
-{% assign page_css = "post-detail.css" | split: "," %}
+{% assign page_css = "post-detail.css,posts-common.css,editor.css" | split: "," %}
 {% include "_header.html.liquid" %}
 
 <article class="post-detail container-sm">
     <header class="post-header">
         <nav class="breadcrumbs">
             <a href="{{ url_prefix }}">← Back to {{ posts_name | capitalize }}</a>
+            {% if can_edit %}
+            <div id="post-edit-mount"
+                 data-posts-name="{{ posts_name }}"
+                 data-url-prefix="{{ url_prefix }}"
+                 data-slug="{{ post.slug }}"></div>
+            {% endif %}
         </nav>
+        {% if post.categories.size > 0 %}
+        <div class="post-categories">
+            {% for category in post.categories %}
+            <a href="{{ category.url }}" class="category-label">{{ category.name }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
         <h1>{{ post.title }}</h1>
-        <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
+        <p class="post-meta">
+            <time datetime="{{ post.date }}">{{ post.date_formatted }}</time>
+            <span class="meta-separator">·</span>
+            <span>{{ post.reading_time_minutes }} min read</span>
+        </p>
     </header>
-    
+
     <div class="post-content content">
         {{ post.html_content }}
     </div>
+
+    <footer class="post-footer">
+        <div id="post-share-mount"
+             data-share-url="{{ share_url }}"
+             data-share-title="{{ post.title | escape }}"
+             data-share-summary="{{ post.summary | escape }}"></div>
+        {% if post.categories.size > 0 %}
+        <div class="post-footer-categories">
+            <span class="post-footer-label">Filed under:</span>
+            {% for category in post.categories %}
+            <a href="{{ category.url }}" class="category-label">{{ category.name }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </footer>
 </article>
 
 {% include "_footer.html.liquid" %}

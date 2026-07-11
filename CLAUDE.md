@@ -198,6 +198,10 @@ region = "us-east-1"
 ```
 
 ### Access Control
+Applies to gallery folders and posts source directories alike (`_folder.md` in the
+directory; the nearest ancestor's file wins for posts). Post viewing requires
+`can_view`; the post editor/creator UI and `/api/posts/{name}/source` API require
+`can_edit_content`.
 ```toml
 # In _folder.md frontmatter
 +++

@@ -65,6 +65,7 @@ This is a tutorial post in a subdirectory."#;
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         (temp_dir, config, storage)
@@ -85,7 +86,7 @@ This is a tutorial post in a subdirectory."#;
         let result = manager.refresh_posts().await;
         assert!(result.is_ok());
 
-        let posts = manager.get_posts_page(0).await;
+        let posts = manager.get_posts_page(0, None, None).await;
         assert_eq!(posts.len(), 3);
 
         // Check that posts are sorted by date (newest first)
@@ -130,14 +131,406 @@ This is a tutorial post in a subdirectory."#;
         let manager = PostsManager::new(config, storage);
         manager.refresh_posts().await.unwrap();
 
-        let page1 = manager.get_posts_page(0).await;
+        let page1 = manager.get_posts_page(0, None, None).await;
         assert_eq!(page1.len(), 2);
 
-        let page2 = manager.get_posts_page(1).await;
+        let page2 = manager.get_posts_page(1, None, None).await;
         assert_eq!(page2.len(), 1);
 
-        let total_pages = manager.get_total_pages().await;
+        let total_pages = manager.get_total_pages(None, None).await;
         assert_eq!(total_pages, 2);
+    }
+
+    #[tokio::test]
+    async fn test_categories_and_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        let travel_post = r#"+++
+title = "Travel Post"
+summary = "A post about travel"
+date = "2024-02-01"
+categories = ["Travel", "Photo Gear"]
++++
+
+Content about travel."#;
+
+        let gear_post = r#"+++
+title = "Gear Post"
+summary = "A post about gear"
+date = "2024-02-02"
+categories = ["Photo Gear"]
++++
+
+Content about gear."#;
+
+        let uncategorized_post = r#"+++
+title = "Plain Post"
+summary = "No categories here"
+date = "2024-02-03"
++++
+
+Plain content."#;
+
+        fs::write(posts_dir.join("travel.md"), travel_post).unwrap();
+        fs::write(posts_dir.join("gear.md"), gear_post).unwrap();
+        fs::write(posts_dir.join("plain.md"), uncategorized_post).unwrap();
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let config = PostsConfig {
+            source_directory: posts_dir.to_string_lossy().to_string(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+            refresh_interval_minutes: None,
+            permissions: Default::default(),
+        };
+
+        let manager = PostsManager::new(config, storage);
+        manager.refresh_posts().await.unwrap();
+
+        // Unfiltered listing includes all posts with their categories
+        let all = manager.get_posts_page(0, None, None).await;
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].title, "Plain Post");
+        assert!(all[0].categories.is_empty());
+        assert_eq!(all[2].categories, vec!["Travel", "Photo Gear"]);
+
+        // Filtering by slugified category
+        let gear = manager.get_posts_page(0, Some("photo-gear"), None).await;
+        assert_eq!(gear.len(), 2);
+        assert_eq!(gear[0].title, "Gear Post");
+        assert_eq!(gear[1].title, "Travel Post");
+
+        let travel = manager.get_posts_page(0, Some("travel"), None).await;
+        assert_eq!(travel.len(), 1);
+        assert_eq!(travel[0].title, "Travel Post");
+
+        let none = manager.get_posts_page(0, Some("nonexistent"), None).await;
+        assert!(none.is_empty());
+
+        // Page counts respect the filter
+        assert_eq!(manager.get_total_pages(None, None).await, 1);
+        assert_eq!(manager.get_total_pages(Some("nonexistent"), None).await, 0);
+
+        // Category summary with counts, sorted by name
+        let categories = manager.get_categories(None).await;
+        assert_eq!(categories.len(), 2);
+        assert_eq!(categories[0].name, "Photo Gear");
+        assert_eq!(categories[0].slug, "photo-gear");
+        assert_eq!(categories[0].count, 2);
+        assert_eq!(categories[1].name, "Travel");
+        assert_eq!(categories[1].slug, "travel");
+        assert_eq!(categories[1].count, 1);
+    }
+
+    fn test_config(posts_dir: &std::path::Path) -> PostsConfig {
+        PostsConfig {
+            source_directory: posts_dir.to_string_lossy().to_string(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+            refresh_interval_minutes: None,
+            permissions: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_folder_permissions_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        let public_post = r#"+++
+title = "Public Post"
+summary = "Everyone can see this"
+date = "2024-05-01"
+categories = ["Open"]
++++
+
+Public content."#;
+
+        let private_post = r#"+++
+title = "Private Post"
+summary = "Restricted"
+date = "2024-05-02"
+categories = ["Secret"]
++++
+
+Private content."#;
+
+        let folder_md = r#"+++
+[permissions]
+public_role = "none"
+default_authenticated_role = "none"
+
+[permissions.roles.owner]
+name = "owner"
+permissions = { can_view = true, can_edit_content = true }
+
+[[permissions.user_roles]]
+username = "alice"
+roles = ["owner"]
++++
+"#;
+
+        fs::write(posts_dir.join("public-post.md"), public_post).unwrap();
+        let private_dir = posts_dir.join("private");
+        fs::create_dir(&private_dir).unwrap();
+        fs::write(private_dir.join("secret.md"), private_post).unwrap();
+        fs::write(private_dir.join("_folder.md"), folder_md).unwrap();
+
+        // Nested subdirectory inherits the nearest ancestor's _folder.md
+        let nested_dir = private_dir.join("nested");
+        fs::create_dir(&nested_dir).unwrap();
+        fs::write(nested_dir.join("deep.md"), private_post).unwrap();
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let manager = PostsManager::new(test_config(posts_dir), storage);
+        manager.refresh_posts().await.unwrap();
+
+        // Anonymous users only see the public post
+        let anon = manager.get_posts_page(0, None, None).await;
+        assert_eq!(anon.len(), 1);
+        assert_eq!(anon[0].title, "Public Post");
+        assert_eq!(manager.get_total_pages(None, None).await, 1);
+
+        // Anonymous categories exclude hidden posts
+        let anon_categories = manager.get_categories(None).await;
+        assert_eq!(anon_categories.len(), 1);
+        assert_eq!(anon_categories[0].name, "Open");
+
+        // Other authenticated users are also excluded
+        let bob = manager.get_posts_page(0, None, Some("bob")).await;
+        assert_eq!(bob.len(), 1);
+
+        // Alice sees everything, including the nested subdirectory post
+        let alice = manager.get_posts_page(0, None, Some("alice")).await;
+        assert_eq!(alice.len(), 3);
+
+        // Permission resolution for individual posts
+        let anon_perms = manager.resolve_permissions("private/secret", None).await;
+        assert!(!anon_perms.can_view);
+        assert!(!anon_perms.can_edit_content);
+
+        let alice_perms = manager
+            .resolve_permissions("private/secret", Some("alice"))
+            .await;
+        assert!(alice_perms.can_view);
+        assert!(alice_perms.can_edit_content);
+
+        let alice_nested = manager
+            .resolve_permissions("private/nested/deep", Some("alice"))
+            .await;
+        assert!(alice_nested.can_view);
+
+        // Root posts use system defaults (no _folder.md at root)
+        let root_perms = manager.resolve_permissions("public-post", None).await;
+        assert!(root_perms.can_view);
+        assert!(!root_perms.can_edit_content);
+    }
+
+    #[test]
+    fn test_validate_slug() {
+        assert!(PostsManager::validate_slug("my-post").is_ok());
+        assert!(PostsManager::validate_slug("2024/travel/my_post-2").is_ok());
+
+        assert!(PostsManager::validate_slug("").is_err());
+        assert!(PostsManager::validate_slug("/leading").is_err());
+        assert!(PostsManager::validate_slug("trailing/").is_err());
+        assert!(PostsManager::validate_slug("a//b").is_err());
+        assert!(PostsManager::validate_slug("_hidden").is_err());
+        assert!(PostsManager::validate_slug("a/_hidden").is_err());
+        assert!(PostsManager::validate_slug("../escape").is_err());
+        assert!(PostsManager::validate_slug("has space").is_err());
+        assert!(PostsManager::validate_slug("dot.md").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_update_delete_post() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let manager = PostsManager::new(test_config(posts_dir), storage);
+        manager.refresh_posts().await.unwrap();
+
+        let metadata = PostMetadata {
+            title: "Created Post".to_string(),
+            summary: "Made via the API".to_string(),
+            date: PostsManager::parse_date("2024-06-01").unwrap(),
+            categories: vec!["News".to_string()],
+            hero_image: Some("https://example.com/hero.jpg".to_string()),
+        };
+
+        // Create
+        manager
+            .create_post("news/created-post", &metadata, "# Hello\n\nBody text.")
+            .await
+            .unwrap();
+        assert!(posts_dir.join("news/created-post.md").exists());
+
+        let post = manager.get_post("news/created-post").await.unwrap();
+        assert_eq!(post.title, "Created Post");
+        assert_eq!(post.categories, vec!["News"]);
+        assert_eq!(
+            post.hero_image.as_deref(),
+            Some("https://example.com/hero.jpg")
+        );
+        assert!(post.html_content.contains("<h1>Hello</h1>"));
+
+        // Creating over an existing slug is rejected
+        let conflict = manager
+            .create_post("news/created-post", &metadata, "other")
+            .await;
+        assert!(matches!(conflict, Err(PostsError::PostAlreadyExists(_))));
+
+        // Update
+        let updated_metadata = PostMetadata {
+            title: "Updated Post".to_string(),
+            summary: "Now updated".to_string(),
+            categories: vec!["News".to_string(), "Updates".to_string()],
+            hero_image: None,
+            ..metadata
+        };
+        manager
+            .update_post("news/created-post", &updated_metadata, "New **body**.")
+            .await
+            .unwrap();
+
+        let post = manager.get_post("news/created-post").await.unwrap();
+        assert_eq!(post.title, "Updated Post");
+        assert_eq!(post.categories, vec!["News", "Updates"]);
+        assert_eq!(post.hero_image, None);
+        assert!(post.html_content.contains("<strong>body</strong>"));
+
+        // Delete
+        manager.delete_post("news/created-post").await.unwrap();
+        assert!(!posts_dir.join("news/created-post.md").exists());
+        assert!(manager.get_post("news/created-post").await.is_none());
+
+        let missing = manager.delete_post("news/created-post").await;
+        assert!(matches!(missing, Err(PostsError::PostNotFound(_))));
+    }
+
+    #[test]
+    fn test_category_slug() {
+        assert_eq!(PostsManager::category_slug("Travel"), "travel");
+        assert_eq!(PostsManager::category_slug("Photo Gear"), "photo-gear");
+        assert_eq!(PostsManager::category_slug("C++ & Rust!"), "c-rust");
+        assert_eq!(PostsManager::category_slug("  spaced  "), "spaced");
+        assert_eq!(PostsManager::category_slug("日本語"), "日本語");
+    }
+
+    #[tokio::test]
+    async fn test_category_pagination() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        for i in 0..3 {
+            let content = format!(
+                r#"+++
+title = "Tagged Post {i}"
+summary = "Post {i}"
+date = "2024-03-0{}"
+categories = ["news"]
++++
+
+Content."#,
+                i + 1
+            );
+            fs::write(posts_dir.join(format!("tagged-{i}.md")), content).unwrap();
+        }
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let config = PostsConfig {
+            source_directory: posts_dir.to_string_lossy().to_string(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 2,
+            refresh_interval_minutes: None,
+            permissions: Default::default(),
+        };
+
+        let manager = PostsManager::new(config, storage);
+        manager.refresh_posts().await.unwrap();
+
+        assert_eq!(manager.get_total_pages(Some("news"), None).await, 2);
+        assert_eq!(manager.get_posts_page(0, Some("news"), None).await.len(), 2);
+        assert_eq!(manager.get_posts_page(1, Some("news"), None).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_hero_image_and_reading_time() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        let explicit_hero = r#"+++
+title = "Explicit Hero"
+summary = "Post with explicit hero image"
+date = "2024-04-01"
+hero_image = "https://example.com/hero.jpg"
++++
+
+![Some other image](https://example.com/body.jpg)
+
+Content."#;
+
+        let first_image_hero = r#"+++
+title = "First Image Hero"
+summary = "Hero falls back to first content image"
+date = "2024-04-02"
++++
+
+Intro paragraph.
+
+![An image](https://example.com/first.jpg)
+
+More content."#;
+
+        let no_image = r#"+++
+title = "No Image"
+summary = "No images at all"
+date = "2024-04-03"
++++
+
+Just text."#;
+
+        fs::write(posts_dir.join("explicit-hero.md"), explicit_hero).unwrap();
+        fs::write(posts_dir.join("first-image.md"), first_image_hero).unwrap();
+        fs::write(posts_dir.join("no-image.md"), no_image).unwrap();
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let config = PostsConfig {
+            source_directory: posts_dir.to_string_lossy().to_string(),
+            url_prefix: "/posts".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+            refresh_interval_minutes: None,
+            permissions: Default::default(),
+        };
+
+        let manager = PostsManager::new(config, storage);
+        manager.refresh_posts().await.unwrap();
+
+        let post = manager.get_post("explicit-hero").await.unwrap();
+        assert_eq!(
+            post.hero_image.as_deref(),
+            Some("https://example.com/hero.jpg")
+        );
+        assert_eq!(post.reading_time_minutes, 1);
+
+        let post = manager.get_post("first-image").await.unwrap();
+        assert_eq!(
+            post.hero_image.as_deref(),
+            Some("https://example.com/first.jpg")
+        );
+
+        let post = manager.get_post("no-image").await.unwrap();
+        assert_eq!(post.hero_image, None);
     }
 
     #[tokio::test]
@@ -160,13 +553,14 @@ Just content."#;
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         let manager = PostsManager::new(config, storage);
         let result = manager.refresh_posts().await;
         assert!(result.is_ok()); // Should not fail completely
 
-        let posts = manager.get_posts_page(0).await;
+        let posts = manager.get_posts_page(0, None, None).await;
         assert_eq!(posts.len(), 0); // Invalid post should be skipped
     }
 
@@ -203,13 +597,14 @@ Content"#;
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         let manager = PostsManager::new(config, storage);
         let result = manager.refresh_posts().await;
         assert!(result.is_ok());
 
-        let posts = manager.get_posts_page(0).await;
+        let posts = manager.get_posts_page(0, None, None).await;
         assert_eq!(posts.len(), 2);
     }
 
@@ -267,6 +662,7 @@ Footnote[^1]
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         let manager = PostsManager::new(config, storage);
@@ -390,6 +786,7 @@ Regular markdown image (not a gallery reference):
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         // Create posts manager with galleries
@@ -472,6 +869,7 @@ This is the initial content."#;
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         let manager = PostsManager::new(config, storage);
@@ -531,6 +929,7 @@ date = "2024-01-01"
             post_template: "modules/post_detail.html.liquid".to_string(),
             posts_per_page: 10,
             refresh_interval_minutes: None,
+            permissions: Default::default(),
         };
 
         let manager = PostsManager::new(config, storage);

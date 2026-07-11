@@ -270,6 +270,7 @@ impl SiteBuilder {
                 post_template: posts_system_config.post_template.clone(),
                 posts_per_page: posts_system_config.posts_per_page,
                 refresh_interval_minutes: posts_system_config.refresh_interval_minutes,
+                permissions: posts_system_config.permissions.clone(),
             };
 
             let mut posts_manager = PostsManager::new(posts_config, posts_storage);
