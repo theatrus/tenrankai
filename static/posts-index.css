@@ -87,6 +87,7 @@
 }
 
 .post-card {
+    position: relative;
     display: flex;
     flex-direction: column;
     background-color: var(--bg-card);
@@ -94,6 +95,20 @@
     border-radius: 8px;
     overflow: hidden;
     transition: border-color 0.15s ease, transform 0.15s ease;
+    cursor: pointer;
+}
+
+/* Stretch the title link over the whole card so anywhere on it opens the
+   post; interactive children re-raise themselves above the overlay */
+.post-card h2 a::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+}
+
+.post-card-categories {
+    position: relative;
+    z-index: 1;
 }
 
 .post-card:hover {

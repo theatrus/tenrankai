@@ -354,6 +354,13 @@ async fn test_posts_rss_feed() {
     let first = xml.find("Second Test Post").unwrap();
     let second = xml.find("First Test Post").unwrap();
     assert!(first < second);
+
+    // Auth-varying responses must not be mixed by shared caches
+    assert_eq!(response.headers().get("vary").unwrap(), "Cookie");
+    assert_eq!(
+        response.headers().get("cache-control").unwrap(),
+        "public, max-age=300"
+    );
 }
 
 #[tokio::test]
@@ -391,6 +398,22 @@ Rust content."#;
         "/blog/category/rust-systems"
     );
 
+    // Unrelated query parameters survive the redirect
+    let response = server
+        .get("/blog")
+        .add_query_param("utm_source", "newsletter")
+        .add_query_param("category", "Rust & Systems")
+        .await;
+    assert_eq!(response.status_code(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        response.headers().get("location").unwrap(),
+        "/blog/category/rust-systems?utm_source=newsletter"
+    );
+
+    // Unknown categories 404 on the index page
+    let response = server.get("/blog/category/nonexistent").await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+
     // Per-category feed contains only matching posts
     let response = server.get("/blog/category/rust-systems/feed.xml").await;
     assert_eq!(response.status_code(), StatusCode::OK);
@@ -399,7 +422,38 @@ Rust content."#;
     assert!(!xml.contains("First Test Post"));
     assert!(xml.contains("<category>Rust &amp; Systems</category>"));
 
-    // Unknown category: 404 for both page-with-no-posts feed and index stays 200
+    // Unknown category feeds are 404
     let response = server.get("/blog/category/nonexistent/feed.xml").await;
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_feed_absolutizes_content_urls() {
+    let (_temp_dir, server) = setup_test_server_with_posts().await;
+
+    let blog_dir = _temp_dir.path().join("posts").join("blog");
+    let post_content = r#"+++
+title = "Relative Links"
+summary = "Post with root-relative content URLs"
+date = "2024-03-05"
++++
+
+![local image](/static/photo.jpg)
+
+[a page](/about) and [protocol-relative](//example.com/x) and [absolute](https://example.com/y)."#;
+    fs::write(blog_dir.join("relative-links.md"), post_content).unwrap();
+    server.post("/api/posts/blog/refresh").await;
+
+    let response = server.get("/blog/feed.xml").await;
+    let xml = response.text();
+
+    // Root-relative URLs become absolute inside content:encoded
+    assert!(xml.contains(r#"src="http://localhost:3000/static/photo.jpg""#));
+    assert!(xml.contains(r#"href="http://localhost:3000/about""#));
+    // Protocol-relative and absolute URLs are untouched
+    assert!(xml.contains(r#"href="//example.com/x""#));
+    assert!(xml.contains(r#"href="https://example.com/y""#));
+    // The HTML page still serves the original relative URLs
+    let page = server.get("/blog/relative-links").await.text();
+    assert!(page.contains(r#"src="/static/photo.jpg""#));
 }

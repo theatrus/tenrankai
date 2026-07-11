@@ -440,7 +440,7 @@ async fn collect_posts_urls(
 
 /// Percent-encode each `/`-separated segment of a path. Segments never contain
 /// `/`, so re-joining them is lossless.
-fn encode_path_segments(path: &str) -> String {
+pub(crate) fn encode_path_segments(path: &str) -> String {
     path.split('/')
         .map(|segment| urlencoding::encode(segment).into_owned())
         .collect::<Vec<_>>()

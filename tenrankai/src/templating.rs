@@ -494,10 +494,7 @@ impl TemplateEngine {
 
         // Add site identity for header/footer branding. `site_title` falls back
         // to "Tenrankai"; `copyright_holder` falls back to the resolved title.
-        let site_title = self
-            .site_title
-            .clone()
-            .unwrap_or_else(|| "Tenrankai".to_string());
+        let site_title = self.site_title();
         let copyright_holder = self
             .copyright_holder
             .clone()

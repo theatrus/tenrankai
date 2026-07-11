@@ -9,10 +9,8 @@ use serde::Deserialize;
 use tracing::error;
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PostsQuery {
     page: Option<usize>,
-    category: Option<String>,
 }
 
 fn format_date(date: &DateTime<Utc>) -> String {
@@ -60,30 +58,49 @@ pub async fn posts_index_handler(
     ResolvedState(app_state): ResolvedState,
     Path(posts_name): Path<String>,
     auth: crate::login::OptionalAuth,
-    Query(query): Query<PostsQuery>,
+    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
 ) -> axum::response::Response {
-    // Legacy ?category= URLs redirect permanently to the canonical path form
-    if let Some(category) = query.category.as_deref() {
+    let raw_query = raw_query.unwrap_or_default();
+    let mut category: Option<String> = None;
+    let mut page = 0usize;
+    let mut other_params: Vec<&str> = Vec::new();
+
+    for pair in raw_query.split('&').filter(|p| !p.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        match key {
+            "category" => {
+                let value = value.replace('+', " ");
+                category = urlencoding::decode(&value)
+                    .map(|v| v.into_owned())
+                    .ok()
+                    .or(Some(value));
+            }
+            "page" => page = value.parse().unwrap_or(0),
+            _ => other_params.push(pair),
+        }
+    }
+
+    // Legacy ?category= URLs redirect permanently to the canonical path
+    // form, keeping any unrelated query parameters
+    if let Some(category) = category.as_deref() {
         let slug = PostsManager::category_slug(category);
         if !slug.is_empty()
             && let Some(manager) = app_state.posts_managers().get(&posts_name)
         {
             let mut target = category_url(&manager.get_config().url_prefix, &slug);
-            if let Some(page) = query.page.filter(|p| *p > 0) {
-                target.push_str(&format!("?page={}", page));
+            let mut params: Vec<String> = other_params.iter().map(|p| p.to_string()).collect();
+            if page > 0 {
+                params.push(format!("page={}", page));
+            }
+            if !params.is_empty() {
+                target.push('?');
+                target.push_str(&params.join("&"));
             }
             return axum::response::Redirect::permanent(&target).into_response();
         }
     }
 
-    render_posts_index(
-        app_state,
-        posts_name,
-        None,
-        query.page.unwrap_or(0),
-        auth.username(),
-    )
-    .await
+    render_posts_index(app_state, posts_name, None, page, auth.username()).await
 }
 
 pub async fn posts_category_index_handler(
@@ -157,6 +174,13 @@ async fn render_posts_index(
             .find(|c| c.slug == slug)
             .map(|c| c.name.clone())
     });
+
+    // A category page for a category with no visible posts is a 404, matching
+    // the feed handler
+    if category_filter.is_some() && active_category.is_none() {
+        return ApiResponse::PostNotFound.into_response();
+    }
+
     let categories: Vec<_> = all_categories
         .iter()
         .map(|c| {
@@ -175,14 +199,10 @@ async fn render_posts_index(
         Some(slug) => category_url(&config.url_prefix, slug),
         None => config.url_prefix.clone(),
     };
-    let page_base_for_og = page_base.clone();
-
-    let feed_url = match category_filter.as_deref() {
-        Some(slug) => format!("{}/feed.xml", category_url(&config.url_prefix, slug)),
-        None => format!("{}/feed.xml", config.url_prefix),
-    };
+    let feed_url = format!("{}/feed.xml", page_base);
 
     let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
+    let og_url = format!("{}{}", base_url, page_base);
 
     let page_title = match &active_category {
         Some(name) => format!("{} – {}", capitalize(&posts_name), name),
@@ -201,7 +221,6 @@ async fn render_posts_index(
         "categories": categories,
         "active_category": active_category,
         "page_base": page_base,
-        "feed_url": feed_url.clone(),
         "rss_feed_url": feed_url,
         "current_page": page,
         "total_pages": total_pages,
@@ -214,7 +233,7 @@ async fn render_posts_index(
         "meta_description": meta_description.clone(),
         "og_title": page_title,
         "og_description": meta_description,
-        "og_url": format!("{}{}", base_url, page_base_for_og),
+        "og_url": og_url,
         "og_type": "website",
     });
 
@@ -284,6 +303,7 @@ pub async fn post_detail_handler(
             "html_content": post.html_content,
             "categories": category_objects(&config.url_prefix, &post.categories),
             "hero_image": post.hero_image,
+            "hero_image_explicit": post.hero_image_explicit,
             "reading_time_minutes": post.reading_time_minutes,
         },
         "posts_name": posts_name,
@@ -343,7 +363,7 @@ async fn render_posts_feed(
     category: Option<String>,
     username: Option<&str>,
 ) -> axum::response::Response {
-    use crate::sitemap::xml_escape;
+    use crate::sitemap::{encode_path_segments, xml_escape};
 
     let posts_manager = match app_state.posts_managers().get(&posts_name) {
         Some(manager) => manager,
@@ -356,21 +376,27 @@ async fn render_posts_feed(
         .map(PostsManager::category_slug)
         .filter(|slug| !slug.is_empty());
 
-    // A category feed for an unknown category is a 404, not an empty feed
+    let posts = posts_manager
+        .get_recent_posts(FEED_ITEM_LIMIT, category_slug.as_deref(), username)
+        .await;
+
+    // A category feed for a category with no visible posts is a 404, not an
+    // empty feed; the display name comes from the matching label
     let category_name = match category_slug.as_deref() {
         Some(slug) => {
-            let categories = posts_manager.get_categories(username).await;
-            match categories.into_iter().find(|c| c.slug == slug) {
-                Some(c) => Some(c.name),
+            let name = posts.first().and_then(|post| {
+                post.categories
+                    .iter()
+                    .find(|c| PostsManager::category_slug(c) == slug)
+                    .cloned()
+            });
+            match name {
+                Some(name) => Some(name),
                 None => return ApiResponse::NotFound.into_response(),
             }
         }
         None => None,
     };
-
-    let posts = posts_manager
-        .get_recent_posts(FEED_ITEM_LIMIT, category_slug.as_deref(), username)
-        .await;
 
     let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
     let site_title = app_state.template_engine().site_title();
@@ -413,7 +439,12 @@ async fn render_posts_feed(
     }
 
     for post in &posts {
-        let link = format!("{}{}/{}", base_url, config.url_prefix, post.slug);
+        let link = format!(
+            "{}{}/{}",
+            base_url,
+            config.url_prefix,
+            encode_path_segments(&post.slug)
+        );
         xml.push_str("<item>\n");
         xml.push_str(&format!("<title>{}</title>\n", xml_escape(&post.title)));
         xml.push_str(&format!("<link>{}</link>\n", xml_escape(&link)));
@@ -431,8 +462,9 @@ async fn render_posts_feed(
         }
         xml.push_str(&format!(
             "<content:encoded><![CDATA[{}]]></content:encoded>\n",
-            // CDATA cannot contain "]]>"; split any occurrence across sections
-            post.html_content.replace("]]>", "]]]]><![CDATA[>")
+            // Feed readers have no base URI for relative links, and CDATA
+            // cannot contain "]]>"
+            absolutize_html_urls(&post.html_content, base_url).replace("]]>", "]]]]><![CDATA[>")
         ));
         xml.push_str("</item>\n");
     }
@@ -440,13 +472,55 @@ async fn render_posts_feed(
     xml.push_str("</channel>\n</rss>\n");
 
     (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "application/rss+xml; charset=utf-8",
-        )],
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/rss+xml; charset=utf-8",
+            ),
+            // The body varies with the session cookie (restricted posts), so
+            // shared caches must not mix authenticated and anonymous copies
+            (axum::http::header::VARY, "Cookie"),
+            (
+                axum::http::header::CACHE_CONTROL,
+                if username.is_some() {
+                    "private, no-store"
+                } else {
+                    "public, max-age=300"
+                },
+            ),
+        ],
         xml,
     )
         .into_response()
+}
+
+/// Rewrite root-relative `src`/`href` attribute URLs to absolute ones
+fn absolutize_html_urls(html: &str, base_url: &str) -> String {
+    let mut out = String::with_capacity(html.len() + 256);
+    let mut rest = html;
+
+    loop {
+        let next = ["src=\"/", "href=\"/"]
+            .iter()
+            .filter_map(|pattern| rest.find(pattern).map(|pos| (pos, pattern.len())))
+            .min();
+
+        let Some((pos, pattern_len)) = next else {
+            out.push_str(rest);
+            return out;
+        };
+
+        let after_slash = pos + pattern_len;
+        // Keep protocol-relative URLs ("//example.com/...") untouched
+        if rest[after_slash..].starts_with('/') {
+            out.push_str(&rest[..after_slash]);
+        } else {
+            out.push_str(&rest[..after_slash - 1]);
+            out.push_str(base_url);
+            out.push('/');
+        }
+        rest = &rest[after_slash..];
+    }
 }
 
 fn capitalize(name: &str) -> String {

@@ -84,6 +84,14 @@ impl PostsManager {
             if entry.path.ends_with(".md") || entry.path.ends_with(".markdown") {
                 match self.load_post(&entry.path).await {
                     Ok(post) => {
+                        if post.slug == "category" || post.slug.starts_with("category/") {
+                            warn!(
+                                "Skipping post {}: the 'category' path segment is reserved \
+                                 for category index URLs and the post would be unreachable",
+                                entry.path
+                            );
+                            continue;
+                        }
                         debug!("Loaded post: {}", post.slug);
                         new_posts.insert(post.slug.clone(), post);
                     }
@@ -222,6 +230,7 @@ impl PostsManager {
         let parser = Parser::new_ext(&markdown_content, options);
         let (html_content, first_image) = self.process_markdown_with_gallery_refs(parser).await;
 
+        let hero_image_explicit = metadata.hero_image.is_some();
         let hero_image = match &metadata.hero_image {
             Some(reference) => self.resolve_image_reference(reference).await,
             None => first_image,
@@ -239,6 +248,7 @@ impl PostsManager {
             html_content,
             categories: metadata.categories,
             hero_image,
+            hero_image_explicit,
             reading_time_minutes,
             last_modified,
         })
@@ -340,34 +350,50 @@ impl PostsManager {
         }
     }
 
-    pub async fn get_posts_page(
+    /// Posts visible to the user (newest first), optionally filtered by
+    /// category, windowed by skip/limit
+    async fn visible_posts(
         &self,
-        page: usize,
         category: Option<&str>,
         username: Option<&str>,
-    ) -> Vec<PostSummary> {
+        skip: usize,
+        limit: usize,
+    ) -> Vec<Post> {
         let posts = self.posts.read().await;
         let slugs = self.sorted_slugs.read().await;
         let folder_perms = self.folder_permissions.read().await;
         let mut visibility = HashMap::new();
-
-        let start = page * self.config.posts_per_page;
 
         slugs
             .iter()
             .filter_map(|slug| posts.get(slug))
             .filter(|post| Self::matches_category(post, category))
             .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
-            .skip(start)
-            .take(self.config.posts_per_page)
+            .skip(skip)
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
+    pub async fn get_posts_page(
+        &self,
+        page: usize,
+        category: Option<&str>,
+        username: Option<&str>,
+    ) -> Vec<PostSummary> {
+        let start = page * self.config.posts_per_page;
+
+        self.visible_posts(category, username, start, self.config.posts_per_page)
+            .await
+            .into_iter()
             .map(|post| PostSummary {
-                slug: post.slug.clone(),
-                title: post.title.clone(),
-                summary: post.summary.clone(),
-                date: post.date,
                 url: format!("{}/{}", self.config.url_prefix, post.slug),
-                categories: post.categories.clone(),
-                hero_image: post.hero_image.clone(),
+                slug: post.slug,
+                title: post.title,
+                summary: post.summary,
+                date: post.date,
+                categories: post.categories,
+                hero_image: post.hero_image,
                 reading_time_minutes: post.reading_time_minutes,
             })
             .collect()
@@ -381,19 +407,7 @@ impl PostsManager {
         category: Option<&str>,
         username: Option<&str>,
     ) -> Vec<Post> {
-        let posts = self.posts.read().await;
-        let slugs = self.sorted_slugs.read().await;
-        let folder_perms = self.folder_permissions.read().await;
-        let mut visibility = HashMap::new();
-
-        slugs
-            .iter()
-            .filter_map(|slug| posts.get(slug))
-            .filter(|post| Self::matches_category(post, category))
-            .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
-            .take(limit)
-            .cloned()
-            .collect()
+        self.visible_posts(category, username, 0, limit).await
     }
 
     fn matches_category(post: &Post, category: Option<&str>) -> bool {

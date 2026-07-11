@@ -53,6 +53,10 @@ test.describe('posts index', () => {
     await expect(heroImg).toBeVisible();
     expect(await heroImg.getAttribute('src')).toContain('/g/_image/');
 
+    // A derived hero is not repeated above the post body on the detail page
+    await page.goto('/blog/camera-bag');
+    await expect(page.locator('.post-hero')).toHaveCount(0);
+
     // Plain Note has no images at all
     const plainNote = page.locator('.post-card', { hasText: 'Plain Note' });
     await expect(plainNote.locator('.post-card-image')).toHaveCount(0);
@@ -125,10 +129,29 @@ test.describe('posts index', () => {
     expect(missing.status()).toBe(404);
   });
 
-  test('shows an empty state for unknown categories', async ({ page }) => {
-    await page.goto('/blog?category=nonexistent');
-    await expect(page.locator('.post-card')).toHaveCount(0);
-    await expect(page.locator('.posts-empty')).toContainText('No posts found');
+  test('returns 404 for unknown categories', async ({ page }) => {
+    const response = await page.goto('/blog/category/nonexistent');
+    expect(response?.status()).toBe(404);
+  });
+
+  test('whole card is clickable', async ({ page }) => {
+    await page.goto('/blog');
+    // Click the summary text, not the title link. The stretched link overlays
+    // the card (which Playwright reports as interception), so force the click
+    // and let the browser hit-test it onto the overlay.
+    await page
+      .locator('.post-card', { hasText: 'Camera Bag' })
+      .locator('.post-card-summary')
+      .click({ force: true });
+    await expect(page).toHaveURL(/\/blog\/camera-bag$/);
+
+    // Category labels inside a card still navigate to the category, not the post
+    await page.goto('/blog');
+    await page
+      .locator('.post-card', { hasText: 'Camera Bag' })
+      .locator('.category-label', { hasText: 'Gear' })
+      .click();
+    await expect(page).toHaveURL(/\/blog\/category\/gear$/);
   });
 });
 
@@ -136,7 +159,7 @@ test.describe('post detail', () => {
   test('renders content, categories, and social meta tags', async ({ page }) => {
     await page.goto('/blog/first-trip');
 
-    await expect(page.locator('.post-header h1')).toHaveText('First Trip');
+    await expect(page.locator('.post-header > h1')).toHaveText('First Trip');
     await expect(page.locator('.post-meta')).toContainText('January 1, 2024');
     await expect(page.locator('.post-meta')).toContainText('min read');
 
@@ -144,6 +167,11 @@ test.describe('post detail', () => {
     const label = page.locator('.post-categories .category-label');
     await expect(label).toHaveText('Travel');
     expect(await label.getAttribute('href')).toBe('/blog/category/travel');
+
+    // The explicit hero image renders above the post body
+    const hero = page.locator('.post-hero img');
+    await expect(hero).toBeVisible();
+    expect(await hero.getAttribute('src')).toContain('/g/_image/');
 
     // Open Graph tags including og:image from the hero
     const ogType = page.locator('meta[property="og:type"]');

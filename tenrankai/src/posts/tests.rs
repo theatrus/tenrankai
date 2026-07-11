@@ -353,6 +353,32 @@ roles = ["owner"]
     }
 
     #[tokio::test]
+    async fn test_reserved_category_slug_posts_are_skipped() {
+        let temp_dir = TempDir::new().unwrap();
+        let posts_dir = temp_dir.path();
+
+        let post = r#"+++
+title = "Shadowed"
+summary = "Would be unreachable behind the category routes"
+date = "2024-06-01"
++++
+
+Content."#;
+
+        let category_dir = posts_dir.join("category");
+        fs::create_dir(&category_dir).unwrap();
+        fs::write(category_dir.join("shadowed.md"), post).unwrap();
+        fs::write(posts_dir.join("visible.md"), post).unwrap();
+
+        let storage: DynStorage = Arc::new(FilesystemStorage::new(posts_dir));
+        let manager = PostsManager::new(test_config(posts_dir), storage);
+        manager.refresh_posts().await.unwrap();
+
+        assert!(manager.get_post("category/shadowed").await.is_none());
+        assert_eq!(manager.get_posts_page(0, None, None).await.len(), 1);
+    }
+
+    #[tokio::test]
     async fn test_get_recent_posts() {
         let temp_dir = TempDir::new().unwrap();
         let posts_dir = temp_dir.path();

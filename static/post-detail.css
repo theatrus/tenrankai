@@ -61,6 +61,17 @@
     font-size: 0.9rem;
 }
 
+.post-hero {
+    margin: 0 0 var(--spacing-xl) 0;
+}
+
+.post-hero img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
 .post-categories {
     display: flex;
     flex-wrap: wrap;
