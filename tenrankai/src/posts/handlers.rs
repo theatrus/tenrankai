@@ -9,10 +9,8 @@ use serde::Deserialize;
 use tracing::error;
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PostsQuery {
     page: Option<usize>,
-    category: Option<String>,
 }
 
 fn format_date(date: &DateTime<Utc>) -> String {
@@ -38,6 +36,10 @@ fn format_date(date: &DateTime<Utc>) -> String {
     )
 }
 
+fn category_url(url_prefix: &str, slug: &str) -> String {
+    format!("{}/category/{}", url_prefix, slug)
+}
+
 fn category_objects(url_prefix: &str, categories: &[String]) -> Vec<liquid::Object> {
     categories
         .iter()
@@ -46,7 +48,7 @@ fn category_objects(url_prefix: &str, categories: &[String]) -> Vec<liquid::Obje
             liquid::object!({
                 "name": name,
                 "slug": slug.clone(),
-                "url": format!("{}?category={}", url_prefix, slug),
+                "url": category_url(url_prefix, &slug),
             })
         })
         .collect()
@@ -56,12 +58,75 @@ pub async fn posts_index_handler(
     ResolvedState(app_state): ResolvedState,
     Path(posts_name): Path<String>,
     auth: crate::login::OptionalAuth,
+    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
+) -> axum::response::Response {
+    let raw_query = raw_query.unwrap_or_default();
+    let mut category: Option<String> = None;
+    let mut page = 0usize;
+    let mut other_params: Vec<&str> = Vec::new();
+
+    for pair in raw_query.split('&').filter(|p| !p.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        match key {
+            "category" => {
+                let value = value.replace('+', " ");
+                category = urlencoding::decode(&value)
+                    .map(|v| v.into_owned())
+                    .ok()
+                    .or(Some(value));
+            }
+            "page" => page = value.parse().unwrap_or(0),
+            _ => other_params.push(pair),
+        }
+    }
+
+    // Legacy ?category= URLs redirect permanently to the canonical path
+    // form, keeping any unrelated query parameters
+    if let Some(category) = category.as_deref() {
+        let slug = PostsManager::category_slug(category);
+        if !slug.is_empty()
+            && let Some(manager) = app_state.posts_managers().get(&posts_name)
+        {
+            let mut target = category_url(&manager.get_config().url_prefix, &slug);
+            let mut params: Vec<String> = other_params.iter().map(|p| p.to_string()).collect();
+            if page > 0 {
+                params.push(format!("page={}", page));
+            }
+            if !params.is_empty() {
+                target.push('?');
+                target.push_str(&params.join("&"));
+            }
+            return axum::response::Redirect::permanent(&target).into_response();
+        }
+    }
+
+    render_posts_index(app_state, posts_name, None, page, auth.username()).await
+}
+
+pub async fn posts_category_index_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path((posts_name, category)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
     Query(query): Query<PostsQuery>,
-) -> impl IntoResponse {
-    let page = query.page.unwrap_or(0);
-    let username = auth.username();
-    let category_filter = query
-        .category
+) -> axum::response::Response {
+    render_posts_index(
+        app_state,
+        posts_name,
+        Some(category),
+        query.page.unwrap_or(0),
+        auth.username(),
+    )
+    .await
+}
+
+async fn render_posts_index(
+    app_state: crate::AppState,
+    posts_name: String,
+    category: Option<String>,
+    page: usize,
+    username: Option<&str>,
+) -> axum::response::Response {
+    let category_filter = category
         .as_deref()
         .map(PostsManager::category_slug)
         .filter(|slug| !slug.is_empty());
@@ -109,6 +174,13 @@ pub async fn posts_index_handler(
             .find(|c| c.slug == slug)
             .map(|c| c.name.clone())
     });
+
+    // A category page for a category with no visible posts is a 404, matching
+    // the feed handler
+    if category_filter.is_some() && active_category.is_none() {
+        return ApiResponse::PostNotFound.into_response();
+    }
+
     let categories: Vec<_> = all_categories
         .iter()
         .map(|c| {
@@ -116,41 +188,25 @@ pub async fn posts_index_handler(
                 "name": c.name,
                 "slug": c.slug,
                 "count": c.count,
-                "url": format!("{}?category={}", config.url_prefix, c.slug),
+                "url": category_url(&config.url_prefix, &c.slug),
                 "active": Some(c.slug.as_str()) == category_filter.as_deref(),
             })
         })
         .collect();
 
-    // Query-string suffix appended to pagination links to preserve the filter
-    let category_query = category_filter
-        .as_deref()
-        .map(|slug| format!("&category={}", slug))
-        .unwrap_or_default();
+    // Base URL for pagination links and og:url; the category form keeps the filter
+    let page_base = match category_filter.as_deref() {
+        Some(slug) => category_url(&config.url_prefix, slug),
+        None => config.url_prefix.clone(),
+    };
+    let feed_url = format!("{}/feed.xml", page_base);
 
     let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
+    let og_url = format!("{}{}", base_url, page_base);
 
     let page_title = match &active_category {
-        Some(name) => format!(
-            "{} – {}",
-            posts_name
-                .chars()
-                .next()
-                .unwrap()
-                .to_uppercase()
-                .to_string()
-                + &posts_name[1..],
-            name
-        ),
-        None => {
-            posts_name
-                .chars()
-                .next()
-                .unwrap()
-                .to_uppercase()
-                .to_string()
-                + &posts_name[1..]
-        }
+        Some(name) => format!("{} – {}", capitalize(&posts_name), name),
+        None => capitalize(&posts_name),
     };
     let meta_description = match &active_category {
         Some(name) => format!("Browse {} posts in {}", posts_name, name),
@@ -164,7 +220,8 @@ pub async fn posts_index_handler(
         "can_edit": root_permissions.can_edit_content,
         "categories": categories,
         "active_category": active_category,
-        "category_query": category_query,
+        "page_base": page_base,
+        "rss_feed_url": feed_url,
         "current_page": page,
         "total_pages": total_pages,
         "has_prev": page > 0,
@@ -176,7 +233,7 @@ pub async fn posts_index_handler(
         "meta_description": meta_description.clone(),
         "og_title": page_title,
         "og_description": meta_description,
-        "og_url": format!("{}{}", base_url, config.url_prefix),
+        "og_url": og_url,
         "og_type": "website",
     });
 
@@ -246,11 +303,13 @@ pub async fn post_detail_handler(
             "html_content": post.html_content,
             "categories": category_objects(&config.url_prefix, &post.categories),
             "hero_image": post.hero_image,
+            "hero_image_explicit": post.hero_image_explicit,
             "reading_time_minutes": post.reading_time_minutes,
         },
         "posts_name": posts_name,
         "url_prefix": config.url_prefix,
         "can_edit": permissions.can_edit_content,
+        "rss_feed_url": format!("{}/feed.xml", config.url_prefix),
         "base_url": base_url,
         "page_title": post.title.clone(),
         "meta_description": post.summary.clone(),
@@ -276,6 +335,199 @@ pub async fn post_detail_handler(
             error!("Template rendering error: {}", e);
             ApiResponse::TemplateRenderError.into_response()
         }
+    }
+}
+
+/// Number of items included in RSS feeds
+const FEED_ITEM_LIMIT: usize = 20;
+
+pub async fn posts_feed_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path(posts_name): Path<String>,
+    auth: crate::login::OptionalAuth,
+) -> axum::response::Response {
+    render_posts_feed(app_state, posts_name, None, auth.username()).await
+}
+
+pub async fn posts_category_feed_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path((posts_name, category)): Path<(String, String)>,
+    auth: crate::login::OptionalAuth,
+) -> axum::response::Response {
+    render_posts_feed(app_state, posts_name, Some(category), auth.username()).await
+}
+
+async fn render_posts_feed(
+    app_state: crate::AppState,
+    posts_name: String,
+    category: Option<String>,
+    username: Option<&str>,
+) -> axum::response::Response {
+    use crate::sitemap::{encode_path_segments, xml_escape};
+
+    let posts_manager = match app_state.posts_managers().get(&posts_name) {
+        Some(manager) => manager,
+        None => return ApiResponse::NotFound.into_response(),
+    };
+    let config = posts_manager.get_config();
+
+    let category_slug = category
+        .as_deref()
+        .map(PostsManager::category_slug)
+        .filter(|slug| !slug.is_empty());
+
+    let posts = posts_manager
+        .get_recent_posts(FEED_ITEM_LIMIT, category_slug.as_deref(), username)
+        .await;
+
+    // A category feed for a category with no visible posts is a 404, not an
+    // empty feed; the display name comes from the matching label
+    let category_name = match category_slug.as_deref() {
+        Some(slug) => {
+            let name = posts.first().and_then(|post| {
+                post.categories
+                    .iter()
+                    .find(|c| PostsManager::category_slug(c) == slug)
+                    .cloned()
+            });
+            match name {
+                Some(name) => Some(name),
+                None => return ApiResponse::NotFound.into_response(),
+            }
+        }
+        None => None,
+    };
+
+    let base_url = app_state.base_url().unwrap_or("http://localhost:8080");
+    let site_title = app_state.template_engine().site_title();
+
+    let channel_path = match category_slug.as_deref() {
+        Some(slug) => category_url(&config.url_prefix, slug),
+        None => config.url_prefix.clone(),
+    };
+    let channel_link = format!("{}{}", base_url, channel_path);
+    let self_url = format!("{}/feed.xml", channel_link);
+
+    let channel_title = match &category_name {
+        Some(name) => format!("{} — {} — {}", site_title, capitalize(&posts_name), name),
+        None => format!("{} — {}", site_title, capitalize(&posts_name)),
+    };
+    let channel_description = match &category_name {
+        Some(name) => format!("{} posts in {}", posts_name, name),
+        None => format!("{} posts", posts_name),
+    };
+
+    let mut xml = String::with_capacity(4096);
+    xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str("<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\">\n");
+    xml.push_str("<channel>\n");
+    xml.push_str(&format!("<title>{}</title>\n", xml_escape(&channel_title)));
+    xml.push_str(&format!("<link>{}</link>\n", xml_escape(&channel_link)));
+    xml.push_str(&format!(
+        "<atom:link href=\"{}\" rel=\"self\" type=\"application/rss+xml\"/>\n",
+        xml_escape(&self_url)
+    ));
+    xml.push_str(&format!(
+        "<description>{}</description>\n",
+        xml_escape(&channel_description)
+    ));
+    if let Some(newest) = posts.first() {
+        xml.push_str(&format!(
+            "<lastBuildDate>{}</lastBuildDate>\n",
+            newest.date.to_rfc2822()
+        ));
+    }
+
+    for post in &posts {
+        let link = format!(
+            "{}{}/{}",
+            base_url,
+            config.url_prefix,
+            encode_path_segments(&post.slug)
+        );
+        xml.push_str("<item>\n");
+        xml.push_str(&format!("<title>{}</title>\n", xml_escape(&post.title)));
+        xml.push_str(&format!("<link>{}</link>\n", xml_escape(&link)));
+        xml.push_str(&format!(
+            "<guid isPermaLink=\"true\">{}</guid>\n",
+            xml_escape(&link)
+        ));
+        xml.push_str(&format!(
+            "<description>{}</description>\n",
+            xml_escape(&post.summary)
+        ));
+        xml.push_str(&format!("<pubDate>{}</pubDate>\n", post.date.to_rfc2822()));
+        for category in &post.categories {
+            xml.push_str(&format!("<category>{}</category>\n", xml_escape(category)));
+        }
+        xml.push_str(&format!(
+            "<content:encoded><![CDATA[{}]]></content:encoded>\n",
+            // Feed readers have no base URI for relative links, and CDATA
+            // cannot contain "]]>"
+            absolutize_html_urls(&post.html_content, base_url).replace("]]>", "]]]]><![CDATA[>")
+        ));
+        xml.push_str("</item>\n");
+    }
+
+    xml.push_str("</channel>\n</rss>\n");
+
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/rss+xml; charset=utf-8",
+            ),
+            // The body varies with the session cookie (restricted posts), so
+            // shared caches must not mix authenticated and anonymous copies
+            (axum::http::header::VARY, "Cookie"),
+            (
+                axum::http::header::CACHE_CONTROL,
+                if username.is_some() {
+                    "private, no-store"
+                } else {
+                    "public, max-age=300"
+                },
+            ),
+        ],
+        xml,
+    )
+        .into_response()
+}
+
+/// Rewrite root-relative `src`/`href` attribute URLs to absolute ones
+fn absolutize_html_urls(html: &str, base_url: &str) -> String {
+    let mut out = String::with_capacity(html.len() + 256);
+    let mut rest = html;
+
+    loop {
+        let next = ["src=\"/", "href=\"/"]
+            .iter()
+            .filter_map(|pattern| rest.find(pattern).map(|pos| (pos, pattern.len())))
+            .min();
+
+        let Some((pos, pattern_len)) = next else {
+            out.push_str(rest);
+            return out;
+        };
+
+        let after_slash = pos + pattern_len;
+        // Keep protocol-relative URLs ("//example.com/...") untouched
+        if rest[after_slash..].starts_with('/') {
+            out.push_str(&rest[..after_slash]);
+        } else {
+            out.push_str(&rest[..after_slash - 1]);
+            out.push_str(base_url);
+            out.push('/');
+        }
+        rest = &rest[after_slash..];
+    }
+}
+
+fn capitalize(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
     }
 }
 

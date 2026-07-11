@@ -14,7 +14,7 @@
         {% endif %}
     </header>
 
-    {% if categories.size > 0 %}
+    {% if posts.size > 0 or categories.size > 0 %}
     <nav class="category-bar" aria-label="Post categories">
         <a href="{{ url_prefix }}" class="category-chip{% unless active_category %} active{% endunless %}">All</a>
         {% for category in categories %}
@@ -22,6 +22,10 @@
             {{ category.name }}<span class="category-count">{{ category.count }}</span>
         </a>
         {% endfor %}
+        <a href="{{ rss_feed_url }}" class="category-chip feed-chip" title="RSS feed">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.18 20.82a2.18 2.18 0 1 1-4.36 0 2.18 2.18 0 0 1 4.36 0zM1.82 8.91v3.05c5.65 0 10.22 4.57 10.22 10.22h3.05c0-7.33-5.94-13.27-13.27-13.27zm0-6.09v3.05c9.01 0 16.31 7.3 16.31 16.31h3.05C21.18 11.5 12.5 2.82 1.82 2.82z"/></svg>
+            RSS
+        </a>
     </nav>
     {% endif %}
 
@@ -60,13 +64,13 @@
         {% if total_pages > 1 %}
             <nav class="posts-pagination">
                 {% if has_prev %}
-                    <a href="{{ url_prefix }}?page={{ prev_page }}{{ category_query }}" class="prev">← Previous</a>
+                    <a href="{{ page_base }}?page={{ prev_page }}" class="prev">← Previous</a>
                 {% endif %}
 
                 <span class="page-info">Page {{ current_page | plus: 1 }} of {{ total_pages }}</span>
 
                 {% if has_next %}
-                    <a href="{{ url_prefix }}?page={{ next_page }}{{ category_query }}" class="next">Next →</a>
+                    <a href="{{ page_base }}?page={{ next_page }}" class="next">Next →</a>
                 {% endif %}
             </nav>
         {% endif %}

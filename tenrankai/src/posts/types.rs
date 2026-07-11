@@ -18,6 +18,10 @@ pub struct Post {
     /// Resolved URL for the post's hero image (frontmatter or first image in content)
     #[serde(default)]
     pub hero_image: Option<String>,
+    /// True when the hero came from frontmatter (not derived from content),
+    /// so the detail page should render it above the post body
+    #[serde(default)]
+    pub hero_image_explicit: bool,
     #[serde(default)]
     pub reading_time_minutes: usize,
     #[serde(skip)]

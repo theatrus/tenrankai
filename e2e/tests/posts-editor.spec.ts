@@ -56,8 +56,12 @@ test.describe('posts editor (authenticated)', () => {
     await expect(page.locator('.category-chip', { hasText: 'Private' })).toBeVisible();
 
     await page.goto('/blog/private/secret-note');
-    await expect(page.locator('.post-header h1')).toHaveText('Secret Note');
+    await expect(page.locator('.post-header > h1')).toHaveText('Secret Note');
     await expect(page.locator('.post-edit-btn')).toBeVisible();
+
+    // Authenticated feeds include restricted posts
+    const feed = await page.request.get('/blog/feed.xml');
+    expect(await feed.text()).toContain('<title>Secret Note</title>');
   });
 
   test('creates, edits, and deletes a post through the UI', async ({ page }) => {
@@ -84,7 +88,7 @@ test.describe('posts editor (authenticated)', () => {
 
     await modal.getByRole('button', { name: 'Create' }).click();
     await page.waitForURL(`/blog/${CREATED_SLUG}`);
-    await expect(page.locator('.post-header h1')).toHaveText('E2E Editor Post');
+    await expect(page.locator('.post-header > h1')).toHaveText('E2E Editor Post');
     await expect(page.locator('.post-content')).toContainText('Written by a robot.');
     await expect(page.locator('.post-categories .category-label')).toHaveCount(2);
 
@@ -93,7 +97,7 @@ test.describe('posts editor (authenticated)', () => {
     await expect(modal).toBeVisible();
     await modal.locator('#post-title').fill('E2E Editor Post (edited)');
     await modal.getByRole('button', { name: 'Save' }).click();
-    await expect(page.locator('.post-header h1')).toHaveText('E2E Editor Post (edited)');
+    await expect(page.locator('.post-header > h1')).toHaveText('E2E Editor Post (edited)');
 
     // --- Delete (two-step confirm) ---
     await page.locator('.post-edit-btn').click();

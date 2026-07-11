@@ -19,7 +19,7 @@ Every post must start with TOML front matter between `+++` delimiters. The requi
 
 Optional fields:
 
-- **categories**: A list of category labels, e.g. `categories = ["Travel", "Photo Gear"]`. Categories appear as labels on the index and each post, and the index can be filtered by category (`/blog?category=photo-gear`).
+- **categories**: A list of category labels, e.g. `categories = ["Travel", "Photo Gear"]`. Categories appear as labels on the index and each post, and each category gets its own index page (`/blog/category/photo-gear`) and RSS feed (`/blog/category/photo-gear/feed.xml`). A site-wide feed is served at `/blog/feed.xml`.
 - **hero_image**: An image shown on the index card and used for social media previews. Accepts a plain URL or a gallery reference like `"gallery:main:vacation/beach.jpg"`. If omitted, the first image in the post is used.
 
 ## Markdown Features

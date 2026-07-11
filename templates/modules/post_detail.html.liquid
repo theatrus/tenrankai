@@ -27,6 +27,12 @@
         </p>
     </header>
 
+    {% if post.hero_image and post.hero_image_explicit %}
+    <figure class="post-hero">
+        <img src="{{ post.hero_image }}" alt="">
+    </figure>
+    {% endif %}
+
     <div class="post-content content">
         {{ post.html_content }}
     </div>
