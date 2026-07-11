@@ -32,16 +32,27 @@ test.describe('posts index', () => {
     await page.goto('/blog');
 
     const chips = page.locator('.category-bar .category-chip');
-    await expect(chips).toHaveCount(4); // All, Gear, Travel, RSS
+    await expect(chips).toHaveCount(3); // All, Gear, Travel
     await expect(chips.nth(0)).toHaveText('All');
     await expect(chips.nth(0)).toHaveClass(/active/);
     await expect(chips.nth(1)).toContainText('Gear');
     await expect(chips.nth(1).locator('.category-count')).toHaveText('2');
     await expect(chips.nth(2)).toContainText('Travel');
     await expect(chips.nth(2).locator('.category-count')).toHaveText('2');
+  });
 
-    const rss = page.locator('.category-bar .feed-chip');
-    expect(await rss.getAttribute('href')).toBe('/blog/feed.xml');
+  test('shows a subscribe link at the bottom of the page', async ({ page }) => {
+    await page.goto('/blog');
+    const link = page.locator('.posts-feed-footer .posts-feed-link');
+    await expect(link).toBeVisible();
+    await expect(link).toContainText('Subscribe via RSS');
+    expect(await link.getAttribute('href')).toBe('/blog/feed.xml');
+
+    // On a category page the link targets the category feed
+    await page.goto('/blog/category/gear');
+    const categoryLink = page.locator('.posts-feed-footer .posts-feed-link');
+    await expect(categoryLink).toContainText('Gear');
+    expect(await categoryLink.getAttribute('href')).toBe('/blog/category/gear/feed.xml');
   });
 
   test('renders hero images from gallery references', async ({ page }) => {
@@ -180,6 +191,30 @@ test.describe('post detail', () => {
     await expect(ogImage).toHaveAttribute('content', /localhost:4319\/g\/_image\//);
     const ogUrl = page.locator('meta[property="og:url"]');
     await expect(ogUrl).toHaveAttribute('content', 'http://localhost:4319/blog/first-trip');
+
+    // Article namespace metadata, including categories
+    await expect(page.locator('meta[property="article:published_time"]')).toHaveAttribute(
+      'content',
+      /^2024-01-01T/,
+    );
+    await expect(page.locator('meta[property="article:modified_time"]')).toHaveCount(1);
+    await expect(page.locator('meta[property="article:section"]')).toHaveAttribute(
+      'content',
+      'Travel',
+    );
+    await expect(page.locator('meta[property="article:tag"]')).toHaveAttribute(
+      'content',
+      'Travel',
+    );
+    await expect(page.locator('meta[property="article:author"]')).toHaveCount(1);
+
+    // Multi-category posts emit one article:tag per category
+    await page.goto('/blog/second-trip');
+    await expect(page.locator('meta[property="article:tag"]')).toHaveCount(2);
+    await expect(page.locator('meta[property="article:section"]')).toHaveAttribute(
+      'content',
+      'Travel',
+    );
   });
 
   test('omits og:image when the post has no images', async ({ page }) => {

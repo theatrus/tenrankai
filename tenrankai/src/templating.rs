@@ -325,6 +325,13 @@ impl TemplateEngine {
             .unwrap_or_else(|| "Tenrankai".to_string())
     }
 
+    /// The copyright holder, falling back to the site title like templates do
+    pub fn copyright_holder(&self) -> String {
+        self.copyright_holder
+            .clone()
+            .unwrap_or_else(|| self.site_title())
+    }
+
     pub fn set_copyright_holder(&mut self, copyright_holder: Option<String>) {
         self.copyright_holder = copyright_holder;
     }
@@ -513,6 +520,12 @@ impl TemplateEngine {
             "has_user_auth".into(),
             liquid::model::Value::scalar(self.has_user_auth),
         );
+
+        // Default og:type so templates can compare it without guarding
+        // against an undefined variable
+        if !globals.contains_key("og_type") {
+            globals.insert("og_type".into(), liquid::model::Value::scalar("website"));
+        }
 
         // Add force color scheme (if set)
         if let Some(ref scheme) = self.force_color_scheme {
