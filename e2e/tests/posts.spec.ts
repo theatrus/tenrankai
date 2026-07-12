@@ -2,10 +2,12 @@ import { test, expect } from '@playwright/test';
 import { shot } from './helpers';
 
 // Fixture posts (e2e/fixtures/posts), newest first:
-//   Plain Note   2024-01-04  (no categories)
-//   Camera Bag   2024-01-03  (Gear, hero from first content image)
-//   Second Trip  2024-01-02  (Travel, Gear)
-//   First Trip   2024-01-01  (Travel, explicit gallery hero)
+//   Plain Note         2024-01-04  (no categories)
+//   Camera Bag         2024-01-03  (Gear, hero from first content image)
+//   Second Trip        2024-01-02  (Travel, Gear)
+//   First Trip         2024-01-01  (Travel, explicit gallery hero)
+//   Old Archived Note  2023-12-30  (Archive — declared archive=true in _categories.md,
+//                                   hidden from the unfiltered index and main feed)
 // posts_per_page = 3, so the unfiltered index has two pages.
 
 test.describe('posts index', () => {
@@ -32,13 +34,49 @@ test.describe('posts index', () => {
     await page.goto('/blog');
 
     const chips = page.locator('.category-bar .category-chip');
-    await expect(chips).toHaveCount(3); // All, Gear, Travel
+    await expect(chips).toHaveCount(4); // All, Gear, Travel, Archive
     await expect(chips.nth(0)).toHaveText('All');
     await expect(chips.nth(0)).toHaveClass(/active/);
     await expect(chips.nth(1)).toContainText('Gear');
     await expect(chips.nth(1).locator('.category-count')).toHaveText('2');
     await expect(chips.nth(2)).toContainText('Travel');
     await expect(chips.nth(2).locator('.category-count')).toHaveText('2');
+
+    // The archive chip renders last, after a separator
+    await expect(chips.nth(3)).toContainText('Archive');
+    await expect(chips.nth(3)).toHaveClass(/archive/);
+    await expect(page.locator('.category-bar-separator')).toHaveCount(1);
+  });
+
+  test('archive categories hide posts from the main flow', async ({ page }) => {
+    // Archived posts are absent from both pages of the unfiltered index
+    await page.goto('/blog');
+    await expect(page.locator('.post-card', { hasText: 'Old Archived Note' })).toHaveCount(0);
+    await expect(page.locator('.posts-pagination .page-info')).toHaveText('Page 1 of 2');
+    await page.goto('/blog?page=1');
+    await expect(page.locator('.post-card', { hasText: 'Old Archived Note' })).toHaveCount(0);
+
+    // ...and from the main feed
+    const feed = await page.request.get('/blog/feed.xml');
+    expect(await feed.text()).not.toContain('Old Archived Note');
+
+    // The archive category page is the archive view, with its declared description
+    await page.goto('/blog');
+    await page.locator('.category-bar .category-chip.archive').click();
+    await expect(page).toHaveURL(/\/blog\/category\/archive$/);
+    await expect(page.locator('.post-card h2')).toHaveText('Old Archived Note');
+    await expect(page.locator('.posts-category-description')).toHaveText(
+      'Older posts kept for reference',
+    );
+    await shot(page, 'posts-archive-category');
+
+    // Archived posts stay reachable at their permalinks and in their feed
+    const post = await page.request.get('/blog/old-archived');
+    expect(post.status()).toBe(200);
+    const archiveFeed = await page.request.get('/blog/category/archive/feed.xml');
+    const xml = await archiveFeed.text();
+    expect(xml).toContain('<title>Old Archived Note</title>');
+    expect(xml).toContain('<description>Older posts kept for reference</description>');
   });
 
   test('shows a subscribe link at the bottom of the page', async ({ page }) => {

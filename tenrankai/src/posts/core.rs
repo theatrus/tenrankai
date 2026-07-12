@@ -18,6 +18,8 @@ pub struct PostsManager {
     /// Per-directory permission overrides from _folder.md files, keyed by
     /// directory path relative to the posts root ("" for the root)
     folder_permissions: Arc<RwLock<HashMap<String, PermissionConfig>>>,
+    /// Per-category options from _categories.md at the posts root, keyed by slug
+    category_options: Arc<RwLock<HashMap<String, CategoryOptions>>>,
     galleries: Option<Arc<HashMap<String, SharedGallery>>>,
 }
 
@@ -29,6 +31,7 @@ impl PostsManager {
             posts: Arc::new(RwLock::new(HashMap::new())),
             sorted_slugs: Arc::new(RwLock::new(Vec::new())),
             folder_permissions: Arc::new(RwLock::new(HashMap::new())),
+            category_options: Arc::new(RwLock::new(HashMap::new())),
             galleries: None,
         }
     }
@@ -46,6 +49,7 @@ impl PostsManager {
 
         let mut new_posts = HashMap::new();
         let mut new_folder_permissions = HashMap::new();
+        let mut new_category_options = HashMap::new();
 
         // List all files recursively from storage
         let entries = self.storage.list_recursive("").await?;
@@ -77,6 +81,20 @@ impl PostsManager {
                 continue;
             }
             if file_name.starts_with('_') {
+                // Category definitions live only at the posts root
+                if entry.path == "_categories.md" {
+                    match self.load_category_options(&entry.path).await {
+                        Ok(options) => new_category_options = options,
+                        Err(e) => {
+                            error!("Failed to load category options {}: {}", entry.path, e);
+                        }
+                    }
+                } else if file_name == "_categories.md" {
+                    warn!(
+                        "Ignoring {}: _categories.md is only read at the posts root",
+                        entry.path
+                    );
+                }
                 continue;
             }
 
@@ -114,11 +132,54 @@ impl PostsManager {
         let mut posts = self.posts.write().await;
         let mut slugs = self.sorted_slugs.write().await;
         let mut folder_perms = self.folder_permissions.write().await;
+        let mut category_options = self.category_options.write().await;
         *posts = new_posts;
         *slugs = sorted_slugs;
         *folder_perms = new_folder_permissions;
+        *category_options = new_category_options;
 
         Ok(())
+    }
+
+    /// Parse the [categories] tables from _categories.md TOML frontmatter,
+    /// normalizing keys to slugs
+    async fn load_category_options(
+        &self,
+        path: &str,
+    ) -> Result<HashMap<String, CategoryOptions>, PostsError> {
+        let content = self.storage.read_to_string(path).await?;
+
+        let parts: Vec<&str> = content.splitn(3, "+++").collect();
+        if parts.len() < 3 || !parts[0].trim().is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        #[derive(Deserialize)]
+        struct CategoriesFrontMatter {
+            #[serde(default)]
+            categories: HashMap<String, CategoryOptions>,
+        }
+
+        let front_matter: CategoriesFrontMatter = toml_edit::de::from_str(parts[1])?;
+        let mut options = HashMap::new();
+        for (key, value) in front_matter.categories {
+            let slug = Self::category_slug(&key);
+            if slug.is_empty() {
+                warn!("Ignoring category definition with empty slug: {:?}", key);
+                continue;
+            }
+            options.insert(slug, value);
+        }
+        Ok(options)
+    }
+
+    /// A post is archived when any of its categories is flagged `archive`
+    fn is_archived(options: &HashMap<String, CategoryOptions>, post: &Post) -> bool {
+        post.categories.iter().any(|c| {
+            options
+                .get(&Self::category_slug(c))
+                .is_some_and(|o| o.archive)
+        })
     }
 
     /// Parse the [permissions] table from a _folder.md file's TOML frontmatter
@@ -351,7 +412,8 @@ impl PostsManager {
     }
 
     /// Posts visible to the user (newest first), optionally filtered by
-    /// category, windowed by skip/limit
+    /// category, windowed by skip/limit. The unfiltered view excludes
+    /// archived posts; category views list everything in the category.
     async fn visible_posts(
         &self,
         category: Option<&str>,
@@ -362,17 +424,32 @@ impl PostsManager {
         let posts = self.posts.read().await;
         let slugs = self.sorted_slugs.read().await;
         let folder_perms = self.folder_permissions.read().await;
+        let options = self.category_options.read().await;
         let mut visibility = HashMap::new();
 
         slugs
             .iter()
             .filter_map(|slug| posts.get(slug))
             .filter(|post| Self::matches_category(post, category))
+            .filter(|post| category.is_some() || !Self::is_archived(&options, post))
             .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
             .skip(skip)
             .take(limit)
             .cloned()
             .collect()
+    }
+
+    fn summarize(&self, post: Post) -> PostSummary {
+        PostSummary {
+            url: format!("{}/{}", self.config.url_prefix, post.slug),
+            slug: post.slug,
+            title: post.title,
+            summary: post.summary,
+            date: post.date,
+            categories: post.categories,
+            hero_image: post.hero_image,
+            reading_time_minutes: post.reading_time_minutes,
+        }
     }
 
     pub async fn get_posts_page(
@@ -386,16 +463,24 @@ impl PostsManager {
         self.visible_posts(category, username, start, self.config.posts_per_page)
             .await
             .into_iter()
-            .map(|post| PostSummary {
-                url: format!("{}/{}", self.config.url_prefix, post.slug),
-                slug: post.slug,
-                title: post.title,
-                summary: post.summary,
-                date: post.date,
-                categories: post.categories,
-                hero_image: post.hero_image,
-                reading_time_minutes: post.reading_time_minutes,
-            })
+            .map(|post| self.summarize(post))
+            .collect()
+    }
+
+    /// All posts visible to anonymous users, newest first, including archived
+    /// posts — the sitemap lists archived permalinks even though the
+    /// unfiltered index hides them
+    pub async fn get_public_post_summaries(&self) -> Vec<PostSummary> {
+        let posts = self.posts.read().await;
+        let slugs = self.sorted_slugs.read().await;
+        let folder_perms = self.folder_permissions.read().await;
+        let mut visibility = HashMap::new();
+
+        slugs
+            .iter()
+            .filter_map(|slug| posts.get(slug))
+            .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, None))
+            .map(|post| self.summarize(post.clone()))
             .collect()
     }
 
@@ -446,10 +531,12 @@ impl PostsManager {
     }
 
     /// All categories across posts visible to the user, with display label,
-    /// slug, and post count, sorted alphabetically by label
+    /// slug, post count, and any options declared in _categories.md. Sorted
+    /// by declared weight then label, with archive categories last.
     pub async fn get_categories(&self, username: Option<&str>) -> Vec<CategoryInfo> {
         let posts = self.posts.read().await;
         let folder_perms = self.folder_permissions.read().await;
+        let options = self.category_options.read().await;
         let mut visibility = HashMap::new();
 
         let mut categories: HashMap<String, CategoryInfo> = HashMap::new();
@@ -464,18 +551,42 @@ impl PostsManager {
                 }
                 categories
                     .entry(slug.clone())
-                    .or_insert_with(|| CategoryInfo {
-                        name: name.clone(),
-                        slug,
-                        count: 0,
+                    .or_insert_with(|| {
+                        let opts = options.get(&slug);
+                        CategoryInfo {
+                            name: opts
+                                .and_then(|o| o.name.clone())
+                                .unwrap_or_else(|| name.clone()),
+                            slug,
+                            count: 0,
+                            description: opts.and_then(|o| o.description.clone()),
+                            archive: opts.is_some_and(|o| o.archive),
+                        }
                     })
                     .count += 1;
             }
         }
 
         let mut result: Vec<CategoryInfo> = categories.into_values().collect();
-        result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        result.sort_by(|a, b| {
+            let weight = |c: &CategoryInfo| {
+                options
+                    .get(&c.slug)
+                    .and_then(|o| o.weight)
+                    .unwrap_or(i64::MAX)
+            };
+            (a.archive, weight(a), a.name.to_lowercase()).cmp(&(
+                b.archive,
+                weight(b),
+                b.name.to_lowercase(),
+            ))
+        });
         result
+    }
+
+    /// Options declared for a category slug in _categories.md, if any
+    pub async fn get_category_options(&self, slug: &str) -> Option<CategoryOptions> {
+        self.category_options.read().await.get(slug).cloned()
     }
 
     pub async fn get_post(&self, slug: &str) -> Option<Post> {
@@ -536,11 +647,13 @@ impl PostsManager {
     pub async fn get_total_pages(&self, category: Option<&str>, username: Option<&str>) -> usize {
         let posts = self.posts.read().await;
         let folder_perms = self.folder_permissions.read().await;
+        let options = self.category_options.read().await;
         let mut visibility = HashMap::new();
 
         let count = posts
             .values()
             .filter(|post| Self::matches_category(post, category))
+            .filter(|post| category.is_some() || !Self::is_archived(&options, post))
             .filter(|post| self.dir_visible(&folder_perms, &mut visibility, &post.slug, username))
             .count();
         count.div_ceil(self.config.posts_per_page)

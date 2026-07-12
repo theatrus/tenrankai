@@ -427,14 +427,11 @@ async fn collect_posts_urls(
         )));
     }
 
-    let total_pages = manager.get_total_pages(None, None).await;
-    for page in 0..total_pages {
-        for post in manager.get_posts_page(page, None, None).await {
-            urls.push(UrlEntry::with_lastmod(
-                format!("{base_url}{}", post.url),
-                post.date.to_rfc3339(),
-            ));
-        }
+    for post in manager.get_public_post_summaries().await {
+        urls.push(UrlEntry::with_lastmod(
+            format!("{base_url}{}", post.url),
+            post.date.to_rfc3339(),
+        ));
     }
 }
 

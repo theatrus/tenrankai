@@ -50,6 +50,12 @@ async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
 {% include "_header.html.liquid" %}
 
 <h1>{{ posts_name | capitalize }}</h1>
+{% if active_category_description %}<p class="category-description">{{ active_category_description }}</p>{% endif %}
+<nav class="category-bar">
+    {% for category in categories %}
+    <span class="chip{% if category.archive %} archive{% endif %}">{{ category.name }}={{ category.count }}</span>
+    {% endfor %}
+</nav>
 <div class="posts-list">
     {% for post in posts %}
         <article>
@@ -425,6 +431,120 @@ Rust content."#;
     // Unknown category feeds are 404
     let response = server.get("/blog/category/nonexistent/feed.xml").await;
     assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_category_options_and_archive() {
+    let (_temp_dir, server) = setup_test_server_with_posts().await;
+
+    let blog_dir = _temp_dir.path().join("posts").join("blog");
+    fs::write(
+        blog_dir.join("_categories.md"),
+        r#"+++
+[categories.legacy]
+name = "The Archive"
+description = "Older posts kept for reference"
+archive = true
+
+[categories.travel]
+weight = 1
+
+[categories.gear]
+weight = 2
++++
+"#,
+    )
+    .unwrap();
+
+    let old_news = r#"+++
+title = "Old News"
+summary = "An archived post"
+date = "2024-02-01"
+categories = ["Legacy"]
++++
+
+Old content."#;
+    fs::write(blog_dir.join("old-news.md"), old_news).unwrap();
+
+    let travel_memories = r#"+++
+title = "Travel Memories"
+summary = "Archived but still a travel post"
+date = "2024-02-02"
+categories = ["Travel", "Legacy"]
++++
+
+Travel content."#;
+    fs::write(blog_dir.join("travel-memories.md"), travel_memories).unwrap();
+
+    let new_trip = r#"+++
+title = "New Trip"
+summary = "A current travel post"
+date = "2024-02-03"
+categories = ["Travel"]
++++
+
+Trip content."#;
+    fs::write(blog_dir.join("new-trip.md"), new_trip).unwrap();
+
+    let gear_post = r#"+++
+title = "Gear Notes"
+summary = "A gear post"
+date = "2024-02-04"
+categories = ["Gear"]
++++
+
+Gear content."#;
+    fs::write(blog_dir.join("gear-notes.md"), gear_post).unwrap();
+
+    server.post("/api/posts/blog/refresh").await;
+
+    // Archived posts are hidden from the unfiltered index
+    let html = server.get("/blog").await.text();
+    assert!(html.contains("New Trip"));
+    assert!(!html.contains("Old News"));
+    assert!(!html.contains("Travel Memories"));
+
+    // Chips: declared weights order Travel before Gear, archive category
+    // last with its declared display name; counts include archived posts
+    let travel = html.find("Travel=2").expect("travel chip with count");
+    let gear = html.find("Gear=1").expect("gear chip with count");
+    let archive = html
+        .find(r#"<span class="chip archive">The Archive=2</span>"#)
+        .expect("archive chip with declared name");
+    assert!(travel < gear && gear < archive);
+
+    // ...and from the main feed
+    let xml = server.get("/blog/feed.xml").await.text();
+    assert!(xml.contains("<title>New Trip</title>"));
+    assert!(!xml.contains("Old News"));
+
+    // Category pages list everything in the category, archived or not
+    let html = server.get("/blog/category/travel").await.text();
+    assert!(html.contains("New Trip"));
+    assert!(html.contains("Travel Memories"));
+
+    // The archive category page is the archive view, with the declared
+    // name and description
+    let html = server.get("/blog/category/legacy").await.text();
+    assert!(html.contains("Old News"));
+    assert!(html.contains("Travel Memories"));
+    assert!(html.contains("Older posts kept for reference"));
+
+    // Archived posts stay reachable at their permalinks
+    let response = server.get("/blog/old-news").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    // The archive category feed uses the declared name and description
+    let xml = server.get("/blog/category/legacy/feed.xml").await.text();
+    assert!(xml.contains("The Archive"));
+    assert!(xml.contains("<description>Older posts kept for reference</description>"));
+    assert!(xml.contains("<title>Old News</title>"));
+
+    // Archived permalinks and the archive category page stay in the sitemap
+    let xml = server.get("/sitemap.xml").await.text();
+    assert!(xml.contains("/blog/old-news"));
+    assert!(xml.contains("/blog/travel-memories"));
+    assert!(xml.contains("/blog/category/legacy"));
 }
 
 #[tokio::test]
