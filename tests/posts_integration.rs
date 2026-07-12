@@ -555,6 +555,115 @@ Gear content."#;
 }
 
 #[tokio::test]
+async fn test_gallery_links_use_index_identifiers() {
+    // A gallery with sequence indexing addresses images by index id, not
+    // filename; post-generated links must use the id or detail-page
+    // navigation breaks
+    let temp_dir = TempDir::new().unwrap();
+    let templates_dir = temp_dir.path().join("templates");
+    let modules_dir = templates_dir.join("modules");
+    let partials_dir = templates_dir.join("partials");
+    let gallery_dir = temp_dir.path().join("gallery");
+    let blog_dir = temp_dir.path().join("blog");
+    for dir in [&modules_dir, &partials_dir, &gallery_dir, &blog_dir] {
+        fs::create_dir_all(dir).unwrap();
+    }
+
+    fs::write(partials_dir.join("_header.html.liquid"), "<html><body>").unwrap();
+    fs::write(partials_dir.join("_footer.html.liquid"), "</body></html>").unwrap();
+    fs::write(
+        modules_dir.join("posts_index.html.liquid"),
+        r#"{% include "_header.html.liquid" %}{% include "_footer.html.liquid" %}"#,
+    )
+    .unwrap();
+    fs::write(
+        modules_dir.join("post_detail.html.liquid"),
+        r#"{% include "_header.html.liquid" %}
+{% if post.hero_image_link %}<a class="post-hero-link" href="{{ post.hero_image_link }}"></a>{% endif %}
+<div class="content">{{ post.html_content }}</div>
+{% include "_footer.html.liquid" %}"#,
+    )
+    .unwrap();
+
+    // Minimal valid 1x1 PNG
+    const PNG: [u8; 69] = [
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2,
+        0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 0, 0,
+        3, 1, 1, 0, 201, 254, 146, 239, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ];
+    fs::write(gallery_dir.join("only-image.png"), PNG).unwrap();
+
+    fs::write(
+        blog_dir.join("seq-post.md"),
+        r#"+++
+title = "Seq Post"
+summary = "Post referencing a sequence-indexed gallery"
+date = "2024-05-01"
+hero_image = "gallery:seq:only-image.png"
++++
+
+![gallery:seq:only-image.png](medium,details)
+"#,
+    )
+    .unwrap();
+
+    let config = SiteConfig {
+        name: "TestServer".to_string(),
+        base_url: Some("http://localhost:3000".to_string()),
+        cookie_secret: "test-cookie-secret".to_string(),
+        templates: TemplateConfig {
+            directories: vec![templates_dir.to_string_lossy().to_string()],
+        },
+        static_files: StaticConfig {
+            directories: vec![temp_dir.path().to_string_lossy().to_string()],
+            use_redirects: false,
+        },
+        galleries: Some(vec![tenrankai::GallerySystemConfig {
+            name: "seq".to_string(),
+            source_directory: gallery_dir.to_string_lossy().to_string(),
+            cache_directory: temp_dir.path().join("cache").to_string_lossy().to_string(),
+            gallery_template: "gallery.html.liquid".to_string(),
+            image_detail_template: "image_detail.html.liquid".to_string(),
+            image_indexing: tenrankai::ImageIndexingMode::Sequence,
+            ..Default::default()
+        }]),
+        posts: Some(vec![PostsSystemConfig {
+            name: "blog".to_string(),
+            source_directory: blog_dir.to_string_lossy().to_string(),
+            url_prefix: "/blog".to_string(),
+            index_template: "modules/posts_index.html.liquid".to_string(),
+            post_template: "modules/post_detail.html.liquid".to_string(),
+            posts_per_page: 10,
+            refresh_interval_minutes: None,
+            permissions: Default::default(),
+        }]),
+        user_database: None,
+        email: None,
+        config_storage: None,
+        site_admins: Vec::new(),
+        hosted_mode: false,
+        site_title: None,
+        copyright_holder: None,
+    };
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app.into_make_service());
+
+    // Populate the gallery index, then re-render the post against it
+    server.get("/api/gallery/seq/data").await;
+    server.post("/api/posts/blog/refresh").await;
+
+    let html = server.get("/blog/seq-post").await.text();
+
+    // Sequence galleries address the only image as "1": links, image URLs,
+    // and the hover-card path all use the identifier, not the filename
+    assert!(html.contains(r#"href="/gallery/detail/1""#), "{html}");
+    assert!(html.contains("/gallery/_image/1/medium"));
+    assert!(html.contains(r#"data-image-path="1""#));
+    assert!(html.contains(r#"class="post-hero-link" href="/gallery/detail/1""#));
+    assert!(!html.contains("detail/only-image.png"));
+}
+
+#[tokio::test]
 async fn test_gallery_embeds_details_and_hero_link() {
     let (_temp_dir, server) = setup_test_server_with_posts().await;
 
