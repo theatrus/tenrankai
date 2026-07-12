@@ -4274,9 +4274,10 @@ dependencies = [
 [[package]]
 name = "seiza"
 version = "0.1.0"
-source = "git+https://github.com/theatrus/seiza?rev=e66b8e7#e66b8e746a5911f446644efd369269cce8616401"
+source = "git+https://github.com/theatrus/seiza?rev=53db453#53db453d02e9a4345dd4b647769299be00bf47bc"
 dependencies = [
  "image",
+ "memmap2",
  "thiserror 2.0.18",
 ]
 

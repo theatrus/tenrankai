@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 /// - `.toml` sidecar files: picks, comments, tags, AI analysis
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ImageUserMetadata {
+    /// Plate solution and overlay coordinates (app-managed, .toml sidecar)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub astro: Option<AstroSolution>,
+
     // === From .md sidecar (human-editable description) ===
     /// Image title (from .md frontmatter)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -394,4 +398,40 @@ impl Comment {
             version_path: Some(version_path),
         }
     }
+}
+
+/// A plate solution persisted as overlay coordinates: the TAN WCS plus the
+/// catalog objects projected into pixel coordinates at solve time.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct AstroSolution {
+    pub solved_at: chrono::DateTime<chrono::Utc>,
+    /// Image dimensions the solution applies to
+    pub width: u32,
+    pub height: u32,
+    /// Reference sky position, degrees (RA, Dec)
+    pub crval: [f64; 2],
+    /// Reference pixel (0-indexed)
+    pub crpix: [f64; 2],
+    /// Linear transform, degrees per pixel
+    pub cd: [[f64; 2]; 2],
+    pub matched_stars: u32,
+    pub rms_arcsec: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<AstroObject>,
+}
+
+/// One catalog object placed in the solved image.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct AstroObject {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub common_name: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mag: Option<f32>,
+    pub x: f64,
+    pub y: f64,
+    pub semi_major_px: f64,
+    pub semi_minor_px: f64,
+    pub angle_deg: f64,
 }
