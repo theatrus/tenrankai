@@ -12,6 +12,7 @@ import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx
 import { VersionPicker } from '../components/ImageDetail/VersionPicker.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { AstroSkyMap } from '../components/ImageDetail/AstroSkyMap.tsx';
+import { AstroOverlay, useAstroSolution } from '../components/ImageDetail/AstroOverlay.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { EditModal } from '../components/Editor/index.ts';
@@ -110,6 +111,12 @@ export function ImageDetailPage({
 
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
+
+  // Plate solution for astro images (null when unsolved or unavailable)
+  const astroSolution = useAstroSolution(
+    currentData?.gallery_name || '',
+    currentData?.image?.path || '',
+  );
 
   // Modal state for editing image info
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -263,6 +270,11 @@ export function ImageDetailPage({
                 tileConfig={currentData.tile_config}
                 galleryName={currentData.gallery_name}
                 onZoomStateChange={setIsImageZoomed}
+                overlay={
+                  astroSolution && !isImageZoomed ? (
+                    <AstroOverlay solution={astroSolution} />
+                  ) : undefined
+                }
               />
             </div>
           </div>

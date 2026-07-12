@@ -10,6 +10,8 @@ interface ImageDisplayProps {
   tileConfig?: TileConfig;
   galleryName: string;
   onZoomStateChange?: (isZoomed: boolean) => void;
+  /** Extra layer rendered over the standard image (e.g. the astro overlay) */
+  overlay?: React.ReactNode;
 }
 
 interface ZoomState {
@@ -66,7 +68,7 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
-export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange, overlay }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
@@ -1121,6 +1123,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
               onError={handleImageError}
               key={image.path} // Force re-render on image change
             />
+            {overlay}
             {/* Transparent overlay to prevent right-click */}
             <div
               style={{

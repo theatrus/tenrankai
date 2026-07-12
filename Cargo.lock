@@ -4272,6 +4272,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "seiza"
+version = "0.1.0"
+source = "git+https://github.com/theatrus/seiza?rev=e66b8e7#e66b8e746a5911f446644efd369269cce8616401"
+dependencies = [
+ "image",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4912,6 +4921,7 @@ dependencies = [
  "resvg",
  "rexif",
  "rgb",
+ "seiza",
  "serde",
  "serde_json",
  "sha2 0.11.0",

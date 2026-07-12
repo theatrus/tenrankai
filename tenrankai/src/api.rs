@@ -2491,6 +2491,7 @@ roles = ["viewer"]
         let site = crate::site::Site::new("test".to_string(), site_resources);
 
         let app_state = AppState {
+            astro: None,
             site: Arc::new(site),
             site_manager: None,
             email_provider: None,

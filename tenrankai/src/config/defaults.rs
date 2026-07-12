@@ -183,6 +183,7 @@ impl Default for Config {
             email: None,
             openai: None,
             cache_queue: None,
+            astro: None,
         }
     }
 }

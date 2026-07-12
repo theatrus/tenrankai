@@ -18,6 +18,22 @@ pub struct Config {
     pub openai: Option<openai::OpenAIConfig>,
     #[serde(default)]
     pub cache_queue: Option<CacheQueueConfig>,
+    /// Plate-solving data files (seiza star tiles and object catalog).
+    /// When configured, images with RA/Dec sidecar metadata get on-demand
+    /// WCS solutions and object overlays.
+    #[serde(default)]
+    pub astro: Option<AstroConfig>,
+}
+
+/// Plate-solving data configuration (`[astro]`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AstroConfig {
+    /// Star tile file built by `seiza build-data` (SEIZAST1)
+    pub star_data: std::path::PathBuf,
+    /// Object catalog built by `seiza build-data objects` (SEIZAOB1)
+    #[serde(default)]
+    pub object_data: Option<std::path::PathBuf>,
 }
 
 /// Configuration for the cache generation queue.
