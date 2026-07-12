@@ -114,6 +114,7 @@ tenrankai-config-storage = { path = "tenrankai-config-storage" }
 tenrankai-email = { path = "tenrankai-email" }
 tenrankai-image = { path = "tenrankai-image" }
 tenrankai-metadata = { path = "tenrankai-metadata" }
+seiza = { git = "https://github.com/theatrus/seiza", rev = "e66b8e7" }
 tenrankai-storage = { path = "tenrankai-storage" }
 tenrankai-users = { path = "tenrankai-users" }
 

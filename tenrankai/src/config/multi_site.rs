@@ -47,6 +47,10 @@ pub struct RootConfig {
     /// Cache generation queue configuration
     #[serde(default)]
     pub cache_queue: Option<CacheQueueConfig>,
+
+    /// Plate-solving data files (shared across all sites)
+    #[serde(default)]
+    pub astro: Option<super::types::AstroConfig>,
 }
 
 /// Convert RootConfig to Config
@@ -58,6 +62,7 @@ impl From<RootConfig> for super::types::Config {
             email: config.email,
             openai: config.openai,
             cache_queue: config.cache_queue,
+            astro: config.astro,
         }
     }
 }
@@ -90,6 +95,7 @@ mod tests {
             email: None,
             openai: None,
             cache_queue: None,
+            astro: None,
         };
 
         let config: super::super::types::Config = root.into();

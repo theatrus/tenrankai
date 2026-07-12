@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod api;
 pub mod api_response;
+pub mod astro;
 pub mod cache;
 pub mod commands;
 pub mod composite;
@@ -64,6 +65,7 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub cache_queue: Option<cache::queue::DynCacheQueue>,
+    pub astro: Option<Arc<astro::AstroContext>>,
 }
 
 impl AppState {
@@ -75,6 +77,7 @@ impl AppState {
             email_provider: self.email_provider.clone(),
             openai_client: self.openai_client.clone(),
             cache_queue: self.cache_queue.clone(),
+            astro: self.astro.clone(),
         }
     }
 
@@ -257,6 +260,7 @@ pub async fn create_app(
         email_provider: None,
         openai_client: None,
         cache_queue: None,
+        astro: None,
     };
 
     create_router(app_state, built_site)
@@ -320,12 +324,15 @@ pub async fn create_app_with_site_manager(
         None
     };
 
+    let astro = config.astro.as_ref().and_then(astro::AstroContext::load);
+
     let app_state = AppState {
         site: built_site.clone(),
         site_manager: Some(site_manager.clone()),
         email_provider,
         openai_client,
         cache_queue,
+        astro,
     };
 
     create_router(app_state, built_site)
@@ -816,6 +823,17 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
         );
 
         // API route for image metadata (get/update)
+        router = router.route(
+            &format!("/api/gallery/{}/astro/{{*path}}", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, auth| {
+                    let image_path = path.0;
+                    astro::astro_handler(state, Path((name, image_path)), auth)
+                }
+            }),
+        );
+
         router = router
             .route(
                 &format!("/api/gallery/{}/metadata/{{*path}}", name),
