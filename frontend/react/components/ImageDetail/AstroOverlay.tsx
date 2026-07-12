@@ -55,12 +55,63 @@ export function useAstroSolution(galleryName: string, imagePath: string): AstroS
  * Renders inside the image display container: a toggle button and, when
  * enabled, an SVG layer drawing the solved objects over the image.
  */
+/** True when the object's ellipse contains the entire image frame. */
+function encompassesFrame(o: PlacedObject, width: number, height: number): boolean {
+  if (o.semi_major_px <= 0) return false;
+  const rad = (o.angle_deg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return [
+    [0, 0],
+    [width, 0],
+    [width, height],
+    [0, height],
+  ].every(([cx, cy]) => {
+    const dx = cx - o.x;
+    const dy = cy - o.y;
+    const u = (dx * cos + dy * sin) / o.semi_major_px;
+    const v = (-dx * sin + dy * cos) / Math.max(o.semi_minor_px, 1);
+    return u * u + v * v <= 1;
+  });
+}
+
 export function AstroOverlay({ solution }: { solution: AstroSolution }) {
   const [visible, setVisible] = useState(false);
 
-  const objects = solution.objects || [];
+  const width = solution.width;
+  const height = solution.height;
+  const all = solution.objects || [];
+  const encompassing = all.filter((o) => encompassesFrame(o, width, height));
+  const objects = all.filter((o) => !encompassing.includes(o));
   const stroke = Math.max(solution.width / 1200, 1.5);
   const fontSize = Math.max(solution.width / 70, 14);
+
+  // Nudge colliding labels apart: labels default above their object; when
+  // two anchors are close, later ones stack further up (or flip below).
+  const labelText = (o: PlacedObject) =>
+    o.common_name && o.common_name !== o.name
+      ? `${o.name} · ${o.common_name}`
+      : o.common_name || o.name;
+  const placedLabels: { x: number; y: number; halfWidth: number }[] = [];
+  const labelY = (o: PlacedObject): number => {
+    const halfWidth = (labelText(o).length * fontSize * 0.55) / 2;
+    const b = Math.max(o.semi_minor_px, fontSize);
+    let y = o.y - b - fontSize * 0.5;
+    let collided = true;
+    let attempts = 0;
+    while (collided && attempts < 6) {
+      collided = placedLabels.some(
+        (l) =>
+          Math.abs(l.y - y) < fontSize * 1.3 && Math.abs(l.x - o.x) < l.halfWidth + halfWidth,
+      );
+      if (collided) {
+        y -= fontSize * 1.4;
+        attempts += 1;
+      }
+    }
+    placedLabels.push({ x: o.x, y, halfWidth });
+    return y;
+  };
 
   return (
     <>
@@ -85,9 +136,9 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
           fontSize: '0.85rem',
           cursor: 'pointer',
         }}
-        title={`${objects.length} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
+        title={`${all.length} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
       >
-        {visible ? 'Objects ✕' : `Objects (${objects.length})`}
+        {visible ? 'Objects ✕' : `Objects (${all.length})`}
       </button>
 
       {visible && (
@@ -104,13 +155,25 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
           }}
           aria-label="Sky object overlay"
         >
+          {encompassing.length > 0 && (
+            <text
+              x={fontSize}
+              y={height - fontSize}
+              fontSize={fontSize}
+              fill="#aee8ff"
+              stroke="rgba(0,0,0,0.8)"
+              strokeWidth={fontSize / 10}
+              paintOrder="stroke"
+            >
+              {`Field within: ${encompassing.map(labelText).join(' · ')}`}
+            </text>
+          )}
           {objects.map((o) => {
             const isStar = o.kind === 'star';
-            const label = o.common_name && o.common_name !== o.name
-              ? `${o.name} · ${o.common_name}`
-              : o.common_name || o.name;
+            const label = labelText(o);
             const a = Math.max(o.semi_major_px, fontSize);
             const b = Math.max(o.semi_minor_px, fontSize);
+            const y = labelY(o);
             return (
               <g key={`${o.name}-${o.x}-${o.y}`}>
                 {isStar ? (
@@ -147,7 +210,7 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
                 )}
                 <text
                   x={o.x}
-                  y={o.y - b - fontSize * 0.5}
+                  y={y}
                   textAnchor="middle"
                   fontSize={fontSize}
                   fill={isStar ? '#ffd479' : '#aee8ff'}
