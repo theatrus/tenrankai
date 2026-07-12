@@ -136,7 +136,11 @@ impl Gallery {
         Ok(())
     }
 
-    pub fn start_background_cache_refresh(gallery: super::SharedGallery, interval_minutes: u64) {
+    pub fn start_background_cache_refresh(
+        gallery: super::SharedGallery,
+        interval_minutes: u64,
+        gallery_key: String,
+    ) {
         let shutdown_token = gallery.shutdown_token.clone();
         tokio::spawn(async move {
             let mut interval =
@@ -153,12 +157,35 @@ impl Gallery {
                         info!("Starting scheduled metadata cache refresh");
 
                         let pregenerate = gallery.config.pregenerate.is_some();
+                        // Refresh metadata only; pre-generation is routed through the
+                        // process-global queue below so it yields to interactive work.
                         if let Err(e) = gallery
                             .clone()
-                            .refresh_metadata_and_pregenerate_cache(pregenerate)
+                            .refresh_metadata_and_pregenerate_cache(false)
                             .await
                         {
                             error!("Failed to refresh metadata cache: {}", e);
+                        }
+
+                        if pregenerate {
+                            match crate::generation::global_manager() {
+                                Some(manager) => {
+                                    let queued = manager
+                                        .enqueue_gallery_pregeneration(
+                                            gallery_key.clone(),
+                                            gallery.clone(),
+                                        )
+                                        .await;
+                                    info!(
+                                        "Queued {} background pre-generation job(s) after scheduled refresh for '{}'",
+                                        queued, gallery_key
+                                    );
+                                }
+                                None => warn!(
+                                    "Generation manager not installed; skipping scheduled pre-generation for '{}'",
+                                    gallery_key
+                                ),
+                            }
                         }
                     }
                 }
@@ -386,7 +413,7 @@ impl Gallery {
     }
 
     /// Check if tiles should be pregenerated
-    fn should_pregenerate_tiles(&self) -> bool {
+    pub(crate) fn should_pregenerate_tiles(&self) -> bool {
         self.config
             .pregenerate
             .as_ref()

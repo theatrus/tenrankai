@@ -18,6 +18,7 @@ pub use formats::{
     png::extract_icc_profile as extract_icc_profile_from_png,
 };
 pub use icc::extract_icc_profile_name;
+pub use serve::{pending_generation_response, serve_image_with_generation_queue};
 
 // Re-export byte-based extraction functions for storage abstraction
 pub use formats::{

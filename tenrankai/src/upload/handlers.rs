@@ -7,7 +7,6 @@ use axum::{
 use tracing::{debug, info, warn};
 
 use super::UploadError;
-use crate::cache::queue::CacheGenerationRequest;
 use crate::login::AuthUser;
 use crate::login::extractors::OptionalAuth;
 use crate::permissions::{PermissionResolver, RolePermissions};
@@ -358,21 +357,18 @@ pub async fn patch_upload(
             warn!(path = %folder_path, error = %e, "Failed to refresh folder cache after upload");
         }
 
-        // Queue cache generation in background (thumbnails, etc.)
-        if let Some(queue) = app_state.cache_queue() {
-            let site_name = app_state.site.name.clone();
-            let request =
-                CacheGenerationRequest::new(&site_name, &gallery_name, &info.path).with_priority(8);
-            if let Err(e) = queue.submit(request).await {
-                warn!(
-                    site = %site_name,
-                    gallery = %gallery_name,
-                    path = %info.path,
-                    error = %e,
-                    "Failed to queue cache generation"
-                );
-            }
-        }
+        // Queue cache generation in the process-global priority queue.
+        let site_name = app_state.site.name.clone();
+        let gallery_key = format!("{}:{}", site_name, gallery_name);
+        app_state
+            .generation_manager()
+            .enqueue_pregenerate(
+                gallery_key,
+                gallery.clone(),
+                &info.path,
+                crate::generation::GenerationPriority::Normal,
+            )
+            .await;
     }
 
     let mut response_headers = tus_headers();

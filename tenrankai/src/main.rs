@@ -9,11 +9,11 @@ use tracing_subscriber::{EnvFilter, fmt};
 use tenrankai::{
     Config, GallerySystemConfig, LogLevel,
     cache::queue::{CacheQueueWorker, DynCacheQueue, InMemoryQueue},
-    commands,
+    commands, concurrency,
     config::{ConfigStorageLoader, MultiSiteConfig},
     create_app_with_site_manager,
     gallery::Gallery,
-    openai, posts,
+    generation, openai, posts,
     site::{SiteBuilder, SiteManager},
     user_storage::{User, create_user_storage},
 };
@@ -1057,6 +1057,10 @@ async fn run_server(
     info!("Loaded {} site(s) from ConfigStorage", loaded_sites.len());
 
     let site_manager = Arc::new(SiteManager::new());
+    let generation_manager =
+        generation::GenerationManager::new(concurrency::WorkerPolicy::default());
+    generation_manager.install_global();
+    generation_manager.start();
 
     for (site_name, mut site_config) in loaded_sites {
         info!("Building site '{}'...", site_name);
@@ -1111,7 +1115,7 @@ async fn run_server(
                 }
                 if let Err(e) = gallery
                     .clone()
-                    .refresh_metadata_and_pregenerate_cache(pregenerate)
+                    .refresh_metadata_and_pregenerate_cache(false)
                     .await
                 {
                     tracing::error!(
@@ -1119,6 +1123,19 @@ async fn run_server(
                         gallery_name,
                         site_name,
                         e
+                    );
+                }
+
+                if pregenerate {
+                    let queued = generation_manager
+                        .enqueue_gallery_pregeneration(
+                            format!("{}:{}", site_name, gallery_name),
+                            gallery.clone(),
+                        )
+                        .await;
+                    info!(
+                        "Queued {} background pre-generation job(s) for gallery '{}' (site '{}')",
+                        queued, gallery_name, site_name
                     );
                 }
             }
@@ -1130,7 +1147,11 @@ async fn run_server(
                     "Starting background cache refresh for gallery '{}' (site '{}') every {} minutes",
                     gallery_name, site_name, interval_minutes
                 );
-                Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
+                Gallery::start_background_cache_refresh(
+                    gallery.clone(),
+                    interval_minutes,
+                    format!("{}:{}", site_name, gallery_name),
+                );
             }
 
             info!(
@@ -1193,9 +1214,13 @@ async fn run_server(
         None
     };
 
-    let app =
-        create_app_with_site_manager(config.clone(), site_manager.clone(), cache_queue.clone())
-            .await;
+    let app = create_app_with_site_manager(
+        config.clone(),
+        site_manager.clone(),
+        cache_queue.clone(),
+        generation_manager.clone(),
+    )
+    .await;
 
     // Convert all_galleries_map to Arc for background analysis
     let galleries_arc = Arc::new(all_galleries_map);

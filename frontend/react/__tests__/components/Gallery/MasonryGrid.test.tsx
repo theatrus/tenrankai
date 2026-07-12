@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MasonryGrid, GalleryImage } from '@components/Gallery/MasonryGrid';
 
 function createGalleryImage(overrides?: Partial<GalleryImage>): GalleryImage {
@@ -517,8 +517,29 @@ describe('MasonryGrid', () => {
 
       const imageContainer = container.querySelector('.gallery-image-container');
       expect(imageContainer).not.toBeNull();
-      expect(imageContainer).toHaveAttribute('role', 'img');
-      expect(imageContainer).toHaveAttribute('aria-label', 'img.jpg');
+      expect(within(container).getByRole('img', { name: 'img.jpg' })).toBe(imageContainer);
+      expect(imageContainer).toHaveAttribute('alt', 'img.jpg');
+    });
+
+    it('builds retina srcset for path-based image URLs', () => {
+      const images = [
+        createGalleryImage({
+          path: 'img.jpg',
+          name: 'img.jpg',
+          thumbnail_url: '/gallery/_image/abc123/thumbnail',
+          gallery_url: '/gallery/_image/abc123/gallery',
+        }),
+      ];
+
+      const { container } = render(
+        <MasonryGrid images={images} galleryUrl="/gallery/main" gridMode="square" />,
+      );
+
+      const imageContainer = container.querySelector('.gallery-image-container');
+      expect(imageContainer).toHaveAttribute(
+        'srcset',
+        '/gallery/_image/abc123/thumbnail 1x, /gallery/_image/abc123/thumbnail@2x 2x',
+      );
     });
   });
 

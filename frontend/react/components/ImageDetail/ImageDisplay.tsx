@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ImageInfo, TileConfig } from '../../types/index.ts';
 import { useDelayedLoading } from '../../hooks/useDelayedLoading.ts';
+import { RetryableImage } from '../common/RetryableImage.tsx';
+import { buildTileUrl, imageSrcSet, withRetryFragment } from '../../utils/imageUrls.ts';
 
 interface ImageDisplayProps {
   image: ImageInfo;
@@ -66,6 +68,28 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
+function preloadImageWithRetry(
+  url: string,
+  onLoad: () => void,
+  onError: () => void,
+  attempt = 0,
+) {
+  const img = new Image();
+  img.onload = onLoad;
+  img.onerror = () => {
+    if (attempt >= 30) {
+      onError();
+      return;
+    }
+
+    const delay = Math.min(750 * Math.max(1, attempt + 1), 5000);
+    window.setTimeout(() => {
+      preloadImageWithRetry(url, onLoad, onError, attempt + 1);
+    }, delay);
+  };
+  img.src = withRetryFragment(url, attempt);
+}
+
 export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
@@ -93,7 +117,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     ? image.user_metadata.ai_alt_text
     : image.name;
   const isInitialMount = useRef(true);
-  const imageRef = useRef<HTMLImageElement>(null);
+  const imageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const preloadedTilesRef = useRef<Set<string>>(new Set());
   const [loadingTiles, setLoadingTiles] = useState<Set<string>>(new Set());
@@ -627,7 +651,6 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
   const preloadSurroundingTiles = useCallback((centerX: number, centerY: number) => {
     if (!tileConfig) return;
     
-    const imageId = getImageIdentifierFromUrl(image.medium_url);
     const tilesToPreload: string[] = [];
     
     // Preload a 3x3 grid around the current tile
@@ -638,7 +661,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         
         if (tileX >= 0 && tileX < tileConfig.grid_width && 
             tileY >= 0 && tileY < tileConfig.grid_height) {
-          const tileUrl = `/gallery/_image/${imageId}/tile_${tileX}_${tileY}`;
+          const tileUrl = buildTileUrl(image.medium_url, tileX, tileY);
           
           // Only preload if we haven't already
           if (!preloadedTilesRef.current.has(tileUrl)) {
@@ -654,54 +677,44 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       // Mark tile as loading
       setLoadingTiles(prev => new Set(prev).add(url));
       
-      const img = new Image();
-      img.onload = () => {
+      preloadImageWithRetry(url, () => {
         setLoadingTiles(prev => {
           const newSet = new Set(prev);
           newSet.delete(url);
           return newSet;
         });
-      };
-      img.onerror = () => {
+      }, () => {
         setLoadingTiles(prev => {
           const newSet = new Set(prev);
           newSet.delete(url);
           return newSet;
         });
-      };
-      img.src = url;
+      });
       
       // Also preload 2x version for retina displays
       if (window.devicePixelRatio > 1) {
-        const url2x = url.replace(/\/tile_/, '/tile_') + '@2x';
+        const tileMatch = url.match(/\/tile_(\d+)_(\d+)$/);
+        const url2x = tileMatch
+          ? buildTileUrl(image.medium_url, Number(tileMatch[1]), Number(tileMatch[2]), true)
+          : `${url}@2x`;
         setLoadingTiles(prev => new Set(prev).add(url2x));
         
-        const img2x = new Image();
-        img2x.onload = () => {
+        preloadImageWithRetry(url2x, () => {
           setLoadingTiles(prev => {
             const newSet = new Set(prev);
             newSet.delete(url2x);
             return newSet;
           });
-        };
-        img2x.onerror = () => {
+        }, () => {
           setLoadingTiles(prev => {
             const newSet = new Set(prev);
             newSet.delete(url2x);
             return newSet;
           });
-        };
-        img2x.src = url2x;
+        });
       }
     });
   }, [tileConfig, image.medium_url]);
-  
-  // Extract the image identifier from a URL
-  const getImageIdentifierFromUrl = (url: string): string => {
-    // Extract the part between /_image/ and the size
-    const match = url.match(/\/_image\/(.+)\/[^/]+$/);
-    return match ? match[1] : image.path;
-  };
   
   // Render multiple tiles for the zoom overlay
   const renderZoomTiles = () => {
@@ -779,8 +792,6 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       tilesToRender.push({x: currentTileX - 1, y: currentTileY - 1});
     }
     
-    const imageId = getImageIdentifierFromUrl(image.medium_url);
-    
     // Calculate offset for the entire tile grid
     const offsetX = -(tiledX * zoomScale - 150);
     const offsetY = -(tiledY * zoomScale - 150);
@@ -788,10 +799,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     return (
       <>
         {tilesToRender.map(tile => {
-          // Create image-set for retina support
-          const tileUrl = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}`;
-          const tileUrl2x = `/gallery/_image/${imageId}/tile_${tile.x}_${tile.y}@2x`;
-          const imageSetValue = `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`;
+          const tileUrl = buildTileUrl(image.medium_url, tile.x, tile.y);
 
           // Calculate actual tile dimensions (edge tiles may be smaller)
           const tileStartX = tile.x * tileConfig.tile_size;
@@ -807,21 +815,21 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             top: `${offsetY + tileStartY * zoomScale}px`,
             width: `${actualTileWidth * zoomScale}px`,
             height: `${actualTileHeight * zoomScale}px`,
-            backgroundSize: '100% 100%',
-            backgroundPosition: 'top left',
-            backgroundRepeat: 'no-repeat',
-            imageRendering: 'auto'
+            objectFit: 'fill',
+            imageRendering: 'auto',
+            pointerEvents: 'none'
           };
-
-          // Set both standard and WebKit prefixed versions
-          tileStyle.backgroundImage = imageSetValue;
-          (tileStyle as any).WebkitBackgroundImage = imageSetValue;
 
           const tileKey = `tile_${tile.x}_${tile.y}`;
 
           return (
-            <div
+            <RetryableImage
               key={tileKey}
+              src={tileUrl}
+              srcSet={`${tileUrl} 1x, ${buildTileUrl(image.medium_url, tile.x, tile.y, true)} 2x`}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
               style={tileStyle}
             />
           );
@@ -835,7 +843,6 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
   const renderMobileZoomTiles = () => {
     if (!tileConfig || !pinchZoom.isZoomed) return null;
 
-    const imageId = getImageIdentifierFromUrl(image.medium_url);
     const tiles: React.JSX.Element[] = [];
 
     // Calculate base image display size (before zoom scale)
@@ -868,8 +875,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
     for (let ty = startTileY; ty <= endTileY; ty++) {
       for (let tx = startTileX; tx <= endTileX; tx++) {
-        const tileUrl = `/gallery/_image/${imageId}/tile_${tx}_${ty}`;
-        const tileUrl2x = `/gallery/_image/${imageId}/tile_${tx}_${ty}@2x`;
+        const tileUrl = buildTileUrl(image.medium_url, tx, ty);
+        const tileUrl2x = buildTileUrl(image.medium_url, tx, ty, true);
 
         // Calculate actual tile dimensions (edge tiles may be smaller)
         const tileStartX = tx * tileConfig.tile_size;
@@ -886,19 +893,21 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         const displayHeight = actualTileHeight * imgScale;
 
         tiles.push(
-          <div
+          <RetryableImage
             key={`tile_${tx}_${ty}`}
+            src={tileUrl}
+            srcSet={`${tileUrl} 1x, ${tileUrl2x} 2x`}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
             style={{
               position: 'absolute',
               left: `${displayX}px`,
               top: `${displayY}px`,
               width: `${displayWidth}px`,
               height: `${displayHeight}px`,
-              backgroundImage: `image-set(url("${tileUrl}") 1x, url("${tileUrl2x}") 2x)`,
-              // Edge tiles are cropped to actual size on server, so 100% 100% works for all
-              backgroundSize: '100% 100%',
-              backgroundPosition: 'top left',
-              backgroundRepeat: 'no-repeat'
+              objectFit: 'fill',
+              pointerEvents: 'none'
             }}
           />
         );
@@ -906,11 +915,9 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         // Preload this tile
         if (!preloadedTilesRef.current.has(tileUrl)) {
           preloadedTilesRef.current.add(tileUrl);
-          const img = new Image();
-          img.src = tileUrl;
+          preloadImageWithRetry(tileUrl, () => undefined, () => undefined);
           if (window.devicePixelRatio > 1) {
-            const img2x = new Image();
-            img2x.src = tileUrl2x;
+            preloadImageWithRetry(tileUrl2x, () => undefined, () => undefined);
           }
         }
       }
@@ -999,9 +1006,9 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                   }}
                 >
                   {/* Base image layer */}
-                  <img
+                  <RetryableImage
                     src={image.medium_url}
-                    srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
+                    srcSet={imageSrcSet(image.medium_url, 'medium@2x')}
                     alt={altText}
                     style={{
                       position: 'absolute',
@@ -1108,9 +1115,9 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             aria-label={image.name}
           >
             {/* Medium image display with retina support - using img element for HDR compatibility */}
-            <img
+            <RetryableImage
               src={image.medium_url}
-              srcSet={`${image.medium_url} 1x, ${image.medium_url.replace('/medium', '/medium@2x')} 2x`}
+              srcSet={imageSrcSet(image.medium_url, 'medium@2x')}
               alt={altText}
               style={{
                 display: 'block', // Remove inline baseline spacing

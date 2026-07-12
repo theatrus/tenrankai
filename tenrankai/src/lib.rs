@@ -4,11 +4,13 @@ pub mod api_response;
 pub mod cache;
 pub mod commands;
 pub mod composite;
+pub mod concurrency;
 pub mod config;
 pub mod copyright;
 pub mod email;
 pub mod favicon;
 pub mod gallery;
+pub mod generation;
 pub mod logging;
 pub mod login;
 pub mod metadata_storage;
@@ -64,6 +66,7 @@ pub struct AppState {
     pub email_provider: Option<email::DynEmailProvider>,
     pub openai_client: Option<Arc<openai::OpenAIClient>>,
     pub cache_queue: Option<cache::queue::DynCacheQueue>,
+    pub generation_manager: Arc<generation::GenerationManager>,
 }
 
 impl AppState {
@@ -75,12 +78,17 @@ impl AppState {
             email_provider: self.email_provider.clone(),
             openai_client: self.openai_client.clone(),
             cache_queue: self.cache_queue.clone(),
+            generation_manager: self.generation_manager.clone(),
         }
     }
 
     /// Get the cache generation queue (if enabled)
     pub fn cache_queue(&self) -> Option<&cache::queue::DynCacheQueue> {
         self.cache_queue.as_ref()
+    }
+
+    pub fn generation_manager(&self) -> &Arc<generation::GenerationManager> {
+        &self.generation_manager
     }
 }
 
@@ -250,6 +258,10 @@ pub async fn create_app(
         login::start_periodic_cleanup(built_site.login_state().clone());
     }
 
+    let generation_manager =
+        generation::GenerationManager::new(concurrency::WorkerPolicy::default());
+    generation_manager.start();
+
     // Create minimal AppState for testing (no email, openai, cache_queue)
     let app_state = AppState {
         site: built_site.clone(),
@@ -257,6 +269,7 @@ pub async fn create_app(
         email_provider: None,
         openai_client: None,
         cache_queue: None,
+        generation_manager,
     };
 
     create_router(app_state, built_site)
@@ -267,6 +280,7 @@ pub async fn create_app_with_site_manager(
     config: Config,
     site_manager: Arc<site::SiteManager>,
     cache_queue: Option<cache::queue::DynCacheQueue>,
+    generation_manager: Arc<generation::GenerationManager>,
 ) -> axum::Router {
     // In multi-site mode, get the default site from SiteManager
     // The site_resolution_middleware will swap in the correct site per-request
@@ -326,6 +340,7 @@ pub async fn create_app_with_site_manager(
         email_provider,
         openai_client,
         cache_queue,
+        generation_manager,
     };
 
     create_router(app_state, built_site)

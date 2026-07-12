@@ -8,9 +8,9 @@ use axum::{
 use super::error::AdminError;
 use super::extractors::RequireAdmin;
 use super::types::*;
-use crate::cache::queue::{CacheCleanupRequest, CacheGenerationRequest};
 use crate::gallery::path_utils::{self, SidecarPaths};
 use crate::gallery::{SortDirection, SortOrder};
+use crate::generation::GenerationPriority;
 use crate::permissions::types::RolePermissions;
 use crate::site::ResolvedState;
 use crate::storage::DynStorage;
@@ -3900,38 +3900,41 @@ pub async fn rename_gallery_folder(
         }
     }
 
-    // Queue cache cleanup for old paths and generation for new paths
-    if let Some(cache_queue) = app_state.cache_queue() {
-        for entry in &all_files {
-            if !entry.is_dir
-                && crate::gallery::grouping::is_image_extension(
-                    path_utils::filename(&entry.path)
-                        .rsplit('.')
-                        .next()
-                        .unwrap_or(""),
+    // Queue cache cleanup for old paths and generation for new paths.
+    let gallery_key = format!("{}:{}", site, gallery);
+    for entry in &all_files {
+        if !entry.is_dir
+            && crate::gallery::grouping::is_image_extension(
+                path_utils::filename(&entry.path)
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(""),
+            )
+        {
+            let relative_path = entry
+                .path
+                .strip_prefix(&folder_path)
+                .unwrap_or(&entry.path)
+                .trim_start_matches('/');
+            let dest_path = if relative_path.is_empty() {
+                new_path.clone()
+            } else {
+                format!("{}/{}", new_path, relative_path)
+            };
+
+            app_state
+                .generation_manager()
+                .enqueue_cleanup(gallery_key.clone(), gallery_obj.clone(), &entry.path)
+                .await;
+            app_state
+                .generation_manager()
+                .enqueue_pregenerate(
+                    gallery_key.clone(),
+                    gallery_obj.clone(),
+                    &dest_path,
+                    GenerationPriority::Normal,
                 )
-            {
-                let relative_path = entry
-                    .path
-                    .strip_prefix(&folder_path)
-                    .unwrap_or(&entry.path)
-                    .trim_start_matches('/');
-                let dest_path = if relative_path.is_empty() {
-                    new_path.clone()
-                } else {
-                    format!("{}/{}", new_path, relative_path)
-                };
-
-                // Cleanup old cache
-                let _ = cache_queue
-                    .submit_cleanup(CacheCleanupRequest::new(&site, &gallery, &entry.path))
-                    .await;
-
-                // Generate new cache
-                let _ = cache_queue
-                    .submit(CacheGenerationRequest::new(&site, &gallery, &dest_path))
-                    .await;
-            }
+                .await;
         }
     }
 
@@ -4139,22 +4142,24 @@ pub async fn move_gallery_images(
                 }
 
                 // Queue cache cleanup/generation for version files
-                if let Some(cache_queue) = app_state.cache_queue() {
-                    let _ = cache_queue
-                        .submit_cleanup(CacheCleanupRequest::new(
-                            &site,
-                            &gallery,
-                            version_src.clone(),
-                        ))
-                        .await;
-                    let _ = cache_queue
-                        .submit(CacheGenerationRequest::new(
-                            &site,
-                            &gallery,
-                            version_dest.clone(),
-                        ))
-                        .await;
-                }
+                let gallery_key = format!("{}:{}", site, gallery);
+                app_state
+                    .generation_manager()
+                    .enqueue_cleanup(
+                        gallery_key.clone(),
+                        gallery_obj.clone(),
+                        version_src.clone(),
+                    )
+                    .await;
+                app_state
+                    .generation_manager()
+                    .enqueue_pregenerate(
+                        gallery_key,
+                        gallery_obj.clone(),
+                        version_dest.clone(),
+                        GenerationPriority::Normal,
+                    )
+                    .await;
             }
         }
 
@@ -4167,17 +4172,20 @@ pub async fn move_gallery_images(
         }
 
         // Queue cache cleanup for old path and generation for new path
-        if let Some(cache_queue) = app_state.cache_queue() {
-            // Cleanup old cache files
-            let _ = cache_queue
-                .submit_cleanup(CacheCleanupRequest::new(&site, &gallery, &source_path))
-                .await;
-
-            // Generate cache for new path
-            let _ = cache_queue
-                .submit(CacheGenerationRequest::new(&site, &gallery, &dest_path))
-                .await;
-        }
+        let gallery_key = format!("{}:{}", site, gallery);
+        app_state
+            .generation_manager()
+            .enqueue_cleanup(gallery_key.clone(), gallery_obj.clone(), &source_path)
+            .await;
+        app_state
+            .generation_manager()
+            .enqueue_pregenerate(
+                gallery_key,
+                gallery_obj.clone(),
+                &dest_path,
+                GenerationPriority::Normal,
+            )
+            .await;
 
         moved_count += 1;
     }
@@ -4384,20 +4392,30 @@ pub async fn copy_gallery_images(
                 }
 
                 // Queue cache generation for version files
-                if let Some(cache_queue) = app_state.cache_queue() {
-                    let _ = cache_queue
-                        .submit(CacheGenerationRequest::new(&site, &gallery, &version_dest))
-                        .await;
-                }
+                let gallery_key = format!("{}:{}", site, gallery);
+                app_state
+                    .generation_manager()
+                    .enqueue_pregenerate(
+                        gallery_key,
+                        gallery_obj.clone(),
+                        &version_dest,
+                        GenerationPriority::Normal,
+                    )
+                    .await;
             }
         }
 
         // Queue cache generation for new path
-        if let Some(cache_queue) = app_state.cache_queue() {
-            let _ = cache_queue
-                .submit(CacheGenerationRequest::new(&site, &gallery, &dest_path))
-                .await;
-        }
+        let gallery_key = format!("{}:{}", site, gallery);
+        app_state
+            .generation_manager()
+            .enqueue_pregenerate(
+                gallery_key,
+                gallery_obj.clone(),
+                &dest_path,
+                GenerationPriority::Normal,
+            )
+            .await;
 
         copied_count += 1;
     }

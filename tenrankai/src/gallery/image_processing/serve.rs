@@ -1,6 +1,7 @@
 use crate::{
     ApiResponse,
-    gallery::{Gallery, GalleryError},
+    gallery::{Gallery, GalleryError, SharedGallery},
+    generation::{GenerationManager, GenerationPriority, tile_output_format},
     storage::{ObjectMetadata, StorageError},
 };
 use axum::{
@@ -9,7 +10,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures::TryStreamExt;
-use tracing::{debug, error};
+use std::sync::Arc;
+use tracing::{debug, error, warn};
 
 /// Short cache duration for images (5 minutes)
 /// This allows quick updates while still benefiting from caching
@@ -91,6 +93,183 @@ fn not_modified_response() -> Response {
             .unwrap(),
     );
     (StatusCode::NOT_MODIFIED, headers, Body::empty()).into_response()
+}
+
+pub fn pending_generation_response() -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CACHE_CONTROL,
+        "no-store, max-age=0, s-maxage=0".parse().unwrap(),
+    );
+    headers.insert(header::RETRY_AFTER, "1".parse().unwrap());
+    (StatusCode::ACCEPTED, headers, Body::empty()).into_response()
+}
+
+pub async fn serve_image_with_generation_queue(
+    gallery: SharedGallery,
+    gallery_key: String,
+    relative_path: &str,
+    size: Option<String>,
+    accept_header: &str,
+    request_headers: &HeaderMap,
+    generation_manager: &Arc<GenerationManager>,
+) -> Response {
+    if relative_path.contains("..") || relative_path.starts_with('/') {
+        return ApiResponse::Forbidden.into_response();
+    }
+
+    let output_format = gallery.determine_output_format(accept_header, relative_path);
+    debug!(
+        "Serving queued image: {}, output format: {:?}",
+        relative_path, output_format
+    );
+
+    if let Some(size) = size.as_deref() {
+        let is_retina_tile = size.ends_with("@2x") && size.starts_with("tile_");
+        let size_to_parse = if is_retina_tile {
+            &size[..size.len() - 3]
+        } else {
+            size
+        };
+
+        let Some(parsed_size) = crate::gallery::types::ImageSize::parse(size_to_parse) else {
+            return ApiResponse::InvalidSizeParameter.into_response();
+        };
+
+        if let crate::gallery::types::ImageSize::Tile(x, y) = parsed_size {
+            let tile_size = gallery
+                .config
+                .tiles
+                .as_ref()
+                .map(|tc| tc.tile_size)
+                .unwrap_or(1024);
+            let tile_format = tile_output_format();
+            let cache_filename = crate::gallery::cache::generate_tile_cache_filename(
+                relative_path,
+                x,
+                y,
+                tile_size,
+                is_retina_tile,
+                tile_format.extension(),
+            );
+
+            if gallery
+                .cache_storage
+                .exists(&cache_filename)
+                .await
+                .unwrap_or(false)
+            {
+                return gallery
+                    .serve_from_cache_storage(
+                        &cache_filename,
+                        tile_format.mime_type(),
+                        request_headers,
+                    )
+                    .await;
+            }
+
+            if !source_exists_for_generation(&gallery, relative_path).await {
+                return ApiResponse::ImageNotFound.into_response();
+            }
+
+            if let Some(error) = generation_manager
+                .take_recent_tile_error(&gallery_key, relative_path, tile_size, tile_format)
+                .await
+            {
+                warn!(
+                    "Tile generation failed for {}: {}; not re-enqueuing",
+                    relative_path, error
+                );
+                return ApiResponse::InternalServerError.into_response();
+            }
+
+            generation_manager
+                .enqueue_tile_set(
+                    gallery_key,
+                    gallery.clone(),
+                    relative_path,
+                    tile_size,
+                    GenerationPriority::Interactive,
+                )
+                .await;
+            return pending_generation_response();
+        }
+
+        if gallery.parse_size(size).is_err() {
+            return ApiResponse::InvalidSizeParameter.into_response();
+        }
+
+        let apply_watermark = gallery.should_apply_watermark(relative_path, size);
+        let cache_filename = gallery.generate_cache_filename(
+            relative_path,
+            size,
+            output_format.extension(),
+            apply_watermark,
+        );
+
+        if gallery
+            .cache_storage
+            .exists(&cache_filename)
+            .await
+            .unwrap_or(false)
+        {
+            return gallery
+                .serve_from_cache_storage(
+                    &cache_filename,
+                    output_format.mime_type(),
+                    request_headers,
+                )
+                .await;
+        }
+
+        if !source_exists_for_generation(&gallery, relative_path).await {
+            return ApiResponse::ImageNotFound.into_response();
+        }
+
+        if let Some(error) = generation_manager
+            .take_recent_resized_error(
+                &gallery_key,
+                relative_path,
+                size,
+                output_format,
+                apply_watermark,
+            )
+            .await
+        {
+            warn!(
+                "Resize generation failed for {}: {}; serving original",
+                relative_path, error
+            );
+            return gallery
+                .serve_from_source_storage(relative_path, request_headers)
+                .await;
+        }
+
+        generation_manager
+            .enqueue_resized(
+                gallery_key,
+                gallery.clone(),
+                relative_path,
+                size,
+                output_format,
+                apply_watermark,
+                GenerationPriority::Interactive,
+            )
+            .await;
+        return pending_generation_response();
+    }
+
+    gallery
+        .serve_from_source_storage(relative_path, request_headers)
+        .await
+}
+
+async fn source_exists_for_generation(gallery: &SharedGallery, relative_path: &str) -> bool {
+    gallery
+        .source_storage
+        .exists(relative_path)
+        .await
+        .unwrap_or(false)
 }
 
 impl Gallery {
@@ -443,5 +622,115 @@ impl Gallery {
         add_cache_headers(&mut headers, &metadata);
 
         Ok((StatusCode::OK, headers, Body::from(image_data)).into_response())
+    }
+}
+
+#[cfg(test)]
+mod queued_tests {
+    use super::*;
+    use crate::config::defaults;
+    use crate::storage::FilesystemStorage;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn queued_resized_cache_miss_returns_uncached_accepted() {
+        let (temp_dir, gallery) = test_gallery();
+        write_source_image(&temp_dir, "pending.jpg");
+        let manager =
+            crate::generation::GenerationManager::new(crate::concurrency::WorkerPolicy::default());
+
+        let response = serve_image_with_generation_queue(
+            gallery,
+            "site:gallery".to_string(),
+            "pending.jpg",
+            Some("gallery".to_string()),
+            "image/webp",
+            &HeaderMap::new(),
+            &manager,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store, max-age=0, s-maxage=0"
+        );
+        assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "1");
+        assert_eq!(manager.queue_depth().await, 1);
+    }
+
+    #[tokio::test]
+    async fn queued_tile_cache_miss_enqueues_tile_set() {
+        let (temp_dir, gallery) = test_gallery();
+        write_source_image(&temp_dir, "pending.jpg");
+        let manager =
+            crate::generation::GenerationManager::new(crate::concurrency::WorkerPolicy::default());
+
+        let response = serve_image_with_generation_queue(
+            gallery,
+            "site:gallery".to_string(),
+            "pending.jpg",
+            Some("tile_0_0".to_string()),
+            "image/avif,image/webp",
+            &HeaderMap::new(),
+            &manager,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(manager.queue_depth().await, 1);
+    }
+
+    #[tokio::test]
+    async fn queued_cache_miss_without_source_returns_not_found() {
+        let (_temp_dir, gallery) = test_gallery();
+        let manager =
+            crate::generation::GenerationManager::new(crate::concurrency::WorkerPolicy::default());
+
+        let response = serve_image_with_generation_queue(
+            gallery,
+            "site:gallery".to_string(),
+            "missing.jpg",
+            Some("gallery".to_string()),
+            "image/webp",
+            &HeaderMap::new(),
+            &manager,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(manager.queue_depth().await, 0);
+    }
+
+    fn test_gallery() -> (TempDir, SharedGallery) {
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("source");
+        let cache_dir = temp_dir.path().join("cache");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+
+        let config = crate::GallerySystemConfig {
+            name: "gallery".to_string(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
+            url_prefix: "/gallery".to_string(),
+            thumbnail: defaults::default_thumbnail_size(),
+            gallery_size: defaults::default_gallery_size(),
+            medium: defaults::default_medium_size(),
+            large: defaults::default_large_size(),
+            tiles: Some(crate::TileConfig { tile_size: 1024 }),
+            ..Default::default()
+        };
+
+        let source_storage = Arc::new(FilesystemStorage::new(source_dir));
+        let cache_storage = Arc::new(FilesystemStorage::new(cache_dir));
+        (
+            temp_dir,
+            Arc::new(Gallery::new(config, source_storage, cache_storage)),
+        )
+    }
+
+    fn write_source_image(temp_dir: &TempDir, path: &str) {
+        std::fs::write(temp_dir.path().join("source").join(path), b"source").unwrap();
     }
 }

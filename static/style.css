@@ -627,6 +627,10 @@ body > footer p {
     pointer-events: auto;
 }
 
+img.gallery-image-container {
+    object-fit: cover;
+}
+
 .image-grid.square-grid {
     --grid-columns: 3;
 
@@ -665,6 +669,12 @@ body > footer p {
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
+}
+
+.square-grid img.gallery-image-container {
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+    object-fit: contain;
 }
 
 /* Legacy img styles for backward compatibility */

@@ -462,6 +462,9 @@ mod tests {
             email_provider: None,
             openai_client: None,
             cache_queue: None,
+            generation_manager: crate::generation::GenerationManager::new(
+                crate::concurrency::WorkerPolicy::default(),
+            ),
         };
 
         // Test public user permissions

@@ -17,11 +17,41 @@ test.describe('gallery display', () => {
         'href',
         /\/g\/detail\/display\/\d{2}-[a-z]+\.png$/,
       );
-      const bg = await item
-        .locator('.gallery-image-container')
-        .evaluate((el) => getComputedStyle(el).backgroundImage);
-      expect(bg).toMatch(/\/_image\/display\/\d{2}-[a-z]+\.png\/thumbnail/);
+      const image = item.locator('img.gallery-image-container');
+      await expect(image).toHaveAttribute(
+        'src',
+        /\/_image\/display\/\d{2}-[a-z]+\.png\/thumbnail/,
+      );
+      await expect(image).toHaveAttribute(
+        'srcset',
+        /\/_image\/display\/\d{2}-[a-z]+\.png\/thumbnail@2x(?:#retry-\d+)? 2x/,
+      );
     }
+  });
+
+  test('retries a thumbnail that is still being generated', async ({ page }) => {
+    let intercepted = false;
+    await page.route(/\/_image\/display\/01-alpha\.png\/thumbnail$/, async (route) => {
+      if (!intercepted) {
+        intercepted = true;
+        await route.fulfill({
+          status: 202,
+          headers: {
+            'cache-control': 'no-store, max-age=0, s-maxage=0',
+            'retry-after': '1',
+          },
+          body: '',
+        });
+        return;
+      }
+
+      await route.continue();
+    });
+
+    await openGallery(page, 'display');
+
+    const firstImage = page.locator('.image-grid.square-grid img.gallery-image-container').first();
+    await expect(firstImage).toHaveAttribute('data-retry-attempt', /[1-9]\d*/);
   });
 
   test('thumbnails are served successfully', async ({ page }) => {
@@ -43,6 +73,15 @@ test.describe('gallery display', () => {
     await page.locator('.image-grid.square-grid .image-item').first().locator('a.image-link').click();
 
     await expect(page).toHaveURL(new RegExp(`/g/detail/by-filename/${first}$`));
+    const detailImage = page.locator('.image-display img').first();
+    await expect(detailImage).toHaveAttribute(
+      'src',
+      new RegExp(`/_image/by-filename/${first}/medium(?:#retry-\\d+)?$`),
+    );
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLImageElement>('.image-display img');
+      return Boolean(image?.complete && image.naturalWidth > 0);
+    });
     await shot(page, 'display-detail');
   });
 
