@@ -96,6 +96,8 @@ struct TomlMetadata {
     pub ai_alt_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ai_analyzed_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub astro: Option<crate::types::AstroSolution>,
 }
 
 impl StorageMetadataBackend {
@@ -285,7 +287,8 @@ impl StorageMetadataBackend {
             || toml_data.pick_status.is_some()
             || !toml_data.tags.is_empty()
             || !toml_data.ai_keywords.is_empty()
-            || toml_data.ai_alt_text.is_some();
+            || toml_data.ai_alt_text.is_some()
+            || toml_data.astro.is_some();
 
         if !has_content {
             // Nothing to write, delete file if it exists
@@ -355,6 +358,7 @@ impl StorageMetadataBackend {
             metadata.ai_keywords = toml.ai_keywords;
             metadata.ai_alt_text = toml.ai_alt_text;
             metadata.ai_analyzed_at = toml.ai_analyzed_at;
+            metadata.astro = toml.astro;
         }
 
         Some(metadata)
@@ -396,6 +400,7 @@ impl StorageMetadataBackend {
             ai_keywords: metadata.ai_keywords.clone(),
             ai_alt_text: metadata.ai_alt_text.clone(),
             ai_analyzed_at: metadata.ai_analyzed_at,
+            astro: metadata.astro.clone(),
         };
 
         (frontmatter, metadata.description.clone(), toml_data)
@@ -483,6 +488,19 @@ impl MetadataStorage for StorageMetadataBackend {
             );
         }
 
+        Ok(())
+    }
+
+    async fn save_astro(
+        &self,
+        relative_path: &str,
+        astro: Option<&crate::types::AstroSolution>,
+    ) -> Result<(), MetadataStorageError> {
+        // Only the app-managed .toml is touched; the .md stays untouched
+        let mut toml_data = self.read_toml_file(relative_path).await.unwrap_or_default();
+        toml_data.astro = astro.cloned();
+        self.write_toml_file(relative_path, &toml_data).await?;
+        self.invalidate(relative_path);
         Ok(())
     }
 

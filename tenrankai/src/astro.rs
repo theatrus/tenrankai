@@ -32,29 +32,9 @@ const DETECT_MAX_DIM: u32 = 2800;
 pub struct AstroContext {
     stars: TileCatalog,
     objects: Option<ObjectCatalog>,
-    /// Solve results keyed by "gallery/path"; None records a failed attempt
-    cache: RwLock<HashMap<String, Option<SolvedWcs>>>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SolvedWcs {
-    pub crval: (f64, f64),
-    pub crpix: (f64, f64),
-    pub cd: [[f64; 2]; 2],
-    pub width: u32,
-    pub height: u32,
-    pub matched_stars: usize,
-    pub rms_arcsec: f64,
-}
-
-impl SolvedWcs {
-    fn wcs(&self) -> Wcs {
-        Wcs {
-            crval: self.crval,
-            crpix: self.crpix,
-            cd: self.cd,
-        }
-    }
+    /// Failed solve attempts this process, keyed by "gallery/path" —
+    /// successes persist into the image's metadata sidecar instead
+    failed: RwLock<HashMap<String, ()>>,
 }
 
 impl AstroContext {
@@ -99,7 +79,7 @@ impl AstroContext {
         Some(Arc::new(Self {
             stars,
             objects,
-            cache: RwLock::new(HashMap::new()),
+            failed: RwLock::new(HashMap::new()),
         }))
     }
 }
@@ -201,70 +181,95 @@ pub async fn astro_handler(
         Err(_) => return ApiResponse::InternalServerError.into_response(),
     }
 
-    let cache_key = format!("{gallery_name}/{resolved_path}");
-    let cached = astro.cache.read().await.get(&cache_key).cloned();
-    let solved = match cached {
-        Some(result) => result,
-        None => {
-            let result = solve_gallery_image(&astro, &gallery, &resolved_path).await;
-            astro.cache.write().await.insert(cache_key, result.clone());
-            result
-        }
-    };
+    // Serve a previously persisted solution from the metadata sidecar
+    let existing = gallery
+        .user_metadata_storage
+        .load(&resolved_path)
+        .await
+        .ok()
+        .flatten();
+    if let Some(solution) = existing.as_ref().and_then(|m| m.astro.as_ref()) {
+        return solution_response(solution);
+    }
 
-    let Some(solved) = solved else {
+    let cache_key = format!("{gallery_name}/{resolved_path}");
+    if astro.failed.read().await.contains_key(&cache_key) {
         let mut response = axum::Json(serde_json::json!({ "solved": false })).into_response();
         response.headers_mut().extend(no_cache_headers());
         return response;
-    };
+    }
 
-    let wcs = solved.wcs();
-    let dims = (solved.width, solved.height);
+    let solution = solve_gallery_image(&astro, &gallery, &resolved_path, existing.as_ref()).await;
+    match solution {
+        Some(solution) => {
+            // Persist as overlay coordinates in the app-managed sidecar so
+            // it survives restarts and syncs with the content
+            if let Err(e) = gallery
+                .user_metadata_storage
+                .save_astro(&resolved_path, Some(&solution))
+                .await
+            {
+                warn!("astro: failed to persist solution for {resolved_path}: {e}");
+            }
+            solution_response(&solution)
+        }
+        None => {
+            astro.failed.write().await.insert(cache_key, ());
+            let mut response = axum::Json(serde_json::json!({ "solved": false })).into_response();
+            response.headers_mut().extend(no_cache_headers());
+            response
+        }
+    }
+}
+
+fn solution_response(
+    solution: &crate::metadata_storage::AstroSolution,
+) -> axum::response::Response {
+    let wcs = Wcs {
+        crval: (solution.crval[0], solution.crval[1]),
+        crpix: (solution.crpix[0], solution.crpix[1]),
+        cd: solution.cd,
+    };
+    let dims = (solution.width, solution.height);
     let (center_ra, center_dec) = wcs.pixel_to_world(dims.0 as f64 / 2.0, dims.1 as f64 / 2.0);
     let footprint = wcs.footprint(dims.0, dims.1);
 
-    let objects: Vec<serde_json::Value> = astro
+    let objects: Vec<serde_json::Value> = solution
         .objects
-        .as_ref()
-        .map(|catalog| {
-            catalog
-                .objects_in_footprint(&wcs, dims)
-                .into_iter()
-                .map(|p| {
-                    serde_json::json!({
-                        "name": p.object.name,
-                        "common_name": p.object.common_name,
-                        "kind": p.object.kind.as_str(),
-                        "mag": p.object.mag,
-                        "x": p.x,
-                        "y": p.y,
-                        "semi_major_px": p.semi_major_px,
-                        "semi_minor_px": p.semi_minor_px,
-                        "angle_deg": p.angle_deg,
-                    })
-                })
-                .collect()
+        .iter()
+        .map(|o| {
+            serde_json::json!({
+                "name": o.name,
+                "common_name": o.common_name,
+                "kind": o.kind,
+                "mag": o.mag,
+                "x": o.x,
+                "y": o.y,
+                "semi_major_px": o.semi_major_px,
+                "semi_minor_px": o.semi_minor_px,
+                "angle_deg": o.angle_deg,
+            })
         })
-        .unwrap_or_default();
+        .collect();
 
     let mut response = axum::Json(serde_json::json!({
         "solved": true,
-        "width": solved.width,
-        "height": solved.height,
+        "width": solution.width,
+        "height": solution.height,
         "center": { "ra": center_ra, "dec": center_dec },
         "scale_arcsec_px": wcs.scale_arcsec_per_px(),
-        "matched_stars": solved.matched_stars,
-        "rms_arcsec": solved.rms_arcsec,
+        "matched_stars": solution.matched_stars,
+        "rms_arcsec": solution.rms_arcsec,
+        "solved_at": solution.solved_at.to_rfc3339(),
         "footprint": footprint.iter().map(|(r, d)| vec![*r, *d]).collect::<Vec<_>>(),
         "wcs": {
-            "crval": solved.crval,
-            "crpix": solved.crpix,
-            "cd": solved.cd,
+            "crval": solution.crval,
+            "crpix": solution.crpix,
+            "cd": solution.cd,
         },
         "objects": objects,
     }))
     .into_response();
-    // Solutions are immutable per image content; modest caching is safe
     response.headers_mut().extend(no_cache_headers());
     response
 }
@@ -275,9 +280,10 @@ async fn solve_gallery_image(
     astro: &Arc<AstroContext>,
     gallery: &crate::gallery::SharedGallery,
     path: &str,
-) -> Option<SolvedWcs> {
+    metadata: Option<&crate::metadata_storage::ImageUserMetadata>,
+) -> Option<crate::metadata_storage::AstroSolution> {
     // The RA/Dec hint comes from the user metadata sidecar
-    let metadata = gallery.user_metadata_storage.load(path).await.ok()??;
+    let metadata = metadata?;
     let ra = parse_ra(metadata.ra.as_deref()?)?;
     let dec = parse_dec(metadata.dec.as_deref()?)?;
 
@@ -303,12 +309,41 @@ async fn solve_gallery_image(
     }
 }
 
+/// Project the object catalog through a solution into overlay coordinates.
+fn placed_objects(
+    astro: &AstroContext,
+    wcs: &Wcs,
+    dims: (u32, u32),
+) -> Vec<crate::metadata_storage::AstroObject> {
+    astro
+        .objects
+        .as_ref()
+        .map(|catalog| {
+            catalog
+                .objects_in_footprint(wcs, dims)
+                .into_iter()
+                .map(|p| crate::metadata_storage::AstroObject {
+                    name: p.object.name,
+                    common_name: p.object.common_name,
+                    kind: p.object.kind.as_str().to_string(),
+                    mag: p.object.mag,
+                    x: p.x,
+                    y: p.y,
+                    semi_major_px: p.semi_major_px,
+                    semi_minor_px: p.semi_minor_px,
+                    angle_deg: p.angle_deg,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn solve_bytes(
     astro: &AstroContext,
     bytes: &[u8],
     hint_center: (f64, f64),
     path: &str,
-) -> Option<SolvedWcs> {
+) -> Option<crate::metadata_storage::AstroSolution> {
     let started = std::time::Instant::now();
     let image = match image::load_from_memory(bytes) {
         Ok(image) => image,
@@ -363,14 +398,17 @@ fn solve_bytes(
                 rms_arcsec,
                 started.elapsed().as_secs_f64()
             );
-            return Some(SolvedWcs {
-                crval: wcs.crval,
-                crpix: wcs.crpix,
-                cd: wcs.cd,
+            let objects = placed_objects(astro, &wcs, (width, height));
+            return Some(crate::metadata_storage::AstroSolution {
+                solved_at: chrono::Utc::now(),
                 width,
                 height,
-                matched_stars,
+                crval: [wcs.crval.0, wcs.crval.1],
+                crpix: [wcs.crpix.0, wcs.crpix.1],
+                cd: wcs.cd,
+                matched_stars: matched_stars as u32,
                 rms_arcsec,
+                objects,
             });
         }
     }

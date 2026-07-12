@@ -4,7 +4,7 @@ pub mod types;
 
 pub use error::MetadataStorageError;
 pub use providers::{SidecarMetadataStorage, StorageMetadataBackend};
-pub use types::{Comment, ImageUserMetadata, PickStatus};
+pub use types::{AstroObject, AstroSolution, Comment, ImageUserMetadata, PickStatus};
 
 use async_trait::async_trait;
 
@@ -26,6 +26,19 @@ pub trait MetadataStorage: Send + Sync {
         relative_path: &str,
         metadata: &ImageUserMetadata,
     ) -> Result<(), MetadataStorageError>;
+
+    /// Persist a plate solution into the app-managed sidecar without
+    /// rewriting the human-authored .md file. `None` clears it.
+    async fn save_astro(
+        &self,
+        relative_path: &str,
+        astro: Option<&types::AstroSolution>,
+    ) -> Result<(), MetadataStorageError> {
+        // Default: read-modify-write through the full metadata round trip
+        let mut metadata = self.load(relative_path).await?.unwrap_or_default();
+        metadata.astro = astro.cloned();
+        self.save(relative_path, &metadata).await
+    }
 
     /// Delete metadata for a specific image by relative path
     async fn delete(&self, relative_path: &str) -> Result<(), MetadataStorageError>;
