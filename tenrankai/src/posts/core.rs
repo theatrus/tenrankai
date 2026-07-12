@@ -874,6 +874,19 @@ impl PostsManager {
         (html_output, first_image)
     }
 
+    /// The gallery's URL identifier for a source file path. Galleries with
+    /// sequence or unique_id indexing address images by index id, not
+    /// filename; deep-linking by filename renders but breaks navigation
+    /// (and defeats unique_id's filename privacy). Falls back to the raw
+    /// path when the image isn't indexed (yet).
+    async fn gallery_url_identifier(gallery: &SharedGallery, image_path: &str) -> String {
+        let indexer = gallery.image_indexer.read().await;
+        indexer
+            .get_index(image_path)
+            .map(str::to_string)
+            .unwrap_or_else(|| image_path.to_string())
+    }
+
     /// Resolve a hero image reference: either a `gallery:name:path` reference
     /// (served at gallery size, linked to its gallery detail page) or a plain
     /// URL passed through unchanged
@@ -883,12 +896,10 @@ impl PostsManager {
             let galleries = self.galleries.as_ref()?;
             let gallery = galleries.get(gallery_name)?;
             let gallery_config = gallery.get_config();
-            let encoded_path = urlencoding::encode(image_path);
-            let image_url = format!(
-                "{}/_image/{}/gallery",
-                gallery_config.url_prefix, encoded_path
-            );
-            let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded_path);
+            let identifier = Self::gallery_url_identifier(gallery, image_path).await;
+            let encoded = urlencoding::encode(&identifier);
+            let image_url = format!("{}/_image/{}/gallery", gallery_config.url_prefix, encoded);
+            let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded);
             return Some((image_url, Some(detail_url)));
         }
 
@@ -929,13 +940,12 @@ impl PostsManager {
         let gallery = galleries.get(gallery_name)?;
         let gallery_config = gallery.get_config();
 
-        // Generate URLs
-        let encoded_path = urlencoding::encode(image_path);
-        let image_url = format!(
-            "{}/_image/{}/{}",
-            gallery_config.url_prefix, encoded_path, size
-        );
-        let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded_path);
+        // Generate URLs from the gallery's URL identifier (index id for
+        // sequence/unique_id galleries) so detail-page navigation works
+        let identifier = Self::gallery_url_identifier(gallery, image_path).await;
+        let encoded = urlencoding::encode(&identifier);
+        let image_url = format!("{}/_image/{}/{}", gallery_config.url_prefix, encoded, size);
+        let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded);
 
         // Generate HTML with proper link. The details option adds data
         // attributes that the frontend turns into a hover card with the
@@ -945,7 +955,7 @@ impl PostsManager {
             format!(
                 r#" data-gallery-details data-gallery="{}" data-image-path="{}""#,
                 escape(gallery_name),
-                escape(image_path)
+                escape(&identifier)
             )
         } else {
             String::new()
