@@ -31,6 +31,12 @@
     color: var(--link-color);
 }
 
+.posts-category-description {
+    margin: var(--spacing-xs) 0 0 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 .posts-empty {
     color: var(--text-secondary);
     margin: var(--spacing-xxl) 0;
@@ -75,6 +81,22 @@
 .category-count {
     font-size: 0.75rem;
     opacity: 0.75;
+}
+
+.category-bar-separator {
+    width: 1px;
+    align-self: stretch;
+    margin: 0 var(--spacing-xs);
+    background-color: var(--border-color);
+}
+
+.category-chip.archive {
+    border-style: dashed;
+    opacity: 0.8;
+}
+
+.category-chip.archive.active {
+    opacity: 1;
 }
 
 /* Flowing post card layout */

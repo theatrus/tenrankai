@@ -168,18 +168,18 @@ async fn render_posts_index(
         .await;
 
     let all_categories = posts_manager.get_categories(username).await;
-    let active_category = category_filter.as_deref().and_then(|slug| {
-        all_categories
-            .iter()
-            .find(|c| c.slug == slug)
-            .map(|c| c.name.clone())
-    });
+    let active = category_filter
+        .as_deref()
+        .and_then(|slug| all_categories.iter().find(|c| c.slug == slug));
 
     // A category page for a category with no visible posts is a 404, matching
     // the feed handler
-    if category_filter.is_some() && active_category.is_none() {
+    if category_filter.is_some() && active.is_none() {
         return ApiResponse::PostNotFound.into_response();
     }
+
+    let active_category = active.map(|c| c.name.clone());
+    let active_category_description = active.and_then(|c| c.description.clone());
 
     let categories: Vec<_> = all_categories
         .iter()
@@ -188,6 +188,8 @@ async fn render_posts_index(
                 "name": c.name,
                 "slug": c.slug,
                 "count": c.count,
+                "archive": c.archive,
+                "description": c.description,
                 "url": category_url(&config.url_prefix, &c.slug),
                 "active": Some(c.slug.as_str()) == category_filter.as_deref(),
             })
@@ -208,9 +210,10 @@ async fn render_posts_index(
         Some(name) => format!("{} – {}", capitalize(&posts_name), name),
         None => capitalize(&posts_name),
     };
-    let meta_description = match &active_category {
-        Some(name) => format!("Browse {} posts in {}", posts_name, name),
-        None => format!("Browse {} posts", posts_name),
+    let meta_description = match (&active_category_description, &active_category) {
+        (Some(description), _) => description.clone(),
+        (None, Some(name)) => format!("Browse {} posts in {}", posts_name, name),
+        (None, None) => format!("Browse {} posts", posts_name),
     };
 
     let globals = liquid::object!({
@@ -220,6 +223,7 @@ async fn render_posts_index(
         "can_edit": root_permissions.can_edit_content,
         "categories": categories,
         "active_category": active_category,
+        "active_category_description": active_category_description,
         "page_base": page_base,
         "rss_feed_url": feed_url,
         "current_page": page,
@@ -390,7 +394,12 @@ async fn render_posts_feed(
         .await;
 
     // A category feed for a category with no visible posts is a 404, not an
-    // empty feed; the display name comes from the matching label
+    // empty feed; the display name comes from _categories.md when declared,
+    // otherwise from the matching label
+    let category_options = match category_slug.as_deref() {
+        Some(slug) => posts_manager.get_category_options(slug).await,
+        None => None,
+    };
     let category_name = match category_slug.as_deref() {
         Some(slug) => {
             let name = posts.first().and_then(|post| {
@@ -400,7 +409,12 @@ async fn render_posts_feed(
                     .cloned()
             });
             match name {
-                Some(name) => Some(name),
+                Some(name) => Some(
+                    category_options
+                        .as_ref()
+                        .and_then(|o| o.name.clone())
+                        .unwrap_or(name),
+                ),
                 None => return ApiResponse::NotFound.into_response(),
             }
         }
@@ -421,9 +435,13 @@ async fn render_posts_feed(
         Some(name) => format!("{} — {} — {}", site_title, capitalize(&posts_name), name),
         None => format!("{} — {}", site_title, capitalize(&posts_name)),
     };
-    let channel_description = match &category_name {
-        Some(name) => format!("{} posts in {}", posts_name, name),
-        None => format!("{} posts", posts_name),
+    let declared_description = category_options
+        .as_ref()
+        .and_then(|o| o.description.clone());
+    let channel_description = match (&declared_description, &category_name) {
+        (Some(description), _) => description.clone(),
+        (None, Some(name)) => format!("{} posts in {}", posts_name, name),
+        (None, None) => format!("{} posts", posts_name),
     };
 
     let mut xml = String::with_capacity(4096);

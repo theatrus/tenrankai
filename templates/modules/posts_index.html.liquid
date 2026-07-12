@@ -11,17 +11,30 @@
         </div>
         {% if active_category %}
         <p class="posts-filter-note">Showing posts in <strong>{{ active_category }}</strong> — <a href="{{ url_prefix }}">show all</a></p>
+        {% if active_category_description %}
+        <p class="posts-category-description">{{ active_category_description }}</p>
+        {% endif %}
         {% endif %}
     </header>
 
     {% if categories.size > 0 %}
+    {% assign has_archive = false %}
+    {% for category in categories %}{% if category.archive %}{% assign has_archive = true %}{% endif %}{% endfor %}
     <nav class="category-bar" aria-label="Post categories">
         <a href="{{ url_prefix }}" class="category-chip{% unless active_category %} active{% endunless %}">All</a>
-        {% for category in categories %}
+        {% for category in categories %}{% unless category.archive %}
         <a href="{{ category.url }}" class="category-chip{% if category.active %} active{% endif %}">
             {{ category.name }}<span class="category-count">{{ category.count }}</span>
         </a>
-        {% endfor %}
+        {% endunless %}{% endfor %}
+        {% if has_archive %}
+        <span class="category-bar-separator" aria-hidden="true"></span>
+        {% for category in categories %}{% if category.archive %}
+        <a href="{{ category.url }}" class="category-chip archive{% if category.active %} active{% endif %}">
+            {{ category.name }}<span class="category-count">{{ category.count }}</span>
+        </a>
+        {% endif %}{% endfor %}
+        {% endif %}
     </nav>
     {% endif %}
 

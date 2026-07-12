@@ -55,11 +55,35 @@ pub struct PostSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryInfo {
-    /// Display label as written in frontmatter
+    /// Display label as written in frontmatter, or the declared `name`
+    /// from _categories.md when the category is defined there
     pub name: String,
     /// URL-safe identifier used for filtering
     pub slug: String,
     pub count: usize,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Posts in an archive category are hidden from the unfiltered index
+    /// and main feed, but still listed on their category pages
+    #[serde(default)]
+    pub archive: bool,
+}
+
+/// Per-category options declared in _categories.md at the posts root,
+/// keyed by category slug. Categories without an entry keep the defaults.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CategoryOptions {
+    /// Canonical display label (otherwise taken from post frontmatter)
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub archive: bool,
+    /// Chip ordering: lower weights sort first, undeclared weights last
+    #[serde(default)]
+    pub weight: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
