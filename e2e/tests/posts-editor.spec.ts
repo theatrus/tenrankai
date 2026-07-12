@@ -112,6 +112,52 @@ test.describe('posts editor (authenticated)', () => {
     expect(gone.status()).toBe(404);
   });
 
+  test('picks gallery images for the hero and content embeds', async ({ page }) => {
+    await page.goto('/blog');
+    await page.locator('.post-new-btn').click();
+    const modal = page.locator('.post-editor-modal');
+    await expect(modal).toBeVisible();
+
+    // --- Hero picking: reference goes into the hero field ---
+    await modal.getByRole('button', { name: 'Browse…' }).click();
+    const picker = page.locator('.gallery-picker');
+    await expect(picker).toBeVisible();
+    // The hero picker has no size/details options
+    await expect(picker.locator('.gallery-picker-options')).toHaveCount(0);
+
+    await picker
+      .locator('.gallery-picker-folder', { hasText: 'Sort by filename (ascending)' })
+      .click();
+    await picker.locator('.gallery-picker-image[title="01-alpha.png"]').click();
+    await expect(picker).toHaveCount(0);
+    await expect(modal.locator('#post-hero')).toHaveValue(
+      'gallery:test:by-filename/01-alpha.png',
+    );
+
+    // --- Content embed: picker inserts a gallery ref with size + details ---
+    await modal.getByRole('button', { name: 'Gallery image' }).click();
+    const embedPicker = page.locator('.gallery-picker');
+    await expect(embedPicker).toBeVisible();
+    await expect(embedPicker.locator('.gallery-picker-options')).toBeVisible();
+    await embedPicker.locator('.gallery-picker-options select').selectOption('medium');
+    await embedPicker.getByLabel('Show technical details on hover').check();
+    await shot(page, 'post-editor-gallery-picker');
+
+    await embedPicker
+      .locator('.gallery-picker-folder', { hasText: 'Sort by filename (ascending)' })
+      .click();
+    await embedPicker.locator('.gallery-picker-image[title="02-bravo.png"]').click();
+    await expect(embedPicker).toHaveCount(0);
+
+    // The insertion round-trips into markdown as a gallery reference
+    await modal.getByRole('button', { name: 'Markdown', exact: true }).click();
+    await expect(modal.locator('.markdown-editor-textarea')).toHaveValue(
+      /!\[gallery:test:by-filename\/02-bravo\.png\]\(medium,details\)/,
+    );
+
+    await modal.getByRole('button', { name: 'Cancel' }).click();
+  });
+
   test('rejects invalid slugs from the API', async ({ page }) => {
     const bad = await page.request.post('/api/posts/blog/source', {
       data: { slug: '_hidden', title: 'x', summary: 'y', content: '' },

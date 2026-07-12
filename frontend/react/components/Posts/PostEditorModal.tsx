@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MarkdownEditor } from '../Editor/MarkdownEditor.tsx';
+import { GalleryImagePicker } from './GalleryImagePicker.tsx';
 import { postsApi, PostSource } from '../../api/posts.ts';
 
 interface PostEditorModalProps {
@@ -7,6 +8,8 @@ interface PostEditorModalProps {
   postsName: string;
   /** Existing post source when editing; null when creating a new post */
   source: PostSource | null;
+  /** Gallery names available for image picking */
+  galleries?: string[];
   onClose: () => void;
   /** Called with the post URL after a successful save */
   onSaved: (url: string) => void;
@@ -25,11 +28,13 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
   isOpen,
   postsName,
   source,
+  galleries,
   onClose,
   onSaved,
   onDeleted,
 }) => {
   const isNew = source === null;
+  const [heroPickerOpen, setHeroPickerOpen] = useState(false);
 
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
@@ -201,15 +206,38 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
           <div className="edit-modal-field">
             <label htmlFor="post-hero">Hero image</label>
-            <input
-              id="post-hero"
-              type="text"
-              value={heroImage}
-              onChange={(e) => setHeroImage(e.target.value)}
-              placeholder="gallery:main:folder/image.jpg or https://... (optional)"
-              disabled={isSaving}
-              className="edit-modal-input"
-            />
+            <div className="post-editor-hero-row">
+              <input
+                id="post-hero"
+                type="text"
+                value={heroImage}
+                onChange={(e) => setHeroImage(e.target.value)}
+                placeholder="gallery:main:folder/image.jpg or https://... (optional)"
+                disabled={isSaving}
+                className="edit-modal-input"
+              />
+              {galleries && galleries.length > 0 && (
+                <button
+                  type="button"
+                  className="edit-modal-btn post-editor-browse-btn"
+                  onClick={() => setHeroPickerOpen(true)}
+                  disabled={isSaving}
+                >
+                  Browse…
+                </button>
+              )}
+            </div>
+            {galleries && galleries.length > 0 && (
+              <GalleryImagePicker
+                isOpen={heroPickerOpen}
+                galleries={galleries}
+                onClose={() => setHeroPickerOpen(false)}
+                onSelect={(selection) => {
+                  setHeroImage(selection.reference);
+                  setHeroPickerOpen(false);
+                }}
+              />
+            )}
           </div>
 
           <div className="edit-modal-field">
@@ -223,6 +251,7 @@ export const PostEditorModal: React.FC<PostEditorModalProps> = ({
               isSaving={isSaving}
               showActions={false}
               autoFocus={false}
+              galleries={galleries}
             />
           </div>
 

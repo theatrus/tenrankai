@@ -2,9 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import TurndownService from 'turndown';
 import { marked } from 'marked';
+import {
+  GalleryImagePicker,
+  GalleryImageSelection,
+} from '../Posts/GalleryImagePicker.tsx';
 
 // Configure marked for synchronous operation
 marked.use({ async: false });
@@ -28,6 +33,8 @@ interface MarkdownEditorProps {
   showActions?: boolean;
   /** Auto-focus the editor on mount */
   autoFocus?: boolean;
+  /** Gallery names for the gallery image picker; omit to hide the button */
+  galleries?: string[];
 }
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
@@ -39,9 +46,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   isSaving = false,
   showActions = true,
   autoFocus = true,
+  galleries,
 }) => {
   const [mode, setMode] = useState<EditorMode>('rich');
   const [markdownText, setMarkdownText] = useState(initialContent);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Create turndown instance for HTML -> Markdown conversion
@@ -89,6 +98,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           rel: 'noopener noreferrer',
         },
       }),
+      // Keeps <img> nodes (including gallery references) intact in rich mode
+      // instead of silently dropping them
+      Image,
       Placeholder.configure({
         placeholder,
       }),
@@ -216,6 +228,36 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     [onSave, onCancel, markdownText]
   );
 
+  const insertGalleryImage = useCallback(
+    (selection: GalleryImageSelection) => {
+      setPickerOpen(false);
+      const hint = selection.details ? `${selection.size},details` : selection.size;
+
+      if (mode === 'rich' && editor) {
+        // Round-trips through turndown as ![gallery:...](size,details)
+        editor.chain().focus().setImage({ src: hint, alt: selection.reference }).run();
+        if (onChange) onChange(getMarkdown(editor.getHTML()));
+        return;
+      }
+
+      const markdown = `![${selection.reference}](${hint})`;
+      const textarea = textareaRef.current;
+      const start = textarea ? textarea.selectionStart : markdownText.length;
+      const end = textarea ? textarea.selectionEnd : markdownText.length;
+      const next = `${markdownText.slice(0, start)}${markdown}${markdownText.slice(end)}`;
+      setMarkdownText(next);
+      if (onChange) onChange(next);
+      requestAnimationFrame(() => {
+        if (textarea) {
+          textarea.focus();
+          textarea.selectionStart = start + markdown.length;
+          textarea.selectionEnd = start + markdown.length;
+        }
+      });
+    },
+    [mode, editor, getMarkdown, markdownText, onChange],
+  );
+
   const setLink = useCallback(() => {
     if (!editor) return;
 
@@ -240,6 +282,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     <div className="markdown-editor">
       {/* Mode toggle */}
       <div className="editor-mode-toggle">
+        {galleries && galleries.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPickerOpen(true);
+            }}
+            className="editor-mode-btn editor-gallery-btn"
+            title="Insert gallery image"
+          >
+            🖼 Gallery image
+          </button>
+        )}
         <button
           type="button"
           onClick={handleModeSwitch}
@@ -249,6 +304,16 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           {mode === 'rich' ? 'Markdown' : 'Rich Text'}
         </button>
       </div>
+
+      {galleries && galleries.length > 0 && (
+        <GalleryImagePicker
+          isOpen={pickerOpen}
+          galleries={galleries}
+          withOptions
+          onClose={() => setPickerOpen(false)}
+          onSelect={insertGalleryImage}
+        />
+      )}
 
       {/* Rich text editor - hidden when in markdown mode but kept mounted to avoid DOM errors */}
       <div style={{ display: mode === 'rich' ? 'block' : 'none' }}>

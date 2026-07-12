@@ -40,6 +40,17 @@ fn category_url(url_prefix: &str, slug: &str) -> String {
     format!("{}/category/{}", url_prefix, slug)
 }
 
+/// Comma-separated gallery names for the post editor's image picker
+fn gallery_names(app_state: &crate::AppState) -> String {
+    let mut names: Vec<&String> = app_state.galleries().keys().collect();
+    names.sort();
+    names
+        .into_iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn category_objects(url_prefix: &str, categories: &[String]) -> Vec<liquid::Object> {
     categories
         .iter()
@@ -221,6 +232,7 @@ async fn render_posts_index(
         "posts_name": posts_name,
         "url_prefix": config.url_prefix,
         "can_edit": root_permissions.can_edit_content,
+        "gallery_names": gallery_names(&app_state),
         "categories": categories,
         "active_category": active_category,
         "active_category_description": active_category_description,
@@ -312,12 +324,14 @@ pub async fn post_detail_handler(
             "html_content": post.html_content,
             "categories": category_objects(&config.url_prefix, &post.categories),
             "hero_image": post.hero_image,
+            "hero_image_link": post.hero_image_link,
             "hero_image_explicit": post.hero_image_explicit,
             "reading_time_minutes": post.reading_time_minutes,
         },
         "posts_name": posts_name,
         "url_prefix": config.url_prefix,
         "can_edit": permissions.can_edit_content,
+        "gallery_names": gallery_names(&app_state),
         "rss_feed_url": format!("{}/feed.xml", config.url_prefix),
         "base_url": base_url,
         "page_title": post.title.clone(),

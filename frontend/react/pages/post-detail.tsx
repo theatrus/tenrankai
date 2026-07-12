@@ -4,10 +4,16 @@ import { PostShare } from '../components/PostShare.tsx';
 import { PostEditorModal } from '../components/Posts/PostEditorModal.tsx';
 import { postsApi, PostSource } from '../api/posts.ts';
 
-const EditPostButton: React.FC<{ postsName: string; slug: string; indexUrl: string }> = ({
+const EditPostButton: React.FC<{
+  postsName: string;
+  slug: string;
+  indexUrl: string;
+  galleries: string[];
+}> = ({
   postsName,
   slug,
   indexUrl,
+  galleries,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [source, setSource] = useState<PostSource | null>(null);
@@ -34,6 +40,7 @@ const EditPostButton: React.FC<{ postsName: string; slug: string; indexUrl: stri
           isOpen={isOpen}
           postsName={postsName}
           source={source}
+          galleries={galleries}
           onClose={() => setIsOpen(false)}
           onSaved={() => window.location.reload()}
           onDeleted={() => {
@@ -60,9 +67,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const postsName = editMount.getAttribute('data-posts-name') || '';
     const slug = editMount.getAttribute('data-slug') || '';
     const indexUrl = editMount.getAttribute('data-url-prefix') || '/';
+    const galleries = (editMount.getAttribute('data-galleries') || '').split(',').filter(Boolean);
     if (postsName && slug) {
       createRoot(editMount).render(
-        <EditPostButton postsName={postsName} slug={slug} indexUrl={indexUrl} />
+        <EditPostButton postsName={postsName} slug={slug} indexUrl={indexUrl} galleries={galleries} />
       );
     }
   }

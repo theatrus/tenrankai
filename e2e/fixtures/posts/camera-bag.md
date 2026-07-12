@@ -9,4 +9,4 @@ categories = ["Gear"]
 
 The first image in the content becomes the card hero:
 
-![gallery:test:by-filename/02-bravo.png](thumbnail)
+![gallery:test:by-filename/02-bravo.png](thumbnail,details)

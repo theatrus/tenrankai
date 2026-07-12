@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PostEditorModal } from '../components/Posts/PostEditorModal.tsx';
 
-const NewPostButton: React.FC<{ postsName: string }> = ({ postsName }) => {
+const NewPostButton: React.FC<{ postsName: string; galleries: string[] }> = ({
+  postsName,
+  galleries,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -14,6 +17,7 @@ const NewPostButton: React.FC<{ postsName: string }> = ({ postsName }) => {
         isOpen={isOpen}
         postsName={postsName}
         source={null}
+        galleries={galleries}
         onClose={() => setIsOpen(false)}
         onSaved={(url) => {
           window.location.href = url;
@@ -30,6 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const postsName = mount.getAttribute('data-posts-name') || '';
   if (!postsName) return;
 
+  const galleries = (mount.getAttribute('data-galleries') || '').split(',').filter(Boolean);
+
   const root = createRoot(mount);
-  root.render(<NewPostButton postsName={postsName} />);
+  root.render(<NewPostButton postsName={postsName} galleries={galleries} />);
 });
