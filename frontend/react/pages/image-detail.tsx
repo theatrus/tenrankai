@@ -11,6 +11,7 @@ import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
 import { VersionPicker } from '../components/ImageDetail/VersionPicker.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
+import { AstroSkyMap } from '../components/ImageDetail/AstroSkyMap.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { EditModal } from '../components/Editor/index.ts';
@@ -370,6 +371,7 @@ export function ImageDetailPage({
             <div className="metadata-grid">
               <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} permissions={currentData.permissions} />
               <CameraMetadata image={currentData.image} permissions={currentData.permissions} />
+              <AstroSkyMap image={currentData.image} permissions={currentData.permissions} />
               <LocationMetadata image={currentData.image} permissions={currentData.permissions} />
             </div>
           )}

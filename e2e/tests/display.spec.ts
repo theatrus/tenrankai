@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { bootstrapSession } from './auth';
 import { IMAGE_FILES, openGallery, renderedOrder, shot } from './helpers';
 
 test.describe('gallery display', () => {
@@ -43,5 +44,43 @@ test.describe('gallery display', () => {
 
     await expect(page).toHaveURL(new RegExp(`/g/detail/by-filename/${first}$`));
     await shot(page, 'display-detail');
+  });
+
+});
+
+// Sky position is gated behind can_see_technical_details, which anonymous
+// visitors lack by default — run authenticated
+test.describe('astro sky map (authenticated)', () => {
+  test.beforeEach(async ({ context }) => {
+    await bootstrapSession(context);
+  });
+
+  test('astro images show a sky map locating their coordinates', async ({ page }) => {
+    // 03-charlie has a .md sidecar with telescope + RA/Dec metadata (M1)
+    await page.goto('/g/detail/by-filename/03-charlie.png');
+
+    const skyMap = page.locator('.sky-map');
+    await expect(skyMap).toBeVisible();
+    await expect(skyMap.locator('h3')).toHaveText('Sky Position');
+    await expect(skyMap.locator('.coordinates-text')).toContainText('05h 34m 32s');
+
+    // The chart renders the star field and the target crosshair
+    const chart = skyMap.locator('.sky-map-chart');
+    await expect(chart).toBeVisible();
+    expect(await chart.locator('.sky-map-star').count()).toBeGreaterThan(400);
+    await expect(chart.locator('circle.sky-map-target')).toHaveCount(1);
+
+    // External viewer links carry the decimal coordinates
+    const aladin = skyMap.locator('a', { hasText: 'Aladin Lite' });
+    expect(await aladin.getAttribute('href')).toContain(
+      encodeURIComponent('83.6333 +22.0144'),
+    );
+    await expect(skyMap.locator('a', { hasText: 'SIMBAD' })).toBeVisible();
+    await shot(page, 'image-detail-sky-map');
+
+    // Images without RA/Dec metadata have no sky map
+    await page.goto('/g/detail/by-filename/01-alpha.png');
+    await expect(page.locator('.image-metadata')).toBeVisible();
+    await expect(page.locator('.sky-map')).toHaveCount(0);
   });
 });
