@@ -6,7 +6,7 @@
         <div class="posts-header-row">
             <h1>{{ posts_name | capitalize }}</h1>
             {% if can_edit %}
-            <div id="post-new-mount" data-posts-name="{{ posts_name }}" data-url-prefix="{{ url_prefix }}"></div>
+            <div id="post-new-mount" data-posts-name="{{ posts_name }}" data-url-prefix="{{ url_prefix }}" data-galleries="{{ gallery_names }}"></div>
             {% endif %}
         </div>
         {% if active_category %}

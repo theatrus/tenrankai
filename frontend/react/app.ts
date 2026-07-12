@@ -14,6 +14,7 @@ import './pages/login.ts';
 import './pages/login-success.ts';
 import './pages/passkey-enrollment.ts';
 import './pages/passkeys.ts';
+import './pages/gallery-image-hover.tsx';
 import './pages/post-detail.tsx';
 import './pages/posts-index.tsx';
 import './pages/posts-preview.tsx';

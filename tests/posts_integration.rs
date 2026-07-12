@@ -92,6 +92,13 @@ async fn setup_test_server_with_posts() -> (TempDir, TestServer) {
 <article>
     <h1>{{ post.title }}</h1>
     <time>{{ post.date_formatted }}</time>
+    {% if post.hero_image and post.hero_image_explicit %}
+    {% if post.hero_image_link %}
+    <a href="{{ post.hero_image_link }}" class="post-hero-link"><img src="{{ post.hero_image }}"></a>
+    {% else %}
+    <img class="post-hero-plain" src="{{ post.hero_image }}">
+    {% endif %}
+    {% endif %}
     <div class="content">{{ post.html_content }}</div>
 </article>
 
@@ -545,6 +552,61 @@ Gear content."#;
     assert!(xml.contains("/blog/old-news"));
     assert!(xml.contains("/blog/travel-memories"));
     assert!(xml.contains("/blog/category/legacy"));
+}
+
+#[tokio::test]
+async fn test_gallery_embeds_details_and_hero_link() {
+    let (_temp_dir, server) = setup_test_server_with_posts().await;
+
+    let blog_dir = _temp_dir.path().join("posts").join("blog");
+    fs::write(
+        blog_dir.join("gallery-post.md"),
+        r#"+++
+title = "Gallery Post"
+summary = "A post with gallery embeds"
+date = "2024-04-01"
+hero_image = "gallery:test:vacation/beach.jpg"
++++
+
+![gallery:test:vacation/sunset.jpg](medium,details)
+
+![gallery:test:vacation/plain.jpg](gallery)
+"#,
+    )
+    .unwrap();
+    fs::write(
+        blog_dir.join("url-hero.md"),
+        r#"+++
+title = "URL Hero"
+summary = "A post with a plain URL hero"
+date = "2024-04-02"
+hero_image = "https://example.com/hero.jpg"
++++
+
+Content."#,
+    )
+    .unwrap();
+    server.post("/api/posts/blog/refresh").await;
+
+    let html = server.get("/blog/gallery-post").await.text();
+
+    // A gallery hero links to its gallery detail page
+    assert!(html.contains(r#"class="post-hero-link""#));
+    assert!(html.contains(r#"href="/gallery/detail/vacation%2Fbeach.jpg""#));
+
+    // The details option adds hover-card data attributes; plain embeds don't
+    assert!(html.contains("gallery-image-details"));
+    assert!(html.contains(r#"data-gallery="test""#));
+    assert!(html.contains(r#"data-image-path="vacation/sunset.jpg""#));
+    assert!(html.contains("gallery-image-medium"));
+    assert!(html.contains("gallery-image-gallery"));
+    let details_count = html.matches("data-gallery-details").count();
+    assert_eq!(details_count, 1);
+
+    // Plain URL heroes render without a gallery link
+    let html = server.get("/blog/url-hero").await.text();
+    assert!(html.contains(r#"class="post-hero-plain" src="https://example.com/hero.jpg""#));
+    assert!(!html.contains("post-hero-link"));
 }
 
 #[tokio::test]

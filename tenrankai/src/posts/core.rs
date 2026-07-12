@@ -292,9 +292,12 @@ impl PostsManager {
         let (html_content, first_image) = self.process_markdown_with_gallery_refs(parser).await;
 
         let hero_image_explicit = metadata.hero_image.is_some();
-        let hero_image = match &metadata.hero_image {
-            Some(reference) => self.resolve_image_reference(reference).await,
-            None => first_image,
+        let (hero_image, hero_image_link) = match &metadata.hero_image {
+            Some(reference) => match self.resolve_image_reference(reference).await {
+                Some((url, link)) => (Some(url), link),
+                None => (None, None),
+            },
+            None => (first_image, None),
         };
 
         let reading_time_minutes = (markdown_content.split_whitespace().count() / 220).max(1);
@@ -309,6 +312,7 @@ impl PostsManager {
             html_content,
             categories: metadata.categories,
             hero_image,
+            hero_image_link,
             hero_image_explicit,
             reading_time_minutes,
             last_modified,
@@ -871,21 +875,24 @@ impl PostsManager {
     }
 
     /// Resolve a hero image reference: either a `gallery:name:path` reference
-    /// (served at gallery size) or a plain URL passed through unchanged
-    async fn resolve_image_reference(&self, reference: &str) -> Option<String> {
+    /// (served at gallery size, linked to its gallery detail page) or a plain
+    /// URL passed through unchanged
+    async fn resolve_image_reference(&self, reference: &str) -> Option<(String, Option<String>)> {
         if let Some(rest) = reference.strip_prefix("gallery:") {
             let (gallery_name, image_path) = rest.split_once(':')?;
             let galleries = self.galleries.as_ref()?;
             let gallery = galleries.get(gallery_name)?;
             let gallery_config = gallery.get_config();
             let encoded_path = urlencoding::encode(image_path);
-            return Some(format!(
+            let image_url = format!(
                 "{}/_image/{}/gallery",
                 gallery_config.url_prefix, encoded_path
-            ));
+            );
+            let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded_path);
+            return Some((image_url, Some(detail_url)));
         }
 
-        Some(reference.to_string())
+        Some((reference.to_string(), None))
     }
 
     async fn process_gallery_reference(
@@ -902,11 +909,20 @@ impl PostsManager {
         let gallery_name = parts[1];
         let image_path = parts[2];
 
-        // Determine size from the URL/hint (default to thumbnail)
-        let size = match size_hint.to_lowercase().as_str() {
-            "gallery" | "medium" | "large" => size_hint,
-            _ => "thumbnail",
-        };
+        // The URL field carries a comma-separated size hint plus options,
+        // e.g. "medium" or "medium,details" (default size: thumbnail)
+        let mut size = "thumbnail";
+        let mut details = false;
+        for token in size_hint.split(',').map(str::trim) {
+            match token.to_lowercase().as_str() {
+                "thumbnail" => size = "thumbnail",
+                "gallery" => size = "gallery",
+                "medium" => size = "medium",
+                "large" => size = "large",
+                "details" => details = true,
+                _ => {}
+            }
+        }
 
         // Get the gallery
         let galleries = self.galleries.as_ref()?;
@@ -921,14 +937,32 @@ impl PostsManager {
         );
         let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded_path);
 
-        // Generate HTML with proper link
+        // Generate HTML with proper link. The details option adds data
+        // attributes that the frontend turns into a hover card with the
+        // image's description and technical details.
+        let escape = crate::sitemap::xml_escape;
+        let details_attrs = if details {
+            format!(
+                r#" data-gallery-details data-gallery="{}" data-image-path="{}""#,
+                escape(gallery_name),
+                escape(image_path)
+            )
+        } else {
+            String::new()
+        };
         let html = format!(
-            r#"<a href="{}" class="gallery-image-link">
+            r#"<a href="{}" class="gallery-image-link{}"{}>
                 <img src="{}" alt="{}" loading="lazy" class="gallery-image gallery-image-{}" />
             </a>"#,
             detail_url,
+            if details {
+                " gallery-image-details"
+            } else {
+                ""
+            },
+            details_attrs,
             image_url,
-            image_path.split('/').next_back().unwrap_or(image_path),
+            escape(image_path.split('/').next_back().unwrap_or(image_path)),
             size
         );
 
