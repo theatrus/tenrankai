@@ -33,7 +33,7 @@ rectangle on the Sky Position chart.
 
 ### Standalone solver crate (separate repository)
 
-The solver lives in its own repository under `~/repos` (working name:
+The solver lives in its own repository (working name:
 **seiza** — 星座, "constellation", which is literally what the matcher
 recognizes; crates.io-available), NOT in the tenrankai workspace: PSF Guard
 wants the same star detection, catalogs, and WCS/solve machinery. Layout:
