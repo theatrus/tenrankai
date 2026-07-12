@@ -32,6 +32,8 @@ const DETECT_MAX_DIM: u32 = 2800;
 pub struct AstroContext {
     stars: TileCatalog,
     objects: Option<ObjectCatalog>,
+    /// Identifies the loaded object catalog build (count + byte length)
+    objects_version: String,
     /// Transients reload when the file changes (a cron refreshes it)
     transients: Option<ReloadingCatalog>,
     /// Failed solve attempts this process, keyed by "gallery/path" —
@@ -101,11 +103,14 @@ impl AstroContext {
                 return None;
             }
         };
+        let mut objects_version = String::new();
         let objects = match &config.object_data {
             Some(path) => match ObjectCatalog::open(path) {
                 Ok(catalog) => {
+                    let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                    objects_version = format!("{}:{}", catalog.len(), bytes);
                     info!(
-                        "astro: {} objects loaded from {}",
+                        "astro: {} objects loaded from {} (version {objects_version})",
                         catalog.len(),
                         path.display()
                     );
@@ -128,6 +133,7 @@ impl AstroContext {
         Some(Arc::new(Self {
             stars,
             objects,
+            objects_version,
             transients,
             failed: RwLock::new(HashMap::new()),
         }))
@@ -239,6 +245,30 @@ pub async fn astro_handler(
         .ok()
         .flatten();
     if let Some(solution) = existing.as_ref().and_then(|m| m.astro.as_ref()) {
+        // Catalog upgrades reproject the overlay through the stored WCS —
+        // no re-solve needed
+        if astro.objects.is_some() && solution.objects_version != astro.objects_version {
+            let wcs = Wcs {
+                crval: (solution.crval[0], solution.crval[1]),
+                crpix: (solution.crpix[0], solution.crpix[1]),
+                cd: solution.cd,
+            };
+            let mut updated = solution.clone();
+            updated.objects = placed_objects(&astro, &wcs, (solution.width, solution.height));
+            updated.objects_version = astro.objects_version.clone();
+            info!(
+                "astro: refreshed overlay objects for {resolved_path} ({} objects)",
+                updated.objects.len()
+            );
+            if let Err(e) = gallery
+                .user_metadata_storage
+                .save_astro(&resolved_path, Some(&updated))
+                .await
+            {
+                warn!("astro: failed to persist refreshed objects for {resolved_path}: {e}");
+            }
+            return solution_response(&updated, &astro).await;
+        }
         return solution_response(solution, &astro).await;
     }
 
@@ -469,6 +499,7 @@ fn solve_bytes(
             );
             let objects = placed_objects(astro, &wcs, (width, height));
             return Some(crate::metadata_storage::AstroSolution {
+                objects_version: astro.objects_version.clone(),
                 solved_at: chrono::Utc::now(),
                 width,
                 height,

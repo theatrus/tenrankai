@@ -416,6 +416,10 @@ pub struct AstroSolution {
     pub cd: [[f64; 2]; 2],
     pub matched_stars: u32,
     pub rms_arcsec: f64,
+    /// Version of the object catalog the overlay list was computed from;
+    /// a mismatch triggers reprojection without re-solving
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub objects_version: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<AstroObject>,
 }
