@@ -32,9 +32,51 @@ const DETECT_MAX_DIM: u32 = 2800;
 pub struct AstroContext {
     stars: TileCatalog,
     objects: Option<ObjectCatalog>,
+    /// Transients reload when the file changes (a cron refreshes it)
+    transients: Option<ReloadingCatalog>,
     /// Failed solve attempts this process, keyed by "gallery/path" —
     /// successes persist into the image's metadata sidecar instead
     failed: RwLock<HashMap<String, ()>>,
+}
+
+/// An object catalog that rereads its file when the mtime changes.
+struct ReloadingCatalog {
+    path: std::path::PathBuf,
+    state: RwLock<(std::time::SystemTime, Arc<ObjectCatalog>)>,
+}
+
+impl ReloadingCatalog {
+    fn open(path: &std::path::Path) -> Option<Self> {
+        let mtime = std::fs::metadata(path).ok()?.modified().ok()?;
+        let catalog = ObjectCatalog::open(path).ok()?;
+        Some(Self {
+            path: path.to_path_buf(),
+            state: RwLock::new((mtime, Arc::new(catalog))),
+        })
+    }
+
+    async fn current(&self) -> Arc<ObjectCatalog> {
+        let mtime = std::fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .ok();
+        {
+            let state = self.state.read().await;
+            match mtime {
+                Some(mtime) if mtime != state.0 => {}
+                _ => return state.1.clone(),
+            }
+        }
+        let mut state = self.state.write().await;
+        if let (Some(mtime), Ok(catalog)) = (mtime, ObjectCatalog::open(&self.path)) {
+            info!(
+                "astro: reloaded {} transients from {}",
+                catalog.len(),
+                self.path.display()
+            );
+            *state = (mtime, Arc::new(catalog));
+        }
+        state.1.clone()
+    }
 }
 
 impl AstroContext {
@@ -76,9 +118,17 @@ impl AstroContext {
             },
             None => None,
         };
+        let transients = config.transient_data.as_deref().and_then(|path| {
+            let catalog = ReloadingCatalog::open(path);
+            if catalog.is_none() {
+                warn!("astro: failed to open transient data {}", path.display());
+            }
+            catalog
+        });
         Some(Arc::new(Self {
             stars,
             objects,
+            transients,
             failed: RwLock::new(HashMap::new()),
         }))
     }
@@ -189,7 +239,7 @@ pub async fn astro_handler(
         .ok()
         .flatten();
     if let Some(solution) = existing.as_ref().and_then(|m| m.astro.as_ref()) {
-        return solution_response(solution);
+        return solution_response(solution, &astro).await;
     }
 
     let cache_key = format!("{gallery_name}/{resolved_path}");
@@ -211,7 +261,7 @@ pub async fn astro_handler(
             {
                 warn!("astro: failed to persist solution for {resolved_path}: {e}");
             }
-            solution_response(&solution)
+            solution_response(&solution, &astro).await
         }
         None => {
             astro.failed.write().await.insert(cache_key, ());
@@ -222,8 +272,9 @@ pub async fn astro_handler(
     }
 }
 
-fn solution_response(
+async fn solution_response(
     solution: &crate::metadata_storage::AstroSolution,
+    astro: &Arc<AstroContext>,
 ) -> axum::response::Response {
     let wcs = Wcs {
         crval: (solution.crval[0], solution.crval[1]),
@@ -234,7 +285,7 @@ fn solution_response(
     let (center_ra, center_dec) = wcs.pixel_to_world(dims.0 as f64 / 2.0, dims.1 as f64 / 2.0);
     let footprint = wcs.footprint(dims.0, dims.1);
 
-    let objects: Vec<serde_json::Value> = solution
+    let mut objects: Vec<serde_json::Value> = solution
         .objects
         .iter()
         .map(|o| {
@@ -251,6 +302,24 @@ fn solution_response(
             })
         })
         .collect();
+
+    // Transients are projected live (never persisted): discoveries change
+    if let Some(transients) = &astro.transients {
+        let catalog = transients.current().await;
+        for p in catalog.objects_in_footprint(&wcs, dims) {
+            objects.push(serde_json::json!({
+                "name": p.object.name,
+                "common_name": p.object.common_name,
+                "kind": "transient",
+                "mag": p.object.mag,
+                "x": p.x,
+                "y": p.y,
+                "semi_major_px": p.semi_major_px,
+                "semi_minor_px": p.semi_minor_px,
+                "angle_deg": p.angle_deg,
+            }));
+        }
+    }
 
     let mut response = axum::Json(serde_json::json!({
         "solved": true,

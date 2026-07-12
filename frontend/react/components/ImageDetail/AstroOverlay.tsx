@@ -170,13 +170,21 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
           )}
           {objects.map((o) => {
             const isStar = o.kind === 'star';
+            const isTransient = o.kind === 'transient';
             const label = labelText(o);
             const a = Math.max(o.semi_major_px, fontSize);
             const b = Math.max(o.semi_minor_px, fontSize);
             const y = labelY(o);
             return (
               <g key={`${o.name}-${o.x}-${o.y}`}>
-                {isStar ? (
+                {isTransient ? (
+                  <path
+                    d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z`}
+                    fill="none"
+                    stroke="#ff7be0"
+                    strokeWidth={stroke * 1.5}
+                  />
+                ) : isStar ? (
                   <>
                     <line
                       x1={o.x - a}
@@ -213,7 +221,7 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
                   y={y}
                   textAnchor="middle"
                   fontSize={fontSize}
-                  fill={isStar ? '#ffd479' : '#aee8ff'}
+                  fill={isTransient ? '#ff7be0' : isStar ? '#ffd479' : '#aee8ff'}
                   stroke="rgba(0,0,0,0.8)"
                   strokeWidth={fontSize / 10}
                   paintOrder="stroke"
