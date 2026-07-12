@@ -31,7 +31,18 @@ rectangle on the Sky Position chart.
 
 ## Components
 
-### `tenrankai-astro` crate (workspace member)
+### Standalone solver crate (separate repository)
+
+The solver lives in its own repository under `~/repos` (working name:
+**seiza** — 星座, "constellation", which is literally what the matcher
+recognizes; crates.io-available), NOT in the tenrankai workspace: PSF Guard
+wants the same star detection, catalogs, and WCS/solve machinery. Layout:
+`seiza` (library: detection, WCS, solver, catalog tiles) and `seiza-cli`
+(data building/downloading, solving, annotated debug output). tenrankai and
+PSF Guard consume it as a git dependency; tenrankai keeps only a thin
+integration layer (config, refresh hook, overlay API).
+
+### Library contents
 
 1. **Star detection** — operates on the already-decoded image from the
    gallery pipeline (downsampled grayscale): grid background estimation
@@ -47,9 +58,10 @@ rectangle on the Sky Position chart.
 4. **Catalog access** — memory-mapped HEALPix-binned tile files under a
    configurable `astro_data_directory`; ~8–10 bytes/star (quantized
    RA/Dec, magnitude).
-5. **Data builder + downloader** — `tenrankai astro build-data` assembles
-   bundles from primary sources; `tenrankai astro download-data` fetches
-   prebuilt versioned bundles from GitHub release assets.
+5. **Data builder + downloader** — `seiza-cli build-data` assembles
+   bundles from primary sources; `seiza-cli download-data` (also exposed
+   as `tenrankai astro download-data`) fetches prebuilt versioned bundles
+   from GitHub release assets.
 
 ### Datasets (all rebuilt from primary sources, no NINA redistribution)
 
