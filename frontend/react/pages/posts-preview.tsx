@@ -21,10 +21,17 @@ interface PostsPreviewProps {
   postsName: string;
   count?: number;
   category?: string;
+  variant?: string;
   host: HTMLElement;
 }
 
-const PostsPreview: React.FC<PostsPreviewProps> = ({ postsName, count, category, host }) => {
+const PostsPreview: React.FC<PostsPreviewProps> = ({
+  postsName,
+  count,
+  category,
+  variant,
+  host,
+}) => {
   const [posts, setPosts] = useState<PreviewPost[] | null>(null);
 
   useEffect(() => {
@@ -52,6 +59,21 @@ const PostsPreview: React.FC<PostsPreviewProps> = ({ postsName, count, category,
   }, [postsName, count, category, host]);
 
   if (!posts) return null;
+
+  if (variant === 'list') {
+    return (
+      <>
+        {posts.map((post) => (
+          <a key={post.url} className="posts-preview-item" href={post.url}>
+            <span className="posts-preview-title">{post.title}</span>
+            <span className="posts-preview-meta">
+              <time dateTime={post.date}>{post.date_formatted}</time>
+            </span>
+          </a>
+        ))}
+      </>
+    );
+  }
 
   return (
     <>
@@ -94,10 +116,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const count = parseInt(host.dataset.count || '', 10) || undefined;
     const category = host.dataset.category || undefined;
+    const variant = host.dataset.variant || undefined;
 
     const root = createRoot(list);
     root.render(
-      <PostsPreview postsName={postsName} count={count} category={category} host={host} />,
+      <PostsPreview
+        postsName={postsName}
+        count={count}
+        category={category}
+        variant={variant}
+        host={host}
+      />,
     );
   });
 });

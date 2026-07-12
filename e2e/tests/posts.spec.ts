@@ -255,6 +255,29 @@ test.describe('posts preview embed', () => {
     await component.locator('.btn-explore').click();
     await expect(page).toHaveURL(/\/blog$/);
   });
+
+  test('list variant renders super-compact title and date rows', async ({ page }) => {
+    await page.goto('/about');
+
+    const component = page.locator('.posts-preview-component.variant-list');
+    await expect(component).toBeVisible();
+    await expect(component.locator('.posts-preview-heading')).toHaveText('Recent Writing');
+
+    // count: 5 shows all four visible posts (archived excluded); rows carry
+    // only a title and a date — no summaries, thumbs, or category labels
+    const items = component.locator('.posts-preview-item');
+    await expect(items).toHaveCount(4);
+    await expect(items.nth(0).locator('.posts-preview-title')).toHaveText('Plain Note');
+    await expect(items.nth(0).locator('.posts-preview-meta')).toHaveText('January 4, 2024');
+    await expect(component.locator('.posts-preview-summary')).toHaveCount(0);
+    await expect(component.locator('.posts-preview-thumb')).toHaveCount(0);
+    await expect(component.locator('.posts-preview-category')).toHaveCount(0);
+    await expect(items.filter({ hasText: 'Old Archived Note' })).toHaveCount(0);
+    await shot(page, 'posts-preview-list-variant');
+
+    await items.nth(3).click();
+    await expect(page).toHaveURL(/\/blog\/first-trip$/);
+  });
 });
 
 test.describe('post detail', () => {
