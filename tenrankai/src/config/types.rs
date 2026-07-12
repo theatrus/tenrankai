@@ -34,6 +34,10 @@ pub struct AstroConfig {
     /// Object catalog built by `seiza build-data objects` (SEIZAOB1)
     #[serde(default)]
     pub object_data: Option<std::path::PathBuf>,
+    /// Transient catalog built by `seiza build-data transients`; reloaded
+    /// automatically when the file changes, so a cron can refresh it
+    #[serde(default)]
+    pub transient_data: Option<std::path::PathBuf>,
 }
 
 /// Configuration for the cache generation queue.
