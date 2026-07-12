@@ -21,6 +21,7 @@ pub enum TemplateType {
     Header,
     Footer,
     GalleryPreview,
+    PostsPreview,
     UserMenu,
 }
 
@@ -57,6 +58,7 @@ impl TemplateType {
             TemplateType::Header => "partials/_header.html.liquid",
             TemplateType::Footer => "partials/_footer.html.liquid",
             TemplateType::GalleryPreview => "partials/_gallery_preview.html.liquid",
+            TemplateType::PostsPreview => "partials/_posts_preview.html.liquid",
             TemplateType::UserMenu => "partials/_user_menu.html.liquid",
         }
     }
@@ -81,6 +83,7 @@ impl TemplateType {
             TemplateType::Header
             | TemplateType::Footer
             | TemplateType::GalleryPreview
+            | TemplateType::PostsPreview
             | TemplateType::UserMenu => TemplateCategory::Partial,
         }
     }
@@ -115,6 +118,7 @@ impl TemplateType {
         TemplateType::Header,
         TemplateType::Footer,
         TemplateType::GalleryPreview,
+        TemplateType::PostsPreview,
         TemplateType::UserMenu,
     ];
 
@@ -138,6 +142,7 @@ impl TemplateType {
         TemplateType::Header,
         TemplateType::Footer,
         TemplateType::GalleryPreview,
+        TemplateType::PostsPreview,
         TemplateType::UserMenu,
     ];
 
@@ -331,11 +336,12 @@ mod tests {
         assert!(TemplateType::PARTIALS.contains(&TemplateType::Header));
         assert!(TemplateType::PARTIALS.contains(&TemplateType::Footer));
         assert!(TemplateType::PARTIALS.contains(&TemplateType::GalleryPreview));
+        assert!(TemplateType::PARTIALS.contains(&TemplateType::PostsPreview));
         assert!(TemplateType::PARTIALS.contains(&TemplateType::UserMenu));
-        assert_eq!(TemplateType::PARTIALS.len(), 4);
+        assert_eq!(TemplateType::PARTIALS.len(), 5);
 
         // Test ALL_STANDARD constant
-        assert_eq!(TemplateType::ALL_STANDARD.len(), 16); // 4 pages + 8 modules + 4 partials
+        assert_eq!(TemplateType::ALL_STANDARD.len(), 17); // 4 pages + 8 modules + 5 partials
         assert!(TemplateType::ALL_STANDARD.contains(&TemplateType::Index));
         assert!(TemplateType::ALL_STANDARD.contains(&TemplateType::Gallery));
         assert!(TemplateType::ALL_STANDARD.contains(&TemplateType::Header));

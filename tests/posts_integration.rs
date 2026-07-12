@@ -548,6 +548,92 @@ Gear content."#;
 }
 
 #[tokio::test]
+async fn test_posts_preview_api() {
+    let (_temp_dir, server) = setup_test_server_with_posts().await;
+
+    let blog_dir = _temp_dir.path().join("posts").join("blog");
+    fs::write(
+        blog_dir.join("_categories.md"),
+        r#"+++
+[categories.legacy]
+archive = true
++++
+"#,
+    )
+    .unwrap();
+    fs::write(
+        blog_dir.join("rust-post.md"),
+        r#"+++
+title = "Rust Post"
+summary = "About Rust"
+date = "2024-03-01"
+categories = ["Rust & Systems"]
++++
+
+Rust content."#,
+    )
+    .unwrap();
+    fs::write(
+        blog_dir.join("old-news.md"),
+        r#"+++
+title = "Old News"
+summary = "Archived"
+date = "2024-03-02"
+categories = ["Legacy"]
++++
+
+Old content."#,
+    )
+    .unwrap();
+    server.post("/api/posts/blog/refresh").await;
+
+    // Default preview: newest first, archived posts excluded
+    let response = server.get("/api/posts/blog/preview").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let json: serde_json::Value = response.json();
+    let posts = json["posts"].as_array().unwrap();
+    assert_eq!(posts.len(), 3);
+    assert_eq!(posts[0]["title"], "Rust Post");
+    assert_eq!(posts[0]["url"], "/blog/rust-post");
+    assert_eq!(posts[0]["date_formatted"], "March 1, 2024");
+    assert!(posts[0]["reading_time_minutes"].as_u64().unwrap() >= 1);
+    assert_eq!(posts[0]["categories"][0]["name"], "Rust & Systems");
+    assert_eq!(
+        posts[0]["categories"][0]["url"],
+        "/blog/category/rust-systems"
+    );
+    assert!(!json.to_string().contains("Old News"));
+
+    // count is honored
+    let response = server
+        .get("/api/posts/blog/preview")
+        .add_query_param("count", "1")
+        .await;
+    let json: serde_json::Value = response.json();
+    assert_eq!(json["posts"].as_array().unwrap().len(), 1);
+
+    // Category filtering by slug, which includes archived posts
+    let response = server
+        .get("/api/posts/blog/preview")
+        .add_query_param("category", "rust-systems")
+        .await;
+    let json: serde_json::Value = response.json();
+    let posts = json["posts"].as_array().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["title"], "Rust Post");
+    let response = server
+        .get("/api/posts/blog/preview")
+        .add_query_param("category", "legacy")
+        .await;
+    let json: serde_json::Value = response.json();
+    assert_eq!(json["posts"][0]["title"], "Old News");
+
+    // Unknown posts systems 404
+    let response = server.get("/api/posts/nonexistent/preview").await;
+    assert_eq!(response.status_code(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn test_feed_absolutizes_content_urls() {
     let (_temp_dir, server) = setup_test_server_with_posts().await;
 

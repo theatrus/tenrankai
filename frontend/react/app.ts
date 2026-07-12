@@ -16,6 +16,7 @@ import './pages/passkey-enrollment.ts';
 import './pages/passkeys.ts';
 import './pages/post-detail.tsx';
 import './pages/posts-index.tsx';
+import './pages/posts-preview.tsx';
 import './pages/profile.ts';
 
 // Export a global object for any runtime configuration if needed

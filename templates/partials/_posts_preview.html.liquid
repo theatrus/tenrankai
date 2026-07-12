@@ -1,0 +1,23 @@
+{% comment %}
+  Posts Preview Partial — embeds a compact list of recent posts on any page.
+  Parameters:
+    - posts_name: (required) Name of the posts system to fetch from
+    - posts_url:  (required) URL of the posts index for the "View all" link
+    - heading:    (optional) Section heading text
+    - count:      (optional) Number of posts to show (default 3, max 12)
+    - category:   (optional) Category slug to filter by
+    - variant:    (optional) "list" for a super-compact title + date list
+                  instead of summary cards
+{% endcomment %}
+<section class="posts-preview-component{% if variant %} variant-{{ variant }}{% endif %}"
+         data-posts-name="{{ posts_name }}"
+         data-posts-url="{{ posts_url }}"
+         {%- if count %} data-count="{{ count }}"{% endif %}
+         {%- if category %} data-category="{{ category }}"{% endif %}
+         {%- if variant %} data-variant="{{ variant }}"{% endif %}>
+    {% if heading %}<h2 class="posts-preview-heading">{{ heading }}</h2>{% endif %}
+    <div class="posts-preview-list"></div>
+    <div class="preview-footer posts-preview-footer">
+        <a href="{{ posts_url }}" class="btn-explore">View All Posts →</a>
+    </div>
+</section>

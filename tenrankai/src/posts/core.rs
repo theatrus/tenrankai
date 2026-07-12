@@ -467,6 +467,22 @@ impl PostsManager {
             .collect()
     }
 
+    /// The most recent posts visible to the user as summaries — used by the
+    /// embeddable posts preview. The unfiltered form excludes archived posts,
+    /// matching the index.
+    pub async fn get_recent_post_summaries(
+        &self,
+        limit: usize,
+        category: Option<&str>,
+        username: Option<&str>,
+    ) -> Vec<PostSummary> {
+        self.visible_posts(category, username, 0, limit)
+            .await
+            .into_iter()
+            .map(|post| self.summarize(post))
+            .collect()
+    }
+
     /// All posts visible to anonymous users, newest first, including archived
     /// posts — the sitemap lists archived permalinks even though the
     /// unfiltered index hides them

@@ -15,6 +15,8 @@
     <div style="margin-top: 3rem;">
         {% include "_gallery_preview.html.liquid" gallery_name: "main", gallery_url: "/gallery" %}
     </div>
+
+    {% include "_posts_preview.html.liquid" posts_name: "blog", posts_url: "/blog", heading: "Recent Writing", variant: "list", count: 5 %}
 </div>
 
 {% include "_footer.html.liquid" %}
