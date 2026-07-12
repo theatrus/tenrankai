@@ -252,6 +252,7 @@ test.describe('posts preview embed', () => {
 
     // The footer link is server-rendered and goes to the posts index
     await page.goto('/');
+    await expect(component.locator('.btn-explore')).toHaveText('View All Posts →');
     await component.locator('.btn-explore').click();
     await expect(page).toHaveURL(/\/blog$/);
   });

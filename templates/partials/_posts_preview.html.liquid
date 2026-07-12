@@ -8,6 +8,7 @@
     - category:   (optional) Category slug to filter by
     - variant:    (optional) "list" for a super-compact title + date list
                   instead of summary cards
+    - link_text:  (optional) Label for the footer link (default "View All Posts")
 {% endcomment %}
 <section class="posts-preview-component{% if variant %} variant-{{ variant }}{% endif %}"
          data-posts-name="{{ posts_name }}"
@@ -18,6 +19,6 @@
     {% if heading %}<h2 class="posts-preview-heading">{{ heading }}</h2>{% endif %}
     <div class="posts-preview-list"></div>
     <div class="preview-footer posts-preview-footer">
-        <a href="{{ posts_url }}" class="btn-explore">View All Posts →</a>
+        <a href="{{ posts_url }}" class="btn-explore">{% if link_text %}{{ link_text }}{% else %}View All Posts{% endif %} →</a>
     </div>
 </section>
