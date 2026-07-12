@@ -3,9 +3,10 @@
   Parameters:
     - gallery_name: (required) Name of the gallery to fetch preview from
     - gallery_url: (required) URL to the gallery for the "Explore Full Gallery" link
+    - count: (optional) Number of images to show (default 6, max 20)
 {% endcomment %}
-<section class="gallery-preview-component" id="gallery-preview-component" data-gallery-name="{{ gallery_name }}" data-gallery-url="{{ gallery_url }}">
-    <div class="preview-masonry" id="gallery-preview-grid">
+<section class="gallery-preview-component" data-gallery-name="{{ gallery_name }}" data-gallery-url="{{ gallery_url }}"{% if count %} data-count="{{ count }}"{% endif %}>
+    <div class="preview-masonry">
         <div class="masonry-column" data-column="0"></div>
         <div class="masonry-column" data-column="1"></div>
     </div>

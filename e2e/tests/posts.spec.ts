@@ -223,6 +223,40 @@ test.describe('posts index', () => {
   });
 });
 
+test.describe('posts preview embed', () => {
+  test('home page embeds a recent-posts summary block', async ({ page }) => {
+    await page.goto('/');
+
+    const component = page.locator('.posts-preview-component');
+    await expect(component).toBeVisible();
+    await expect(component.locator('.posts-preview-heading')).toHaveText('Latest Posts');
+
+    // Default count of three, newest first, archived posts excluded
+    const items = component.locator('.posts-preview-item');
+    await expect(items).toHaveCount(3);
+    await expect(items.nth(0).locator('.posts-preview-title')).toHaveText('Plain Note');
+    await expect(items.nth(1).locator('.posts-preview-title')).toHaveText('Camera Bag');
+    await expect(items.nth(2).locator('.posts-preview-title')).toHaveText('Second Trip');
+    await expect(component.locator('.posts-preview-item', { hasText: 'Old Archived Note' })).toHaveCount(0);
+
+    // Items carry meta, summary, and category labels; hero thumbs render
+    await expect(items.nth(0).locator('.posts-preview-meta')).toContainText('January 4, 2024');
+    await expect(items.nth(0).locator('.posts-preview-meta')).toContainText('min read');
+    await expect(items.nth(1).locator('.posts-preview-category')).toHaveText('Gear');
+    await expect(items.nth(1).locator('.posts-preview-thumb img')).toBeVisible();
+    await shot(page, 'posts-preview-embed');
+
+    // The whole item links to the post
+    await items.nth(0).click();
+    await expect(page).toHaveURL(/\/blog\/plain-note$/);
+
+    // The footer link is server-rendered and goes to the posts index
+    await page.goto('/');
+    await component.locator('.btn-explore').click();
+    await expect(page).toHaveURL(/\/blog$/);
+  });
+});
+
 test.describe('post detail', () => {
   test('renders content, categories, and social meta tags', async ({ page }) => {
     await page.goto('/blog/first-trip');

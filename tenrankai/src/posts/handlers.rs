@@ -354,6 +354,65 @@ pub async fn post_detail_handler(
 /// Number of items included in RSS feeds
 const FEED_ITEM_LIMIT: usize = 20;
 
+#[derive(Deserialize)]
+pub struct PostsPreviewQuery {
+    count: Option<usize>,
+    category: Option<String>,
+}
+
+/// JSON summaries of recent posts for the embeddable posts preview block
+pub async fn posts_preview_handler(
+    ResolvedState(app_state): ResolvedState,
+    Path(posts_name): Path<String>,
+    auth: crate::login::OptionalAuth,
+    Query(query): Query<PostsPreviewQuery>,
+) -> axum::response::Response {
+    let posts_manager = match app_state.posts_managers().get(&posts_name) {
+        Some(manager) => manager,
+        None => return ApiResponse::NotFound.into_response(),
+    };
+    let config = posts_manager.get_config();
+
+    let category_slug = query
+        .category
+        .as_deref()
+        .map(PostsManager::category_slug)
+        .filter(|slug| !slug.is_empty());
+    let count = query.count.unwrap_or(3).clamp(1, 12);
+
+    let posts: Vec<serde_json::Value> = posts_manager
+        .get_recent_post_summaries(count, category_slug.as_deref(), auth.username())
+        .await
+        .into_iter()
+        .map(|post| {
+            serde_json::json!({
+                "url": post.url,
+                "title": post.title,
+                "summary": post.summary,
+                "date": post.date.to_rfc3339(),
+                "date_formatted": format_date(&post.date),
+                "reading_time_minutes": post.reading_time_minutes,
+                "hero_image": post.hero_image,
+                "categories": post
+                    .categories
+                    .iter()
+                    .map(|name| {
+                        serde_json::json!({
+                            "name": name,
+                            "url": category_url(
+                                &config.url_prefix,
+                                &PostsManager::category_slug(name),
+                            ),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    json_response(serde_json::json!({ "posts": posts }))
+}
+
 pub async fn posts_feed_handler(
     ResolvedState(app_state): ResolvedState,
     Path(posts_name): Path<String>,

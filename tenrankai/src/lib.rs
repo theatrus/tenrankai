@@ -1043,6 +1043,17 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             }),
         );
 
+        // JSON preview for the embeddable posts summary block
+        router = router.route(
+            &format!("/api/posts/{}/preview", name),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, auth, query| {
+                    posts::handlers::posts_preview_handler(state, Path(name), auth, query)
+                }
+            }),
+        );
+
         // Refresh route for posts
         router = router.route(
             &format!("/api/posts/{}/refresh", name),

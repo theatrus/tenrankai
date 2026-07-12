@@ -576,6 +576,13 @@ impl TemplateEngine {
                 error!("Failed to load gallery preview partial: {}", e);
                 String::new()
             });
+        let posts_preview_content = self
+            .load_template(TemplateType::PostsPreview.path())
+            .await
+            .unwrap_or_else(|e| {
+                error!("Failed to load posts preview partial: {}", e);
+                String::new()
+            });
 
         // Load user menu partial if user auth is enabled
         let user_menu_content = if self.has_user_auth {
@@ -599,6 +606,7 @@ impl TemplateEngine {
             "_gallery_preview.html.liquid",
             gallery_preview_content.clone(),
         );
+        partials_source.add("_posts_preview.html.liquid", posts_preview_content.clone());
         if self.has_user_auth {
             partials_source.add("_user_menu.html.liquid", user_menu_content.clone());
         }

@@ -852,6 +852,123 @@ body > footer p {
     background: var(--bg-button-hover);
 }
 
+/* Posts Preview Component (embeddable recent-posts summary block) */
+.posts-preview-component {
+    margin: 2rem 0;
+}
+
+.posts-preview-heading {
+    margin: 0 0 1rem 0;
+}
+
+.posts-preview-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.posts-preview-item {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    padding: 1rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.posts-preview-item:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+}
+
+.posts-preview-thumb {
+    flex: 0 0 auto;
+    width: 96px;
+    height: 72px;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.posts-preview-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.posts-preview-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.posts-preview-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.posts-preview-category {
+    display: inline-block;
+    padding: 1px 0.5rem;
+    border-radius: 4px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.posts-preview-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.posts-preview-meta {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.posts-preview-summary {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.posts-preview-footer {
+    text-align: center;
+    margin-top: 1.5rem;
+}
+
+.posts-preview-component .btn-explore {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--border-color);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: background 0.3s;
+}
+
+.posts-preview-component .btn-explore:hover {
+    background: var(--bg-button-hover);
+}
+
+@media (max-width: 480px) {
+    .posts-preview-thumb {
+        display: none;
+    }
+}
+
 /* Mobile Styles */
 @media (max-width: 768px) {
     nav {

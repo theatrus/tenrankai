@@ -13,13 +13,17 @@ class GalleryPreviewTemplate {
   private previewComponent: HTMLElement;
   private galleryName: string;
   private galleryUrl: string;
+  private count: number;
   private previewImages: GalleryImage[] = [];
   private allAvailableImages: GalleryImage[] = [];
   private imageReplacementInterval?: number;
   private resizeTimeout?: number;
 
   constructor(previewComponent: HTMLElement) {
-    const previewGrid = previewComponent.querySelector<HTMLElement>('#gallery-preview-grid');
+    // The id fallback tolerates a cached page rendered from the old partial
+    const previewGrid =
+      previewComponent.querySelector<HTMLElement>('.preview-masonry') ||
+      previewComponent.querySelector<HTMLElement>('#gallery-preview-grid');
     const galleryName = previewComponent.dataset.galleryName;
 
     if (!previewGrid || !galleryName) {
@@ -30,6 +34,7 @@ class GalleryPreviewTemplate {
     this.previewComponent = previewComponent;
     this.galleryName = galleryName;
     this.galleryUrl = previewComponent.dataset.galleryUrl || '/gallery';
+    this.count = parseInt(previewComponent.dataset.count || '', 10) || 6;
 
     void this.init();
   }
@@ -49,7 +54,7 @@ class GalleryPreviewTemplate {
   }
 
   private async fetchInitialImages(): Promise<void> {
-    const response = await fetch(`/api/gallery/${this.galleryName}/preview`);
+    const response = await fetch(`/api/gallery/${this.galleryName}/preview?count=${this.count}`);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch gallery preview: ${response.status}`);
@@ -205,7 +210,9 @@ class GalleryPreviewTemplate {
 
   private async fetchMoreImages(): Promise<GalleryImage[]> {
     try {
-      const response = await fetch(`/api/gallery/${this.galleryName}/preview?count=20`);
+      const response = await fetch(
+        `/api/gallery/${this.galleryName}/preview?count=${Math.max(20, this.count)}`,
+      );
 
       if (!response.ok) {
         console.error('Failed to fetch more gallery images:', response.status);
