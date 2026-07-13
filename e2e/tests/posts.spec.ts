@@ -300,7 +300,7 @@ test.describe('post detail', () => {
     await expect(hero).toBeVisible();
     expect(await hero.getAttribute('src')).toContain('/g/_image/');
     const heroLink = page.locator('.post-hero .post-hero-link');
-    expect(await heroLink.getAttribute('href')).toBe('/g/detail/by-filename%2F01-alpha.png');
+    expect(await heroLink.getAttribute('href')).toBe('/g/detail/by-filename/01-alpha.png');
 
     // Open Graph tags including og:image from the hero
     const ogType = page.locator('meta[property="og:type"]');
@@ -341,7 +341,7 @@ test.describe('post detail', () => {
     // The embed links to the gallery and carries the details data attributes
     const embed = page.locator('.post-content .gallery-image-details');
     await expect(embed).toHaveCount(1);
-    expect(await embed.getAttribute('href')).toBe('/g/detail/by-filename%2F02-bravo.png');
+    expect(await embed.getAttribute('href')).toBe('/g/detail/by-filename/02-bravo.png');
 
     // Hovering reveals the details card
     await expect(page.locator('.gallery-hover-card')).toHaveCount(0);
