@@ -962,17 +962,11 @@ impl PostsManager {
         // attributes that the frontend turns into a hover card with the
         // image's description and technical details.
         let escape = crate::sitemap::xml_escape;
-        let details_attrs = if details {
-            format!(
-                r#" data-gallery-details data-gallery="{}" data-image-path="{}""#,
-                escape(gallery_name),
-                escape(&identifier)
-            )
-        } else {
-            String::new()
-        };
+        let details_attrs = if details { " data-gallery-details" } else { "" };
+        // data-gallery/data-image-path always: the astro overlay hydrator
+        // uses them to offer object labels on solved astro embeds
         let html = format!(
-            r#"<a href="{}" class="gallery-image-link{}"{}>
+            r#"<a href="{}" class="gallery-image-link{}" data-gallery="{}" data-image-path="{}"{}>
                 <img src="{}" alt="{}" loading="lazy" class="gallery-image gallery-image-{}" />
             </a>"#,
             detail_url,
@@ -981,6 +975,8 @@ impl PostsManager {
             } else {
                 ""
             },
+            escape(gallery_name),
+            escape(&identifier),
             details_attrs,
             image_url,
             escape(image_path.split('/').next_back().unwrap_or(image_path)),

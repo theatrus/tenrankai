@@ -177,3 +177,31 @@ test.describe('astro overlay', () => {
     await shot(page, 'astro-overlay-mobile-zoom');
   });
 });
+
+test.describe('astro overlay in post embeds', () => {
+  test('embedded gallery image offers the Objects toggle and renders labels', async ({
+    page,
+  }) => {
+    await page.route('**/api/gallery/*/astro/**', (route) =>
+      route.fulfill({ json: SOLUTION }),
+    );
+    await page.goto('/blog/camera-bag');
+
+    const embed = page.locator('a.gallery-image-link[data-gallery]').first();
+    await expect(embed).toBeVisible();
+
+    const toggle = embed.getByRole('button', { name: /Objects \(/ });
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+
+    const svg = embed.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg).toBeVisible();
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+    await shot(page, 'astro-overlay-post-embed');
+
+    // The toggle must not navigate to the detail page
+    await expect(page).toHaveURL(/\/blog\/camera-bag/);
+    await embed.getByRole('button', { name: 'Objects ✕' }).click();
+    await expect(svg).toHaveCount(0);
+  });
+});
