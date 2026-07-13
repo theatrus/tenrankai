@@ -12,7 +12,7 @@ import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx
 import { VersionPicker } from '../components/ImageDetail/VersionPicker.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { AstroSkyMap } from '../components/ImageDetail/AstroSkyMap.tsx';
-import { AstroOverlay, useAstroSolution } from '../components/ImageDetail/AstroOverlay.tsx';
+import { AstroControls, AstroOverlay, useAstroSolution } from '../components/ImageDetail/AstroOverlay.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { EditModal } from '../components/Editor/index.ts';
@@ -112,11 +112,14 @@ export function ImageDetailPage({
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
 
-  // Plate solution for astro images (null when unsolved or unavailable)
+  // Plate solution for astro images (null when unsolved or unavailable).
+  // Overlay state lives here so the zoomed views share it.
   const astroSolution = useAstroSolution(
     currentData?.gallery_name || '',
     currentData?.image?.path || '',
   );
+  const [astroVisible, setAstroVisible] = useState(false);
+  const [astroAllTransients, setAstroAllTransients] = useState(false);
 
   // Modal state for editing image info
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -271,14 +274,38 @@ export function ImageDetailPage({
                 galleryName={currentData.gallery_name}
                 onZoomStateChange={setIsImageZoomed}
                 overlay={
-                  astroSolution && !isImageZoomed ? (
-                    <AstroOverlay solution={astroSolution} />
+                  astroSolution ? (
+                    <AstroOverlay
+                      solution={astroSolution}
+                      visible={astroVisible}
+                      allTransients={astroAllTransients}
+                    />
+                  ) : undefined
+                }
+                zoomOverlay={
+                  astroSolution && astroVisible ? (
+                    <AstroOverlay
+                      solution={astroSolution}
+                      visible
+                      allTransients={astroAllTransients}
+                    />
                   ) : undefined
                 }
               />
             </div>
           </div>
-          
+
+          {/* Astro overlay toggles sit right under the image they affect */}
+          {astroSolution && (
+            <AstroControls
+              solution={astroSolution}
+              visible={astroVisible}
+              onVisibleChange={setAstroVisible}
+              allTransients={astroAllTransients}
+              onAllTransientsChange={setAstroAllTransients}
+            />
+          )}
+
           {/* Thumbnail navigation */}
           <ImageNavigation
             prevImage={currentData.prev_image}

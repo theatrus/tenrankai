@@ -409,6 +409,29 @@ body {
     gap: var(--spacing-md);
 }
 
+/* Astro overlay toggles: a slim pill row tucked right under the image */
+.astro-controls {
+    justify-content: center;
+    margin-top: 0.35rem;
+    gap: var(--spacing-sm);
+}
+
+.astro-controls .btn {
+    padding: 0.15rem 0.85rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    border-radius: 999px;
+    touch-action: manipulation;
+}
+
+/* Touch devices keep a full-size tap target */
+@media (pointer: coarse) {
+    .astro-controls .btn {
+        min-height: 44px;
+        padding: 0.4rem 1.1rem;
+    }
+}
+
 .nav-hint-container {
     margin-top: var(--spacing-sm);
 }

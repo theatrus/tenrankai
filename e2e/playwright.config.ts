@@ -29,7 +29,16 @@ export default defineConfig({
     screenshot: 'on',
   },
 
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Touch-device pass for the astro overlay controls (tap targets and
+    // gesture interception regressions surface only with touch events)
+    {
+      name: 'mobile',
+      use: { ...devices['Pixel 7'] },
+      testMatch: /astro-overlay/,
+    },
+  ],
 
   webServer: {
     // Generate fixtures BEFORE the server starts — its folder cache is built at

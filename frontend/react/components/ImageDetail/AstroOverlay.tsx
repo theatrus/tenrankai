@@ -79,19 +79,29 @@ function encompassesFrame(o: PlacedObject, width: number, height: number): boole
   });
 }
 
-export function AstroOverlay({ solution }: { solution: AstroSolution }) {
-  const [visible, setVisible] = useState(false);
-  const [allTransients, setAllTransients] = useState(false);
+/** Transients not discovered near the capture date (hidden by default). */
+export function distantTransients(solution: AstroSolution): PlacedObject[] {
+  return (solution.objects || []).filter(
+    (o) => o.kind === 'transient' && o.near_capture === false,
+  );
+}
+
+interface AstroOverlayProps {
+  solution: AstroSolution;
+  visible: boolean;
+  allTransients: boolean;
+}
+
+/** The SVG marker layer. Toggle buttons live in [`AstroControls`]. */
+export function AstroOverlay({ solution, visible, allTransients }: AstroOverlayProps) {
 
   const width = solution.width;
   const height = solution.height;
   // Transients not discovered near the capture date are noise by default
   // (M31 accumulates hundreds of historical novae) but can be toggled on
   const everything = solution.objects || [];
-  const distantTransients = everything.filter(
-    (o) => o.kind === 'transient' && o.near_capture === false,
-  );
-  const all = allTransients ? everything : everything.filter((o) => !distantTransients.includes(o));
+  const distant = distantTransients(solution);
+  const all = allTransients ? everything : everything.filter((o) => !distant.includes(o));
   const encompassing = all.filter((o) => encompassesFrame(o, width, height));
   const objects = all.filter((o) => !encompassing.includes(o));
   const stroke = Math.max(solution.width / 1200, 1.5);
@@ -126,62 +136,6 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
 
   return (
     <>
-      <button
-        type="button"
-        className="astro-overlay-toggle"
-        onClick={(e) => {
-          e.stopPropagation();
-          setVisible(!visible);
-        }}
-        style={{
-          position: 'absolute',
-          top: '0.75rem',
-          right: '0.75rem',
-          zIndex: 3,
-          pointerEvents: 'auto',
-          padding: '0.35rem 0.8rem',
-          borderRadius: '999px',
-          border: '1px solid rgba(255,255,255,0.4)',
-          background: visible ? 'rgba(80,180,255,0.35)' : 'rgba(0,0,0,0.45)',
-          color: '#fff',
-          fontSize: '0.85rem',
-          cursor: 'pointer',
-        }}
-        title={`${all.length} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
-      >
-        {visible ? 'Objects ✕' : `Objects (${all.length})`}
-      </button>
-
-      {visible && distantTransients.length > 0 && (
-        <button
-          type="button"
-          className="astro-overlay-transient-toggle"
-          onClick={(e) => {
-            e.stopPropagation();
-            setAllTransients(!allTransients);
-          }}
-          style={{
-            position: 'absolute',
-            top: '3rem',
-            right: '0.75rem',
-            zIndex: 3,
-            pointerEvents: 'auto',
-            padding: '0.3rem 0.7rem',
-            borderRadius: '999px',
-            border: '1px solid rgba(255,123,224,0.5)',
-            background: allTransients ? 'rgba(255,123,224,0.3)' : 'rgba(0,0,0,0.45)',
-            color: '#ffd6f4',
-            fontSize: '0.75rem',
-            cursor: 'pointer',
-          }}
-          title="Transients discovered long before or after this image was captured"
-        >
-          {allTransients
-            ? 'Hide old transients'
-            : `+${distantTransients.length} old transients`}
-        </button>
-      )}
-
       {visible && (
         <svg
           viewBox={`0 0 ${solution.width} ${solution.height}`}
@@ -275,5 +229,52 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
         </svg>
       )}
     </>
+  );
+}
+
+interface AstroControlsProps {
+  solution: AstroSolution;
+  visible: boolean;
+  onVisibleChange: (visible: boolean) => void;
+  allTransients: boolean;
+  onAllTransientsChange: (all: boolean) => void;
+}
+
+/**
+ * Overlay toggles for the image controls bar — off the image itself, so
+ * they don't obscure it and stay clearly visible when active.
+ */
+export function AstroControls({
+  solution,
+  visible,
+  onVisibleChange,
+  allTransients,
+  onAllTransientsChange,
+}: AstroControlsProps) {
+  const total = (solution.objects || []).length;
+  const distant = distantTransients(solution);
+  const shown = allTransients ? total : total - distant.length;
+
+  return (
+    <div className="control-buttons astro-controls">
+      <button
+        type="button"
+        className={`btn ${visible ? 'btn-primary' : 'btn-secondary'}`}
+        onClick={() => onVisibleChange(!visible)}
+        title={`${shown} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
+      >
+        {visible ? 'Objects ✕' : `Objects (${shown})`}
+      </button>
+      {visible && distant.length > 0 && (
+        <button
+          type="button"
+          className={`btn ${allTransients ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => onAllTransientsChange(!allTransients)}
+          title="Transients discovered long before or after this image was captured"
+        >
+          {allTransients ? 'Hide old transients' : `+${distant.length} old transients`}
+        </button>
+      )}
+    </div>
   );
 }
