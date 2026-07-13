@@ -176,14 +176,20 @@ export function AstroOverlay({ solution, visible, allTransients }: AstroOverlayP
             return (
               <g key={`${o.name}-${o.x}-${o.y}`}>
                 {isComet || isAsteroid ? (
-                  // Moving bodies: a diamond plus a short trailing dash,
-                  // in comet green or asteroid orange
-                  <path
-                    d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z M ${o.x + a * 1.3} ${o.y + a * 1.3} L ${o.x + a * 2.1} ${o.y + a * 2.1}`}
-                    fill="none"
-                    stroke={movingColor}
-                    strokeWidth={stroke * 1.5}
-                  />
+                  // Moving bodies: a diamond plus a directional dash — the
+                  // comet's anti-solar tail or the asteroid's motion trail
+                  (() => {
+                    const rad = ((o.angle_deg || 45) * Math.PI) / 180;
+                    const [dx, dy] = [Math.cos(rad), Math.sin(rad)];
+                    return (
+                      <path
+                        d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z M ${o.x + a * 1.3 * dx} ${o.y + a * 1.3 * dy} L ${o.x + a * 3.2 * dx} ${o.y + a * 3.2 * dy}`}
+                        fill="none"
+                        stroke={movingColor}
+                        strokeWidth={stroke * 1.5}
+                      />
+                    );
+                  })()
                 ) : isTransient ? (
                   <path
                     d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z`}

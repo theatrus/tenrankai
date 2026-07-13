@@ -4304,9 +4304,9 @@ dependencies = [
 
 [[package]]
 name = "seiza"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744f31c79267b4a8b7cdf9a53ed26c7b086127aa54b0f61ba547eec3a639a5c0"
+checksum = "04eaad50f14c1ce9e78e7490406f74cc3b2b7284713daf795f90eed05366aaff"
 dependencies = [
  "image",
  "memmap2",
@@ -4917,7 +4917,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
