@@ -241,3 +241,87 @@ test.describe('per-catalog toggles', () => {
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
   });
 });
+
+test.describe('post embed overlay geometry and menus', () => {
+  test('overlay aligns with the image and the hover card stays legible', async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, 'hover interactions are desktop-only');
+    await page.route('**/api/gallery/*/astro/**', (route) =>
+      route.fulfill({ json: SOLUTION }),
+    );
+    await page.goto('/blog/camera-bag');
+
+    const embed = page.locator('a.gallery-image-link[data-gallery]').first();
+    const img = embed.locator('img');
+    await embed.getByRole('button', { name: /Objects \(/ }).click();
+
+    // The SVG overlay must match the image box (the inline baseline gap
+    // used to shift it a few px down)
+    const svg = embed.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg).toBeVisible();
+    const imgBox = (await img.boundingBox())!;
+    const svgBox = (await svg.boundingBox())!;
+    expect(Math.abs(svgBox.y - imgBox.y)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(svgBox.height - imgBox.height)).toBeLessThanOrEqual(1.5);
+
+    // The details hover card (same anchor) must keep a readable
+    // line-height — the overlay wrapper's line-height: 0 must not leak
+    await embed.hover();
+    const card = page.locator('.gallery-hover-mount > div').first();
+    await expect(card).toBeVisible();
+    const lineHeight = await card.evaluate((el) => getComputedStyle(el).lineHeight);
+    expect(lineHeight).not.toBe('0px');
+    const rows = card.locator('dt');
+    if ((await rows.count()) >= 2) {
+      const first = (await rows.nth(0).boundingBox())!;
+      const second = (await rows.nth(1).boundingBox())!;
+      expect(second.y).toBeGreaterThanOrEqual(first.y + first.height - 1);
+    }
+    await shot(page, 'astro-embed-hover-legible');
+  });
+
+  test('embeds offer the catalog menu', async ({ page, isMobile }) => {
+    await page.route('**/api/gallery/*/astro/**', (route) =>
+      route.fulfill({ json: SOLUTION }),
+    );
+    await page.goto('/blog/camera-bag');
+    const embed = page.locator('a.gallery-image-link[data-gallery]').first();
+    const tapOrClick = async (l: ReturnType<typeof page.locator>) =>
+      isMobile ? l.tap() : l.click();
+
+    await tapOrClick(embed.getByRole('button', { name: /Objects \(/ }));
+    const svg = embed.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+
+    await tapOrClick(embed.getByRole('button', { name: /Catalogs/ }));
+    await tapOrClick(page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' }));
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toHaveCount(0);
+    await expect(svg.getByText(/WR 134/)).toBeVisible();
+    // Still on the post page (controls never follow the embed link)
+    await expect(page).toHaveURL(/\/blog\/camera-bag/);
+  });
+
+  test('hero image pill sits inside the hero image box', async ({ page, isMobile }) => {
+    await page.route('**/api/gallery/*/astro/**', (route) =>
+      route.fulfill({ json: SOLUTION }),
+    );
+    await page.goto('/blog/first-trip');
+    const hero = page.locator('a.post-hero-link[data-gallery]');
+    await expect(hero).toBeVisible();
+
+    const img = hero.locator('img');
+    const pill = hero.getByRole('button', { name: /Objects \(/ });
+    await expect(pill).toBeVisible();
+    const imgBox = (await img.boundingBox())!;
+    const pillBox = (await pill.boundingBox())!;
+    expect(pillBox.x).toBeGreaterThanOrEqual(imgBox.x);
+    expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(imgBox.x + imgBox.width + 1);
+    expect(pillBox.y + pillBox.height).toBeLessThanOrEqual(imgBox.y + imgBox.height + 1);
+
+    await (isMobile ? pill.tap() : pill.click());
+    await expect(hero.locator('svg[aria-label="Sky object overlay"]')).toBeVisible();
+    await shot(page, 'astro-hero-overlay');
+  });
+});
