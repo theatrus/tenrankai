@@ -318,25 +318,13 @@ export function AstroControls({
   hiddenGroups,
   onHiddenGroupsChange,
 }: AstroControlsProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const objects = solution.objects || [];
-  const groupCounts = new Map<string, number>();
-  for (const o of objects) {
-    const group = catalogGroup(o);
-    groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
-  }
   const kept = objects.filter((o) => !hiddenGroups.includes(catalogGroup(o)));
   const distant = distantTransients(solution).filter((o) => kept.includes(o));
   const shown = allTransients ? kept.length : kept.length - distant.length;
-  const availableGroups = CATALOG_GROUPS.filter(([id]) => groupCounts.has(id));
-
-  const toggleGroup = (id: string) => {
-    onHiddenGroupsChange(
-      hiddenGroups.includes(id)
-        ? hiddenGroups.filter((g) => g !== id)
-        : [...hiddenGroups, id],
-    );
-  };
+  const availableGroups = CATALOG_GROUPS.filter(([id]) =>
+    objects.some((o) => catalogGroup(o) === id),
+  );
 
   return (
     <div className="control-buttons astro-controls">
@@ -359,34 +347,102 @@ export function AstroControls({
         </button>
       )}
       {visible && availableGroups.length > 1 && (
-        <span style={{ position: 'relative', display: 'inline-block' }}>
-          <button
-            type="button"
-            className={`btn ${hiddenGroups.length > 0 ? 'btn-primary' : 'btn-secondary'}`}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(!menuOpen)}
-            title="Choose which catalogs to label"
-          >
-            Catalogs {menuOpen ? '▴' : '▾'}
-          </button>
-          {menuOpen && (
-            <span className="astro-catalog-menu" role="menu">
-              {availableGroups.map(([id, label]) => (
-                <label key={id} className="astro-catalog-item">
-                  <input
-                    type="checkbox"
-                    checked={!hiddenGroups.includes(id)}
-                    onChange={() => toggleGroup(id)}
-                  />
-                  <span>
-                    {label} ({groupCounts.get(id)})
-                  </span>
-                </label>
-              ))}
-            </span>
-          )}
-        </span>
+        <CatalogMenu
+          solution={solution}
+          hiddenGroups={hiddenGroups}
+          onHiddenGroupsChange={onHiddenGroupsChange}
+        />
       )}
     </div>
+  );
+}
+
+interface CatalogMenuProps {
+  solution: AstroSolution;
+  hiddenGroups: string[];
+  onHiddenGroupsChange: (groups: string[]) => void;
+  /** Small pill styling for tight spots (post embeds) */
+  compact?: boolean;
+}
+
+/** The per-catalog visibility dropdown, shared by the detail-page
+ * controls and post embeds. */
+export function CatalogMenu({
+  solution,
+  hiddenGroups,
+  onHiddenGroupsChange,
+  compact = false,
+}: CatalogMenuProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const groupCounts = new Map<string, number>();
+  for (const o of solution.objects || []) {
+    const group = catalogGroup(o);
+    groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
+  }
+  const availableGroups = CATALOG_GROUPS.filter(([id]) => groupCounts.has(id));
+  if (availableGroups.length < 2) return null;
+
+  const toggleGroup = (id: string) => {
+    onHiddenGroupsChange(
+      hiddenGroups.includes(id)
+        ? hiddenGroups.filter((g) => g !== id)
+        : [...hiddenGroups, id],
+    );
+  };
+  const stop = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-block', pointerEvents: 'auto' }}
+      onClick={compact ? stop : undefined}
+      onTouchEnd={compact ? (e) => e.stopPropagation() : undefined}
+    >
+      <button
+        type="button"
+        className={compact ? 'post-astro-toggle-pill' : `btn ${hiddenGroups.length > 0 ? 'btn-primary' : 'btn-secondary'}`}
+        aria-expanded={menuOpen}
+        onClick={(e) => {
+          if (compact) stop(e);
+          setMenuOpen(!menuOpen);
+        }}
+        title="Choose which catalogs to label"
+        style={
+          compact
+            ? {
+                touchAction: 'manipulation',
+                padding: '0.1rem 0.6rem',
+                borderRadius: '999px',
+                border: '1px solid rgba(255,255,255,0.4)',
+                background:
+                  hiddenGroups.length > 0 ? 'rgba(80,180,255,0.4)' : 'rgba(0,0,0,0.55)',
+                color: '#fff',
+                fontSize: '0.72rem',
+                cursor: 'pointer',
+              }
+            : undefined
+        }
+      >
+        Catalogs {menuOpen ? '▴' : '▾'}
+      </button>
+      {menuOpen && (
+        <span className="astro-catalog-menu" role="menu">
+          {availableGroups.map(([id, label]) => (
+            <label key={id} className="astro-catalog-item">
+              <input
+                type="checkbox"
+                checked={!hiddenGroups.includes(id)}
+                onChange={() => toggleGroup(id)}
+              />
+              <span>
+                {label} ({groupCounts.get(id)})
+              </span>
+            </label>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
