@@ -468,6 +468,15 @@ async fn solution_response(
                 seiza::minor_bodies::MinorBodyKind::Comet => "comet",
                 seiza::minor_bodies::MinorBodyKind::Asteroid => "asteroid",
             };
+            // Sky position angle (comet tail / asteroid trail) becomes a
+            // pixel-space angle by projecting a small step along it
+            let angle_deg = m.direction_pa_deg.and_then(|pa| {
+                let step = 0.05;
+                let ra2 = m.ra + step * pa.to_radians().sin() / m.dec.to_radians().cos().max(0.05);
+                let dec2 = (m.dec + step * pa.to_radians().cos()).clamp(-89.9, 89.9);
+                let (x2, y2) = wcs.world_to_pixel(ra2, dec2)?;
+                Some((y2 - m.y).atan2(x2 - m.x).to_degrees())
+            });
             objects.push(serde_json::json!({
                 "name": m.body.name,
                 "common_name": format!("V~{:.1}, {:.2} AU", m.mag, m.delta_au),
@@ -477,7 +486,7 @@ async fn solution_response(
                 "y": m.y,
                 "semi_major_px": 0.0,
                 "semi_minor_px": 0.0,
-                "angle_deg": 0.0,
+                "angle_deg": angle_deg.unwrap_or(0.0),
                 "near_capture": true,
             }));
         }
