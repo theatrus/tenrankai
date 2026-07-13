@@ -353,6 +353,11 @@ pub(crate) struct FolderConfig {
     #[serde(default)]
     pub hidden: bool,
 
+    /// Every image in this folder (and below, unless overridden) is an
+    /// astronomical image: hint-less images may be blind plate-solved
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub astro: bool,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden_images: Vec<String>,
 
