@@ -256,7 +256,10 @@ export function AstroControls({
   const shown = allTransients ? total : total - distant.length;
 
   return (
-    <div className="control-buttons astro-controls">
+    <div
+      className="control-buttons astro-controls"
+      style={{ justifyContent: 'center', marginTop: '0.5rem' }}
+    >
       <button
         type="button"
         className={`btn ${visible ? 'btn-primary' : 'btn-secondary'}`}

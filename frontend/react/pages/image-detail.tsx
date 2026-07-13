@@ -294,7 +294,18 @@ export function ImageDetailPage({
               />
             </div>
           </div>
-          
+
+          {/* Astro overlay toggles sit right under the image they affect */}
+          {astroSolution && (
+            <AstroControls
+              solution={astroSolution}
+              visible={astroVisible}
+              onVisibleChange={setAstroVisible}
+              allTransients={astroAllTransients}
+              onAllTransientsChange={setAstroAllTransients}
+            />
+          )}
+
           {/* Thumbnail navigation */}
           <ImageNavigation
             prevImage={currentData.prev_image}
@@ -407,16 +418,6 @@ export function ImageDetailPage({
           <AIMetadata image={currentData.image} permissions={currentData.permissions} />
 
           <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} shareUrl={currentData.share_url} baseUrl={currentData.base_url} />
-
-          {astroSolution && (
-            <AstroControls
-              solution={astroSolution}
-              visible={astroVisible}
-              onVisibleChange={setAstroVisible}
-              allTransients={astroAllTransients}
-              onAllTransientsChange={setAstroAllTransients}
-            />
-          )}
 
           {currentData.permissions.can_read_metadata && (
             <UserMetadata

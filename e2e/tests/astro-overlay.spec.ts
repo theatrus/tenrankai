@@ -136,4 +136,26 @@ test.describe('astro overlay', () => {
     await page.getByRole('button', { name: 'Objects ✕' }).tap();
     await expect(svg).toHaveCount(0);
   });
+
+  test('mobile zoom carries the overlay with the image', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'touch-specific interaction');
+    await openSolvedDetail(page);
+
+    await page.getByRole('button', { name: /Objects \(/ }).tap();
+    const svg = page.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg.first()).toBeVisible();
+
+    // Double-tap opens the mobile zoom view; the normal image view
+    // unmounts, so any overlay still present is the one inside the zoomed
+    // scaling container — it pans and zooms with the image
+    // Two raw taps inside the 300 ms double-tap window
+    const box = (await page.locator('.image-display').boundingBox())!;
+    const [cx, cy] = [box.x + box.width / 2, box.y + box.height / 2];
+    await page.touchscreen.tap(cx, cy);
+    await page.touchscreen.tap(cx, cy);
+    await expect(page.getByRole('button', { name: '×' })).toBeVisible();
+    await expect(svg.first()).toBeVisible();
+    await expect(svg.first().getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+    await shot(page, 'astro-overlay-mobile-zoom');
+  });
 });
