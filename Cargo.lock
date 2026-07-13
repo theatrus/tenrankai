@@ -4274,10 +4274,12 @@ dependencies = [
 [[package]]
 name = "seiza"
 version = "0.1.0"
-source = "git+https://github.com/theatrus/seiza?rev=3c98c9b#3c98c9b3b72fe0ee1084f48fd08341b0e8672422"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37108a7523280d3d72eabb55a8e93db02e2f8e36d5fc57f3779e2ace061e5327"
 dependencies = [
  "image",
  "memmap2",
+ "rayon",
  "thiserror 2.0.18",
 ]
 
