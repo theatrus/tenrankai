@@ -41,3 +41,4 @@ TODO.md
 /static/js/
 /static/dist/
 static/admin/
+.cache/
