@@ -22,7 +22,9 @@ use tracing::{info, warn};
 
 /// Pixel-scale ladder tried in order; ±35 % tolerance makes the rungs
 /// overlap, covering roughly 0.23–7.5 arcsec/pixel.
-const SCALE_LADDER: &[f64] = &[0.35, 0.7, 1.4, 2.8, 5.6];
+// Down to ~0.1"/px: drizzled or upscaled close-ups land well below
+// native seeing scales (an upscaled M51 solves at 0.16"/px)
+const SCALE_LADDER: &[f64] = &[0.11, 0.19, 0.35, 0.7, 1.4, 2.8, 5.6];
 const SCALE_TOLERANCE: f64 = 0.35;
 const SEARCH_RADIUS_DEG: f64 = 2.0;
 /// Images are downsampled to at most this many pixels on the long side
@@ -488,7 +490,18 @@ fn solve_bytes(
     path: &str,
 ) -> Option<crate::metadata_storage::AstroSolution> {
     let started = std::time::Instant::now();
-    let image = match image::load_from_memory(bytes) {
+    // AVIF needs the custom reader (the image crate cannot decode it)
+    #[cfg(feature = "avif")]
+    let decoded = if bytes.len() > 12 && &bytes[4..12] == b"ftypavif" {
+        crate::gallery::image_processing::formats::avif::read_avif_info_from_bytes(bytes)
+            .map(|(image, _)| image)
+            .map_err(|e| format!("{e}"))
+    } else {
+        image::load_from_memory(bytes).map_err(|e| format!("{e}"))
+    };
+    #[cfg(not(feature = "avif"))]
+    let decoded = image::load_from_memory(bytes).map_err(|e| format!("{e}"));
+    let image = match decoded {
         Ok(image) => image,
         Err(e) => {
             warn!("astro: failed to decode {path}: {e}");
@@ -524,7 +537,9 @@ fn solve_bytes(
         let hint = SolveHint {
             center: hint_center,
             radius_deg: SEARCH_RADIUS_DEG,
-            scale_arcsec_px: scale * factor,
+            // Detections were rescaled to full-resolution pixels above, so
+            // the ladder scale applies as-is regardless of downsampling
+            scale_arcsec_px: scale,
             scale_tolerance: SCALE_TOLERANCE,
         };
         // Solve in full-resolution pixel space

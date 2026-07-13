@@ -874,11 +874,11 @@ Regular markdown image (not a gallery reference):
 
         // Check that gallery references were converted to HTML
         assert!(post.html_content.contains(
-            r#"<a href="/gallery/detail/vacation%2Fbeach.jpg" class="gallery-image-link">"#
+            r#"<a href="/gallery/detail/vacation/beach.jpg" class="gallery-image-link">"#
         ));
         assert!(
             post.html_content
-                .contains(r#"<img src="/gallery/_image/vacation%2Fbeach.jpg/thumbnail""#)
+                .contains(r#"<img src="/gallery/_image/vacation/beach.jpg/thumbnail""#)
         );
         assert!(
             post.html_content
@@ -886,22 +886,21 @@ Regular markdown image (not a gallery reference):
         );
 
         assert!(post.html_content.contains(
-            r#"<a href="/gallery/detail/vacation%2Fsunset.jpg" class="gallery-image-link">"#
+            r#"<a href="/gallery/detail/vacation/sunset.jpg" class="gallery-image-link">"#
         ));
         assert!(
             post.html_content
-                .contains(r#"<img src="/gallery/_image/vacation%2Fsunset.jpg/gallery""#)
+                .contains(r#"<img src="/gallery/_image/vacation/sunset.jpg/gallery""#)
         );
         assert!(
             post.html_content
                 .contains(r#"class="gallery-image gallery-image-gallery""#)
         );
 
-        assert!(post.html_content.contains(r#"<a href="/my-portfolio/detail/projects%2Fapp-screenshot.png" class="gallery-image-link">"#));
+        assert!(post.html_content.contains(r#"<a href="/my-portfolio/detail/projects/app-screenshot.png" class="gallery-image-link">"#));
         assert!(
-            post.html_content.contains(
-                r#"<img src="/my-portfolio/_image/projects%2Fapp-screenshot.png/medium""#
-            )
+            post.html_content
+                .contains(r#"<img src="/my-portfolio/_image/projects/app-screenshot.png/medium""#)
         );
         assert!(
             post.html_content
