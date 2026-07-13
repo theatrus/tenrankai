@@ -112,11 +112,14 @@ export function ImageDetailPage({
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
 
-  // Plate solution for astro images (null when unsolved or unavailable)
+  // Plate solution for astro images (null when unsolved or unavailable).
+  // Overlay state lives here so the zoomed views share it.
   const astroSolution = useAstroSolution(
     currentData?.gallery_name || '',
     currentData?.image?.path || '',
   );
+  const [astroVisible, setAstroVisible] = useState(false);
+  const [astroAllTransients, setAstroAllTransients] = useState(false);
 
   // Modal state for editing image info
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -271,8 +274,24 @@ export function ImageDetailPage({
                 galleryName={currentData.gallery_name}
                 onZoomStateChange={setIsImageZoomed}
                 overlay={
-                  astroSolution && !isImageZoomed ? (
-                    <AstroOverlay solution={astroSolution} />
+                  astroSolution ? (
+                    <AstroOverlay
+                      solution={astroSolution}
+                      visible={astroVisible}
+                      onVisibleChange={setAstroVisible}
+                      allTransients={astroAllTransients}
+                      onAllTransientsChange={setAstroAllTransients}
+                    />
+                  ) : undefined
+                }
+                zoomOverlay={
+                  astroSolution && astroVisible ? (
+                    <AstroOverlay
+                      solution={astroSolution}
+                      controls={false}
+                      visible
+                      allTransients={astroAllTransients}
+                    />
                   ) : undefined
                 }
               />

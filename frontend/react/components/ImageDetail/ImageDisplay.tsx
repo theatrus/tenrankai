@@ -12,6 +12,8 @@ interface ImageDisplayProps {
   onZoomStateChange?: (isZoomed: boolean) => void;
   /** Extra layer rendered over the standard image (e.g. the astro overlay) */
   overlay?: React.ReactNode;
+  /** Overlay layer for zoomed views; transforms with the zoomed image */
+  zoomOverlay?: React.ReactNode;
 }
 
 interface ZoomState {
@@ -68,7 +70,7 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
-export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange, overlay }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange, overlay, zoomOverlay }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
@@ -1030,6 +1032,22 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                       }}
                     >
                       {renderMobileZoomTiles()}
+                    </div>
+                  )}
+
+                  {/* Astro overlay scales and pans with the image */}
+                  {zoomOverlay && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      {zoomOverlay}
                     </div>
                   )}
                 </div>

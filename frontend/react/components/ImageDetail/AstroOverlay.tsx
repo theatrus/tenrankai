@@ -79,9 +79,37 @@ function encompassesFrame(o: PlacedObject, width: number, height: number): boole
   });
 }
 
-export function AstroOverlay({ solution }: { solution: AstroSolution }) {
-  const [visible, setVisible] = useState(false);
-  const [allTransients, setAllTransients] = useState(false);
+interface AstroOverlayProps {
+  solution: AstroSolution;
+  /** Render the toggle buttons (off for zoom layers that reuse the state) */
+  controls?: boolean;
+  /** Controlled visibility; falls back to internal state when omitted */
+  visible?: boolean;
+  onVisibleChange?: (visible: boolean) => void;
+  allTransients?: boolean;
+  onAllTransientsChange?: (all: boolean) => void;
+}
+
+export function AstroOverlay({
+  solution,
+  controls = true,
+  visible: visibleProp,
+  onVisibleChange,
+  allTransients: allTransientsProp,
+  onAllTransientsChange,
+}: AstroOverlayProps) {
+  const [visibleState, setVisibleState] = useState(false);
+  const [allTransientsState, setAllTransientsState] = useState(false);
+  const visible = visibleProp ?? visibleState;
+  const allTransients = allTransientsProp ?? allTransientsState;
+  const setVisible = (value: boolean) => {
+    setVisibleState(value);
+    onVisibleChange?.(value);
+  };
+  const setAllTransients = (value: boolean) => {
+    setAllTransientsState(value);
+    onAllTransientsChange?.(value);
+  };
 
   const width = solution.width;
   const height = solution.height;
@@ -124,35 +152,49 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
     return y;
   };
 
+  // Touch handlers mirror the click handlers: on touch devices the image
+  // container's own tap gestures (zoom open, swipe nav) otherwise swallow
+  // the tap before the click synthesizes
+  const touchToggle = (action: () => void) => (e: React.TouchEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    action();
+  };
+
   return (
     <>
-      <button
-        type="button"
-        className="astro-overlay-toggle"
-        onClick={(e) => {
-          e.stopPropagation();
-          setVisible(!visible);
-        }}
-        style={{
-          position: 'absolute',
-          top: '0.75rem',
-          right: '0.75rem',
-          zIndex: 3,
-          pointerEvents: 'auto',
-          padding: '0.35rem 0.8rem',
-          borderRadius: '999px',
-          border: '1px solid rgba(255,255,255,0.4)',
-          background: visible ? 'rgba(80,180,255,0.35)' : 'rgba(0,0,0,0.45)',
-          color: '#fff',
-          fontSize: '0.85rem',
-          cursor: 'pointer',
-        }}
-        title={`${all.length} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
-      >
-        {visible ? 'Objects ✕' : `Objects (${all.length})`}
-      </button>
+      {controls && (
+        <button
+          type="button"
+          className="astro-overlay-toggle"
+          onClick={(e) => {
+            e.stopPropagation();
+            setVisible(!visible);
+          }}
+          onTouchEnd={touchToggle(() => setVisible(!visible))}
+          style={{
+            position: 'absolute',
+            top: '0.75rem',
+            right: '0.75rem',
+            zIndex: 5,
+            pointerEvents: 'auto',
+            touchAction: 'manipulation',
+            minHeight: '2.75rem',
+            padding: '0.35rem 1rem',
+            borderRadius: '999px',
+            border: '1px solid rgba(255,255,255,0.4)',
+            background: visible ? 'rgba(80,180,255,0.35)' : 'rgba(0,0,0,0.45)',
+            color: '#fff',
+            fontSize: '0.85rem',
+            cursor: 'pointer',
+          }}
+          title={`${all.length} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
+        >
+          {visible ? 'Objects ✕' : `Objects (${all.length})`}
+        </button>
+      )}
 
-      {visible && distantTransients.length > 0 && (
+      {controls && visible && distantTransients.length > 0 && (
         <button
           type="button"
           className="astro-overlay-transient-toggle"
@@ -160,13 +202,16 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
             e.stopPropagation();
             setAllTransients(!allTransients);
           }}
+          onTouchEnd={touchToggle(() => setAllTransients(!allTransients))}
           style={{
             position: 'absolute',
-            top: '3rem',
+            top: '4rem',
             right: '0.75rem',
-            zIndex: 3,
+            zIndex: 5,
             pointerEvents: 'auto',
-            padding: '0.3rem 0.7rem',
+            touchAction: 'manipulation',
+            minHeight: '2.5rem',
+            padding: '0.3rem 0.9rem',
             borderRadius: '999px',
             border: '1px solid rgba(255,123,224,0.5)',
             background: allTransients ? 'rgba(255,123,224,0.3)' : 'rgba(0,0,0,0.45)',
