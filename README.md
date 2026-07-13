@@ -3,7 +3,7 @@
 [![CI](https://github.com/theatrus/tenrankai/actions/workflows/ci.yml/badge.svg)](https://github.com/theatrus/tenrankai/actions/workflows/ci.yml)
 [![Security Audit](https://github.com/theatrus/tenrankai/actions/workflows/security.yml/badge.svg)](https://github.com/theatrus/tenrankai/actions/workflows/security.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.89.0%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org)
 [![Dependencies](https://deps.rs/repo/github/theatrus/tenrankai/status.svg)](https://deps.rs/repo/github/theatrus/tenrankai)
 [![GitHub release](https://img.shields.io/github/release/theatrus/tenrankai.svg)](https://github.com/theatrus/tenrankai/releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/theatrus/tenrankai/pulls)
@@ -37,28 +37,44 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 - **WebAuthn/Passkey Support**: Modern passwordless authentication with biometric login
 - **Pluggable User Storage**: Store users in TOML files, SQLite, PostgreSQL, or DynamoDB
 - **S3 Storage Support**: Store galleries, caches, templates, posts, and static files on Amazon S3
+- **Astrophotography Support**: Plate solving via [seiza](https://crates.io/crates/seiza) with object overlays, sky maps on image detail pages, and live transient (supernova) markers
+- **AI Image Analysis**: Optional OpenAI-powered keyword and alt-text generation
+- **RSS Feeds**: Per-blog and per-category feeds with rich Open Graph metadata
+- **Post Categories**: Path-style category URLs configured via `_categories.md`
+- **Web-Based Post Editor**: In-browser post creation and editing with a gallery image picker (permission-gated)
+- **Flexible Image URLs**: Choose filename, sequence, or stable unique-ID image indexing per gallery
+- **React/TypeScript Frontend**: Vite-built frontend assets served from disk — frontend changes need no Rust recompile
 
 ## Installation
 
 ### Prerequisites
 
-- Rust 1.89.0 or later (automatically managed by rust-toolchain.toml)
+- Rust 1.94 or later (automatically managed by rust-toolchain.toml)
+- Node.js and npm (for building the React/TypeScript frontend assets)
 - DejaVuSans.ttf font file (required for watermarking)
 
 ### Building from Source
 
 ```bash
-git clone https://github.com/yourusername/tenrankai.git
+git clone https://github.com/theatrus/tenrankai.git
 cd tenrankai
 
-# Default build with AVIF support
-cargo build --release
+# Full build: frontend assets + release binary
+make release
+
+# Or step by step:
+npm install && npm run build      # Build frontend assets into static/
+cargo build --release             # Build the server (with AVIF support)
 
 # Build without AVIF for easier compilation (especially on Windows)
 cargo build --release --no-default-features
 ```
 
-The project includes a `rust-toolchain.toml` file that will automatically download and use Rust 1.89.0 when you run cargo commands. This ensures consistent builds across all development environments.
+Frontend assets are served from disk, not embedded in the binary — changing
+frontend code only requires `npm run build` (or `make frontend`), not a Rust
+recompile.
+
+The project includes a `rust-toolchain.toml` file that will automatically download and use the pinned Rust toolchain when you run cargo commands. This ensures consistent builds across all development environments.
 
 ### Docker
 
@@ -73,11 +89,11 @@ docker pull ghcr.io/theatrus/tenrankai:latest
 # Or build locally
 docker build -t tenrankai:latest .
 
-# Run the container
+# Run the container (expects config.toml inside the mounted config directory)
 docker run -d \
   --name tenrankai \
   -p 8080:8080 \
-  -v ./config.toml:/app/config.toml:ro \
+  -v ./config:/app/config:ro \
   -v ./photos:/app/photos:ro \
   -v ./cache:/app/cache \
   tenrankai:latest
@@ -94,10 +110,9 @@ The Docker image (~168 MB) includes full AVIF support with HDR and gain maps, us
 #### Volume Mounts
 
 The container expects these volumes:
-- `/app/config.toml` - Main configuration file (read-only recommended)
-- `/app/photos` - Photo directories (read-only recommended) 
+- `/app/config` - Configuration directory containing `config.toml` (and optionally `users.toml`), read-only recommended
+- `/app/photos` - Photo directories (read-only recommended)
 - `/app/cache` - Image cache directory (read-write)
-- `/app/users.toml` - Optional: User database for authentication
 - `/app/static` - Optional: Custom static assets
 - `/app/templates` - Optional: Custom templates (see below for override examples)
 
@@ -106,9 +121,12 @@ The container expects these volumes:
 ```bash
 # Set custom log level
 docker run -e RUST_LOG=debug ...
+```
 
-# Override configuration
-docker run -e TENRANKAI_HOST=0.0.0.0 -e TENRANKAI_PORT=3000 ...
+To override the host, port, or config path, replace the default command:
+
+```bash
+docker run ... tenrankai:latest --config /app/config/config.toml serve --host 0.0.0.0 --port 3000
 ```
 
 #### Security Considerations
@@ -144,8 +162,9 @@ cat > custom-templates/partials/_header.html.liquid << 'EOF'
     <main>
 EOF
 
-# Update config.toml to use both directories
-cat > config.toml << 'EOF'
+# Update the config to use both directories
+mkdir -p config
+cat > config/config.toml << 'EOF'
 [templates]
 # Custom templates override built-in ones
 directories = ["custom-templates", "templates"]
@@ -153,8 +172,8 @@ EOF
 
 # Run with Docker
 docker run -d \
-  -p 3000:3000 \
-  -v ./config.toml:/app/config.toml:ro \
+  -p 8080:8080 \
+  -v ./config:/app/config:ro \
   -v ./custom-templates:/app/custom-templates:ro \
   -v ./photos:/app/photos:ro \
   -v ./cache:/app/cache \
@@ -166,17 +185,17 @@ docker run -d \
 # Create a complete theme override
 mkdir -p themes/dark/{partials,pages,modules}
 
-# Run with theme
+# Run with theme (config directory contains config.toml)
 docker run -d \
-  -p 3000:3000 \
-  -v ./config-with-theme.toml:/app/config.toml:ro \
+  -p 8080:8080 \
+  -v ./config:/app/config:ro \
   -v ./themes:/app/themes:ro \
   -v ./photos:/app/photos:ro \
   -v ./cache:/app/cache \
   tenrankai:latest
 ```
 
-Where `config-with-theme.toml` contains:
+Where `config/config.toml` contains:
 ```toml
 [templates]
 directories = ["themes/dark", "templates"]
@@ -280,6 +299,8 @@ cache_directory = "cache/main"
 jpeg_quality = 85
 webp_quality = 85.0
 copyright_holder = "Your Name"
+image_indexing = "filename"  # or "sequence", "unique_id"
+new_threshold_days = 7
 
 [thumbnail]
 width = 300
@@ -289,6 +310,11 @@ height = 300
 width = 1200
 height = 1200
 ```
+
+**Image Indexing Modes** (how images are addressed in URLs):
+- `filename` (default): `/gallery/image/IMG_1234.jpg` — predictable, exposes filenames
+- `sequence`: `/gallery/image/1` — clean URLs, but unstable when images change
+- `unique_id`: `/gallery/image/a8k3m9` — stable and privacy-friendly
 
 ### Posts Configuration
 
@@ -445,6 +471,40 @@ This command displays:
 - CLLI (Content Light Level Information) data
 - ICC profile information
 - Detailed HDR detection logic (with --verbose)
+
+#### Cache Management
+
+Inspect and maintain a gallery's image cache:
+
+```bash
+cargo run -- cache report -g main                 # Report format coverage
+cargo run -- cache cleanup -g main                # Clean up outdated entries
+cargo run -- cache list-composites -g main        # List composite preview images
+
+# Invalidate cache entries to force regeneration (recursive by default)
+cargo run -- cache invalidate -g main                              # Entire gallery
+cargo run -- cache invalidate -g main -p "vacation"                # Folder and subfolders
+cargo run -- cache invalidate -g main -t image -p "folder/img.jpg" # Single image
+cargo run -- cache invalidate -g main --size gallery --size medium # Specific sizes only
+```
+
+#### AI Image Analysis
+
+With an `[openai]` section in `config.toml`, Tenrankai can generate keywords
+and alt-text for gallery images using the OpenAI Vision API:
+
+```bash
+cargo run -- analyze-images       # Analyze images and store results
+cargo run -- clear-analysis       # Clear stored AI analysis data
+```
+
+#### Site Administrators
+
+```bash
+cargo run -- admin add <username>     # Grant site admin access
+cargo run -- admin remove <username>
+cargo run -- admin list
+```
 
 ## Gallery Features
 
@@ -749,11 +809,46 @@ Each system has its own:
 - Chronological sorting (newest first)
 - Pagination support
 - Subdirectory organization (URL reflects directory structure)
+- Path-style category URLs with per-category RSS feeds
+- Category options via `_categories.md` (archive flag, descriptions, sort weights)
+- RSS feed at `/{prefix}/feed.xml` with rich Open Graph article metadata
+- Hero images with gallery integration (click-through, hover details)
+- Web-based post editor and creator with a gallery image picker (requires the `can_edit_content` permission)
+- Embeddable posts preview block for use on other pages
 - Dynamic refresh via API
 - Automatic periodic refresh (configurable interval)
 - Individual post reloading when files change
 - Dark theme optimized code blocks with syntax highlighting
 - Responsive post layout for mobile and desktop
+
+## Astrophotography
+
+Tenrankai has first-class support for astrophotography galleries, powered by
+the [seiza](https://crates.io/crates/seiza) plate-solving library:
+
+- **Sky Map**: Image detail pages show a sky map for images with RA/Dec metadata
+- **Plate Solving**: Images with RA/Dec sidecar metadata get on-demand WCS
+  solutions, persisted alongside the image metadata
+- **Object Overlays**: Deep-sky objects from a catalog are overlaid on solved
+  images, with zoomable views and touch-friendly controls
+- **Transient Markers**: Live markers (e.g. supernovae) from a separate
+  transient catalog, scoped to each image's capture date; the catalog file is
+  reloaded automatically when it changes, so a cron job can keep it fresh
+
+Configure the data files (built with `seiza build-data`) in `config.toml`:
+
+```toml
+[astro]
+star_data = "data/stars.seiza"          # Star tiles (SEIZAST1)
+object_data = "data/objects.seiza"      # Object catalog (SEIZAOB1, optional)
+transient_data = "data/transients.seiza" # Transient catalog (optional)
+```
+
+When the object catalog changes, regenerate persisted overlays:
+
+```bash
+cargo run -- astro regen
+```
 
 ## Image Sizes
 
@@ -948,6 +1043,8 @@ This is useful for:
 ### Posts Endpoints (configurable prefix)
 - `GET /{prefix}` - List posts with pagination
 - `GET /{prefix}/{slug}` - View individual post
+- `GET /{prefix}/feed.xml` - RSS feed (per-category feeds also available)
+- `GET /api/posts/{name}/source` - Post markdown source (requires `can_edit_content`)
 - `POST /api/posts/{name}/refresh` - Refresh posts cache
 
 ### Authentication Endpoints
@@ -1071,6 +1168,17 @@ cargo run -- --log-level trace
 
 Tenrankai is under active development with a comprehensive codebase and documentation.
 
+### Development Workflow
+
+```bash
+make                   # First-time build (frontend + backend)
+cargo run -- serve     # Terminal 1: server on port 3000
+npm run dev            # Terminal 2: frontend hot-reload on port 5173 (proxies to 3000)
+```
+
+Visit http://localhost:5173/ during development. Before committing, run
+`make check` (lint + tests for both frontend and backend).
+
 ### Documentation
 
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Development setup, code organization, and contribution guidelines
@@ -1080,6 +1188,11 @@ Tenrankai is under active development with a comprehensive codebase and document
 
 ### Recent Major Features
 
+- ✅ **Astrophotography Support**: Plate solving, object overlays, sky maps, and transient markers via seiza
+- ✅ **RSS Feeds & Categories**: Per-blog and per-category feeds, path-style category URLs
+- ✅ **Web-Based Post Editor**: In-browser post creation/editing with gallery image picker
+- ✅ **AI Image Analysis**: OpenAI-powered keyword and alt-text generation
+- ✅ **Cache Management CLI**: Report, cleanup, and targeted invalidation commands
 - ✅ **ConfigStorage System**: Centralized site configuration via directory structure or S3
 - ✅ **CLI Config Commands**: Manage sites, galleries, and posts from command line
 - ✅ **Admin API**: REST API for site configuration and permissions management
@@ -1116,8 +1229,10 @@ Contributions are welcome! Please:
 ### Architecture Highlights
 
 - **Async Rust**: Built on Tokio with Axum web framework
+- **React/TypeScript Frontend**: Vite-built assets served from disk, with hot-reload development
+- **Cargo Workspace**: Core server plus reusable crates for storage, image processing, metadata, users, email, and config storage
 - **Thread-Safe Operations**: Arc<RwLock<T>> for concurrent access
-- **Comprehensive Testing**: 243+ unit tests and integration tests (with AVIF), 180+ without AVIF
+- **Comprehensive Testing**: Rust unit/integration tests, Vitest frontend tests, and Playwright end-to-end tests (including mobile viewports)
 - **Modular Design**: Clean separation of concerns across modules
 - **Configuration-Driven**: Flexible TOML-based configuration system
 - **Cross-Platform CI**: Automated testing on Ubuntu, macOS, and Windows

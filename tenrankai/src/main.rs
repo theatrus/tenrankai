@@ -70,10 +70,11 @@ enum Commands {
     #[command(subcommand)]
     Cache(CacheCommands),
 
-    /// Analyze images using OpenAI Vision API to generate keywords and alt-text
     /// Astrometry maintenance (regenerate persisted overlays)
     #[command(subcommand)]
     Astro(AstroCommands),
+
+    /// Analyze images using OpenAI Vision API to generate keywords and alt-text
     AnalyzeImages {
         /// Gallery name to analyze
         #[arg(short, long)]
