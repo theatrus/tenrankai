@@ -120,6 +120,21 @@ export function ImageDetailPage({
   );
   const [astroVisible, setAstroVisible] = useState(false);
   const [astroAllTransients, setAstroAllTransients] = useState(false);
+  const [astroHiddenGroups, setAstroHiddenGroupsState] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('astro-hidden-catalogs') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const setAstroHiddenGroups = (groups: string[]) => {
+    setAstroHiddenGroupsState(groups);
+    try {
+      localStorage.setItem('astro-hidden-catalogs', JSON.stringify(groups));
+    } catch {
+      /* private mode */
+    }
+  };
 
   // Modal state for editing image info
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -279,6 +294,7 @@ export function ImageDetailPage({
                       solution={astroSolution}
                       visible={astroVisible}
                       allTransients={astroAllTransients}
+                      hiddenGroups={astroHiddenGroups}
                     />
                   ) : undefined
                 }
@@ -288,6 +304,7 @@ export function ImageDetailPage({
                       solution={astroSolution}
                       visible
                       allTransients={astroAllTransients}
+                      hiddenGroups={astroHiddenGroups}
                     />
                   ) : undefined
                 }
@@ -303,6 +320,8 @@ export function ImageDetailPage({
               onVisibleChange={setAstroVisible}
               allTransients={astroAllTransients}
               onAllTransientsChange={setAstroAllTransients}
+              hiddenGroups={astroHiddenGroups}
+              onHiddenGroupsChange={setAstroHiddenGroups}
             />
           )}
 
