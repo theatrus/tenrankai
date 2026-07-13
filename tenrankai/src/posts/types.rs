@@ -25,6 +25,12 @@ pub struct Post {
     /// so the detail page should render it above the post body
     #[serde(default)]
     pub hero_image_explicit: bool,
+    /// Gallery name + identifier when the hero is a gallery image, for
+    /// the astro overlay hydrator
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hero_image_gallery: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hero_image_path: Option<String>,
     #[serde(default)]
     pub reading_time_minutes: usize,
     #[serde(skip)]

@@ -31,7 +31,7 @@
     {% if post.hero_image and post.hero_image_explicit %}
     <figure class="post-hero">
         {% if post.hero_image_link %}
-        <a href="{{ post.hero_image_link }}" class="post-hero-link" title="View in gallery">
+        <a href="{{ post.hero_image_link }}" class="post-hero-link" title="View in gallery"{% if post.hero_image_gallery %} data-gallery="{{ post.hero_image_gallery }}" data-image-path="{{ post.hero_image_path }}"{% endif %}>
             <img src="{{ post.hero_image }}" alt="">
         </a>
         {% else %}
