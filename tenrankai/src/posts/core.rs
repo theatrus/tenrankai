@@ -292,12 +292,16 @@ impl PostsManager {
         let (html_content, first_image) = self.process_markdown_with_gallery_refs(parser).await;
 
         let hero_image_explicit = metadata.hero_image.is_some();
-        let (hero_image, hero_image_link) = match &metadata.hero_image {
+        let (hero_image, hero_image_link, hero_gallery_ref) = match &metadata.hero_image {
             Some(reference) => match self.resolve_image_reference(reference).await {
-                Some((url, link)) => (Some(url), link),
-                None => (None, None),
+                Some((url, link, gallery_ref)) => (Some(url), link, gallery_ref),
+                None => (None, None, None),
             },
-            None => (first_image, None),
+            None => (first_image, None, None),
+        };
+        let (hero_image_gallery, hero_image_path) = match hero_gallery_ref {
+            Some((gallery, path)) => (Some(gallery), Some(path)),
+            None => (None, None),
         };
 
         let reading_time_minutes = (markdown_content.split_whitespace().count() / 220).max(1);
@@ -314,6 +318,8 @@ impl PostsManager {
             hero_image,
             hero_image_link,
             hero_image_explicit,
+            hero_image_gallery,
+            hero_image_path,
             reading_time_minutes,
             last_modified,
         })
@@ -901,7 +907,10 @@ impl PostsManager {
     /// Resolve a hero image reference: either a `gallery:name:path` reference
     /// (served at gallery size, linked to its gallery detail page) or a plain
     /// URL passed through unchanged
-    async fn resolve_image_reference(&self, reference: &str) -> Option<(String, Option<String>)> {
+    async fn resolve_image_reference(
+        &self,
+        reference: &str,
+    ) -> Option<(String, Option<String>, Option<(String, String)>)> {
         if let Some(rest) = reference.strip_prefix("gallery:") {
             let (gallery_name, image_path) = rest.split_once(':')?;
             let galleries = self.galleries.as_ref()?;
@@ -911,10 +920,14 @@ impl PostsManager {
             let encoded = Self::encode_path(&identifier);
             let image_url = format!("{}/_image/{}/gallery", gallery_config.url_prefix, encoded);
             let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded);
-            return Some((image_url, Some(detail_url)));
+            return Some((
+                image_url,
+                Some(detail_url),
+                Some((gallery_name.to_string(), identifier)),
+            ));
         }
 
-        Some((reference.to_string(), None))
+        Some((reference.to_string(), None, None))
     }
 
     async fn process_gallery_reference(

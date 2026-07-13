@@ -75,7 +75,9 @@ const EmbedOverlay: React.FC<{ gallery: string; path: string }> = ({ gallery, pa
 
 document.addEventListener('DOMContentLoaded', () => {
   document
-    .querySelectorAll<HTMLAnchorElement>('a.gallery-image-link[data-gallery]')
+    .querySelectorAll<HTMLAnchorElement>(
+      'a.gallery-image-link[data-gallery], a.post-hero-link[data-gallery]',
+    )
     .forEach((anchor) => {
       const gallery = anchor.dataset.gallery;
       const path = anchor.dataset.imagePath;
