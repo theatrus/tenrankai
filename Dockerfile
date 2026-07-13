@@ -137,4 +137,4 @@ VOLUME ["/app/config", "/app/photos", "/app/cache"]
 # Default command
 # Users can override with their own parameters
 ENTRYPOINT ["tenrankai"]
-CMD ["--host", "0.0.0.0", "--port", "8080", "--config-file", "/app/config/config.toml"]
+CMD ["--config", "/app/config/config.toml", "serve", "--host", "0.0.0.0", "--port", "8080"]
