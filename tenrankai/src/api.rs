@@ -2070,6 +2070,7 @@ pub async fn update_folder_description_handler(
         // Note: title is NOT stored in config, only in markdown as # Title
         let new_metadata = crate::gallery::FolderMetadata {
             config: crate::gallery::FolderConfig {
+                astro: false,
                 hidden: cached_entry
                     .metadata
                     .as_ref()

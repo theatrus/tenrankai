@@ -114,7 +114,7 @@ tenrankai-config-storage = { path = "tenrankai-config-storage" }
 tenrankai-email = { path = "tenrankai-email" }
 tenrankai-image = { path = "tenrankai-image" }
 tenrankai-metadata = { path = "tenrankai-metadata" }
-seiza = "0.1"
+seiza = "0.2"
 tenrankai-storage = { path = "tenrankai-storage" }
 tenrankai-users = { path = "tenrankai-users" }
 

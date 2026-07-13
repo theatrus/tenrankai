@@ -38,9 +38,61 @@ pub struct AstroContext {
     objects_version: String,
     /// Transients reload when the file changes (a cron refreshes it)
     transients: Option<ReloadingCatalog>,
+    /// Whole-sky pattern index for images with no coordinate hint —
+    /// built once, lazily, on the first hint-less solve
+    blind_index: tokio::sync::OnceCell<Option<Arc<seiza::blind::BlindIndex>>>,
+    /// Comet/asteroid elements; positions depend on the capture time
+    minor_bodies: Option<ReloadingMinorBodies>,
     /// Failed solve attempts this process, keyed by "gallery/path" —
     /// successes persist into the image's metadata sidecar instead
     failed: RwLock<HashMap<String, ()>>,
+}
+
+/// Minor-body elements that reread their file when the mtime changes
+/// (the nightly publish refreshes comets).
+struct ReloadingMinorBodies {
+    path: std::path::PathBuf,
+    state: RwLock<(
+        std::time::SystemTime,
+        Arc<seiza::minor_bodies::MinorBodyCatalog>,
+    )>,
+}
+
+impl ReloadingMinorBodies {
+    fn open(path: &std::path::Path) -> Option<Self> {
+        let mtime = std::fs::metadata(path).ok()?.modified().ok()?;
+        let catalog = seiza::minor_bodies::MinorBodyCatalog::open(path).ok()?;
+        Some(Self {
+            path: path.to_path_buf(),
+            state: RwLock::new((mtime, Arc::new(catalog))),
+        })
+    }
+
+    async fn current(&self) -> Arc<seiza::minor_bodies::MinorBodyCatalog> {
+        let mtime = std::fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .ok();
+        {
+            let state = self.state.read().await;
+            match mtime {
+                Some(mtime) if mtime != state.0 => {}
+                _ => return state.1.clone(),
+            }
+        }
+        let mut state = self.state.write().await;
+        if let (Some(mtime), Ok(catalog)) = (
+            mtime,
+            seiza::minor_bodies::MinorBodyCatalog::open(&self.path),
+        ) {
+            info!(
+                "astro: reloaded {} minor bodies from {}",
+                catalog.len(),
+                self.path.display()
+            );
+            *state = (mtime, Arc::new(catalog));
+        }
+        state.1.clone()
+    }
 }
 
 /// An object catalog that rereads its file when the mtime changes.
@@ -136,11 +188,26 @@ impl AstroContext {
             }
             catalog
         });
+        let minor_bodies = config.minor_body_data.as_deref().and_then(|path| {
+            let catalog = ReloadingMinorBodies::open(path);
+            match &catalog {
+                Some(c) => info!(
+                    "astro: {} minor bodies loaded from {}",
+                    // Length via a blocking read is fine during startup
+                    c.state.try_read().map(|s| s.1.len()).unwrap_or(0),
+                    path.display()
+                ),
+                None => warn!("astro: failed to open minor-body data {}", path.display()),
+            }
+            catalog
+        });
         Some(Arc::new(Self {
             stars,
             objects,
             objects_version,
             transients,
+            blind_index: tokio::sync::OnceCell::new(),
+            minor_bodies,
             failed: RwLock::new(HashMap::new()),
         }))
     }
@@ -243,14 +310,6 @@ pub async fn astro_handler(
         Err(_) => return ApiResponse::InternalServerError.into_response(),
     }
 
-    // The capture date scopes which transients are relevant to the image
-    let capture_date = gallery
-        .get_image_metadata_cached(&resolved_path)
-        .await
-        .ok()
-        .and_then(|m| m.capture_date)
-        .map(chrono::DateTime::<chrono::Utc>::from);
-
     // Serve a previously persisted solution from the metadata sidecar
     let existing = gallery
         .user_metadata_storage
@@ -258,6 +317,22 @@ pub async fn astro_handler(
         .await
         .ok()
         .flatten();
+
+    // The capture date scopes transients and positions minor bodies:
+    // EXIF first, else the sidecar's capture_date frontmatter
+    let capture_date = match gallery
+        .get_image_metadata_cached(&resolved_path)
+        .await
+        .ok()
+        .and_then(|m| m.capture_date)
+        .map(chrono::DateTime::<chrono::Utc>::from)
+    {
+        Some(date) => Some(date),
+        None => existing
+            .as_ref()
+            .and_then(|m| m.capture_date.as_deref())
+            .and_then(parse_capture_date),
+    };
     if let Some(solution) = existing.as_ref().and_then(|m| m.astro.as_ref()) {
         // Catalog upgrades reproject the overlay through the stored WCS —
         // no re-solve needed
@@ -383,6 +458,31 @@ async fn solution_response(
         }
     }
 
+    // Minor bodies (comets/asteroids) move: only meaningful with a
+    // capture time, propagated to that instant, never persisted
+    if let (Some(minor_bodies), Some(capture)) = (&astro.minor_bodies, capture_date) {
+        let jd = 2_440_587.5 + capture.timestamp() as f64 / 86_400.0;
+        let catalog = minor_bodies.current().await;
+        for m in catalog.objects_in_footprint(&wcs, dims, jd, 18.0) {
+            let kind = match m.body.kind {
+                seiza::minor_bodies::MinorBodyKind::Comet => "comet",
+                seiza::minor_bodies::MinorBodyKind::Asteroid => "asteroid",
+            };
+            objects.push(serde_json::json!({
+                "name": m.body.name,
+                "common_name": format!("V~{:.1}, {:.2} AU", m.mag, m.delta_au),
+                "kind": kind,
+                "mag": m.mag,
+                "x": m.x,
+                "y": m.y,
+                "semi_major_px": 0.0,
+                "semi_minor_px": 0.0,
+                "angle_deg": 0.0,
+                "near_capture": true,
+            }));
+        }
+    }
+
     let mut response = axum::Json(serde_json::json!({
         "solved": true,
         "width": solution.width,
@@ -407,16 +507,83 @@ async fn solution_response(
 
 /// Decode, detect, and solve one gallery image. Returns None when the image
 /// has no RA/Dec hint or no solution is found.
+/// Blind-solve parameters for the gallery path: the scale range spans the
+/// hinted ladder's coverage, and the magnitude limit keeps the pattern
+/// index a couple of hundred MB instead of multiple GB on deep catalogs.
+fn blind_params() -> seiza::blind::BlindParams {
+    seiza::blind::BlindParams {
+        min_scale_arcsec_px: SCALE_LADDER[0] * (1.0 - SCALE_TOLERANCE),
+        max_scale_arcsec_px: SCALE_LADDER[SCALE_LADDER.len() - 1] * (1.0 + SCALE_TOLERANCE),
+        index_mag_limit: 11.8,
+        ..Default::default()
+    }
+}
+
+impl AstroContext {
+    /// The blind pattern index, building it on first use (a few seconds).
+    async fn blind_index(self: &Arc<Self>) -> Option<Arc<seiza::blind::BlindIndex>> {
+        self.blind_index
+            .get_or_init(|| async {
+                let astro = self.clone();
+                let built = tokio::task::spawn_blocking(move || {
+                    let started = std::time::Instant::now();
+                    let index = seiza::blind::BlindIndex::build(&astro.stars, &blind_params());
+                    info!(
+                        "astro: blind index built: {} patterns in {:.1}s",
+                        index.pattern_count(),
+                        started.elapsed().as_secs_f64()
+                    );
+                    Arc::new(index)
+                })
+                .await;
+                match built {
+                    Ok(index) => Some(index),
+                    Err(e) => {
+                        warn!("astro: blind index build panicked: {e}");
+                        None
+                    }
+                }
+            })
+            .await
+            .clone()
+    }
+}
+
+/// True when the image's folder (or any ancestor) sets `astro = true`
+/// in its `_folder.md` config.
+async fn folder_is_astro(gallery: &crate::gallery::SharedGallery, path: &str) -> bool {
+    let mut folder = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    loop {
+        if let Some(metadata) = gallery.read_folder_metadata_full(folder).await
+            && metadata.config.astro
+        {
+            return true;
+        }
+        if folder.is_empty() {
+            return false;
+        }
+        folder = folder.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    }
+}
+
 async fn solve_gallery_image(
     astro: &Arc<AstroContext>,
     gallery: &crate::gallery::SharedGallery,
     path: &str,
     metadata: Option<&crate::metadata_storage::ImageUserMetadata>,
 ) -> Option<crate::metadata_storage::AstroSolution> {
-    // The RA/Dec hint comes from the user metadata sidecar
-    let metadata = metadata?;
-    let ra = parse_ra(metadata.ra.as_deref()?)?;
-    let dec = parse_dec(metadata.dec.as_deref()?)?;
+    // The RA/Dec hint comes from the user metadata sidecar; without one
+    // (comets and other targets with no fixed coordinates) fall back to
+    // blind solving — but only for images marked as astro (a telescope in
+    // the metadata), never arbitrary photos
+    let hint =
+        metadata.and_then(|m| Some((parse_ra(m.ra.as_deref()?)?, parse_dec(m.dec.as_deref()?)?)));
+    if hint.is_none()
+        && metadata.is_none_or(|m| m.telescope.is_none())
+        && !folder_is_astro(gallery, path).await
+    {
+        return None;
+    }
 
     let bytes = match gallery.source_storage.read(path).await {
         Ok(bytes) => bytes,
@@ -426,11 +593,18 @@ async fn solve_gallery_image(
         }
     };
 
+    let blind_index = match hint {
+        Some(_) => None,
+        None => Some(astro.blind_index().await?),
+    };
     let astro = astro.clone();
     let path_owned = path.to_string();
-    let result =
-        tokio::task::spawn_blocking(move || solve_bytes(&astro, &bytes, (ra, dec), &path_owned))
-            .await;
+    let result = tokio::task::spawn_blocking(move || match (hint, blind_index) {
+        (Some(center), _) => solve_bytes(&astro, &bytes, center, &path_owned),
+        (None, Some(index)) => solve_bytes_blind(&astro, &bytes, &index, &path_owned),
+        (None, None) => None,
+    })
+    .await;
     match result {
         Ok(solution) => solution,
         Err(e) => {
@@ -441,6 +615,26 @@ async fn solve_gallery_image(
 }
 
 /// Project the object catalog through a solution into overlay coordinates.
+/// Parse a sidecar capture_date string: ISO datetime, plain date, or the
+/// app's own "July 12, 2026 at 04:15:00" rendering. Plain dates resolve
+/// to local midnight-ish UTC — fine for objects moving arcmin/day.
+fn parse_capture_date(text: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let text = text.trim();
+    if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(text) {
+        return Some(datetime.into());
+    }
+    if let Ok(datetime) = chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S") {
+        return Some(datetime.and_utc());
+    }
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        return Some(date.and_hms_opt(6, 0, 0)?.and_utc());
+    }
+    if let Ok(datetime) = chrono::NaiveDateTime::parse_from_str(text, "%B %d, %Y at %H:%M:%S") {
+        return Some(datetime.and_utc());
+    }
+    None
+}
+
 /// Extract the discovery date from a transient's detail text
 /// ("type II, disc. 2026/07/08, in NGC 3310") as an ISO date.
 fn transient_discovery_date(details: &str) -> Option<String> {
@@ -483,13 +677,9 @@ pub(crate) fn placed_objects(
         .unwrap_or_default()
 }
 
-fn solve_bytes(
-    astro: &AstroContext,
-    bytes: &[u8],
-    hint_center: (f64, f64),
-    path: &str,
-) -> Option<crate::metadata_storage::AstroSolution> {
-    let started = std::time::Instant::now();
+/// Decode (including AVIF), downsample for detection, and return
+/// full-resolution star centroids plus the original dimensions.
+fn detect_in_bytes(bytes: &[u8], path: &str) -> Option<(Vec<seiza::DetectedStar>, (u32, u32))> {
     // AVIF needs the custom reader (the image crate cannot decode it)
     #[cfg(feature = "avif")]
     let decoded = if bytes.len() > 12 && &bytes[4..12] == b"ftypavif" {
@@ -532,6 +722,71 @@ fn solve_bytes(
         star.x *= factor;
         star.y *= factor;
     }
+    Some((stars, (width, height)))
+}
+
+/// Persistable solution from a solved WCS.
+fn solution_from(
+    astro: &AstroContext,
+    wcs: &Wcs,
+    matched_stars: usize,
+    rms_arcsec: f64,
+    dims: (u32, u32),
+) -> crate::metadata_storage::AstroSolution {
+    let objects = placed_objects(astro, wcs, dims);
+    crate::metadata_storage::AstroSolution {
+        objects_version: astro.objects_version.clone(),
+        solved_at: chrono::Utc::now(),
+        width: dims.0,
+        height: dims.1,
+        crval: [wcs.crval.0, wcs.crval.1],
+        crpix: [wcs.crpix.0, wcs.crpix.1],
+        cd: wcs.cd,
+        matched_stars: matched_stars as u32,
+        rms_arcsec,
+        objects,
+    }
+}
+
+/// Blind-solve an image with no coordinate hint.
+fn solve_bytes_blind(
+    astro: &AstroContext,
+    bytes: &[u8],
+    index: &seiza::blind::BlindIndex,
+    path: &str,
+) -> Option<crate::metadata_storage::AstroSolution> {
+    let started = std::time::Instant::now();
+    let (stars, dims) = detect_in_bytes(bytes, path)?;
+    match seiza::blind::solve_blind(&stars, &astro.stars, index, &blind_params(), dims) {
+        Ok(Solution {
+            wcs,
+            matched_stars,
+            rms_arcsec,
+        }) => {
+            info!(
+                "astro: blind-solved {path} at {:.3}\"/px, {} stars, RMS {:.2}\" in {:.2}s",
+                wcs.scale_arcsec_per_px(),
+                matched_stars,
+                rms_arcsec,
+                started.elapsed().as_secs_f64()
+            );
+            Some(solution_from(astro, &wcs, matched_stars, rms_arcsec, dims))
+        }
+        Err(e) => {
+            info!("astro: blind solve failed for {path}: {e}");
+            None
+        }
+    }
+}
+
+fn solve_bytes(
+    astro: &AstroContext,
+    bytes: &[u8],
+    hint_center: (f64, f64),
+    path: &str,
+) -> Option<crate::metadata_storage::AstroSolution> {
+    let started = std::time::Instant::now();
+    let (stars, (width, height)) = detect_in_bytes(bytes, path)?;
 
     for &scale in SCALE_LADDER {
         let hint = SolveHint {
@@ -556,19 +811,13 @@ fn solve_bytes(
                 rms_arcsec,
                 started.elapsed().as_secs_f64()
             );
-            let objects = placed_objects(astro, &wcs, (width, height));
-            return Some(crate::metadata_storage::AstroSolution {
-                objects_version: astro.objects_version.clone(),
-                solved_at: chrono::Utc::now(),
-                width,
-                height,
-                crval: [wcs.crval.0, wcs.crval.1],
-                crpix: [wcs.crpix.0, wcs.crpix.1],
-                cd: wcs.cd,
-                matched_stars: matched_stars as u32,
+            return Some(solution_from(
+                astro,
+                &wcs,
+                matched_stars,
                 rms_arcsec,
-                objects,
-            });
+                (width, height),
+            ));
         }
     }
     info!(

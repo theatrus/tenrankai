@@ -38,6 +38,11 @@ pub struct AstroConfig {
     /// automatically when the file changes, so a cron can refresh it
     #[serde(default)]
     pub transient_data: Option<std::path::PathBuf>,
+    /// Minor-body elements built by `seiza build-data minor-bodies`
+    /// (comets + asteroids); positions are propagated to each image's
+    /// capture time. Reloaded when the file changes.
+    #[serde(default)]
+    pub minor_body_data: Option<std::path::PathBuf>,
 }
 
 /// Configuration for the cache generation queue.

@@ -52,6 +52,18 @@ const SOLUTION = {
       near_capture: true,
     },
     {
+      name: 'C/2025 A6 (Lemmon)',
+      common_name: 'V~7.6, 0.71 AU',
+      kind: 'comet',
+      mag: 7.6,
+      x: 300,
+      y: 450,
+      semi_major_px: 0,
+      semi_minor_px: 0,
+      angle_deg: 0,
+      near_capture: true,
+    },
+    {
       name: 'SN Nova M31 2022-10a',
       common_name: 'disc. 2022/10/26',
       kind: 'transient',
@@ -89,13 +101,14 @@ test.describe('astro overlay', () => {
     const toggle = page.getByRole('button', { name: /Objects \(/ });
     await expect(toggle).toBeVisible();
     // Count excludes the one out-of-window transient by default
-    await expect(toggle).toHaveText('Objects (3)');
+    await expect(toggle).toHaveText('Objects (4)');
     await toggle.click();
 
     const svg = page.locator('svg[aria-label="Sky object overlay"]');
     await expect(svg).toBeVisible();
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
     await expect(svg.getByText(/SN 2026sqf/)).toBeVisible();
+    await expect(svg.getByText(/Lemmon/)).toBeVisible();
     await expect(svg.getByText(/2022-10a/)).toHaveCount(0);
     await shot(page, 'astro-overlay-visible');
 

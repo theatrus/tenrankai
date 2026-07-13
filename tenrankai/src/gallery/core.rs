@@ -901,6 +901,7 @@ impl Gallery {
                 // No TOML front matter, treat entire content as markdown
                 Some(super::FolderMetadata {
                     config: super::FolderConfig {
+                        astro: false,
                         hidden: false,
                         hidden_images: vec![],
                         permissions: Default::default(),

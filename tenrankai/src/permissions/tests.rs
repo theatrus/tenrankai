@@ -386,6 +386,7 @@ mod scenario_tests {
 
         // Folder level permissions - private folder
         let mut folder_config = FolderConfig {
+            astro: false,
             hidden: false,
             hidden_images: vec![],
             permissions: Default::default(),
@@ -576,6 +577,7 @@ mod scenario_tests {
 
         // Wedding folder - guests can view and download
         let mut wedding_folder = FolderConfig {
+            astro: false,
             hidden: false,
             hidden_images: vec![],
             permissions: Default::default(),
@@ -638,6 +640,7 @@ mod scenario_tests {
 
         // Corporate event folder - restricted access
         let mut corporate_folder = FolderConfig {
+            astro: false,
             hidden: true, // Hidden from gallery listings
             hidden_images: vec![],
             permissions: Default::default(),
@@ -780,6 +783,7 @@ mod scenario_tests {
         );
 
         let folder_config = FolderConfig {
+            astro: false,
             hidden: false,
             hidden_images: vec![],
             permissions: PermissionConfig {

@@ -166,13 +166,25 @@ export function AstroOverlay({ solution, visible, allTransients }: AstroOverlayP
           {objects.map((o) => {
             const isStar = o.kind === 'star';
             const isTransient = o.kind === 'transient';
+            const isComet = o.kind === 'comet';
+            const isAsteroid = o.kind === 'asteroid';
+            const movingColor = isComet ? '#7bffd0' : '#ffb36b';
             const label = labelText(o);
             const a = Math.max(o.semi_major_px, fontSize);
             const b = Math.max(o.semi_minor_px, fontSize);
             const y = labelY(o);
             return (
               <g key={`${o.name}-${o.x}-${o.y}`}>
-                {isTransient ? (
+                {isComet || isAsteroid ? (
+                  // Moving bodies: a diamond plus a short trailing dash,
+                  // in comet green or asteroid orange
+                  <path
+                    d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z M ${o.x + a * 1.3} ${o.y + a * 1.3} L ${o.x + a * 2.1} ${o.y + a * 2.1}`}
+                    fill="none"
+                    stroke={movingColor}
+                    strokeWidth={stroke * 1.5}
+                  />
+                ) : isTransient ? (
                   <path
                     d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z`}
                     fill="none"
@@ -216,7 +228,15 @@ export function AstroOverlay({ solution, visible, allTransients }: AstroOverlayP
                   y={y}
                   textAnchor="middle"
                   fontSize={fontSize}
-                  fill={isTransient ? '#ff7be0' : isStar ? '#ffd479' : '#aee8ff'}
+                  fill={
+                    isComet || isAsteroid
+                      ? movingColor
+                      : isTransient
+                        ? '#ff7be0'
+                        : isStar
+                          ? '#ffd479'
+                          : '#aee8ff'
+                  }
                   stroke="rgba(0,0,0,0.8)"
                   strokeWidth={fontSize / 10}
                   paintOrder="stroke"
