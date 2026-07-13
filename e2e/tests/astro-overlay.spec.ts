@@ -205,3 +205,39 @@ test.describe('astro overlay in post embeds', () => {
     await expect(svg).toHaveCount(0);
   });
 });
+
+test.describe('per-catalog toggles', () => {
+  test('catalog menu hides and restores groups, persisting the choice', async ({
+    page,
+    isMobile,
+  }) => {
+    await openSolvedDetail(page);
+    const tapOrClick = async (locator: ReturnType<typeof page.locator>) =>
+      isMobile ? locator.tap() : locator.click();
+
+    await tapOrClick(page.getByRole('button', { name: /Objects \(/ }));
+    const svg = page.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+
+    // Open the catalogs menu and hide the NGC/IC/Messier group
+    await tapOrClick(page.getByRole('button', { name: /Catalogs/ }));
+    const ngc = page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' });
+    await expect(ngc).toBeVisible();
+    await tapOrClick(ngc);
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toHaveCount(0);
+    // Other groups stay
+    await expect(svg.getByText(/WR 134/)).toBeVisible();
+    await shot(page, 'astro-catalog-toggles');
+
+    // The choice persists across a reload
+    await page.reload();
+    await tapOrClick(page.getByRole('button', { name: /Objects \(/ }));
+    await expect(svg.getByText(/WR 134/)).toBeVisible();
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toHaveCount(0);
+
+    // And restores
+    await tapOrClick(page.getByRole('button', { name: /Catalogs/ }));
+    await tapOrClick(page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' }));
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+  });
+});

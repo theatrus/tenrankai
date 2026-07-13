@@ -79,6 +79,34 @@ function encompassesFrame(o: PlacedObject, width: number, height: number): boole
   });
 }
 
+/** Catalog group of an object, for the per-catalog display toggles. */
+export function catalogGroup(o: PlacedObject): string {
+  if (o.kind === 'transient') return 'transients';
+  if (o.kind === 'comet' || o.kind === 'asteroid') return 'solar-system';
+  const name = o.name;
+  if (name.startsWith('PGC')) return 'pgc';
+  if (name.startsWith('UGC')) return 'ugc';
+  if (name.startsWith('LDN') || /^B\d/.test(name)) return 'dark-nebulae';
+  if (name.startsWith('SNR')) return 'snr';
+  if (name.startsWith('WR ')) return 'wr';
+  if (o.kind === 'star' || o.kind === 'double-star') return 'stars';
+  if (name.startsWith('Sh2-') || name.startsWith('vdB')) return 'sharpless-vdb';
+  return 'ngc-ic-messier';
+}
+
+/** Display names for catalog groups, in menu order. */
+export const CATALOG_GROUPS: [string, string][] = [
+  ['ngc-ic-messier', 'NGC / IC / Messier'],
+  ['sharpless-vdb', 'Sharpless / vdB'],
+  ['dark-nebulae', 'Dark nebulae (B / LDN)'],
+  ['snr', 'Supernova remnants'],
+  ['wr', 'Wolf-Rayet stars'],
+  ['stars', 'Stars (HD / named)'],
+  ['ugc', 'UGC galaxies'],
+  ['pgc', 'PGC galaxies'],
+  ['solar-system', 'Comets / asteroids'],
+];
+
 /** Transients not discovered near the capture date (hidden by default). */
 export function distantTransients(solution: AstroSolution): PlacedObject[] {
   return (solution.objects || []).filter(
@@ -90,17 +118,26 @@ interface AstroOverlayProps {
   solution: AstroSolution;
   visible: boolean;
   allTransients: boolean;
+  /** Catalog groups (see [`catalogGroup`]) currently hidden */
+  hiddenGroups?: string[];
 }
 
 /** The SVG marker layer. Toggle buttons live in [`AstroControls`]. */
-export function AstroOverlay({ solution, visible, allTransients }: AstroOverlayProps) {
+export function AstroOverlay({
+  solution,
+  visible,
+  allTransients,
+  hiddenGroups = [],
+}: AstroOverlayProps) {
 
   const width = solution.width;
   const height = solution.height;
   // Transients not discovered near the capture date are noise by default
   // (M31 accumulates hundreds of historical novae) but can be toggled on
-  const everything = solution.objects || [];
-  const distant = distantTransients(solution);
+  const everything = (solution.objects || []).filter(
+    (o) => !hiddenGroups.includes(catalogGroup(o)),
+  );
+  const distant = distantTransients(solution).filter((o) => everything.includes(o));
   const all = allTransients ? everything : everything.filter((o) => !distant.includes(o));
   const encompassing = all.filter((o) => encompassesFrame(o, width, height));
   const objects = all.filter((o) => !encompassing.includes(o));
@@ -264,6 +301,8 @@ interface AstroControlsProps {
   onVisibleChange: (visible: boolean) => void;
   allTransients: boolean;
   onAllTransientsChange: (all: boolean) => void;
+  hiddenGroups: string[];
+  onHiddenGroupsChange: (groups: string[]) => void;
 }
 
 /**
@@ -276,10 +315,28 @@ export function AstroControls({
   onVisibleChange,
   allTransients,
   onAllTransientsChange,
+  hiddenGroups,
+  onHiddenGroupsChange,
 }: AstroControlsProps) {
-  const total = (solution.objects || []).length;
-  const distant = distantTransients(solution);
-  const shown = allTransients ? total : total - distant.length;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const objects = solution.objects || [];
+  const groupCounts = new Map<string, number>();
+  for (const o of objects) {
+    const group = catalogGroup(o);
+    groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
+  }
+  const kept = objects.filter((o) => !hiddenGroups.includes(catalogGroup(o)));
+  const distant = distantTransients(solution).filter((o) => kept.includes(o));
+  const shown = allTransients ? kept.length : kept.length - distant.length;
+  const availableGroups = CATALOG_GROUPS.filter(([id]) => groupCounts.has(id));
+
+  const toggleGroup = (id: string) => {
+    onHiddenGroupsChange(
+      hiddenGroups.includes(id)
+        ? hiddenGroups.filter((g) => g !== id)
+        : [...hiddenGroups, id],
+    );
+  };
 
   return (
     <div className="control-buttons astro-controls">
@@ -300,6 +357,35 @@ export function AstroControls({
         >
           {allTransients ? 'Hide old transients' : `+${distant.length} old transients`}
         </button>
+      )}
+      {visible && availableGroups.length > 1 && (
+        <span style={{ position: 'relative', display: 'inline-block' }}>
+          <button
+            type="button"
+            className={`btn ${hiddenGroups.length > 0 ? 'btn-primary' : 'btn-secondary'}`}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(!menuOpen)}
+            title="Choose which catalogs to label"
+          >
+            Catalogs {menuOpen ? '▴' : '▾'}
+          </button>
+          {menuOpen && (
+            <span className="astro-catalog-menu" role="menu">
+              {availableGroups.map(([id, label]) => (
+                <label key={id} className="astro-catalog-item">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenGroups.includes(id)}
+                    onChange={() => toggleGroup(id)}
+                  />
+                  <span>
+                    {label} ({groupCounts.get(id)})
+                  </span>
+                </label>
+              ))}
+            </span>
+          )}
+        </span>
       )}
     </div>
   );

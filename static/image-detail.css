@@ -432,6 +432,59 @@ body {
     }
 }
 
+/* Per-catalog dropdown: a pill-styled popover above the toggle */
+.astro-catalog-menu {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 15rem;
+    padding: 0.5rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border-color, rgba(128, 128, 128, 0.4));
+    background: var(--bg-primary, #fff);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+    text-align: left;
+}
+
+.astro-catalog-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.astro-catalog-item:hover {
+    background: rgba(128, 160, 255, 0.12);
+}
+
+.astro-catalog-item input {
+    accent-color: #3b82f6;
+    width: 1rem;
+    height: 1rem;
+}
+
+@media (pointer: coarse) {
+    .astro-catalog-item {
+        min-height: 44px;
+        font-size: 0.95rem;
+    }
+
+    .astro-catalog-item input {
+        width: 1.3rem;
+        height: 1.3rem;
+    }
+}
+
 .nav-hint-container {
     margin-top: var(--spacing-sm);
 }

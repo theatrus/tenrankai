@@ -326,6 +326,8 @@ pub async fn post_detail_handler(
             "hero_image": post.hero_image,
             "hero_image_link": post.hero_image_link,
             "hero_image_explicit": post.hero_image_explicit,
+            "hero_image_gallery": post.hero_image_gallery,
+            "hero_image_path": post.hero_image_path,
             "reading_time_minutes": post.reading_time_minutes,
         },
         "posts_name": posts_name,

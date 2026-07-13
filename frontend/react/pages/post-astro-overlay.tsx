@@ -85,6 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       anchor.style.position = 'relative';
       anchor.style.display = 'inline-block';
+      anchor.style.lineHeight = '0';
+      // Kill the inline-image baseline gap so the anchor box matches the
+      // image exactly (a few px of descender space otherwise shifts the
+      // overlay downward)
+      const img = anchor.querySelector('img');
+      if (img) img.style.display = 'block';
       const mount = document.createElement('span');
       mount.style.display = 'contents';
       anchor.appendChild(mount);
