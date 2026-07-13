@@ -12,7 +12,7 @@ import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx
 import { VersionPicker } from '../components/ImageDetail/VersionPicker.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { AstroSkyMap } from '../components/ImageDetail/AstroSkyMap.tsx';
-import { AstroOverlay, useAstroSolution } from '../components/ImageDetail/AstroOverlay.tsx';
+import { AstroControls, AstroOverlay, useAstroSolution } from '../components/ImageDetail/AstroOverlay.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { EditModal } from '../components/Editor/index.ts';
@@ -278,9 +278,7 @@ export function ImageDetailPage({
                     <AstroOverlay
                       solution={astroSolution}
                       visible={astroVisible}
-                      onVisibleChange={setAstroVisible}
                       allTransients={astroAllTransients}
-                      onAllTransientsChange={setAstroAllTransients}
                     />
                   ) : undefined
                 }
@@ -288,7 +286,6 @@ export function ImageDetailPage({
                   astroSolution && astroVisible ? (
                     <AstroOverlay
                       solution={astroSolution}
-                      controls={false}
                       visible
                       allTransients={astroAllTransients}
                     />
@@ -410,6 +407,16 @@ export function ImageDetailPage({
           <AIMetadata image={currentData.image} permissions={currentData.permissions} />
 
           <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} shareUrl={currentData.share_url} baseUrl={currentData.base_url} />
+
+          {astroSolution && (
+            <AstroControls
+              solution={astroSolution}
+              visible={astroVisible}
+              onVisibleChange={setAstroVisible}
+              allTransients={astroAllTransients}
+              onAllTransientsChange={setAstroAllTransients}
+            />
+          )}
 
           {currentData.permissions.can_read_metadata && (
             <UserMetadata
