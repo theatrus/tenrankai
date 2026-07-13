@@ -256,14 +256,10 @@ export function AstroControls({
   const shown = allTransients ? total : total - distant.length;
 
   return (
-    <div
-      className="control-buttons astro-controls"
-      style={{ justifyContent: 'center', marginTop: '0.5rem' }}
-    >
+    <div className="control-buttons astro-controls">
       <button
         type="button"
         className={`btn ${visible ? 'btn-primary' : 'btn-secondary'}`}
-        style={{ minHeight: '2.75rem', touchAction: 'manipulation' }}
         onClick={() => onVisibleChange(!visible)}
         title={`${shown} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
       >
@@ -273,7 +269,6 @@ export function AstroControls({
         <button
           type="button"
           className={`btn ${allTransients ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ minHeight: '2.75rem', touchAction: 'manipulation' }}
           onClick={() => onAllTransientsChange(!allTransients)}
           title="Transients discovered long before or after this image was captured"
         >
