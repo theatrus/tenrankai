@@ -71,6 +71,9 @@ enum Commands {
     Cache(CacheCommands),
 
     /// Analyze images using OpenAI Vision API to generate keywords and alt-text
+    /// Astrometry maintenance (regenerate persisted overlays)
+    #[command(subcommand)]
+    Astro(AstroCommands),
     AnalyzeImages {
         /// Gallery name to analyze
         #[arg(short, long)]
@@ -323,6 +326,24 @@ enum ConfigCommands {
 }
 
 #[derive(Subcommand, Debug)]
+enum AstroCommands {
+    /// Reproject persisted astro overlays against the current object catalog
+    Regen {
+        /// Gallery name
+        #[arg(short, long)]
+        gallery: String,
+
+        /// Site name (for multi-site configurations)
+        #[arg(short, long, default_value = "default")]
+        site: String,
+
+        /// Report what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum AdminCommands {
     /// Add a site administrator
     Add {
@@ -403,6 +424,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             image_path,
             verbose,
         } => commands::avif_debug::handle_avif_debug_command(image_path, verbose).await,
+        Commands::Astro(astro_cmd) => match astro_cmd {
+            AstroCommands::Regen {
+                gallery,
+                site,
+                dry_run,
+            } => commands::astro::handle_regen_command(config, site, gallery, dry_run).await,
+        },
         Commands::AnalyzeImages {
             gallery,
             site,

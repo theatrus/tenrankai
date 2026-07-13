@@ -22,7 +22,9 @@ use tracing::{info, warn};
 
 /// Pixel-scale ladder tried in order; ±35 % tolerance makes the rungs
 /// overlap, covering roughly 0.23–7.5 arcsec/pixel.
-const SCALE_LADDER: &[f64] = &[0.35, 0.7, 1.4, 2.8, 5.6];
+// Down to ~0.1"/px: drizzled or upscaled close-ups land well below
+// native seeing scales (an upscaled M51 solves at 0.16"/px)
+const SCALE_LADDER: &[f64] = &[0.11, 0.19, 0.35, 0.7, 1.4, 2.8, 5.6];
 const SCALE_TOLERANCE: f64 = 0.35;
 const SEARCH_RADIUS_DEG: f64 = 2.0;
 /// Images are downsampled to at most this many pixels on the long side
@@ -82,6 +84,10 @@ impl ReloadingCatalog {
 }
 
 impl AstroContext {
+    pub(crate) fn objects_version(&self) -> &str {
+        &self.objects_version
+    }
+
     /// Load catalogs from the configured data files. Returns None (with a
     /// warning) when loading fails so a bad path cannot take the site down.
     pub fn load(config: &crate::config::AstroConfig) -> Option<Arc<Self>> {
@@ -237,6 +243,14 @@ pub async fn astro_handler(
         Err(_) => return ApiResponse::InternalServerError.into_response(),
     }
 
+    // The capture date scopes which transients are relevant to the image
+    let capture_date = gallery
+        .get_image_metadata_cached(&resolved_path)
+        .await
+        .ok()
+        .and_then(|m| m.capture_date)
+        .map(chrono::DateTime::<chrono::Utc>::from);
+
     // Serve a previously persisted solution from the metadata sidecar
     let existing = gallery
         .user_metadata_storage
@@ -267,9 +281,9 @@ pub async fn astro_handler(
             {
                 warn!("astro: failed to persist refreshed objects for {resolved_path}: {e}");
             }
-            return solution_response(&updated, &astro).await;
+            return solution_response(&updated, &astro, capture_date).await;
         }
-        return solution_response(solution, &astro).await;
+        return solution_response(solution, &astro, capture_date).await;
     }
 
     let cache_key = format!("{gallery_name}/{resolved_path}");
@@ -291,7 +305,7 @@ pub async fn astro_handler(
             {
                 warn!("astro: failed to persist solution for {resolved_path}: {e}");
             }
-            solution_response(&solution, &astro).await
+            solution_response(&solution, &astro, capture_date).await
         }
         None => {
             astro.failed.write().await.insert(cache_key, ());
@@ -305,6 +319,7 @@ pub async fn astro_handler(
 async fn solution_response(
     solution: &crate::metadata_storage::AstroSolution,
     astro: &Arc<AstroContext>,
+    capture_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> axum::response::Response {
     let wcs = Wcs {
         crval: (solution.crval[0], solution.crval[1]),
@@ -333,10 +348,25 @@ async fn solution_response(
         })
         .collect();
 
-    // Transients are projected live (never persisted): discoveries change
+    // Transients are projected live (never persisted): discoveries change.
+    // Each carries its discovery date and whether that falls near the
+    // image's capture date, so the UI can hide long-gone events by
+    // default (M31 alone accumulates hundreds of historical novae).
     if let Some(transients) = &astro.transients {
         let catalog = transients.current().await;
         for p in catalog.objects_in_footprint(&wcs, dims) {
+            let discovered = transient_discovery_date(&p.object.common_name);
+            let near_capture = match (&discovered, capture_date) {
+                (Some(date), Some(capture)) => chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                    .map(|date| {
+                        let capture = capture.date_naive();
+                        date <= capture + chrono::Duration::days(30)
+                            && date >= capture - chrono::Duration::days(365)
+                    })
+                    .unwrap_or(true),
+                // Without both dates there is nothing to scope by
+                _ => true,
+            };
             objects.push(serde_json::json!({
                 "name": p.object.name,
                 "common_name": p.object.common_name,
@@ -347,6 +377,8 @@ async fn solution_response(
                 "semi_major_px": p.semi_major_px,
                 "semi_minor_px": p.semi_minor_px,
                 "angle_deg": p.angle_deg,
+                "discovered": discovered,
+                "near_capture": near_capture,
             }));
         }
     }
@@ -409,7 +441,21 @@ async fn solve_gallery_image(
 }
 
 /// Project the object catalog through a solution into overlay coordinates.
-fn placed_objects(
+/// Extract the discovery date from a transient's detail text
+/// ("type II, disc. 2026/07/08, in NGC 3310") as an ISO date.
+fn transient_discovery_date(details: &str) -> Option<String> {
+    let raw = details
+        .split(", ")
+        .find_map(|part| part.strip_prefix("disc. "))?;
+    let mut parts = raw.split('/');
+    let year: i32 = parts.next()?.trim().parse().ok()?;
+    let month: u32 = parts.next()?.trim().parse().ok()?;
+    let day: u32 = parts.next()?.trim().parse().ok()?;
+    ((1900..3000).contains(&year) && (1..=12).contains(&month) && (1..=31).contains(&day))
+        .then(|| format!("{year:04}-{month:02}-{day:02}"))
+}
+
+pub(crate) fn placed_objects(
     astro: &AstroContext,
     wcs: &Wcs,
     dims: (u32, u32),
@@ -444,7 +490,18 @@ fn solve_bytes(
     path: &str,
 ) -> Option<crate::metadata_storage::AstroSolution> {
     let started = std::time::Instant::now();
-    let image = match image::load_from_memory(bytes) {
+    // AVIF needs the custom reader (the image crate cannot decode it)
+    #[cfg(feature = "avif")]
+    let decoded = if bytes.len() > 12 && &bytes[4..12] == b"ftypavif" {
+        crate::gallery::image_processing::formats::avif::read_avif_info_from_bytes(bytes)
+            .map(|(image, _)| image)
+            .map_err(|e| format!("{e}"))
+    } else {
+        image::load_from_memory(bytes).map_err(|e| format!("{e}"))
+    };
+    #[cfg(not(feature = "avif"))]
+    let decoded = image::load_from_memory(bytes).map_err(|e| format!("{e}"));
+    let image = match decoded {
         Ok(image) => image,
         Err(e) => {
             warn!("astro: failed to decode {path}: {e}");
@@ -480,7 +537,9 @@ fn solve_bytes(
         let hint = SolveHint {
             center: hint_center,
             radius_deg: SEARCH_RADIUS_DEG,
-            scale_arcsec_px: scale * factor,
+            // Detections were rescaled to full-resolution pixels above, so
+            // the ladder scale applies as-is regardless of downsampling
+            scale_arcsec_px: scale,
             scale_tolerance: SCALE_TOLERANCE,
         };
         // Solve in full-resolution pixel space

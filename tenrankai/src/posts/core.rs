@@ -887,6 +887,17 @@ impl PostsManager {
             .unwrap_or_else(|| image_path.to_string())
     }
 
+    /// Percent-encode a gallery identifier for use in a URL path, keeping
+    /// `/` literal: the gallery routes are wildcards, so path separators
+    /// need no escaping and `%2F` only makes links ugly.
+    fn encode_path(identifier: &str) -> String {
+        identifier
+            .split('/')
+            .map(|segment| urlencoding::encode(segment).into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
     /// Resolve a hero image reference: either a `gallery:name:path` reference
     /// (served at gallery size, linked to its gallery detail page) or a plain
     /// URL passed through unchanged
@@ -897,7 +908,7 @@ impl PostsManager {
             let gallery = galleries.get(gallery_name)?;
             let gallery_config = gallery.get_config();
             let identifier = Self::gallery_url_identifier(gallery, image_path).await;
-            let encoded = urlencoding::encode(&identifier);
+            let encoded = Self::encode_path(&identifier);
             let image_url = format!("{}/_image/{}/gallery", gallery_config.url_prefix, encoded);
             let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded);
             return Some((image_url, Some(detail_url)));
@@ -943,7 +954,7 @@ impl PostsManager {
         // Generate URLs from the gallery's URL identifier (index id for
         // sequence/unique_id galleries) so detail-page navigation works
         let identifier = Self::gallery_url_identifier(gallery, image_path).await;
-        let encoded = urlencoding::encode(&identifier);
+        let encoded = Self::encode_path(&identifier);
         let image_url = format!("{}/_image/{}/{}", gallery_config.url_prefix, encoded, size);
         let detail_url = format!("{}/detail/{}", gallery_config.url_prefix, encoded);
 

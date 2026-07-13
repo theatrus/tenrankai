@@ -701,7 +701,7 @@ Content."#,
 
     // A gallery hero links to its gallery detail page
     assert!(html.contains(r#"class="post-hero-link""#));
-    assert!(html.contains(r#"href="/gallery/detail/vacation%2Fbeach.jpg""#));
+    assert!(html.contains(r#"href="/gallery/detail/vacation/beach.jpg""#));
 
     // The details option adds hover-card data attributes; plain embeds don't
     assert!(html.contains("gallery-image-details"));
