@@ -549,8 +549,11 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     if (e.touches.length === 0) {
       lastTouchCenter.current = null;
 
-      // Reset zoom if scale is close to 1
-      if (currentScaleRef.current < 1.1) {
+      // Reset zoom if a gesture ends near 1x. Only while actually zoomed:
+      // a plain tap in the normal view also lands here (before the
+      // double-tap handler runs), and scheduling a close then would stomp
+      // the zoom the double-tap is about to open.
+      if (pinchZoom.isZoomed && currentScaleRef.current < 1.1) {
         closeZoomModal();
       } else {
         // Keep zoomed, update refs for next gesture
@@ -1243,20 +1246,80 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
                   <div style={{ position: 'relative', zIndex: 10 }}>
                     {renderZoomTiles()}
                   </div>
+
+                  {/* Astro overlay at tile scale, cursor point centered —
+                      same mapping as the tile grid offset */}
+                  {zoomOverlay &&
+                    (() => {
+                      const tiledX = (zoomState.imageX / 100) * tileConfig.tiled_width;
+                      const tiledY = (zoomState.imageY / 100) * tileConfig.tiled_height;
+                      return (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${150 - tiledX}px`,
+                            top: `${150 - tiledY}px`,
+                            width: `${tileConfig.tiled_width}px`,
+                            height: `${tileConfig.tiled_height}px`,
+                            pointerEvents: 'none',
+                            zIndex: 12
+                          }}
+                        >
+                          {zoomOverlay}
+                        </div>
+                      );
+                    })()}
                 </div>
               ) : (
                 <div
                   style={{
-                    position: 'absolute',
+                    position: 'relative',
                     width: '100%',
                     height: '100%',
-                    backgroundImage: `url(${image.medium_url})`,
-                    backgroundSize: `${containerRef.current?.clientWidth ? containerRef.current.clientWidth * 1.8 : image.dimensions[0] * 1.8}px auto`,
-                    backgroundPosition: `${zoomState.imageX}% ${zoomState.imageY}%`,
-                    backgroundRepeat: 'no-repeat',
-                    imageRendering: 'auto'
+                    overflow: 'hidden',
+                    borderRadius: '50%'
                   }}
-                />
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      backgroundImage: `url(${image.medium_url})`,
+                      backgroundSize: `${containerRef.current?.clientWidth ? containerRef.current.clientWidth * 1.8 : image.dimensions[0] * 1.8}px auto`,
+                      backgroundPosition: `${zoomState.imageX}% ${zoomState.imageY}%`,
+                      backgroundRepeat: 'no-repeat',
+                      imageRendering: 'auto'
+                    }}
+                  />
+
+                  {/* Astro overlay at the magnified scale — same
+                      background-position mapping as the image */}
+                  {zoomOverlay &&
+                    (() => {
+                      const zoomWidth = containerRef.current?.clientWidth
+                        ? containerRef.current.clientWidth * 1.8
+                        : image.dimensions[0] * 1.8;
+                      const zoomHeight =
+                        (zoomWidth * image.dimensions[1]) / image.dimensions[0];
+                      const left = ((300 - zoomWidth) * zoomState.imageX) / 100;
+                      const top = ((300 - zoomHeight) * zoomState.imageY) / 100;
+                      return (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${left}px`,
+                            top: `${top}px`,
+                            width: `${zoomWidth}px`,
+                            height: `${zoomHeight}px`,
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          {zoomOverlay}
+                        </div>
+                      );
+                    })()}
+                </div>
               )}
             </div>
           )}

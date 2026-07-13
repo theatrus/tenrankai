@@ -156,6 +156,11 @@ test.describe('astro overlay', () => {
     await expect(page.getByRole('button', { name: '×' })).toBeVisible();
     await expect(svg.first()).toBeVisible();
     await expect(svg.first().getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+    // The zoom must STAY open: a stale close-timeout from the tap handler
+    // used to stomp it shut ~300ms after opening
+    await page.waitForTimeout(800);
+    await expect(page.getByRole('button', { name: '×' })).toBeVisible();
+    await expect(svg.first().getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
     await shot(page, 'astro-overlay-mobile-zoom');
   });
 });
