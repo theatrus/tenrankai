@@ -10,6 +10,10 @@ interface PlacedObject {
   semi_major_px: number;
   semi_minor_px: number;
   angle_deg: number;
+  /** Transients only: ISO discovery date, when known */
+  discovered?: string | null;
+  /** Transients only: discovered near this image's capture date */
+  near_capture?: boolean;
 }
 
 export interface AstroSolution {
@@ -77,10 +81,17 @@ function encompassesFrame(o: PlacedObject, width: number, height: number): boole
 
 export function AstroOverlay({ solution }: { solution: AstroSolution }) {
   const [visible, setVisible] = useState(false);
+  const [allTransients, setAllTransients] = useState(false);
 
   const width = solution.width;
   const height = solution.height;
-  const all = solution.objects || [];
+  // Transients not discovered near the capture date are noise by default
+  // (M31 accumulates hundreds of historical novae) but can be toggled on
+  const everything = solution.objects || [];
+  const distantTransients = everything.filter(
+    (o) => o.kind === 'transient' && o.near_capture === false,
+  );
+  const all = allTransients ? everything : everything.filter((o) => !distantTransients.includes(o));
   const encompassing = all.filter((o) => encompassesFrame(o, width, height));
   const objects = all.filter((o) => !encompassing.includes(o));
   const stroke = Math.max(solution.width / 1200, 1.5);
@@ -140,6 +151,36 @@ export function AstroOverlay({ solution }: { solution: AstroSolution }) {
       >
         {visible ? 'Objects ✕' : `Objects (${all.length})`}
       </button>
+
+      {visible && distantTransients.length > 0 && (
+        <button
+          type="button"
+          className="astro-overlay-transient-toggle"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAllTransients(!allTransients);
+          }}
+          style={{
+            position: 'absolute',
+            top: '3rem',
+            right: '0.75rem',
+            zIndex: 3,
+            pointerEvents: 'auto',
+            padding: '0.3rem 0.7rem',
+            borderRadius: '999px',
+            border: '1px solid rgba(255,123,224,0.5)',
+            background: allTransients ? 'rgba(255,123,224,0.3)' : 'rgba(0,0,0,0.45)',
+            color: '#ffd6f4',
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+          }}
+          title="Transients discovered long before or after this image was captured"
+        >
+          {allTransients
+            ? 'Hide old transients'
+            : `+${distantTransients.length} old transients`}
+        </button>
+      )}
 
       {visible && (
         <svg
