@@ -834,15 +834,26 @@ the [seiza](https://crates.io/crates/seiza) plate-solving library:
 - **Transient Markers**: Live markers (e.g. supernovae) from a separate
   transient catalog, scoped to each image's capture date; the catalog file is
   reloaded automatically when it changes, so a cron job can keep it fresh
+- **Blind Solving**: Images without RA/Dec metadata are solved from the star
+  field alone, using a prebuilt whole-sky pattern index
 
-Configure the data files (built with `seiza build-data`) in `config.toml`:
+Fetch the prebuilt catalogs (`seiza download-data prebuilt --output data`, or
+straight from [downloads.seiza.fyi](https://downloads.seiza.fyi/data/manifest.json))
+and point `config.toml` at them:
 
 ```toml
 [astro]
-star_data = "data/stars.seiza"          # Star tiles (SEIZAST1)
-object_data = "data/objects.seiza"      # Object catalog (SEIZAOB1, optional)
-transient_data = "data/transients.seiza" # Transient catalog (optional)
+star_data = "data/stars-deep-gaia17.bin"    # Star tiles (SEIZAST1)
+blind_index = "data/blind-gaia16.idx"       # Blind pattern index (SEIZABI1, optional)
+object_data = "data/objects.bin"            # Object catalog (SEIZAOB1, optional)
+transient_data = "data/transients.bin"      # Transient catalog (optional)
+minor_body_data = "data/minor-bodies.bin"   # Comets + asteroids (optional)
 ```
+
+`blind_index` is memory-mapped at first use and must come from the same
+catalog as `star_data`. Without it the index is built on demand from
+`star_data`, which covers only the bright tiers — small, fine-scale fields
+need the prebuilt index to blind-solve.
 
 When the object catalog changes, regenerate persisted overlays:
 
