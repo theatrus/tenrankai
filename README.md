@@ -855,6 +855,21 @@ catalog as `star_data`. Without it the index is built on demand from
 `star_data`, which covers only the bright tiers — small, fine-scale fields
 need the prebuilt index to blind-solve.
 
+Images are solved from their `.md` sidecar frontmatter: `ra` and `dec` give a
+hinted solve, and `pixel_scale` (arcseconds per pixel) makes it a single
+attempt instead of a walk up the scale ladder — worth setting, since each rung
+the solver walks past is a failed solve. Images with no coordinates are blind
+solved when the folder is marked `astro` or the frontmatter names a telescope.
+
+```toml
++++
+telescope = "Radian 61"
+ra = "21h 18m"
+dec = "+43° 57′"
+pixel_scale = 2.82   # 206.265 × pixel size (µm) ÷ focal length (mm)
++++
+```
+
 When the object catalog changes, regenerate persisted overlays:
 
 ```bash
