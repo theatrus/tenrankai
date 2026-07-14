@@ -20,12 +20,25 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-/// Pixel-scale ladder tried in order; ±35 % tolerance makes the rungs
-/// overlap, covering roughly 0.23–7.5 arcsec/pixel.
-// Down to ~0.1"/px: drizzled or upscaled close-ups land well below
-// native seeing scales (an upscaled M51 solves at 0.16"/px)
-const SCALE_LADDER: &[f64] = &[0.11, 0.19, 0.35, 0.7, 1.4, 2.8, 5.6];
+/// Pixel-scale ladder, in descending order of how often real astrophotos
+/// land on each rung rather than ascending by scale: every rung a solve
+/// walks past costs a full failed attempt, so the common cases go first.
+/// Consecutive rungs are a factor of two apart and ±35 % tolerance makes
+/// them overlap, so the set still covers roughly 0.07–7.5 arcsec/pixel
+/// whatever the order.
+///
+/// - 2.8, 1.4: wide refractors and fast astrographs, the bulk of images
+/// - 0.7, 0.35: long focal lengths and SCTs
+/// - 5.6: camera lenses and wide fields
+/// - 0.19, 0.11: drizzled or upscaled close-ups, well below native seeing
+///   (an upscaled M51 solves at 0.16"/px)
+///
+/// A sidecar `pixel_scale` skips the ladder entirely — prefer setting it.
+const SCALE_LADDER: &[f64] = &[2.8, 1.4, 0.7, 5.6, 0.35, 0.19, 0.11];
 const SCALE_TOLERANCE: f64 = 0.35;
+/// A sidecar-supplied scale is trusted, but resampling and rounding move it
+/// a little, so allow a modest window around it before falling back.
+const HINTED_SCALE_TOLERANCE: f64 = 0.15;
 const SEARCH_RADIUS_DEG: f64 = 2.0;
 /// Images are downsampled to at most this many pixels on the long side
 /// before star detection (centroids are scaled back to full resolution)
@@ -649,6 +662,8 @@ async fn solve_gallery_image(
         }
     };
 
+    // A sidecar pixel scale turns the ladder walk into a single solve
+    let hint_scale = metadata.and_then(|m| m.pixel_scale).filter(|s| *s > 0.0);
     let blind_index = match hint {
         Some(_) => None,
         None => Some(astro.blind_index().await?),
@@ -656,7 +671,7 @@ async fn solve_gallery_image(
     let astro = astro.clone();
     let path_owned = path.to_string();
     let result = tokio::task::spawn_blocking(move || match (hint, blind_index) {
-        (Some(center), _) => solve_bytes(&astro, &bytes, center, &path_owned),
+        (Some(center), _) => solve_bytes(&astro, &bytes, center, hint_scale, &path_owned),
         (None, Some(index)) => solve_bytes_blind(&astro, &bytes, &index, &path_owned),
         (None, None) => None,
     })
@@ -839,19 +854,27 @@ fn solve_bytes(
     astro: &AstroContext,
     bytes: &[u8],
     hint_center: (f64, f64),
+    hint_scale: Option<f64>,
     path: &str,
 ) -> Option<crate::metadata_storage::AstroSolution> {
     let started = std::time::Instant::now();
     let (stars, (width, height)) = detect_in_bytes(bytes, path)?;
 
-    for &scale in SCALE_LADDER {
+    // The sidecar scale (when given) is one solve; the ladder is a fallback
+    // for a wrong or absent one, and each rung it walks is a failed solve
+    let attempts = hint_scale
+        .map(|scale| (scale, HINTED_SCALE_TOLERANCE))
+        .into_iter()
+        .chain(SCALE_LADDER.iter().map(|&s| (s, SCALE_TOLERANCE)));
+
+    for (scale, scale_tolerance) in attempts {
         let hint = SolveHint {
             center: hint_center,
             radius_deg: SEARCH_RADIUS_DEG,
             // Detections were rescaled to full-resolution pixels above, so
             // the ladder scale applies as-is regardless of downsampling
             scale_arcsec_px: scale,
-            scale_tolerance: SCALE_TOLERANCE,
+            scale_tolerance,
         };
         // Solve in full-resolution pixel space
         if let Ok(Solution {
@@ -903,5 +926,32 @@ mod tests {
         assert!((parse_dec("−22° 00′").unwrap() - -22.0).abs() < 1e-6);
         assert!(parse_dec("95").is_none());
         assert!(parse_dec("").is_none());
+    }
+
+    /// Reordering the ladder is only safe if the rungs still overlap: a
+    /// scale that falls in no rung's window can never solve, whatever the
+    /// order. Sorted, each rung's upper reach must meet the next's lower.
+    #[test]
+    fn scale_ladder_rungs_overlap() {
+        let mut sorted = SCALE_LADDER.to_vec();
+        sorted.sort_by(f64::total_cmp);
+        for pair in sorted.windows(2) {
+            let (low, high) = (pair[0], pair[1]);
+            assert!(
+                low * (1.0 + SCALE_TOLERANCE) >= high * (1.0 - SCALE_TOLERANCE),
+                "gap between {low} and {high}: scales in between cannot solve"
+            );
+        }
+    }
+
+    /// The common rungs come first: an image that solves at a typical
+    /// astrophoto scale must not pay for failed fine-scale attempts.
+    #[test]
+    fn scale_ladder_tries_common_scales_first() {
+        assert_eq!(SCALE_LADDER[0], 2.8);
+        assert_eq!(SCALE_LADDER[1], 1.4);
+        let fine = SCALE_LADDER.iter().position(|&s| s <= 0.2).unwrap();
+        let common = SCALE_LADDER.iter().position(|&s| s == 1.4).unwrap();
+        assert!(common < fine, "fine scales must be tried after common ones");
     }
 }

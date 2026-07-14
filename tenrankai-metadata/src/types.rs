@@ -83,6 +83,12 @@ pub struct ImageUserMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dec: Option<String>,
 
+    /// Image scale in arcseconds per pixel, if known (206.265 × pixel size
+    /// in µm ÷ focal length in mm, adjusted for any resampling). Plate
+    /// solving tries this first instead of walking the scale ladder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_scale: Option<f64>,
+
     /// Additional details/notes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_details: Option<String>,
