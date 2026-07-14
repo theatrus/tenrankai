@@ -31,6 +31,13 @@ pub struct Config {
 pub struct AstroConfig {
     /// Star tile file built by `seiza build-data` (SEIZAST1)
     pub star_data: std::path::PathBuf,
+    /// Prebuilt blind pattern index built by `seiza build-blind-index`
+    /// (SEIZABI1), memory-mapped at startup. Without it the index is built
+    /// from `star_data` on the first blind solve, which only covers the
+    /// bright tiers — small, fine-scale fields need the prebuilt index
+    /// (and it must come from the same catalog as `star_data`).
+    #[serde(default)]
+    pub blind_index: Option<std::path::PathBuf>,
     /// Object catalog built by `seiza build-data objects` (SEIZAOB1)
     #[serde(default)]
     pub object_data: Option<std::path::PathBuf>,

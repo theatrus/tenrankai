@@ -40,6 +40,8 @@ pub struct AstroContext {
     transients: Option<ReloadingCatalog>,
     /// Whole-sky pattern index for images with no coordinate hint —
     /// built once, lazily, on the first hint-less solve
+    /// Prebuilt index to memory-map; None builds the bright tiers on demand
+    blind_index_path: Option<std::path::PathBuf>,
     blind_index: tokio::sync::OnceCell<Option<Arc<seiza::blind::BlindIndex>>>,
     /// Comet/asteroid elements; positions depend on the capture time
     minor_bodies: Option<ReloadingMinorBodies>,
@@ -206,6 +208,7 @@ impl AstroContext {
             objects,
             objects_version,
             transients,
+            blind_index_path: config.blind_index.clone(),
             blind_index: tokio::sync::OnceCell::new(),
             minor_bodies,
             failed: RwLock::new(HashMap::new()),
@@ -517,9 +520,10 @@ async fn solution_response(
 /// Decode, detect, and solve one gallery image. Returns None when the image
 /// has no RA/Dec hint or no solution is found.
 /// Blind-solve parameters for the gallery path: the scale range spans the
-/// hinted ladder's coverage, and the magnitude limit keeps the pattern
-/// index a couple of hundred MB instead of multiple GB on deep catalogs.
-fn blind_params() -> seiza::blind::BlindParams {
+/// hinted ladder's coverage. Without a prebuilt index the magnitude limit
+/// keeps an on-demand build to a couple of hundred MB instead of multiple
+/// GB on deep catalogs — at the cost of the fine-scale tiers.
+fn blind_build_params() -> seiza::blind::BlindParams {
     seiza::blind::BlindParams {
         min_scale_arcsec_px: SCALE_LADDER[0] * (1.0 - SCALE_TOLERANCE),
         max_scale_arcsec_px: SCALE_LADDER[SCALE_LADDER.len() - 1] * (1.0 + SCALE_TOLERANCE),
@@ -528,27 +532,70 @@ fn blind_params() -> seiza::blind::BlindParams {
     }
 }
 
+/// Solving must use the depth and pattern extent the index was built with,
+/// whichever way it was obtained.
+fn blind_params(index: &seiza::blind::BlindIndex) -> seiza::blind::BlindParams {
+    seiza::blind::BlindParams {
+        index_mag_limit: index.index_mag_limit(),
+        max_pattern_deg: index.max_pattern_deg(),
+        ..blind_build_params()
+    }
+}
+
 impl AstroContext {
-    /// The blind pattern index, building it on first use (a few seconds).
+    /// The blind pattern index: memory-mapped from the configured file, or
+    /// built from the star catalog on first use (a few seconds).
     async fn blind_index(self: &Arc<Self>) -> Option<Arc<seiza::blind::BlindIndex>> {
         self.blind_index
             .get_or_init(|| async {
                 let astro = self.clone();
                 let built = tokio::task::spawn_blocking(move || {
                     let started = std::time::Instant::now();
-                    let index = seiza::blind::BlindIndex::build(&astro.stars, &blind_params());
+                    if let Some(path) = &astro.blind_index_path {
+                        match seiza::blind::BlindIndex::open(path) {
+                            Ok(index) => {
+                                let built_from = index.source_star_count();
+                                let stars = astro.stars.star_count();
+                                if built_from > 0
+                                    && built_from.max(stars) > 2 * built_from.min(stars)
+                                {
+                                    warn!(
+                                        "astro: blind index {} was built from {built_from} stars \
+                                         but star_data has {stars}; blind solves may fail",
+                                        path.display()
+                                    );
+                                }
+                                info!(
+                                    "astro: blind index mapped from {}: {} patterns (G<={:.1}) in {:.2}s",
+                                    path.display(),
+                                    index.pattern_count(),
+                                    index.index_mag_limit(),
+                                    started.elapsed().as_secs_f64()
+                                );
+                                return Some(Arc::new(index));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "astro: failed to open blind index {}: {e}; building the \
+                                     bright tiers from star_data instead",
+                                    path.display()
+                                );
+                            }
+                        }
+                    }
+                    let index = seiza::blind::BlindIndex::build(&astro.stars, &blind_build_params());
                     info!(
                         "astro: blind index built: {} patterns in {:.1}s",
                         index.pattern_count(),
                         started.elapsed().as_secs_f64()
                     );
-                    Arc::new(index)
+                    Some(Arc::new(index))
                 })
                 .await;
                 match built {
-                    Ok(index) => Some(index),
+                    Ok(index) => index,
                     Err(e) => {
-                        warn!("astro: blind index build panicked: {e}");
+                        warn!("astro: blind index load panicked: {e}");
                         None
                     }
                 }
@@ -766,7 +813,7 @@ fn solve_bytes_blind(
 ) -> Option<crate::metadata_storage::AstroSolution> {
     let started = std::time::Instant::now();
     let (stars, dims) = detect_in_bytes(bytes, path)?;
-    match seiza::blind::solve_blind(&stars, &astro.stars, index, &blind_params(), dims) {
+    match seiza::blind::solve_blind(&stars, &astro.stars, index, &blind_params(index), dims) {
         Ok(Solution {
             wcs,
             matched_stars,
