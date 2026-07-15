@@ -181,7 +181,11 @@ impl AstroContext {
             Some(path) => match ObjectCatalog::open(path) {
                 Ok(catalog) => {
                     let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-                    objects_version = format!("{}:{}", catalog.len(), bytes);
+                    // The `p2` schema tag bumps whenever the persisted overlay
+                    // shape changes (here: added prominence), forcing a
+                    // one-time reprojection even if the catalog file is
+                    // unchanged.
+                    objects_version = format!("p2:{}:{}", catalog.len(), bytes);
                     info!(
                         "astro: {} objects loaded from {} (version {objects_version})",
                         catalog.len(),
@@ -435,6 +439,7 @@ async fn solution_response(
                 "semi_major_px": o.semi_major_px,
                 "semi_minor_px": o.semi_minor_px,
                 "angle_deg": o.angle_deg,
+                "prominence": o.prominence,
             })
         })
         .collect();
@@ -445,7 +450,13 @@ async fn solution_response(
     // default (M31 alone accumulates hundreds of historical novae).
     if let Some(transients) = &astro.transients {
         let catalog = transients.current().await;
-        for p in catalog.objects_in_footprint(&wcs, dims) {
+        let placed = catalog
+            .objects_in_footprint(&wcs, dims)
+            .unwrap_or_else(|e| {
+                warn!("astro: transient footprint query failed: {e}");
+                Vec::new()
+            });
+        for p in placed {
             let discovered = transient_discovery_date(&p.object.common_name);
             let near_capture = match (&discovered, capture_date) {
                 (Some(date), Some(capture)) => chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
@@ -729,10 +740,18 @@ pub(crate) fn placed_objects(
         .objects
         .as_ref()
         .map(|catalog| {
-            catalog
-                .objects_in_footprint(wcs, dims)
+            let placed = catalog.objects_in_footprint(wcs, dims).unwrap_or_else(|e| {
+                warn!("astro: object footprint query failed: {e}");
+                Vec::new()
+            });
+            // objects_in_footprint gives placement but drops the catalog
+            // prominence; a second query over the same footprint recovers it,
+            // joined by name (unique within the catalog).
+            let prominence = object_prominence(catalog, wcs, dims);
+            placed
                 .into_iter()
                 .map(|p| crate::metadata_storage::AstroObject {
+                    prominence: prominence.get(p.object.name.as_str()).copied(),
                     name: p.object.name,
                     common_name: p.object.common_name,
                     kind: p.object.kind.as_str().to_string(),
@@ -743,6 +762,28 @@ pub(crate) fn placed_objects(
                     semi_minor_px: p.semi_minor_px,
                     angle_deg: p.angle_deg,
                 })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Catalog prominence (0–1) keyed by object name for the image footprint.
+/// `objects_in_footprint` computes this internally but returns only placement,
+/// so we re-run the region query to keep the ranking without duplicating the
+/// projection math.
+fn object_prominence(
+    catalog: &ObjectCatalog,
+    wcs: &Wcs,
+    dims: (u32, u32),
+) -> std::collections::HashMap<String, f32> {
+    let region = seiza::objects::SkyRegion::Polygon {
+        vertices: wcs.footprint(dims.0, dims.1).to_vec(),
+    };
+    catalog
+        .query_region(&region, &seiza::objects::ObjectQuery::default())
+        .map(|hits| {
+            hits.into_iter()
+                .map(|h| (h.object.name, h.predicted_prominence as f32))
                 .collect()
         })
         .unwrap_or_default()

@@ -124,6 +124,60 @@ test.describe('astro overlay', () => {
     await expect(svg).toHaveCount(0);
   });
 
+  test('label-density slider thins a crowded field by prominence', async ({ page }) => {
+    // A field with many ranked galaxies: prominence descends with the index.
+    const dense = {
+      solved: true,
+      width: 1600,
+      height: 1200,
+      center: { ra: 202.4, dec: 47.2 },
+      scale_arcsec_px: 1.0,
+      matched_stars: 60,
+      rms_arcsec: 0.9,
+      objects: Array.from({ length: 12 }, (_, i) => ({
+        name: `NGC ${5000 + i}`,
+        common_name: '',
+        kind: 'galaxy',
+        mag: 10 + i,
+        x: 100 + i * 110,
+        y: 200 + (i % 5) * 160,
+        semi_major_px: 30,
+        semi_minor_px: 20,
+        angle_deg: 0,
+        prominence: (12 - i) / 12,
+      })),
+    };
+    await page.route('**/api/gallery/*/astro/**', (route) => route.fulfill({ json: dense }));
+    await page.goto('/g/by-filename');
+    await page
+      .locator('.image-grid.square-grid .image-item')
+      .first()
+      .locator('a.image-link')
+      .click();
+    await expect(page).toHaveURL(/\/g\/detail\//);
+
+    await page.getByRole('button', { name: /Objects \(/ }).click();
+    const svg = page.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg).toBeVisible();
+
+    const slider = page.getByRole('slider', { name: 'Label density' });
+    await expect(slider).toBeVisible();
+
+    // At full density every galaxy is labeled...
+    await slider.fill('1');
+    await expect(svg.locator('text')).toHaveCount(12);
+
+    // ...and at the lowest density only the most prominent handful remain.
+    await slider.fill('0');
+    const low = await svg.locator('text').count();
+    expect(low).toBeLessThan(12);
+    expect(low).toBeGreaterThanOrEqual(4);
+    // The most prominent object survives; the least prominent is dropped.
+    await expect(svg.getByText('NGC 5000')).toBeVisible();
+    await expect(svg.getByText('NGC 5011')).toHaveCount(0);
+    await shot(page, 'astro-overlay-density-low');
+  });
+
   test('toggles work with taps on touch devices', async ({ page, isMobile }) => {
     test.skip(!isMobile, 'touch-specific interaction');
     await openSolvedDetail(page);

@@ -432,6 +432,36 @@ body {
     }
 }
 
+/* Label-density slider: prominence-ranks how many named features are shown */
+.astro-density {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color, rgba(128, 128, 128, 0.4));
+    background: var(--bg-secondary, rgba(128, 128, 128, 0.12));
+    font-size: 0.72rem;
+    color: var(--text-secondary, #999);
+    touch-action: manipulation;
+}
+
+.astro-density input[type='range'] {
+    width: 6rem;
+    accent-color: var(--link-color, #4a9eff);
+    cursor: pointer;
+}
+
+@media (pointer: coarse) {
+    .astro-density {
+        min-height: 44px;
+    }
+    .astro-density input[type='range'] {
+        width: 8rem;
+        height: 24px;
+    }
+}
+
 /* Per-catalog dropdown: a pill-styled popover above the toggle */
 .astro-catalog-menu {
     position: absolute;

@@ -4,6 +4,7 @@ import {
   AstroOverlay,
   AstroSolution,
   CatalogMenu,
+  DEFAULT_LABEL_DENSITY,
   distantTransients,
   catalogGroup,
   useAstroSolution,
@@ -26,6 +27,12 @@ function loadHiddenGroups(): string[] {
   } catch {
     return [];
   }
+}
+
+/** Embeds have no density control; they honor the detail page's setting. */
+function loadDensity(): number {
+  const stored = Number(localStorage.getItem('astro-label-density'));
+  return Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_LABEL_DENSITY;
 }
 
 const EmbedOverlay: React.FC<{ gallery: string; path: string }> = ({ gallery, path }) => {
@@ -114,6 +121,7 @@ const EmbedOverlay: React.FC<{ gallery: string; path: string }> = ({ gallery, pa
             visible
             allTransients={false}
             hiddenGroups={hiddenGroups}
+            density={loadDensity()}
           />
         </span>
       )}
