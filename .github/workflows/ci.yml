@@ -247,7 +247,10 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Install cargo-audit
-      run: cargo install cargo-audit
+      # --locked installs the versions from cargo-audit's own lockfile; without
+      # it, cargo resolves transitive deps (e.g. kstring) to releases whose
+      # MSRV outruns the runner's stable toolchain and the build fails.
+      run: cargo install cargo-audit --locked
 
     - name: Run cargo audit
       run: cargo audit

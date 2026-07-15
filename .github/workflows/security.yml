@@ -30,11 +30,14 @@ jobs:
           key: ${{ runner.os }}-cargo-audit
       
       - name: Install or update cargo-audit
+        # --locked pins cargo-audit's own tested dependency versions; without
+        # it, a transitive dep (e.g. kstring) resolves to a release whose MSRV
+        # exceeds the runner's stable toolchain and the build fails.
         run: |
           if ! command -v cargo-audit &> /dev/null; then
-            cargo install cargo-audit --features=fix
+            cargo install cargo-audit --locked --features=fix
           else
-            cargo install cargo-audit --features=fix --force
+            cargo install cargo-audit --locked --features=fix --force
           fi
       
       - name: Run security audit
