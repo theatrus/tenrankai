@@ -830,7 +830,11 @@ the [seiza](https://crates.io/crates/seiza) plate-solving library:
 - **Plate Solving**: Images with RA/Dec sidecar metadata get on-demand WCS
   solutions, persisted alongside the image metadata
 - **Object Overlays**: Deep-sky objects from a catalog are overlaid on solved
-  images, with zoomable views and touch-friendly controls
+  images, with zoomable views and touch-friendly controls. Objects are ranked
+  by catalog prominence (size, brightness, whether they are named), and a
+  label-density slider trades completeness for legibility on crowded fields.
+  Named sources include NGC/IC/Messier, Sharpless/vdB, LBN, Cederblad, dark
+  nebulae, supernova remnants, and galaxies, each independently toggleable.
 - **Transient Markers**: Live markers (e.g. supernovae) from a separate
   transient catalog, scoped to each image's capture date; the catalog file is
   reloaded automatically when it changes, so a cron job can keep it fresh
@@ -838,14 +842,14 @@ the [seiza](https://crates.io/crates/seiza) plate-solving library:
   field alone, using a prebuilt whole-sky pattern index
 
 Fetch the prebuilt catalogs (`seiza download-data prebuilt --output data`, or
-straight from [downloads.seiza.fyi](https://downloads.seiza.fyi/data/manifest.json))
+straight from the [v2 bundle](https://downloads.seiza.fyi/data/v2/manifest.json))
 and point `config.toml` at them:
 
 ```toml
 [astro]
-star_data = "data/stars-deep-gaia17.bin"    # Star tiles (SEIZAST1)
+star_data = "data/stars-deep-gaia17.bin"    # Star tiles (SEIZAST2)
 blind_index = "data/blind-gaia16.idx"       # Blind pattern index (SEIZABI1, optional)
-object_data = "data/objects.bin"            # Object catalog (SEIZAOB1, optional)
+object_data = "data/objects.bin"            # Object catalog (SEIZAOB3, optional)
 transient_data = "data/transients.bin"      # Transient catalog (optional)
 minor_body_data = "data/minor-bodies.bin"   # Comets + asteroids (optional)
 ```

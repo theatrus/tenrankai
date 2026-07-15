@@ -12,7 +12,12 @@ import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx
 import { VersionPicker } from '../components/ImageDetail/VersionPicker.tsx';
 import { ImageMetadata, CameraMetadata, LocationMetadata, AIMetadata } from '../components/ImageDetail/ImageMetadata.tsx';
 import { AstroSkyMap } from '../components/ImageDetail/AstroSkyMap.tsx';
-import { AstroControls, AstroOverlay, useAstroSolution } from '../components/ImageDetail/AstroOverlay.tsx';
+import {
+  AstroControls,
+  AstroOverlay,
+  DEFAULT_LABEL_DENSITY,
+  useAstroSolution,
+} from '../components/ImageDetail/AstroOverlay.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { EditModal } from '../components/Editor/index.ts';
@@ -131,6 +136,18 @@ export function ImageDetailPage({
     setAstroHiddenGroupsState(groups);
     try {
       localStorage.setItem('astro-hidden-catalogs', JSON.stringify(groups));
+    } catch {
+      /* private mode */
+    }
+  };
+  const [astroDensity, setAstroDensityState] = useState<number>(() => {
+    const stored = Number(localStorage.getItem('astro-label-density'));
+    return Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_LABEL_DENSITY;
+  });
+  const setAstroDensity = (density: number) => {
+    setAstroDensityState(density);
+    try {
+      localStorage.setItem('astro-label-density', String(density));
     } catch {
       /* private mode */
     }
@@ -295,6 +312,7 @@ export function ImageDetailPage({
                       visible={astroVisible}
                       allTransients={astroAllTransients}
                       hiddenGroups={astroHiddenGroups}
+                      density={astroDensity}
                     />
                   ) : undefined
                 }
@@ -305,6 +323,7 @@ export function ImageDetailPage({
                       visible
                       allTransients={astroAllTransients}
                       hiddenGroups={astroHiddenGroups}
+                      density={astroDensity}
                     />
                   ) : undefined
                 }
@@ -322,6 +341,8 @@ export function ImageDetailPage({
               onAllTransientsChange={setAstroAllTransients}
               hiddenGroups={astroHiddenGroups}
               onHiddenGroupsChange={setAstroHiddenGroups}
+              density={astroDensity}
+              onDensityChange={setAstroDensity}
             />
           )}
 

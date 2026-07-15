@@ -10,6 +10,8 @@ interface PlacedObject {
   semi_major_px: number;
   semi_minor_px: number;
   angle_deg: number;
+  /** Catalog prominence 0–1; absent for transients and minor bodies. */
+  prominence?: number | null;
   /** Transients only: ISO discovery date, when known */
   discovered?: string | null;
   /** Transients only: discovered near this image's capture date */
@@ -86,6 +88,8 @@ export function catalogGroup(o: PlacedObject): string {
   const name = o.name;
   if (name.startsWith('PGC')) return 'pgc';
   if (name.startsWith('UGC')) return 'ugc';
+  if (name.startsWith('LBN')) return 'lbn';
+  if (name.startsWith('Ced')) return 'cederblad';
   if (name.startsWith('LDN') || /^B\d/.test(name)) return 'dark-nebulae';
   if (name.startsWith('SNR')) return 'snr';
   if (name.startsWith('WR ')) return 'wr';
@@ -98,6 +102,8 @@ export function catalogGroup(o: PlacedObject): string {
 export const CATALOG_GROUPS: [string, string][] = [
   ['ngc-ic-messier', 'NGC / IC / Messier'],
   ['sharpless-vdb', 'Sharpless / vdB'],
+  ['lbn', 'LBN (bright nebulae)'],
+  ['cederblad', 'Cederblad'],
   ['dark-nebulae', 'Dark nebulae (B / LDN)'],
   ['snr', 'Supernova remnants'],
   ['wr', 'Wolf-Rayet stars'],
@@ -106,6 +112,44 @@ export const CATALOG_GROUPS: [string, string][] = [
   ['pgc', 'PGC galaxies'],
   ['solar-system', 'Comets / asteroids'],
 ];
+
+/** Default label density (0 = only the most prominent, 1 = every object). */
+export const DEFAULT_LABEL_DENSITY = 0.6;
+/** Below this many rankable objects, the density control adds nothing. */
+const DENSITY_FLOOR = 4;
+
+/**
+ * Split the field into the objects to label and the frame-filling ones shown
+ * as a "Field within" caption. Prominence (from the catalog) ranks the named
+ * features so a density budget can keep wide fields legible: transients and
+ * minor bodies have no prominence and are always kept. Shared by the overlay
+ * and the controls so the button count matches what is drawn.
+ */
+export function partitionObjects(
+  solution: AstroSolution,
+  opts: { hiddenGroups: string[]; allTransients: boolean; density: number },
+): { rendered: PlacedObject[]; encompassing: PlacedObject[]; total: number } {
+  const { width, height } = solution;
+  const everything = (solution.objects || []).filter(
+    (o) => !opts.hiddenGroups.includes(catalogGroup(o)),
+  );
+  const distant = distantTransients(solution).filter((o) => everything.includes(o));
+  const all = opts.allTransients ? everything : everything.filter((o) => !distant.includes(o));
+  const encompassing = all.filter((o) => encompassesFrame(o, width, height));
+  const inFrame = all.filter((o) => !encompassing.includes(o));
+
+  const rankable = inFrame
+    .filter((o) => o.prominence != null)
+    .sort((a, b) => (b.prominence as number) - (a.prominence as number));
+  const unrankable = inFrame.filter((o) => o.prominence == null);
+
+  const floor = Math.min(rankable.length, DENSITY_FLOOR);
+  const budget = Math.round(floor + (rankable.length - floor) * opts.density);
+  // Unrankable (transients / comets) first so their labels win collisions,
+  // then the most prominent named features up to the density budget.
+  const rendered = [...unrankable, ...rankable.slice(0, Math.max(floor, budget))];
+  return { rendered, encompassing, total: inFrame.length };
+}
 
 /** Transients not discovered near the capture date (hidden by default). */
 export function distantTransients(solution: AstroSolution): PlacedObject[] {
@@ -120,6 +164,8 @@ interface AstroOverlayProps {
   allTransients: boolean;
   /** Catalog groups (see [`catalogGroup`]) currently hidden */
   hiddenGroups?: string[];
+  /** Label density 0–1: fewer, most-prominent labels → every object. */
+  density?: number;
 }
 
 /** The SVG marker layer. Toggle buttons live in [`AstroControls`]. */
@@ -128,19 +174,18 @@ export function AstroOverlay({
   visible,
   allTransients,
   hiddenGroups = [],
+  density = DEFAULT_LABEL_DENSITY,
 }: AstroOverlayProps) {
 
-  const width = solution.width;
   const height = solution.height;
-  // Transients not discovered near the capture date are noise by default
-  // (M31 accumulates hundreds of historical novae) but can be toggled on
-  const everything = (solution.objects || []).filter(
-    (o) => !hiddenGroups.includes(catalogGroup(o)),
-  );
-  const distant = distantTransients(solution).filter((o) => everything.includes(o));
-  const all = allTransients ? everything : everything.filter((o) => !distant.includes(o));
-  const encompassing = all.filter((o) => encompassesFrame(o, width, height));
-  const objects = all.filter((o) => !encompassing.includes(o));
+  // Prominence-ranked, density-budgeted labels; frame-filling objects become
+  // a caption instead. Transients far from the capture date stay hidden
+  // unless allTransients is set (M31 accumulates hundreds of historical novae).
+  const { rendered: objects, encompassing } = partitionObjects(solution, {
+    hiddenGroups,
+    allTransients,
+    density,
+  });
   const stroke = Math.max(solution.width / 1200, 1.5);
   const fontSize = Math.max(solution.width / 70, 14);
 
@@ -303,6 +348,8 @@ interface AstroControlsProps {
   onAllTransientsChange: (all: boolean) => void;
   hiddenGroups: string[];
   onHiddenGroupsChange: (groups: string[]) => void;
+  density: number;
+  onDensityChange: (density: number) => void;
 }
 
 /**
@@ -317,14 +364,26 @@ export function AstroControls({
   onAllTransientsChange,
   hiddenGroups,
   onHiddenGroupsChange,
+  density,
+  onDensityChange,
 }: AstroControlsProps) {
   const objects = solution.objects || [];
-  const kept = objects.filter((o) => !hiddenGroups.includes(catalogGroup(o)));
-  const distant = distantTransients(solution).filter((o) => kept.includes(o));
-  const shown = allTransients ? kept.length : kept.length - distant.length;
+  const { rendered, total } = partitionObjects(solution, {
+    hiddenGroups,
+    allTransients,
+    density,
+  });
+  const shown = rendered.length;
+  const distant = distantTransients(solution).filter(
+    (o) => !hiddenGroups.includes(catalogGroup(o)),
+  );
   const availableGroups = CATALOG_GROUPS.filter(([id]) =>
     objects.some((o) => catalogGroup(o) === id),
   );
+  // The density control only matters when it can hide something.
+  const rankableTotal = objects.filter(
+    (o) => o.prominence != null && !hiddenGroups.includes(catalogGroup(o)),
+  ).length;
 
   return (
     <div className="control-buttons astro-controls">
@@ -332,7 +391,7 @@ export function AstroControls({
         type="button"
         className={`btn ${visible ? 'btn-primary' : 'btn-secondary'}`}
         onClick={() => onVisibleChange(!visible)}
-        title={`${shown} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
+        title={`${shown} of ${total} objects — solved at ${solution.scale_arcsec_px?.toFixed(2)}″/px`}
       >
         {visible ? 'Objects ✕' : `Objects (${shown})`}
       </button>
@@ -345,6 +404,24 @@ export function AstroControls({
         >
           {allTransients ? 'Hide old transients' : `+${distant.length} old transients`}
         </button>
+      )}
+      {visible && rankableTotal > DENSITY_FLOOR && (
+        <label
+          className="astro-density"
+          title={`Label density — showing ${shown} of ${total}`}
+        >
+          <span aria-hidden="true">Fewer</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={density}
+            onChange={(e) => onDensityChange(Number(e.target.value))}
+            aria-label="Label density"
+          />
+          <span aria-hidden="true">More</span>
+        </label>
       )}
       {visible && availableGroups.length > 1 && (
         <CatalogMenu
