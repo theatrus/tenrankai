@@ -1,22 +1,17 @@
 import { useEffect, useState } from 'react';
+import {
+  partitionOverlayObjects,
+  type OverlayLayerVisibility,
+  type OverlayObject,
+} from '@seiza/astro-overlay';
+import { AstroOverlay as OverlaySvg } from '@seiza/astro-overlay/react';
 
-interface PlacedObject {
-  name: string;
-  common_name: string;
-  kind: string;
-  mag?: number | null;
-  x: number;
-  y: number;
-  semi_major_px: number;
-  semi_minor_px: number;
-  angle_deg: number;
-  /** Catalog prominence 0–1; absent for transients and minor bodies. */
-  prominence?: number | null;
-  /** Transients only: ISO discovery date, when known */
-  discovered?: string | null;
-  /** Transients only: discovered near this image's capture date */
-  near_capture?: boolean;
-}
+/**
+ * One placed object in the overlay API response. The shape is shared with
+ * `@seiza/astro-overlay` (which was modeled on this API): geometry in image
+ * pixels, plus optional precise catalog outlines projected by the server.
+ */
+export type PlacedObject = OverlayObject;
 
 export interface AstroSolution {
   solved: boolean;
@@ -57,30 +52,6 @@ export function useAstroSolution(galleryName: string, imagePath: string): AstroS
   return solution;
 }
 
-/**
- * Renders inside the image display container: a toggle button and, when
- * enabled, an SVG layer drawing the solved objects over the image.
- */
-/** True when the object's ellipse contains the entire image frame. */
-function encompassesFrame(o: PlacedObject, width: number, height: number): boolean {
-  if (o.semi_major_px <= 0) return false;
-  const rad = (o.angle_deg * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return [
-    [0, 0],
-    [width, 0],
-    [width, height],
-    [0, height],
-  ].every(([cx, cy]) => {
-    const dx = cx - o.x;
-    const dy = cy - o.y;
-    const u = (dx * cos + dy * sin) / o.semi_major_px;
-    const v = (-dx * sin + dy * cos) / Math.max(o.semi_minor_px, 1);
-    return u * u + v * v <= 1;
-  });
-}
-
 /** Catalog group of an object, for the per-catalog display toggles. */
 export function catalogGroup(o: PlacedObject): string {
   if (o.kind === 'transient') return 'transients';
@@ -119,36 +90,56 @@ export const DEFAULT_LABEL_DENSITY = 0.6;
 const DENSITY_FLOOR = 4;
 
 /**
+ * The package partitions by its own layer taxonomy; our per-catalog and
+ * historical-transient filtering happens before objects reach it, so every
+ * layer stays enabled and the grid stays off (this overlay has never
+ * drawn one).
+ */
+const ALL_LAYERS: OverlayLayerVisibility = {
+  deep_sky: true,
+  named_stars: true,
+  star_identifiers: true,
+  field_stars: true,
+  transients: true,
+  minor_bodies: true,
+  historical_transients: true,
+  grid: false,
+};
+
+/** Objects that survive the catalog toggles and the historical-transient
+ * default, i.e. everything eligible for rendering. */
+function visibleObjects(
+  solution: AstroSolution,
+  hiddenGroups: string[],
+  allTransients: boolean,
+): PlacedObject[] {
+  const everything = (solution.objects || []).filter(
+    (o) => !hiddenGroups.includes(catalogGroup(o)),
+  );
+  if (allTransients) return everything;
+  const distant = distantTransients(solution);
+  return everything.filter((o) => !distant.includes(o));
+}
+
+/**
  * Split the field into the objects to label and the frame-filling ones shown
  * as a "Field within" caption. Prominence (from the catalog) ranks the named
  * features so a density budget can keep wide fields legible: transients and
- * minor bodies have no prominence and are always kept. Shared by the overlay
- * and the controls so the button count matches what is drawn.
+ * minor bodies have no prominence and are always kept. Delegates to the
+ * shared `@seiza/astro-overlay` partition so the button count always
+ * matches what the packaged renderer draws.
  */
 export function partitionObjects(
   solution: AstroSolution,
   opts: { hiddenGroups: string[]; allTransients: boolean; density: number },
 ): { rendered: PlacedObject[]; encompassing: PlacedObject[]; total: number } {
-  const { width, height } = solution;
-  const everything = (solution.objects || []).filter(
-    (o) => !opts.hiddenGroups.includes(catalogGroup(o)),
+  const { rendered, encompassing, total } = partitionOverlayObjects(
+    visibleObjects(solution, opts.hiddenGroups, opts.allTransients),
+    solution.width,
+    solution.height,
+    { density: opts.density, minimumRankedObjects: DENSITY_FLOOR, layers: ALL_LAYERS },
   );
-  const distant = distantTransients(solution).filter((o) => everything.includes(o));
-  const all = opts.allTransients ? everything : everything.filter((o) => !distant.includes(o));
-  const encompassing = all.filter((o) => encompassesFrame(o, width, height));
-  const inFrame = all.filter((o) => !encompassing.includes(o));
-
-  const rankable = inFrame
-    .filter((o) => o.prominence != null)
-    .sort((a, b) => (b.prominence as number) - (a.prominence as number));
-  const unrankable = inFrame.filter((o) => o.prominence == null);
-
-  const floor = Math.min(rankable.length, DENSITY_FLOOR);
-  const budget = Math.round(floor + (rankable.length - floor) * opts.density);
-  // Unrankable (transients / comets) first so their labels win collisions,
-  // then the most prominent named features up to the density budget.
-  const rendered = [...unrankable, ...rankable.slice(0, Math.max(floor, budget))];
-  return { rendered, encompassing, total: inFrame.length };
+  return { rendered, encompassing, total };
 }
 
 /** Transients not discovered near the capture date (hidden by default). */
@@ -166,177 +157,57 @@ interface AstroOverlayProps {
   hiddenGroups?: string[];
   /** Label density 0–1: fewer, most-prominent labels → every object. */
   density?: number;
+  /** Draw precise catalog outlines (OpenNGC contours) instead of ellipses
+   * for objects that have them. */
+  preciseOutlines?: boolean;
 }
 
-/** The SVG marker layer. Toggle buttons live in [`AstroControls`]. */
+/**
+ * The SVG marker layer, rendered by `@seiza/astro-overlay`. Toggle buttons
+ * live in [`AstroControls`]; this component only maps our per-catalog and
+ * transient filtering onto the package's object list.
+ */
 export function AstroOverlay({
   solution,
   visible,
   allTransients,
   hiddenGroups = [],
   density = DEFAULT_LABEL_DENSITY,
+  preciseOutlines = true,
 }: AstroOverlayProps) {
+  if (!visible) return null;
 
-  const height = solution.height;
-  // Prominence-ranked, density-budgeted labels; frame-filling objects become
-  // a caption instead. Transients far from the capture date stay hidden
-  // unless allTransients is set (M31 accumulates hundreds of historical novae).
-  const { rendered: objects, encompassing } = partitionObjects(solution, {
-    hiddenGroups,
-    allTransients,
-    density,
-  });
-  const stroke = Math.max(solution.width / 1200, 1.5);
-  const fontSize = Math.max(solution.width / 70, 14);
-
-  // Nudge colliding labels apart: labels default above their object; when
-  // two anchors are close, later ones stack further up (or flip below).
-  const labelText = (o: PlacedObject) =>
-    o.common_name && o.common_name !== o.name
-      ? `${o.name} · ${o.common_name}`
-      : o.common_name || o.name;
-  const placedLabels: { x: number; y: number; halfWidth: number }[] = [];
-  const labelY = (o: PlacedObject): number => {
-    const halfWidth = (labelText(o).length * fontSize * 0.55) / 2;
-    const b = Math.max(o.semi_minor_px, fontSize);
-    let y = o.y - b - fontSize * 0.5;
-    let collided = true;
-    let attempts = 0;
-    while (collided && attempts < 6) {
-      collided = placedLabels.some(
-        (l) =>
-          Math.abs(l.y - y) < fontSize * 1.3 && Math.abs(l.x - o.x) < l.halfWidth + halfWidth,
-      );
-      if (collided) {
-        y -= fontSize * 1.4;
-        attempts += 1;
-      }
-    }
-    placedLabels.push({ x: o.x, y, halfWidth });
-    return y;
-  };
+  const objects = visibleObjects(solution, hiddenGroups, allTransients).map((o) =>
+    preciseOutlines || !o.outlines?.length ? o : { ...o, outlines: [] },
+  );
 
   return (
-    <>
-      {visible && (
-        <svg
-          viewBox={`0 0 ${solution.width} ${solution.height}`}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            zIndex: 2,
-            pointerEvents: 'none',
-          }}
-          aria-label="Sky object overlay"
-        >
-          {encompassing.length > 0 && (
-            <text
-              x={fontSize}
-              y={height - fontSize}
-              fontSize={fontSize}
-              fill="#aee8ff"
-              stroke="rgba(0,0,0,0.8)"
-              strokeWidth={fontSize / 10}
-              paintOrder="stroke"
-            >
-              {`Field within: ${encompassing.map(labelText).join(' · ')}`}
-            </text>
-          )}
-          {objects.map((o) => {
-            const isStar = o.kind === 'star';
-            const isTransient = o.kind === 'transient';
-            const isComet = o.kind === 'comet';
-            const isAsteroid = o.kind === 'asteroid';
-            const movingColor = isComet ? '#7bffd0' : '#ffb36b';
-            const label = labelText(o);
-            const a = Math.max(o.semi_major_px, fontSize);
-            const b = Math.max(o.semi_minor_px, fontSize);
-            const y = labelY(o);
-            return (
-              <g key={`${o.name}-${o.x}-${o.y}`}>
-                {isComet || isAsteroid ? (
-                  // Moving bodies: a diamond plus a directional dash — the
-                  // comet's anti-solar tail or the asteroid's motion trail
-                  (() => {
-                    const rad = ((o.angle_deg || 45) * Math.PI) / 180;
-                    const [dx, dy] = [Math.cos(rad), Math.sin(rad)];
-                    return (
-                      <path
-                        d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z M ${o.x + a * 1.3 * dx} ${o.y + a * 1.3 * dy} L ${o.x + a * 3.2 * dx} ${o.y + a * 3.2 * dy}`}
-                        fill="none"
-                        stroke={movingColor}
-                        strokeWidth={stroke * 1.5}
-                      />
-                    );
-                  })()
-                ) : isTransient ? (
-                  <path
-                    d={`M ${o.x} ${o.y - a} L ${o.x + a} ${o.y} L ${o.x} ${o.y + a} L ${o.x - a} ${o.y} Z`}
-                    fill="none"
-                    stroke="#ff7be0"
-                    strokeWidth={stroke * 1.5}
-                  />
-                ) : isStar ? (
-                  <>
-                    <line
-                      x1={o.x - a}
-                      y1={o.y}
-                      x2={o.x - a / 3}
-                      y2={o.y}
-                      stroke="#ffd479"
-                      strokeWidth={stroke}
-                    />
-                    <line
-                      x1={o.x + a / 3}
-                      y1={o.y}
-                      x2={o.x + a}
-                      y2={o.y}
-                      stroke="#ffd479"
-                      strokeWidth={stroke}
-                    />
-                  </>
-                ) : (
-                  <ellipse
-                    cx={0}
-                    cy={0}
-                    rx={a}
-                    ry={b}
-                    transform={`translate(${o.x} ${o.y}) rotate(${o.angle_deg})`}
-                    fill="none"
-                    stroke="#5fd3ff"
-                    strokeWidth={stroke}
-                    opacity={0.85}
-                  />
-                )}
-                <text
-                  x={o.x}
-                  y={y}
-                  textAnchor="middle"
-                  fontSize={fontSize}
-                  fill={
-                    isComet || isAsteroid
-                      ? movingColor
-                      : isTransient
-                        ? '#ff7be0'
-                        : isStar
-                          ? '#ffd479'
-                          : '#aee8ff'
-                  }
-                  stroke="rgba(0,0,0,0.8)"
-                  strokeWidth={fontSize / 10}
-                  paintOrder="stroke"
-                >
-                  {label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      )}
-    </>
+    <OverlaySvg
+      solution={{
+        image_width: solution.width,
+        image_height: solution.height,
+        center_ra_deg: solution.center?.ra,
+        center_dec_deg: solution.center?.dec,
+        pixel_scale_arcsec_per_pixel: solution.scale_arcsec_px,
+        matched_stars: solution.matched_stars,
+        rms_arcsec: solution.rms_arcsec,
+      }}
+      objects={objects}
+      layers={ALL_LAYERS}
+      density={density}
+      minimumRankedObjects={DENSITY_FLOOR}
+      showCenter={false}
+      aria-label="Sky object overlay"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        zIndex: 2,
+        pointerEvents: 'none',
+      }}
+    />
   );
 }
 
@@ -350,6 +221,8 @@ interface AstroControlsProps {
   onHiddenGroupsChange: (groups: string[]) => void;
   density: number;
   onDensityChange: (density: number) => void;
+  preciseOutlines?: boolean;
+  onPreciseOutlinesChange?: (outlines: boolean) => void;
 }
 
 /**
@@ -366,6 +239,8 @@ export function AstroControls({
   onHiddenGroupsChange,
   density,
   onDensityChange,
+  preciseOutlines,
+  onPreciseOutlinesChange,
 }: AstroControlsProps) {
   const objects = solution.objects || [];
   const { rendered, total } = partitionObjects(solution, {
@@ -428,6 +303,8 @@ export function AstroControls({
           solution={solution}
           hiddenGroups={hiddenGroups}
           onHiddenGroupsChange={onHiddenGroupsChange}
+          preciseOutlines={preciseOutlines}
+          onPreciseOutlinesChange={onPreciseOutlinesChange}
         />
       )}
     </div>
@@ -438,6 +315,8 @@ interface CatalogMenuProps {
   solution: AstroSolution;
   hiddenGroups: string[];
   onHiddenGroupsChange: (groups: string[]) => void;
+  preciseOutlines?: boolean;
+  onPreciseOutlinesChange?: (outlines: boolean) => void;
   /** Small pill styling for tight spots (post embeds) */
   compact?: boolean;
 }
@@ -448,6 +327,8 @@ export function CatalogMenu({
   solution,
   hiddenGroups,
   onHiddenGroupsChange,
+  preciseOutlines,
+  onPreciseOutlinesChange,
   compact = false,
 }: CatalogMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -458,6 +339,9 @@ export function CatalogMenu({
   }
   const availableGroups = CATALOG_GROUPS.filter(([id]) => groupCounts.has(id));
   if (availableGroups.length < 2) return null;
+  // The outline toggle only appears when the catalog actually carries
+  // precise outlines for something in this field.
+  const outlined = (solution.objects || []).filter((o) => o.outlines?.length).length;
 
   const toggleGroup = (id: string) => {
     onHiddenGroupsChange(
@@ -518,6 +402,19 @@ export function CatalogMenu({
               </span>
             </label>
           ))}
+          {onPreciseOutlinesChange && outlined > 0 && (
+            <label
+              className="astro-catalog-item astro-outline-item"
+              title="Draw catalog brightness contours instead of ellipses where available"
+            >
+              <input
+                type="checkbox"
+                checked={preciseOutlines !== false}
+                onChange={() => onPreciseOutlinesChange(preciseOutlines === false)}
+              />
+              <span>Precise outlines ({outlined})</span>
+            </label>
+          )}
         </span>
       )}
     </span>

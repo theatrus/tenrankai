@@ -47,6 +47,17 @@ const EmbedOverlay: React.FC<{ gallery: string; path: string }> = ({ gallery, pa
       /* private mode */
     }
   };
+  const [preciseOutlines, setPreciseOutlinesState] = useState<boolean>(
+    () => localStorage.getItem('astro-precise-outlines') !== 'false',
+  );
+  const setPreciseOutlines = (outlines: boolean) => {
+    setPreciseOutlinesState(outlines);
+    try {
+      localStorage.setItem('astro-precise-outlines', String(outlines));
+    } catch {
+      /* private mode */
+    }
+  };
 
   if (!solution) return null;
   const kept = (solution.objects || []).filter((o) => !hiddenGroups.includes(catalogGroup(o)));
@@ -77,6 +88,8 @@ const EmbedOverlay: React.FC<{ gallery: string; path: string }> = ({ gallery, pa
             solution={solution}
             hiddenGroups={hiddenGroups}
             onHiddenGroupsChange={setHiddenGroups}
+            preciseOutlines={preciseOutlines}
+            onPreciseOutlinesChange={setPreciseOutlines}
             compact
           />
         )}
@@ -122,6 +135,7 @@ const EmbedOverlay: React.FC<{ gallery: string; path: string }> = ({ gallery, pa
             allTransients={false}
             hiddenGroups={hiddenGroups}
             density={loadDensity()}
+            preciseOutlines={preciseOutlines}
           />
         </span>
       )}

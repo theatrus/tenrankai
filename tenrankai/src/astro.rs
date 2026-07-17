@@ -181,11 +181,11 @@ impl AstroContext {
             Some(path) => match ObjectCatalog::open(path) {
                 Ok(catalog) => {
                     let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-                    // The `p2` schema tag bumps whenever the persisted overlay
-                    // shape changes (here: added prominence), forcing a
-                    // one-time reprojection even if the catalog file is
-                    // unchanged.
-                    objects_version = format!("p2:{}:{}", catalog.len(), bytes);
+                    // The `p3` schema tag bumps whenever the persisted overlay
+                    // shape changes (here: optional angle_deg and stable_id),
+                    // forcing a one-time reprojection even if the catalog file
+                    // is unchanged.
+                    objects_version = format!("p3:{}:{}", catalog.len(), bytes);
                     info!(
                         "astro: {} objects loaded from {} (version {objects_version})",
                         catalog.len(),
@@ -429,6 +429,16 @@ async fn solution_response(
         .objects
         .iter()
         .map(|o| {
+            // Precise catalog outlines (e.g. OpenNGC contours) are projected
+            // live rather than persisted: they are large, and reprojecting
+            // through the stored WCS keeps sidecars small and outlines
+            // current across catalog updates.
+            let outlines = o
+                .stable_id
+                .as_deref()
+                .zip(astro.objects.as_ref())
+                .map(|(id, catalog)| projected_outlines(catalog, id, &wcs))
+                .unwrap_or_default();
             serde_json::json!({
                 "name": o.name,
                 "common_name": o.common_name,
@@ -439,7 +449,9 @@ async fn solution_response(
                 "semi_major_px": o.semi_major_px,
                 "semi_minor_px": o.semi_minor_px,
                 "angle_deg": o.angle_deg,
+                "stable_id": o.stable_id,
                 "prominence": o.prominence,
+                "outlines": outlines,
             })
         })
         .collect();
@@ -514,6 +526,7 @@ async fn solution_response(
                 "semi_major_px": 0.0,
                 "semi_minor_px": 0.0,
                 "angle_deg": angle_deg.unwrap_or(0.0),
+                "direction_angle_deg": angle_deg,
                 "near_capture": true,
             }));
         }
@@ -752,6 +765,8 @@ pub(crate) fn placed_objects(
                 .into_iter()
                 .map(|p| crate::metadata_storage::AstroObject {
                     prominence: prominence.get(p.object.name.as_str()).copied(),
+                    stable_id: (!p.object.metadata.id.is_empty())
+                        .then(|| p.object.metadata.id.clone()),
                     name: p.object.name,
                     common_name: p.object.common_name,
                     kind: p.object.kind.as_str().to_string(),
@@ -765,6 +780,49 @@ pub(crate) fn placed_objects(
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Project an object's precise catalog outline geometry (OpenNGC brightness
+/// contours in the v4 catalog) into pixel coordinates. Contours whose
+/// vertices do not all project (behind the tangent plane) are dropped, as
+/// are degenerate ones; objects without outline geometry yield an empty
+/// list and render as ellipses.
+fn projected_outlines(
+    catalog: &ObjectCatalog,
+    canonical_id: &str,
+    wcs: &Wcs,
+) -> Vec<serde_json::Value> {
+    let Ok(geometries) = catalog.geometries(canonical_id) else {
+        return Vec::new();
+    };
+    geometries
+        .into_iter()
+        .filter_map(|geometry| {
+            let seiza::objects::GeometryData::OutlineSet { level, contours } = geometry.data else {
+                return None;
+            };
+            let contours: Vec<serde_json::Value> = contours
+                .into_iter()
+                .filter_map(|contour| {
+                    let points = contour
+                        .vertices
+                        .into_iter()
+                        .map(|(ra, dec)| wcs.world_to_pixel(ra, dec).map(|(x, y)| [x, y]))
+                        .collect::<Option<Vec<_>>>()?;
+                    let minimum_points = if contour.closed { 3 } else { 2 };
+                    (points.len() >= minimum_points)
+                        .then(|| serde_json::json!({ "closed": contour.closed, "points": points }))
+                })
+                .collect();
+            (!contours.is_empty()).then(|| {
+                serde_json::json!({
+                    "geometry_id": geometry.id,
+                    "level": level,
+                    "contours": contours,
+                })
+            })
+        })
+        .collect()
 }
 
 /// Catalog prominence (0–1) keyed by object name for the image footprint.
