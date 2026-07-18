@@ -42,3 +42,6 @@ TODO.md
 /static/dist/
 static/admin/
 .cache/
+
+# Playwright artifacts from bare runs
+test-results/
