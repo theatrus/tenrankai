@@ -157,13 +157,27 @@ impl AstroContext {
 
     /// Load catalogs from the configured data files. Returns None (with a
     /// warning) when loading fails so a bad path cannot take the site down.
+    ///
+    /// Paths resolve through `seiza::data_paths`: an explicit per-kind key
+    /// wins, then the shared `data` directory, and the star catalog and
+    /// blind index also fall back to seiza's standard locations. The
+    /// annotation catalogs are optional — absent from the `data` directory
+    /// just means that layer stays off.
     pub fn load(config: &crate::config::AstroConfig) -> Option<Arc<Self>> {
-        let stars = match TileCatalog::open(&config.star_data) {
+        let data = config.data.as_deref();
+        let star_path = match seiza::data_paths::star_data(config.star_data.as_deref().or(data)) {
+            Ok(path) => path,
+            Err(e) => {
+                warn!("astro: {e}; plate solving disabled");
+                return None;
+            }
+        };
+        let stars = match TileCatalog::open(&star_path) {
             Ok(catalog) => {
                 info!(
                     "astro: {} stars loaded from {} (epoch {})",
                     catalog.star_count(),
-                    config.star_data.display(),
+                    star_path.display(),
                     catalog.epoch()
                 );
                 catalog
@@ -171,13 +185,36 @@ impl AstroContext {
             Err(e) => {
                 warn!(
                     "astro: failed to open star data {}: {e}; plate solving disabled",
-                    config.star_data.display()
+                    star_path.display()
                 );
                 return None;
             }
         };
+        let blind_index_path =
+            match seiza::data_paths::blind_index(config.blind_index.as_deref().or(data)) {
+                Ok(path) => path,
+                Err(e) => {
+                    warn!("astro: {e}; blind solving will build an in-memory bright index");
+                    None
+                }
+            };
+        let object_path = optional_catalog(
+            config.object_data.as_deref(),
+            data,
+            seiza::data_paths::objects,
+        );
+        let transient_path = optional_catalog(
+            config.transient_data.as_deref(),
+            data,
+            seiza::data_paths::transients,
+        );
+        let minor_body_path = optional_catalog(
+            config.minor_body_data.as_deref(),
+            data,
+            seiza::data_paths::minor_bodies,
+        );
         let mut objects_version = String::new();
-        let objects = match &config.object_data {
+        let objects = match &object_path {
             Some(path) => match ObjectCatalog::open(path) {
                 Ok(catalog) => {
                     let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -200,14 +237,14 @@ impl AstroContext {
             },
             None => None,
         };
-        let transients = config.transient_data.as_deref().and_then(|path| {
+        let transients = transient_path.as_deref().and_then(|path| {
             let catalog = ReloadingCatalog::open(path);
             if catalog.is_none() {
                 warn!("astro: failed to open transient data {}", path.display());
             }
             catalog
         });
-        let minor_bodies = config.minor_body_data.as_deref().and_then(|path| {
+        let minor_bodies = minor_body_path.as_deref().and_then(|path| {
             let catalog = ReloadingMinorBodies::open(path);
             match &catalog {
                 Some(c) => info!(
@@ -225,11 +262,34 @@ impl AstroContext {
             objects,
             objects_version,
             transients,
-            blind_index_path: config.blind_index.clone(),
+            blind_index_path,
             blind_index: tokio::sync::OnceCell::new(),
             minor_bodies,
             failed: RwLock::new(HashMap::new()),
         }))
+    }
+}
+
+/// Resolve an optional annotation catalog: an explicit key must resolve
+/// (a warning disables the layer), the shared `data` directory is searched
+/// quietly, and with neither the layer stays off.
+fn optional_catalog(
+    explicit: Option<&std::path::Path>,
+    data: Option<&std::path::Path>,
+    resolve: impl Fn(
+        Option<&std::path::Path>,
+    ) -> Result<std::path::PathBuf, seiza::data_paths::DataPathError>,
+) -> Option<std::path::PathBuf> {
+    match (explicit, data) {
+        (Some(path), _) => match resolve(Some(path)) {
+            Ok(path) => Some(path),
+            Err(e) => {
+                warn!("astro: {e}");
+                None
+            }
+        },
+        (None, Some(dir)) => resolve(Some(dir)).ok(),
+        (None, None) => None,
     }
 }
 
@@ -361,6 +421,7 @@ pub async fn astro_handler(
                 crval: (solution.crval[0], solution.crval[1]),
                 crpix: (solution.crpix[0], solution.crpix[1]),
                 cd: solution.cd,
+                sip: None,
             };
             let mut updated = solution.clone();
             updated.objects = placed_objects(&astro, &wcs, (solution.width, solution.height));
@@ -420,6 +481,7 @@ async fn solution_response(
         crval: (solution.crval[0], solution.crval[1]),
         crpix: (solution.crpix[0], solution.crpix[1]),
         cd: solution.cd,
+        sip: None,
     };
     let dims = (solution.width, solution.height);
     let (center_ra, center_dec) = wcs.pixel_to_world(dims.0 as f64 / 2.0, dims.1 as f64 / 2.0);
@@ -974,6 +1036,9 @@ fn solve_bytes(
             // the ladder scale applies as-is regardless of downsampling
             scale_arcsec_px: scale,
             scale_tolerance,
+            // The persisted sidecar schema stores a linear WCS; SIP terms
+            // would be lost, so the overlay solves stay linear
+            sip_order: 0,
         };
         // Solve in full-resolution pixel space
         if let Ok(Solution {
