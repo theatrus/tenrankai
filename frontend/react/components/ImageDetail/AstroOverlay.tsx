@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   partitionOverlayObjects,
+  suggestedDeepSkyColorForObject,
   type OverlayLayerVisibility,
   type OverlayObject,
 } from '@seiza/astro-overlay';
@@ -196,6 +197,7 @@ export function AstroOverlay({
       layers={ALL_LAYERS}
       density={density}
       minimumRankedObjects={DENSITY_FLOOR}
+      colorForObject={suggestedDeepSkyColorForObject}
       showCenter={false}
       aria-label="Sky object overlay"
       style={{

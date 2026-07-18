@@ -522,12 +522,6 @@ body {
     border-radius: 0;
 }
 
-/* The packaged overlay labels deep-sky objects in the marker color;
-   production has always used a softer blue for those labels */
-.seiza-overlay g[data-layer='deep_sky'] .seiza-overlay__label {
-    fill: #aee8ff;
-}
-
 .nav-hint-container {
     margin-top: var(--spacing-sm);
 }
