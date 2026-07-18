@@ -239,6 +239,51 @@ test.describe('astro overlay', () => {
     await shot(page, 'astro-overlay-outlines-off');
   });
 
+  test('deep-sky markers are colored by catalog family', async ({ page }) => {
+    // One object per catalog family; stars keep the theme color.
+    const mixed = {
+      ...SOLUTION,
+      objects: [
+        { ...SOLUTION.objects[0] },
+        { ...SOLUTION.objects[0], name: 'M 31', x: 150, y: 100 },
+        { ...SOLUTION.objects[0], name: 'IC 5070', kind: 'nebula', x: 650, y: 100 },
+        { ...SOLUTION.objects[0], name: 'Sh2-101', kind: 'nebula', x: 650, y: 500 },
+        { ...SOLUTION.objects[1] },
+      ],
+    };
+    await page.route('**/api/gallery/*/astro/**', (route) =>
+      route.fulfill({ json: mixed }),
+    );
+    await page.goto('/g/by-filename');
+    await page
+      .locator('.image-grid.square-grid .image-item')
+      .first()
+      .locator('a.image-link')
+      .click();
+    await expect(page).toHaveURL(/\/g\/detail\//);
+
+    await page.getByRole('button', { name: /Objects \(/ }).click();
+    const svg = page.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg).toBeVisible();
+
+    // The suggested seiza palette separates catalogs by color, applied to
+    // marker and label alike (no CSS override may flatten the labels)
+    const labelFill = (name: string) =>
+      svg.locator('.seiza-overlay__label', { hasText: name }).getAttribute('fill');
+    expect(await labelFill('NGC 224')).toBe('#55cfff');
+    expect(await labelFill('M 31')).toBe('#f2ca72');
+    expect(await labelFill('IC 5070')).toBe('#72dfb9');
+    expect(await labelFill('Sh2-101')).toBe('#ee9a78');
+    const ngcGroup = svg.locator('g[data-kind="galaxy"]', { hasText: 'NGC 224' });
+    await expect(ngcGroup.locator('.seiza-overlay__marker')).toHaveAttribute(
+      'stroke',
+      '#55cfff',
+    );
+    // The WR star is not a deep-sky object: it stays on the theme color
+    expect(await labelFill('WR 134')).toContain('var(');
+    await shot(page, 'astro-overlay-catalog-colors');
+  });
+
   test('toggles work with taps on touch devices', async ({ page, isMobile }) => {
     test.skip(!isMobile, 'touch-specific interaction');
     await openSolvedDetail(page);
