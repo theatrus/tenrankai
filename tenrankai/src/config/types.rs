@@ -26,11 +26,26 @@ pub struct Config {
 }
 
 /// Plate-solving data configuration (`[astro]`).
+///
+/// Paths resolve through `seiza::data_paths`, the same rules as the seiza
+/// CLI's `--data`: each key takes a file or a directory (a directory picks
+/// the right catalog inside). `data` names one directory for everything;
+/// the per-kind keys override it. With neither `data` nor `star_data` set,
+/// the star catalog and blind index are searched for in seiza's standard
+/// locations (`SEIZA_STAR_DATA`, `SEIZA_BLIND_INDEX`, `seiza setup`
+/// directories); the annotation catalogs stay disabled unless configured.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AstroConfig {
-    /// Star tile file built by `seiza build-data` (SEIZAST1)
-    pub star_data: std::path::PathBuf,
+    /// Directory holding every catalog (star tiles, blind index, objects,
+    /// transients, minor bodies), e.g. the `seiza download-data prebuilt`
+    /// output directory
+    #[serde(default)]
+    pub data: Option<std::path::PathBuf>,
+    /// Star tile catalog built by `seiza build-data` (SEIZAST1);
+    /// overrides `data`
+    #[serde(default)]
+    pub star_data: Option<std::path::PathBuf>,
     /// Prebuilt blind pattern index built by `seiza build-blind-index`
     /// (SEIZABI1), memory-mapped at startup. Without it the index is built
     /// from `star_data` on the first blind solve, which only covers the

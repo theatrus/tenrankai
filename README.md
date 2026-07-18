@@ -852,12 +852,28 @@ and point `config.toml` at them:
 
 ```toml
 [astro]
-star_data = "data/stars-deep-gaia17.bin"    # Star tiles (SEIZAST2)
+data = "data"     # One directory with every catalog; seiza picks the files
+```
+
+`data` resolves like the seiza CLI's `--data`: the deepest star catalog in
+the directory wins, and the blind index, object, transient, and minor-body
+catalogs are picked up when present. Every kind also has an explicit key
+that overrides the directory:
+
+```toml
+[astro]
+data = "data"
+star_data = "data/stars-lite-tycho2.bin"    # Star tiles (SEIZAST2)
 blind_index = "data/blind-gaia16.idx"       # Blind pattern index (SEIZABI1, optional)
 object_data = "data/objects.bin"            # Object catalog (v4/SEIZAOB, optional)
 transient_data = "data/transients.bin"      # Transient catalog (optional)
 minor_body_data = "data/minor-bodies.bin"   # Comets + asteroids (optional)
 ```
+
+With neither `data` nor `star_data` set, the star catalog and blind index
+are searched for in seiza's standard locations (`SEIZA_STAR_DATA`,
+`SEIZA_BLIND_INDEX`, the `seiza setup` directories); the annotation
+catalogs stay off unless configured.
 
 `blind_index` is memory-mapped at first use and must come from the same
 catalog as `star_data`. Without it the index is built on demand from

@@ -65,6 +65,7 @@ pub async fn handle_regen_command(
             crval: (solution.crval[0], solution.crval[1]),
             crpix: (solution.crpix[0], solution.crpix[1]),
             cd: solution.cd,
+            sip: None,
         };
         let mut updated = solution.clone();
         updated.objects =
