@@ -443,7 +443,16 @@ pub struct AstroObject {
     pub y: f64,
     pub semi_major_px: f64,
     pub semi_minor_px: f64,
-    pub angle_deg: f64,
+    /// None when the catalog gives an asymmetric extent without a position
+    /// angle: such an ellipse has no renderable orientation, so it must be
+    /// drawn as a conservative circle of the major axis, never at an
+    /// assumed rotation.
+    #[serde(default)]
+    pub angle_deg: Option<f64>,
+    /// Stable catalog identity (seiza `ObjectMetadata::id`); keys detail
+    /// lookups such as precise outline geometry at serve time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_id: Option<String>,
     /// Catalog prominence 0–1 (size/brightness/naming heuristic from seiza);
     /// drives which named features are labeled first. Absent for transients
     /// and minor bodies, which are ranked by recency and motion instead.

@@ -515,6 +515,19 @@ body {
     }
 }
 
+/* The precise-outline toggle sits apart from the catalog checkboxes */
+.astro-outline-item {
+    margin-top: 0.25rem;
+    border-top: 1px solid var(--border-color, rgba(128, 128, 128, 0.4));
+    border-radius: 0;
+}
+
+/* The packaged overlay labels deep-sky objects in the marker color;
+   production has always used a softer blue for those labels */
+.seiza-overlay g[data-layer='deep_sky'] .seiza-overlay__label {
+    fill: #aee8ff;
+}
+
 .nav-hint-container {
     margin-top: var(--spacing-sm);
 }

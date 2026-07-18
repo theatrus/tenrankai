@@ -152,6 +152,17 @@ export function ImageDetailPage({
       /* private mode */
     }
   };
+  const [astroOutlines, setAstroOutlinesState] = useState<boolean>(
+    () => localStorage.getItem('astro-precise-outlines') !== 'false',
+  );
+  const setAstroOutlines = (outlines: boolean) => {
+    setAstroOutlinesState(outlines);
+    try {
+      localStorage.setItem('astro-precise-outlines', String(outlines));
+    } catch {
+      /* private mode */
+    }
+  };
 
   // Modal state for editing image info
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -313,6 +324,7 @@ export function ImageDetailPage({
                       allTransients={astroAllTransients}
                       hiddenGroups={astroHiddenGroups}
                       density={astroDensity}
+                      preciseOutlines={astroOutlines}
                     />
                   ) : undefined
                 }
@@ -324,6 +336,7 @@ export function ImageDetailPage({
                       allTransients={astroAllTransients}
                       hiddenGroups={astroHiddenGroups}
                       density={astroDensity}
+                      preciseOutlines={astroOutlines}
                     />
                   ) : undefined
                 }
@@ -343,6 +356,8 @@ export function ImageDetailPage({
               onHiddenGroupsChange={setAstroHiddenGroups}
               density={astroDensity}
               onDensityChange={setAstroDensity}
+              preciseOutlines={astroOutlines}
+              onPreciseOutlinesChange={setAstroOutlines}
             />
           )}
 

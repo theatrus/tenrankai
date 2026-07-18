@@ -178,6 +178,67 @@ test.describe('astro overlay', () => {
     await shot(page, 'astro-overlay-density-low');
   });
 
+  test('precise catalog outlines render and can be toggled back to ellipses', async ({
+    page,
+  }) => {
+    // One nebula with OpenNGC-style brightness contours, one without.
+    const outlined = {
+      ...SOLUTION,
+      objects: [
+        {
+          ...SOLUTION.objects[0],
+          name: 'NGC 7000',
+          common_name: 'North America Nebula',
+          kind: 'nebula',
+          outlines: [
+            {
+              geometry_id: 'openngc-outline:NGC7000_lv1.txt',
+              level: 'level-1',
+              contours: [
+                {
+                  closed: true,
+                  points: [
+                    [200, 100],
+                    [600, 120],
+                    [560, 480],
+                    [220, 460],
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        { ...SOLUTION.objects[1] },
+      ],
+    };
+    await page.route('**/api/gallery/*/astro/**', (route) =>
+      route.fulfill({ json: outlined }),
+    );
+    await page.goto('/g/by-filename');
+    await page
+      .locator('.image-grid.square-grid .image-item')
+      .first()
+      .locator('a.image-link')
+      .click();
+    await expect(page).toHaveURL(/\/g\/detail\//);
+
+    await page.getByRole('button', { name: /Objects \(/ }).click();
+    const svg = page.locator('svg[aria-label="Sky object overlay"]');
+    await expect(svg).toBeVisible();
+
+    // The precise contour replaces the ellipse for the outlined nebula
+    await expect(svg.locator('.seiza-overlay__marker--outline')).toHaveCount(1);
+    await expect(svg.locator('ellipse')).toHaveCount(0);
+    await shot(page, 'astro-overlay-outlines');
+
+    // The catalog menu offers the outline toggle; ellipses come back
+    await page.getByRole('button', { name: /Catalogs/ }).click();
+    await page.locator('.astro-outline-item').click();
+    await expect(svg.locator('.seiza-overlay__marker--outline')).toHaveCount(0);
+    await expect(svg.locator('ellipse')).toHaveCount(1);
+    await shot(page, 'astro-overlay-outlines-off');
+  });
+
   test('toggles work with taps on touch devices', async ({ page, isMobile }) => {
     test.skip(!isMobile, 'touch-specific interaction');
     await openSolvedDetail(page);

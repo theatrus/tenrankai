@@ -22,6 +22,7 @@
     "help": "echo 'Development: npm run dev (+ cargo run in another terminal)'"
   },
   "dependencies": {
+    "@seiza/astro-overlay": "0.2.0",
     "@tiptap/core": "^3.22.5",
     "@tiptap/extension-image": "^3.27.1",
     "@tiptap/extension-link": "^3.23.6",
