@@ -1,41 +1,21 @@
-# Dependabot configuration for automated dependency updates
 version: 2
 updates:
-  # Rust dependencies
-  - package-ecosystem: "cargo"
-    directory: "/"
+  - package-ecosystem: cargo
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "rust"
-    commit-message:
-      prefix: "chore"
-      prefix-development: "chore"
-      include: "scope"
-    # Group minor and patch updates together
+      interval: weekly
     groups:
-      minor-and-patch:
+      cargo-dependencies:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
-    # But keep major updates separate
-  # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "github-actions"
-    commit-message:
-      prefix: "ci"
-      include: "scope"
+      interval: weekly
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

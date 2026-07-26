@@ -118,7 +118,7 @@ jobs:
       shell: powershell
 
     - name: Install Rust (use rust-toolchain.toml)
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.97.1
       # Note: When rust-toolchain.toml is present, it takes precedence
       # The 'with' section is ignored when rust-toolchain.toml exists
 
@@ -196,7 +196,7 @@ jobs:
       run: npm run build
 
     - name: Install Rust (use rust-toolchain.toml)
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.97.1
 
     - name: Cache cargo registry
       uses: actions/cache@v6

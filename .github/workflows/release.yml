@@ -118,7 +118,7 @@ jobs:
         npm run build:prod
 
     - name: Install Rust (use rust-toolchain.toml)
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.97.1
       with:
         target: ${{ matrix.target }}
         # Note: rust-toolchain.toml specifies the version, components are installed automatically
