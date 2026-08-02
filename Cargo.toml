@@ -19,7 +19,7 @@ repository = "https://github.com/theatrus/tenrankai"
 [workspace.dependencies]
 # Shared dependencies with consistent versions
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
@@ -114,7 +114,7 @@ tenrankai-config-storage = { path = "tenrankai-config-storage" }
 tenrankai-email = { path = "tenrankai-email" }
 tenrankai-image = { path = "tenrankai-image" }
 tenrankai-metadata = { path = "tenrankai-metadata" }
-seiza = "0.10.0"
+seiza = "0.12.2"
 tenrankai-storage = { path = "tenrankai-storage" }
 tenrankai-users = { path = "tenrankai-users" }
 
