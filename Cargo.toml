@@ -71,7 +71,7 @@ webp = { version = "0.3", features = ["img"] }
 libwebp-sys = "0.14"
 libavif = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif-v2", default-features = false, features = ["codec-aom"] }
 libavif-sys = { git = "https://github.com/theatrus/libavif-rs", branch = "new-libavif-v2", default-features = false, features = ["codec-aom"] }
-libheif-rs = "2.7"
+libheif-rs = "3.0"
 rgb = "0.8"
 
 # EXIF and metadata
@@ -114,7 +114,7 @@ tenrankai-config-storage = { path = "tenrankai-config-storage" }
 tenrankai-email = { path = "tenrankai-email" }
 tenrankai-image = { path = "tenrankai-image" }
 tenrankai-metadata = { path = "tenrankai-metadata" }
-seiza = "0.15.1"
+seiza = "0.16.0"
 tenrankai-storage = { path = "tenrankai-storage" }
 tenrankai-users = { path = "tenrankai-users" }
 
