@@ -47,9 +47,8 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 let tag_name = e.name();
-                let tag_str = String::from_utf8_lossy(tag_name.as_ref());
 
-                match tag_str.as_ref() {
+                match tag_name.as_ref() {
                     "dc:title" => {
                         in_title = true;
                     }
@@ -57,42 +56,42 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
                         in_description = true;
                     }
                     "exif:Make" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.camera_make = Some(value);
                         }
                     }
                     "exif:Model" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.camera_model = Some(value);
                         }
                     }
                     "exif:LensModel" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.lens_model = Some(value);
                         }
                     }
                     "exif:ISOSpeedRatings" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.iso = value.parse().ok();
                         }
                     }
                     "exif:FNumber" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.aperture = Some(format!("f/{}", value));
                         }
                     }
                     "exif:ExposureTime" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.shutter_speed = Some(value);
                         }
                     }
                     "exif:FocalLength" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource") {
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource") {
                             metadata.focal_length = Some(format!("{} mm", value));
                         }
                     }
                     "exif:DateTimeOriginal" => {
-                        if let Some(value) = get_attribute_value(&e, b"rdf:resource")
+                        if let Some(value) = get_attribute_value(&e, "rdf:resource")
                             && let Ok(dt) = DateTime::parse_from_rfc3339(&value)
                         {
                             metadata.capture_date = Some(SystemTime::from(dt));
@@ -103,10 +102,10 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
             }
             Ok(Event::Text(e)) => {
                 if in_title {
-                    metadata.title = Some(e.decode().unwrap_or_default().to_string());
+                    metadata.title = Some(e.to_string());
                     in_title = false;
                 } else if in_description {
-                    metadata.description = Some(e.decode().unwrap_or_default().to_string());
+                    metadata.description = Some(e.to_string());
                     in_description = false;
                 }
             }
@@ -124,11 +123,11 @@ fn parse_xmp_content(content: &str) -> Option<XmpMetadata> {
     Some(metadata)
 }
 
-fn get_attribute_value(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option<String> {
+fn get_attribute_value(e: &quick_xml::events::BytesStart, name: &str) -> Option<String> {
     e.attributes()
         .filter_map(|a| a.ok())
         .find(|a| a.key.as_ref() == name)
-        .map(|a| String::from_utf8_lossy(&a.value).to_string())
+        .map(|a| a.value.to_string())
 }
 
 /// Merge metadata from multiple sources with priority:
@@ -453,14 +452,14 @@ mod tests {
         let mut buf = Vec::new();
         if let Ok(Event::Empty(e)) = reader.read_event_into(&mut buf) {
             assert_eq!(
-                get_attribute_value(&e, b"rdf:resource"),
+                get_attribute_value(&e, "rdf:resource"),
                 Some("Canon".to_string())
             );
             assert_eq!(
-                get_attribute_value(&e, b"other:attr"),
+                get_attribute_value(&e, "other:attr"),
                 Some("value".to_string())
             );
-            assert_eq!(get_attribute_value(&e, b"nonexistent"), None);
+            assert_eq!(get_attribute_value(&e, "nonexistent"), None);
         }
     }
 }
