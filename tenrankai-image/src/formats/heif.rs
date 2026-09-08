@@ -298,13 +298,13 @@ fn parse_xmp_gain_map_metadata(xmp_data: &[u8]) -> Option<XmpGainMapMetadata> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
                 let name_bytes = e.name();
-                let name = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
+                let name: &str = name_bytes.as_ref();
 
                 // Check for rdf:Description with hdrgm attributes (ISO 21496-1 format)
                 if name == "rdf:Description" {
                     for attr in e.attributes().flatten() {
-                        let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
-                        let value = std::str::from_utf8(&attr.value).unwrap_or("");
+                        let key: &str = attr.key.as_ref();
+                        let value: &str = &attr.value;
 
                         match key {
                             "hdrgm:GainMapMin" => {
@@ -343,9 +343,8 @@ fn parse_xmp_gain_map_metadata(xmp_data: &[u8]) -> Option<XmpGainMapMetadata> {
             Ok(Event::Text(e)) => {
                 // Handle Apple's HDRGainMap format where values are element content
                 if let Some(ref elem) = current_element {
-                    // Convert BytesText to string (quick-xml 0.39 API)
-                    let text_bytes = e.as_ref();
-                    if let Ok(value_str) = std::str::from_utf8(text_bytes) {
+                    {
+                        let value_str: &str = &e;
                         let value = value_str.trim();
                         match elem.as_str() {
                             "HDRGainMap:HDRGainMapHeadroom" => {
