@@ -71,6 +71,8 @@ function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle, imagePath }: 
 }) {
   // Handle case where breadcrumbs might not be an array
   const safeBreadcrumbs = Array.isArray(breadcrumbs) ? breadcrumbs : [];
+  const lastCrumb = safeBreadcrumbs[safeBreadcrumbs.length - 1];
+  const showCurrent = !lastCrumb || lastCrumb.display_name !== currentImageTitle;
 
   return (
     <nav className="gallery-nav">
@@ -87,8 +89,12 @@ function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle, imagePath }: 
           </React.Fragment>
         );
       })}
-      <span className="nav-separator">→</span>
-      <span className="nav-current">{currentImageTitle}</span>
+      {showCurrent && (
+        <>
+          <span className="nav-separator">→</span>
+          <span className="nav-current">{currentImageTitle}</span>
+        </>
+      )}
     </nav>
   );
 }

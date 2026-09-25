@@ -359,7 +359,7 @@ export function CatalogMenu({
 
   return (
     <span
-      style={{ position: 'relative', display: 'inline-block', pointerEvents: 'auto' }}
+      className="astro-catalog-anchor"
       onClick={compact ? stop : undefined}
       onTouchEnd={compact ? (e) => e.stopPropagation() : undefined}
     >
