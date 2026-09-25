@@ -61,8 +61,8 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   if (windowWidth <= 768) {
     width = windowWidth;
     height = width / aspectRatio;
-    if (height > windowHeight * 0.6) {
-      height = windowHeight * 0.6;
+    if (height > windowHeight * 0.8) {
+      height = windowHeight * 0.8;
       width = height * aspectRatio;
     }
   }

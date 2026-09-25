@@ -14,19 +14,15 @@ body {
     padding-top: 0 !important;  /* Override container-lg padding */
     padding-left: 0;
     padding-right: 0;
-    position: relative;  /* For absolute positioning of nav */
-    min-height: 100vh;  /* Ensure full viewport height */
+    position: relative;
+    min-height: 100vh;
 }
 
+/* Breadcrumbs stay in flow so long names push content down, not over it */
 .image-detail-container .gallery-nav {
     margin-bottom: 0;
-    padding: 0.5rem var(--spacing-xl);
-    padding-top: 1rem;
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 10;
+    padding: 1rem var(--spacing-xl) 0.5rem;
+    position: static;
     width: 100%;
     box-sizing: border-box;
 }
@@ -34,7 +30,6 @@ body {
 .image-detail-content {
     display: flex;
     flex-direction: column;
-    padding-top: 3rem;  /* Account for absolutely positioned nav */
 }
 
 /* New full-viewport image section */
@@ -75,6 +70,10 @@ body {
     align-items: center;
     justify-content: center;
     max-width: 100%;
+    position: relative;
+    touch-action: pan-y pinch-zoom;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .image-main {
@@ -121,12 +120,6 @@ body {
     position: relative;
     width: 100%;
     height: 100%;
-}
-
-@media (max-width: 768px) {
-    .image-container {
-        box-shadow: none;
-    }
 }
 
 /* Subtle fade-in for image background */
@@ -463,6 +456,12 @@ body {
 }
 
 /* Per-catalog dropdown: a pill-styled popover above the toggle */
+.astro-catalog-anchor {
+    position: relative;
+    display: inline-block;
+    pointer-events: auto;
+}
+
 .astro-catalog-menu {
     position: absolute;
     bottom: calc(100% + 0.4rem);
@@ -747,14 +746,6 @@ dd {
     height: 20px;
 }
 
-/* Swipeable Image Area */
-.swipeable-image-area {
-    touch-action: pan-y pinch-zoom;
-    user-select: none;
-    -webkit-user-select: none;
-    position: relative;
-}
-
 /* Mobile swipe hint */
 .mobile-swipe-hint {
     display: none;
@@ -766,6 +757,7 @@ dd {
     color: var(--text-muted);  /* Light gray from theme */
     padding: 0;  /* No padding needed without background */
     font-size: 0.65rem;  /* Small font */
+    white-space: nowrap;
     z-index: 140;  /* Below navigation buttons */
     font-weight: 300;  /* Light font weight */
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);  /* Subtle shadow for readability */
@@ -791,16 +783,17 @@ dd {
         padding: 0;
     }
     
-    /* Adjust outer container for mobile */
+    /* The image box fits the image; ImageDisplay sizes it to the screen */
     .image-container-outer {
         height: auto;
-        max-height: 60vh;
+        max-height: none;
     }
-    
-    /* Adjust image container for mobile - full width, no borders */
+
     .image-container {
         box-shadow: none;
         background-color: transparent;
+        max-width: 100%;
+        max-height: none;
     }
     
     /* Remove shadow and borders from image display on mobile */
@@ -810,14 +803,44 @@ dd {
         background-color: transparent;
     }
     
-    /* Adjust image viewer section for mobile - add top padding for nav elements */
+    /* Top padding leaves room for the prev/next buttons and swipe hint */
     .image-viewer-section {
-        height: 60vh;
-        min-height: 60vh;
-        padding: 0;
-        padding-top: 4rem;  /* Space for navigation buttons and swipe hint */
+        height: auto;
+        min-height: 0;
+        padding: 2.75rem 0 0;
         margin: 0;
         border-radius: 0;
+    }
+
+    /* Astro toggles wrap; the catalog menu spans the row and opens downward */
+    .astro-controls {
+        position: relative;
+        flex-wrap: wrap;
+        max-width: 100%;
+        padding: 0 0.5rem;
+        box-sizing: border-box;
+    }
+
+    .astro-controls .btn {
+        white-space: nowrap;
+    }
+
+    .astro-controls .astro-catalog-anchor {
+        position: static;
+    }
+
+    .astro-controls .astro-catalog-menu {
+        top: calc(100% + 0.4rem);
+        bottom: auto;
+        left: 0.5rem;
+        right: 0.5rem;
+        transform: none;
+        min-width: 0;
+        z-index: 160;
+    }
+
+    .astro-controls .astro-catalog-item {
+        white-space: normal;
     }
     
     
@@ -847,13 +870,37 @@ dd {
     
     /* Mobile layout adjustments */
     .image-detail-container {
-        padding: 0;  /* No padding on mobile either */
+        padding: 0;
+        width: 100%;
+        border-radius: 0;
+        box-shadow: none;
     }
-    
+
+    /* Breadcrumbs sit in flow on one line; long names truncate */
     .image-detail-container .gallery-nav {
         font-size: 0.75rem;
-        padding: 0.5rem var(--spacing-md);  /* Padding on mobile */
-        padding-top: 0.75rem;  /* Less top padding on mobile */
+        padding: 0.75rem var(--spacing-md) 0.5rem;
+        flex-wrap: nowrap;
+        align-items: baseline;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .image-detail-container .gallery-nav .nav-link,
+    .image-detail-container .gallery-nav .nav-current {
+        flex: 0 1 auto;
+        min-width: 2.5em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .image-detail-container .gallery-nav .nav-current {
+        flex-shrink: 0.3;
+    }
+
+    .image-detail-container .gallery-nav .nav-separator {
+        flex-shrink: 0;
+        margin: 0 0.35rem;
     }
     
     /* Fix technical details overflow on mobile */
