@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ImageInfo, TileConfig } from '../../types/index.ts';
 import { useDelayedLoading } from '../../hooks/useDelayedLoading.ts';
 
@@ -941,15 +942,14 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
   return (
     <div className="image-container-outer">
-      {/* Mobile Zoom Modal */}
-      {isMobile && canUseZoom && (pinchZoom.isZoomed || pinchZoom.isTransitioning) && (
+      {/* Mobile Zoom Modal: portaled to <body> so it stacks above the site
+          header, and pinned to the visible edges rather than 100vh, which on
+          iOS reaches under the browser toolbar */}
+      {isMobile && canUseZoom && (pinchZoom.isZoomed || pinchZoom.isTransitioning) && createPortal(
         <div
           style={{
             position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
+            inset: 0,
             backgroundColor: 'black',
             zIndex: 9999,
             opacity: pinchZoom.isTransitioning ? (pinchZoom.isZoomed ? 1 : 0) : 1,
@@ -966,8 +966,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             onClick={closeZoomModal}
             style={{
               position: 'absolute',
-              top: '16px',
-              right: '16px',
+              top: 'calc(16px + env(safe-area-inset-top, 0px))',
+              right: 'calc(16px + env(safe-area-inset-right, 0px))',
               zIndex: 10001,
               width: '44px',
               height: '44px',
@@ -1075,7 +1075,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
           <div
             style={{
               position: 'absolute',
-              bottom: '16px',
+              bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
               left: '50%',
               transform: 'translateX(-50%)',
               backgroundColor: 'rgba(0, 0, 0, 0.6)',
@@ -1088,7 +1088,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
           >
             {Math.round(pinchZoom.scale * 100)}%
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Main image container */}

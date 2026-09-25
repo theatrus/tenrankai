@@ -6,6 +6,7 @@ import { useImageDetail } from '../hooks/useImageDetail.ts';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation.ts';
 import { useDelayedLoading } from '../hooks/useDelayedLoading.ts';
 import { useSwipeGestures } from '../hooks/useSwipeGestures.ts';
+import { useSwipeDrag } from '../hooks/useSwipeDrag.ts';
 import { useImagePreload } from '../hooks/useImagePreload.ts';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
@@ -298,7 +299,7 @@ export function ImageDetailPage({
   // Preload previous and next images for faster navigation
   useImagePreload(currentData?.prev_image, currentData?.next_image);
 
-  // Add swipe gesture support (disabled when image is zoomed)
+  // Tablets and larger touch screens: navigate on a completed swipe
   useSwipeGestures(imageContainerRef, {
     onSwipeLeft: () => {
       if (currentData?.next_image) {
@@ -310,7 +311,17 @@ export function ImageDetailPage({
         handleNavigation('prev');
       }
     }
-  }, { disabled: isImageZoomed });
+  }, { disabled: isImageZoomed || isPhone });
+
+  // Phones: the image follows the finger, so it is clear a swipe navigates
+  useSwipeDrag(imageContainerRef, {
+    canPrev: !!currentData?.prev_image,
+    canNext: !!currentData?.next_image,
+    onPrev: () => handleNavigation('prev'),
+    onNext: () => handleNavigation('next'),
+    disabled: !isPhone || isImageZoomed,
+    resetKey: currentData?.image.path,
+  });
 
   if (error) {
     return (
