@@ -366,6 +366,7 @@ body > footer p {
 }
 
 .gallery-nav {
+    box-sizing: border-box;
     margin-bottom: 1rem;
     padding: 0.5rem 0.75rem;
     padding-top: 0.75rem;
