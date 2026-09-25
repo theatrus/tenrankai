@@ -1,4 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { ImageDetailData } from '../types/index.ts';
 import { useImageDetail } from '../hooks/useImageDetail.ts';
@@ -486,7 +487,9 @@ export function ImageDetailPage({
     );
     const hasStrip = (currentData.prev_images?.length || 0) + (currentData.next_images?.length || 0) > 0;
 
-    return (
+    // Portaled to <body>: iOS Safari gives the page container a transform,
+    // which would pin this fixed layout to that container instead of the screen
+    return createPortal(
       <div className="phone-detail" style={{ top: siteHeaderBottom }}>
         {breadcrumbs}
         <div ref={stageRef} className="phone-stage">
@@ -525,7 +528,8 @@ export function ImageDetailPage({
           {details}
         </MobileTray>
         {editModal}
-      </div>
+      </div>,
+      document.body,
     );
   }
 

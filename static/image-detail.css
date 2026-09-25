@@ -19,7 +19,8 @@ body {
 }
 
 /* Breadcrumbs stay in flow so long names push content down, not over it */
-.image-detail-container .gallery-nav {
+.image-detail-container .gallery-nav,
+.phone-detail .gallery-nav {
     margin-bottom: 0;
     padding: 1rem var(--spacing-xl) 0.5rem;
     position: static;
@@ -780,7 +781,8 @@ dd {
     }
 
     /* Breadcrumbs sit in flow on one line; long names truncate */
-    .image-detail-container .gallery-nav {
+    .image-detail-container .gallery-nav,
+    .phone-detail .gallery-nav {
         font-size: 0.75rem;
         padding: 0.75rem var(--spacing-md) 0.5rem;
         flex-wrap: nowrap;
@@ -789,19 +791,19 @@ dd {
         overflow: hidden;
     }
 
-    .image-detail-container .gallery-nav .nav-link,
-    .image-detail-container .gallery-nav .nav-current {
+    .phone-detail .gallery-nav .nav-link,
+    .phone-detail .gallery-nav .nav-current {
         flex: 0 1 auto;
         min-width: 2.5em;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .image-detail-container .gallery-nav .nav-current {
+    .phone-detail .gallery-nav .nav-current {
         flex-shrink: 0.3;
     }
 
-    .image-detail-container .gallery-nav .nav-separator {
+    .phone-detail .gallery-nav .nav-separator {
         flex-shrink: 0;
         margin: 0 0.35rem;
     }
