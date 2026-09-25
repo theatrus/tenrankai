@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { createRoot, type Root } from 'react-dom/client';
 import { MasonryGrid } from './MasonryGrid';
 import { FilterBar, FilterType } from './FilterBar';
 import { ManageToolbar } from './ManageToolbar';
@@ -130,20 +131,18 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
     });
   }, [images, activeFilter, permissions]);
 
-  const filterRootRef = React.useRef<any>(null);
+  const filterRootRef = React.useRef<Root | null>(null);
 
   React.useEffect(() => {
     if (filterMount && permissions?.can_read_metadata && !filterRootRef.current) {
-      import('react-dom/client').then(({ createRoot }) => {
-        filterRootRef.current = createRoot(filterMount);
-        filterRootRef.current.render(
-          <FilterBar
-            activeFilter={activeFilter}
-            onFilterChange={handleFilterChange}
-            counts={filterCounts}
-          />
-        );
-      });
+      filterRootRef.current = createRoot(filterMount);
+      filterRootRef.current.render(
+        <FilterBar
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+          counts={filterCounts}
+        />
+      );
     }
 
     return () => {
