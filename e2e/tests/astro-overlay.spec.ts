@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { shot } from './helpers';
+import { openDetailsTray, shot } from './helpers';
 
 /**
  * Astro overlay controls, exercised on desktop and touch devices (the
@@ -113,6 +113,7 @@ test.describe('astro overlay', () => {
     await shot(page, 'astro-overlay-visible');
 
     // The old-transient toggle brings the historical nova back
+    await openDetailsTray(page);
     const older = page.getByRole('button', { name: /old transients/ });
     await expect(older).toHaveText('+1 old transients');
     await older.click();
@@ -120,7 +121,7 @@ test.describe('astro overlay', () => {
     await shot(page, 'astro-overlay-all-transients');
 
     // And the main toggle hides everything again
-    await page.getByRole('button', { name: 'Objects ✕' }).click();
+    await page.getByRole('button', { name: 'Objects ✕' }).first().click();
     await expect(svg).toHaveCount(0);
   });
 
@@ -160,6 +161,7 @@ test.describe('astro overlay', () => {
     const svg = page.locator('svg[aria-label="Sky object overlay"]');
     await expect(svg).toBeVisible();
 
+    await openDetailsTray(page);
     const slider = page.getByRole('slider', { name: 'Label density' });
     await expect(slider).toBeVisible();
 
@@ -232,6 +234,7 @@ test.describe('astro overlay', () => {
     await shot(page, 'astro-overlay-outlines');
 
     // The catalog menu offers the outline toggle; ellipses come back
+    await openDetailsTray(page);
     await page.getByRole('button', { name: /Catalogs/ }).click();
     await page.locator('.astro-outline-item').click();
     await expect(svg.locator('.seiza-overlay__marker--outline')).toHaveCount(0);
@@ -302,11 +305,13 @@ test.describe('astro overlay', () => {
     // Tapping the toggle must not have opened the mobile zoom dialog
     await expect(page.locator('.image-display')).toBeVisible();
 
+    // The rest of the overlay controls live in the phone tray
+    await openDetailsTray(page);
     const older = page.getByRole('button', { name: /old transients/ });
     await older.tap();
     await expect(svg.getByText(/2022-10a/)).toBeVisible();
 
-    await page.getByRole('button', { name: 'Objects ✕' }).tap();
+    await page.getByRole('button', { name: 'Objects ✕' }).first().tap();
     await expect(svg).toHaveCount(0);
   });
 
@@ -380,6 +385,7 @@ test.describe('per-catalog toggles', () => {
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
 
     // Open the catalogs menu and hide the NGC/IC/Messier group
+    await openDetailsTray(page);
     await tapOrClick(page.getByRole('button', { name: /Catalogs/ }));
     const ngc = page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' });
     await expect(ngc).toBeVisible();
@@ -396,6 +402,7 @@ test.describe('per-catalog toggles', () => {
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toHaveCount(0);
 
     // And restores
+    await openDetailsTray(page);
     await tapOrClick(page.getByRole('button', { name: /Catalogs/ }));
     await tapOrClick(page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' }));
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();

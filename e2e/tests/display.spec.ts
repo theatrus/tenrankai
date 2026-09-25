@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { bootstrapSession } from './auth';
-import { IMAGE_FILES, openGallery, renderedOrder, shot } from './helpers';
+import { IMAGE_FILES, openDetailsTray, openGallery, renderedOrder, shot } from './helpers';
 
 test.describe('gallery display', () => {
   test('renders every image in a square grid', async ({ page }) => {
@@ -58,6 +58,7 @@ test.describe('astro sky map (authenticated)', () => {
   test('astro images show a sky map locating their coordinates', async ({ page }) => {
     // 03-charlie has a .md sidecar with telescope + RA/Dec metadata (M1)
     await page.goto('/g/detail/by-filename/03-charlie.png');
+    await openDetailsTray(page);
 
     const skyMap = page.locator('.sky-map');
     await expect(skyMap).toBeVisible();
@@ -80,6 +81,7 @@ test.describe('astro sky map (authenticated)', () => {
 
     // Images without RA/Dec metadata have no sky map
     await page.goto('/g/detail/by-filename/01-alpha.png');
+    await openDetailsTray(page);
     await expect(page.locator('.image-metadata')).toBeVisible();
     await expect(page.locator('.sky-map')).toHaveCount(0);
   });

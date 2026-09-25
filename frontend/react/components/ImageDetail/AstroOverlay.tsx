@@ -227,6 +227,39 @@ interface AstroControlsProps {
   onPreciseOutlinesChange?: (outlines: boolean) => void;
 }
 
+interface AstroQuickToggleProps {
+  solution: AstroSolution;
+  visible: boolean;
+  onVisibleChange: (visible: boolean) => void;
+  hiddenGroups: string[];
+  allTransients: boolean;
+  density: number;
+  className?: string;
+}
+
+/** The Objects on/off button alone, for compact bars like the phone tray */
+export function AstroQuickToggle({
+  solution,
+  visible,
+  onVisibleChange,
+  hiddenGroups,
+  allTransients,
+  density,
+  className,
+}: AstroQuickToggleProps) {
+  const { rendered } = partitionObjects(solution, { hiddenGroups, allTransients, density });
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-pressed={visible}
+      onClick={() => onVisibleChange(!visible)}
+    >
+      {visible ? 'Objects ✕' : `Objects (${rendered.length})`}
+    </button>
+  );
+}
+
 /**
  * Overlay toggles for the image controls bar — off the image itself, so
  * they don't obscure it and stay clearly visible when active.

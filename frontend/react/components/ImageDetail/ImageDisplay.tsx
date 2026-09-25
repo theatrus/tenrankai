@@ -14,6 +14,8 @@ interface ImageDisplayProps {
   overlay?: React.ReactNode;
   /** Overlay layer for zoomed views; transforms with the zoomed image */
   zoomOverlay?: React.ReactNode;
+  /** Box to fit the image into instead of sizing from the window */
+  fitBox?: { width: number; height: number } | null;
 }
 
 interface ZoomState {
@@ -40,8 +42,18 @@ const isTouchDevice = () => {
 };
 
 // Helper function to calculate dimensions
-const calculateImageDimensions = (imageDimensions: number[], windowWidth: number, windowHeight: number) => {
+const calculateImageDimensions = (
+  imageDimensions: number[],
+  windowWidth: number,
+  windowHeight: number,
+  fitBox?: { width: number; height: number } | null,
+) => {
   const aspectRatio = imageDimensions[0] / imageDimensions[1];
+  if (fitBox && fitBox.width > 0 && fitBox.height > 0) {
+    return fitBox.width / fitBox.height > aspectRatio
+      ? { width: fitBox.height * aspectRatio, height: fitBox.height }
+      : { width: fitBox.width, height: fitBox.width / aspectRatio };
+  }
   const maxWidth = windowWidth * 0.95;
   const maxHeight = windowHeight * 0.75 - 100;
   
@@ -70,13 +82,13 @@ const calculateImageDimensions = (imageDimensions: number[], windowWidth: number
   return { width, height };
 };
 
-export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange, overlay, zoomOverlay }: ImageDisplayProps) {
+export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = false, onImageClick, tileConfig, onZoomStateChange, overlay, zoomOverlay, fitBox }: ImageDisplayProps) {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
   // Calculate initial dimensions immediately to prevent flicker
   const [dimensions, setDimensions] = useState(() =>
-    calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight)
+    calculateImageDimensions(image.dimensions, window.innerWidth, window.innerHeight, fitBox)
   );
   
   const [zoomState, setZoomState] = useState<ZoomState>({
@@ -156,8 +168,9 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
   const calculateDimensions = () => {
     const newDimensions = calculateImageDimensions(
       image.dimensions, 
-      window.innerWidth, 
-      window.innerHeight
+      window.innerWidth,
+      window.innerHeight,
+      fitBox
     );
     setDimensions(newDimensions);
   };
@@ -172,7 +185,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [image.dimensions]);
+  }, [image.dimensions, fitBox?.width, fitBox?.height]);
 
   useEffect(() => {
     if (!image.medium_url) {
