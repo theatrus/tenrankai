@@ -76,10 +76,6 @@ body {
     -webkit-user-select: none;
 }
 
-.image-main {
-    text-align: center;
-}
-
 /* Outer container for viewport constraints and centering */
 .image-container-outer {
     display: flex;
@@ -746,78 +742,24 @@ dd {
     height: 20px;
 }
 
-/* Mobile swipe hint */
-.mobile-swipe-hint {
-    display: none;
-    position: absolute;  /* Absolute positioning relative to container */
-    top: calc(0.5rem + 18px);  /* Vertically centered with nav buttons (36px/2) */
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: none;  /* No background */
-    color: var(--text-muted);  /* Light gray from theme */
-    padding: 0;  /* No padding needed without background */
-    font-size: 0.65rem;  /* Small font */
-    white-space: nowrap;
-    z-index: 140;  /* Below navigation buttons */
-    font-weight: 300;  /* Light font weight */
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);  /* Subtle shadow for readability */
-}
-
 /* Mobile-specific styles */
 @media (max-width: 768px) {
-    .mobile-navigation {
-        display: flex;
-    }
-    
-    .mobile-swipe-hint {
-        display: block;
-    }
-    
-    /* Hide desktop navigation on mobile */
-    .image-navigation {
-        display: none;
-    }
-    
-    /* Full width image wrapper on mobile */
-    .image-container-wrapper {
-        padding: 0;
-    }
-    
-    /* The image box fits the image; ImageDisplay sizes it to the screen */
-    .image-container-outer {
-        height: auto;
-        max-height: none;
-    }
-
     .image-container {
         box-shadow: none;
         background-color: transparent;
         max-width: 100%;
         max-height: none;
     }
-    
-    /* Remove shadow and borders from image display on mobile */
+
     .image-container .image-display {
         box-shadow: none;
         border-radius: 0;
         background-color: transparent;
     }
-    
-    /* Top padding leaves room for the prev/next buttons and swipe hint */
-    .image-viewer-section {
-        height: auto;
-        min-height: 0;
-        padding: 2.75rem 0 0;
-        margin: 0;
-        border-radius: 0;
-    }
 
-    /* Astro toggles wrap; the catalog menu spans the row and opens downward */
     .astro-controls {
-        position: relative;
         flex-wrap: wrap;
         max-width: 100%;
-        padding: 0 0.5rem;
         box-sizing: border-box;
     }
 
@@ -825,49 +767,10 @@ dd {
         white-space: nowrap;
     }
 
-    .astro-controls .astro-catalog-anchor {
-        position: static;
-    }
-
-    .astro-controls .astro-catalog-menu {
-        top: calc(100% + 0.4rem);
-        bottom: auto;
-        left: 0.5rem;
-        right: 0.5rem;
-        transform: none;
-        min-width: 0;
-        z-index: 160;
-    }
-
     .astro-controls .astro-catalog-item {
         white-space: normal;
     }
-    
-    
-    /* Show swipe hint on mobile */
-    .nav-hint {
-        display: none;
-    }
-    
-    .image-controls::after {
-        content: "Swipe left/right to navigate";
-        display: block;
-        font-size: 0.875rem;
-        color: var(--text-secondary);
-        font-style: italic;
-        margin-top: 0.5rem;
-        text-align: center;
-    }
-    
-    /* Adjust spacing on mobile */
-    .image-detail-content {
-        gap: 1rem;
-    }
-    
-    .image-main {
-        padding: 0;
-    }
-    
+
     /* Mobile layout adjustments */
     .image-detail-container {
         padding: 0;
@@ -1053,6 +956,245 @@ dd {
         font-size: 0.85rem;
         padding: 0.2rem 0.6rem;
     }
+}
+
+/* Phone layout: the page does not scroll. Breadcrumbs on top, the image fills
+   the stage, and a bottom tray slides up over it with everything else. */
+body.image-detail-phone {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+body.image-detail-phone > footer {
+    display: none;
+}
+
+body.image-detail-phone .image-detail-container {
+    min-height: 0;
+}
+
+.phone-detail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-primary);
+    z-index: 50;
+}
+
+.phone-detail .gallery-nav {
+    flex: none;
+    z-index: auto;
+}
+
+.phone-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.phone-stage .image-container-outer {
+    height: 100%;
+    max-height: none;
+}
+
+.phone-tray-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 15;
+}
+
+.phone-tray {
+    flex: none;
+    position: relative;
+    z-index: 20;
+    background-color: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 16px var(--shadow-medium);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.phone-tray-head {
+    padding: 0 0.75rem 0.5rem;
+    border-top: 1px solid transparent;
+}
+
+.phone-tray-body {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 0.75rem;
+    box-sizing: border-box;
+    background-color: var(--bg-secondary);
+    border-radius: 16px 16px 0 0;
+    visibility: hidden;
+    transition: max-height 0.25s ease, visibility 0s linear 0.25s;
+}
+
+.phone-tray.expanded .phone-tray-body {
+    visibility: visible;
+    transition: max-height 0.25s ease;
+    max-height: 72vh;
+    max-height: 72dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 0.75rem;
+    box-shadow: 0 -8px 24px var(--shadow-medium);
+}
+
+.phone-tray.expanded .phone-tray-head {
+    border-top-color: var(--border-color);
+}
+
+/* The head keeps its handle's space when open so the image does not move */
+.phone-tray.expanded .phone-tray-head > .phone-tray-handle {
+    visibility: hidden;
+}
+
+.phone-tray-handle {
+    display: block;
+    width: 100%;
+    padding: 8px 0 6px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.phone-tray-handle span {
+    display: block;
+    width: 40px;
+    height: 4px;
+    margin: 0 auto;
+    border-radius: 2px;
+    background-color: var(--text-tertiary);
+    opacity: 0.5;
+}
+
+.phone-tray-body > .phone-tray-handle {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: var(--bg-secondary);
+}
+
+.phone-tray-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 40px;
+}
+
+.phone-tray-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.phone-tray-chip,
+.phone-tray-toggle {
+    flex: none;
+    min-height: 36px;
+    padding: 0 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+    .phone-tray-chip,
+    .phone-tray-toggle {
+        min-height: 44px;
+    }
+}
+
+.phone-tray-chip.active {
+    background-color: var(--link-color);
+    border-color: var(--link-color);
+    color: var(--text-white);
+}
+
+.phone-tray-strip {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.phone-tray-strip::-webkit-scrollbar {
+    display: none;
+}
+
+.phone-tray-thumb {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    overflow: hidden;
+    background: none;
+    opacity: 0.7;
+    cursor: pointer;
+}
+
+.phone-tray-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.phone-tray-thumb.current {
+    border-color: var(--link-color);
+    opacity: 1;
+}
+
+.phone-tray .version-picker {
+    margin-top: 0.4rem;
+}
+
+.phone-tray-body .astro-controls {
+    margin: 0.25rem 0 0.75rem;
+}
+
+/* In the tray the catalog list opens in place instead of as a popover */
+.phone-tray .astro-controls .astro-catalog-anchor {
+    display: contents;
+}
+
+.phone-tray .astro-controls .astro-catalog-menu {
+    position: static;
+    flex-basis: 100%;
+    transform: none;
+    min-width: 0;
+    box-shadow: none;
+}
+
+.phone-tray-body .metadata-grid {
+    padding: 0;
+    gap: var(--spacing-md);
 }
 
 /* Tablet-specific adjustments */

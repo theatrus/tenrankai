@@ -15,11 +15,14 @@ import { AstroSkyMap } from '../components/ImageDetail/AstroSkyMap.tsx';
 import {
   AstroControls,
   AstroOverlay,
+  AstroQuickToggle,
   DEFAULT_LABEL_DENSITY,
   useAstroSolution,
 } from '../components/ImageDetail/AstroOverlay.tsx';
 import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
+import { MobileTray, TrayThumbnails } from '../components/ImageDetail/MobileTray.tsx';
+import { useMediaQuery } from '../hooks/useMediaQuery.ts';
 import { EditModal } from '../components/Editor/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
 
@@ -122,6 +125,48 @@ export function ImageDetailPage({
 
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
+
+  // Phones get a fixed layout: header, an image that fits the screen, and a
+  // bottom tray that slides up over the image with everything else
+  const isPhone = useMediaQuery('(max-width: 768px)');
+  const [trayExpanded, setTrayExpanded] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageBox, setStageBox] = useState<{ width: number; height: number } | null>(null);
+  const [siteHeaderBottom, setSiteHeaderBottom] = useState(0);
+
+  useEffect(() => {
+    if (!isPhone) return;
+    document.body.classList.add('image-detail-phone');
+    const header = document.querySelector('body > header');
+    const measureHeader = () =>
+      setSiteHeaderBottom(Math.max(0, header?.getBoundingClientRect().bottom ?? 0));
+    measureHeader();
+    const headerObserver = header ? new ResizeObserver(measureHeader) : null;
+    if (header) headerObserver?.observe(header);
+    window.addEventListener('resize', measureHeader);
+    return () => {
+      document.body.classList.remove('image-detail-phone');
+      headerObserver?.disconnect();
+      window.removeEventListener('resize', measureHeader);
+    };
+  }, [isPhone]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!isPhone || !stage) return;
+    const measure = () => {
+      const rect = stage.getBoundingClientRect();
+      setStageBox((prev) =>
+        prev && prev.width === rect.width && prev.height === rect.height
+          ? prev
+          : { width: rect.width, height: rect.height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [isPhone]);
 
   // Plate solution for astro images (null when unsolved or unavailable).
   // Overlay state lives here so the zoomed views share it.
@@ -284,15 +329,210 @@ export function ImageDetailPage({
     );
   }
 
+  const breadcrumbs = (
+    <Breadcrumbs
+      breadcrumbs={currentData.breadcrumbs}
+      galleryUrl={galleryUrl}
+      currentImageTitle={currentData.image.title || currentData.image.name}
+      imagePath={currentData.image.path}
+    />
+  );
+
+  const imageDisplay = (
+    <ImageDisplay
+      image={currentData.image}
+      canUseZoom={currentData.permissions.can_use_zoom}
+      canSeeAiAltText={currentData.permissions.can_see_ai_alt_text}
+      tileConfig={currentData.tile_config}
+      galleryName={currentData.gallery_name}
+      onZoomStateChange={setIsImageZoomed}
+      fitBox={isPhone ? stageBox : undefined}
+      overlay={
+        astroSolution ? (
+          <AstroOverlay
+            solution={astroSolution}
+            visible={astroVisible}
+            allTransients={astroAllTransients}
+            hiddenGroups={astroHiddenGroups}
+            density={astroDensity}
+            preciseOutlines={astroOutlines}
+          />
+        ) : undefined
+      }
+      zoomOverlay={
+        astroSolution && astroVisible ? (
+          <AstroOverlay
+            solution={astroSolution}
+            visible
+            allTransients={astroAllTransients}
+            hiddenGroups={astroHiddenGroups}
+            density={astroDensity}
+            preciseOutlines={astroOutlines}
+          />
+        ) : undefined
+      }
+    />
+  );
+
+  const astroControls = astroSolution && (
+    <AstroControls
+      solution={astroSolution}
+      visible={astroVisible}
+      onVisibleChange={setAstroVisible}
+      allTransients={astroAllTransients}
+      onAllTransientsChange={setAstroAllTransients}
+      hiddenGroups={astroHiddenGroups}
+      onHiddenGroupsChange={setAstroHiddenGroups}
+      density={astroDensity}
+      onDensityChange={setAstroDensity}
+      preciseOutlines={astroOutlines}
+      onPreciseOutlinesChange={setAstroOutlines}
+    />
+  );
+
+  const versionPicker = currentData.image.versions && currentData.image.versions.length > 0 && (
+    <VersionPicker
+      versions={currentData.image.versions}
+      currentPath={currentData.image.path}
+      galleryUrl={galleryUrl}
+    />
+  );
+
+  const hiddenBadge = currentData.is_hidden && (
+    <div className="image-hidden-badge" title="This image is hidden from users without permission">
+      <span className="hidden-icon">HIDDEN</span>
+    </div>
+  );
+
+  const editIcon = currentData.permissions.can_edit_content && (
+    <button
+      type="button"
+      className="image-edit-icon"
+      onClick={() => setIsEditModalOpen(true)}
+      title="Edit image info"
+      aria-label="Edit image info"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+      </svg>
+    </button>
+  );
+
+  const description = currentData.image.description && (
+    <div
+      className="image-description"
+      dangerouslySetInnerHTML={{ __html: currentData.image.description }}
+    />
+  );
+
+  const editModal = (
+    <EditModal
+      isOpen={isEditModalOpen}
+      modalTitle="Edit Image"
+      title={currentData.image.title || ''}
+      markdownContent={currentData.image.user_metadata?.description || ''}
+      descriptionPlaceholder="Add image description..."
+      onSave={handleSaveImageInfo}
+      onClose={() => setIsEditModalOpen(false)}
+    />
+  );
+
+  const details = (
+    <>
+      {!hideMetadata && (
+        <div className="metadata-grid">
+          <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} permissions={currentData.permissions} />
+          <CameraMetadata image={currentData.image} permissions={currentData.permissions} />
+          <AstroSkyMap image={currentData.image} permissions={currentData.permissions} />
+          <LocationMetadata image={currentData.image} permissions={currentData.permissions} />
+        </div>
+      )}
+
+      <AIMetadata image={currentData.image} permissions={currentData.permissions} />
+
+      <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} shareUrl={currentData.share_url} baseUrl={currentData.base_url} />
+
+      {currentData.permissions.can_read_metadata && (
+        <UserMetadata
+          metadata={currentData.image.user_metadata}
+          imagePath={currentData.image.path}
+          galleryName={currentData.gallery_name}
+          isAuthenticated={isAuthenticated}
+          currentUser={currentUser}
+          permissions={currentData.permissions}
+          onUpdate={(updatedMetadata) => updateMetadata(updatedMetadata)}
+          image={{
+            medium_url: currentData.image.medium_url,
+            dimensions: currentData.image.dimensions
+          }}
+        />
+      )}
+    </>
+  );
+
+  if (isPhone) {
+    const title = currentData.image.title || currentData.image.name;
+    const strip = (
+      <TrayThumbnails
+        current={{
+          path: currentData.image.path,
+          name: currentData.image.name,
+          thumbnail_url: currentData.image.thumbnail_url,
+        }}
+        prevImages={currentData.prev_images || []}
+        nextImages={currentData.next_images || []}
+        onSelect={handleNavigateToImage}
+      />
+    );
+    const hasStrip = (currentData.prev_images?.length || 0) + (currentData.next_images?.length || 0) > 0;
+
+    return (
+      <div className="phone-detail" style={{ top: siteHeaderBottom }}>
+        {breadcrumbs}
+        <div ref={stageRef} className="phone-stage">
+          <div ref={imageContainerRef} className="swipeable-image-area">
+            {imageDisplay}
+          </div>
+        </div>
+        <MobileTray
+          title={title}
+          expanded={trayExpanded}
+          onExpandedChange={setTrayExpanded}
+          quickActions={
+            astroSolution && (
+              <AstroQuickToggle
+                solution={astroSolution}
+                visible={astroVisible}
+                onVisibleChange={setAstroVisible}
+                hiddenGroups={astroHiddenGroups}
+                allTransients={astroAllTransients}
+                density={astroDensity}
+                className={`phone-tray-chip${astroVisible ? ' active' : ''}`}
+              />
+            )
+          }
+          strip={hasStrip ? strip : versionPicker}
+        >
+          {astroControls}
+          {hiddenBadge}
+          {(description || editIcon) && (
+            <div className="image-header-mobile">
+              {editIcon && <div className="image-title-row">{editIcon}</div>}
+              {description}
+            </div>
+          )}
+          {hasStrip && versionPicker}
+          {details}
+        </MobileTray>
+        {editModal}
+      </div>
+    );
+  }
+
   return (
     <>
-      <Breadcrumbs
-        breadcrumbs={currentData.breadcrumbs}
-        galleryUrl={galleryUrl}
-        currentImageTitle={currentData.image.title || currentData.image.name}
-        imagePath={currentData.image.path}
-      />
-      
+      {breadcrumbs}
+
       <div className="image-detail-content">
         {/* Image viewer section - full viewport */}
         <div className="image-viewer-section">
@@ -301,71 +541,15 @@ export function ImageDetailPage({
             nextImage={currentData.next_image}
             onNavigate={handleNavigation}
           />
-          
-          {/* Swipe hint for mobile */}
-          <div className="mobile-swipe-hint">
-            <span>
-              {isImageZoomed
-                ? 'Pinch out to exit zoom'
-                : currentData.permissions.can_use_zoom
-                  ? 'Pinch to zoom • Swipe to navigate'
-                  : 'Swipe to navigate'}
-            </span>
-          </div>
-          
+
           <div className="image-container-wrapper">
             <div ref={imageContainerRef} className="swipeable-image-area">
-              <ImageDisplay
-                image={currentData.image}
-                canUseZoom={currentData.permissions.can_use_zoom}
-                canSeeAiAltText={currentData.permissions.can_see_ai_alt_text}
-                tileConfig={currentData.tile_config}
-                galleryName={currentData.gallery_name}
-                onZoomStateChange={setIsImageZoomed}
-                overlay={
-                  astroSolution ? (
-                    <AstroOverlay
-                      solution={astroSolution}
-                      visible={astroVisible}
-                      allTransients={astroAllTransients}
-                      hiddenGroups={astroHiddenGroups}
-                      density={astroDensity}
-                      preciseOutlines={astroOutlines}
-                    />
-                  ) : undefined
-                }
-                zoomOverlay={
-                  astroSolution && astroVisible ? (
-                    <AstroOverlay
-                      solution={astroSolution}
-                      visible
-                      allTransients={astroAllTransients}
-                      hiddenGroups={astroHiddenGroups}
-                      density={astroDensity}
-                      preciseOutlines={astroOutlines}
-                    />
-                  ) : undefined
-                }
-              />
+              {imageDisplay}
             </div>
           </div>
 
           {/* Astro overlay toggles sit right under the image they affect */}
-          {astroSolution && (
-            <AstroControls
-              solution={astroSolution}
-              visible={astroVisible}
-              onVisibleChange={setAstroVisible}
-              allTransients={astroAllTransients}
-              onAllTransientsChange={setAstroAllTransients}
-              hiddenGroups={astroHiddenGroups}
-              onHiddenGroupsChange={setAstroHiddenGroups}
-              density={astroDensity}
-              onDensityChange={setAstroDensity}
-              preciseOutlines={astroOutlines}
-              onPreciseOutlinesChange={setAstroOutlines}
-            />
-          )}
+          {astroControls}
 
           {/* Thumbnail navigation */}
           <ImageNavigation
@@ -382,13 +566,7 @@ export function ImageDetailPage({
           />
 
           {/* Version picker - shows previous versions if available */}
-          {currentData.image.versions && currentData.image.versions.length > 0 && (
-            <VersionPicker
-              versions={currentData.image.versions}
-              currentPath={currentData.image.path}
-              galleryUrl={galleryUrl}
-            />
-          )}
+          {versionPicker}
 
           {(currentData.prev_image || currentData.next_image) && (
             <div className="nav-hint">
@@ -402,7 +580,7 @@ export function ImageDetailPage({
             </div>
           )}
         </div>
-        
+
         {/* Image description - shown when description exists */}
         {currentData.image.description && (
           <div className="image-description-section hide-mobile">
@@ -415,16 +593,9 @@ export function ImageDetailPage({
 
         {/* Info section - below the image viewer */}
         <div className="image-info-section">
-          {/* Hidden image indicator */}
-          {currentData.is_hidden && (
-            <div className="image-hidden-badge" title="This image is hidden from users without permission">
-              <span className="hidden-icon">HIDDEN</span>
-            </div>
-          )}
+          {hiddenBadge}
 
-          {/* Image title and description */}
           <div className="image-header-mobile">
-            {/* Title with edit icon */}
             {(currentData.image.title || currentData.permissions.can_edit_content) && (
               <div className="image-title-row">
                 {currentData.image.title ? (
@@ -432,72 +603,17 @@ export function ImageDetailPage({
                 ) : currentData.permissions.can_edit_content ? (
                   <span className="image-title-placeholder">Untitled image</span>
                 ) : null}
-                {currentData.permissions.can_edit_content && (
-                  <button
-                    type="button"
-                    className="image-edit-icon"
-                    onClick={() => setIsEditModalOpen(true)}
-                    title="Edit image info"
-                    aria-label="Edit image info"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
-                    </svg>
-                  </button>
-                )}
+                {editIcon}
               </div>
             )}
-            {/* Description content */}
-            {currentData.image.description && (
-              <div
-                className="image-description"
-                dangerouslySetInnerHTML={{ __html: currentData.image.description }}
-              />
-            )}
+            {description}
           </div>
 
-          {/* Edit modal */}
-          <EditModal
-            isOpen={isEditModalOpen}
-            modalTitle="Edit Image"
-            title={currentData.image.title || ''}
-            markdownContent={currentData.image.user_metadata?.description || ''}
-            descriptionPlaceholder="Add image description..."
-            onSave={handleSaveImageInfo}
-            onClose={() => setIsEditModalOpen(false)}
-          />
-          
-          {!hideMetadata && (
-            <div className="metadata-grid">
-              <ImageMetadata image={currentData.image} hideMetadata={hideMetadata} permissions={currentData.permissions} />
-              <CameraMetadata image={currentData.image} permissions={currentData.permissions} />
-              <AstroSkyMap image={currentData.image} permissions={currentData.permissions} />
-              <LocationMetadata image={currentData.image} permissions={currentData.permissions} />
-            </div>
-          )}
+          {editModal}
 
-          <AIMetadata image={currentData.image} permissions={currentData.permissions} />
-
-          <ImageControls image={currentData.image} permissions={currentData.permissions} onEditClick={() => setIsEditModalOpen(true)} shareUrl={currentData.share_url} baseUrl={currentData.base_url} />
-
-          {currentData.permissions.can_read_metadata && (
-            <UserMetadata
-              metadata={currentData.image.user_metadata}
-              imagePath={currentData.image.path}
-              galleryName={currentData.gallery_name}
-              isAuthenticated={isAuthenticated}
-              currentUser={currentUser}
-              permissions={currentData.permissions}
-              onUpdate={(updatedMetadata) => updateMetadata(updatedMetadata)}
-              image={{
-                medium_url: currentData.image.medium_url,
-                dimensions: currentData.image.dimensions
-              }}
-            />
-          )}
+          {details}
         </div>
       </div>
-      
     </>
   );
 }

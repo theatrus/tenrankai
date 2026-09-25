@@ -43,3 +43,14 @@ export async function renderedOrder(page: Page): Promise<string[]> {
 export async function shot(page: Page, name: string) {
   await page.screenshot({ path: join(SCREENSHOT_DIR, `${name}.png`), fullPage: true });
 }
+
+/**
+ * On phones the image detail page keeps its controls and metadata in a
+ * bottom tray. Open it; on desktop there is no tray and this does nothing.
+ */
+export async function openDetailsTray(page: Page) {
+  const toggle = page.locator('.phone-tray-toggle');
+  if ((await toggle.count()) === 0) return;
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await expect(page.locator('.phone-tray.expanded')).toHaveCount(1);
+}
