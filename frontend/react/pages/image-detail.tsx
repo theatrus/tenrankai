@@ -319,6 +319,8 @@ export function ImageDetailPage({
     canNext: !!currentData?.next_image,
     onPrev: () => handleNavigation('prev'),
     onNext: () => handleNavigation('next'),
+    prevUrl: currentData?.prev_image?.thumbnail_url.replace(/\/thumbnail$/, '/medium'),
+    nextUrl: currentData?.next_image?.thumbnail_url.replace(/\/thumbnail$/, '/medium'),
     disabled: !isPhone || isImageZoomed,
     resetKey: currentData?.image.path,
   });

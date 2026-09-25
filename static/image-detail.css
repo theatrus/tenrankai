@@ -1006,6 +1006,26 @@ body.image-detail-phone .image-detail-container {
     max-height: none;
 }
 
+/* Neighboring images that slide in beside the current one while swiping;
+   the offset matches the peek gap in useSwipeDrag */
+.phone-stage .swipe-peek {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+}
+
+.phone-stage .swipe-peek-prev {
+    left: calc(-100% - 16px);
+}
+
+.phone-stage .swipe-peek-next {
+    left: calc(100% + 16px);
+}
+
 .phone-tray-backdrop {
     position: absolute;
     inset: 0;
