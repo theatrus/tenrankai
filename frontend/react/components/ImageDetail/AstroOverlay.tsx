@@ -389,6 +389,16 @@ export function CatalogMenu({
     e.preventDefault();
     e.stopPropagation();
   };
+  // Embeds sit inside a link, so their clicks are cancelled to keep the link
+  // from following. In Safari that also cancels a label's checkbox toggle, so
+  // compact rows cancel the click themselves and toggle directly.
+  const rowClick = (toggle: () => void) =>
+    compact
+      ? (e: React.MouseEvent) => {
+          stop(e);
+          toggle();
+        }
+      : undefined;
 
   return (
     <span
@@ -426,11 +436,11 @@ export function CatalogMenu({
       {menuOpen && (
         <span className="astro-catalog-menu" role="menu">
           {availableGroups.map(([id, label]) => (
-            <label key={id} className="astro-catalog-item">
+            <label key={id} className="astro-catalog-item" onClick={rowClick(() => toggleGroup(id))}>
               <input
                 type="checkbox"
                 checked={!hiddenGroups.includes(id)}
-                onChange={() => toggleGroup(id)}
+                onChange={compact ? () => {} : () => toggleGroup(id)}
               />
               <span>
                 {label} ({groupCounts.get(id)})
@@ -441,11 +451,14 @@ export function CatalogMenu({
             <label
               className="astro-catalog-item astro-outline-item"
               title="Draw catalog brightness contours instead of ellipses where available"
+              onClick={rowClick(() => onPreciseOutlinesChange(preciseOutlines === false))}
             >
               <input
                 type="checkbox"
                 checked={preciseOutlines !== false}
-                onChange={() => onPreciseOutlinesChange(preciseOutlines === false)}
+                onChange={
+                  compact ? () => {} : () => onPreciseOutlinesChange(preciseOutlines === false)
+                }
               />
               <span>Precise outlines ({outlined})</span>
             </label>

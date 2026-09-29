@@ -5,6 +5,8 @@ const SWIPE_THRESHOLD = 30;
 
 interface MobileTrayProps {
   title: string;
+  /** Short line under the title, e.g. integration time and optics */
+  summary?: string;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   quickActions?: React.ReactNode;
@@ -39,6 +41,7 @@ function useVerticalSwipe(
 
 export function MobileTray({
   title,
+  summary,
   expanded,
   onExpandedChange,
   quickActions,
@@ -94,7 +97,10 @@ export function MobileTray({
         <div className="phone-tray-head" {...headSwipe}>
           {handle}
           <div className="phone-tray-row">
-            <h1 className="phone-tray-title">{title}</h1>
+            <div className="phone-tray-heading">
+              <h1 className="phone-tray-title">{title}</h1>
+              {summary && <p className="phone-tray-summary">{summary}</p>}
+            </div>
             {quickActions}
             <button
               type="button"

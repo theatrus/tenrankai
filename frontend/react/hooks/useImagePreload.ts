@@ -18,59 +18,28 @@ function getMedium2xUrl(mediumUrl: string): string {
 
 /**
  * Preload images for smoother navigation.
- * Takes navigation images and preloads their medium-sized versions in the background.
- * Automatically handles @2x versions for retina displays.
+ * Takes navigation images (most likely next first) and preloads their
+ * medium-sized versions in the background, with @2x on retina displays.
  */
-export function useImagePreload(
-  prevImage?: NavigationImage,
-  nextImage?: NavigationImage
-) {
+export function useImagePreload(images: (NavigationImage | undefined)[]) {
   // Track which images we've already preloaded to avoid duplicate requests
   const preloadedRef = useRef<Set<string>>(new Set());
 
   // Check if we should load @2x images
   const shouldLoad2x = typeof window !== 'undefined' && window.devicePixelRatio > 1;
+  const key = images.map((img) => img?.thumbnail_url ?? '').join('|');
 
   useEffect(() => {
-    const imagesToPreload: string[] = [];
-
-    // Add next image first (more likely to be navigated to)
-    if (nextImage?.thumbnail_url) {
-      const mediumUrl = thumbnailToMediumUrl(nextImage.thumbnail_url);
-      if (!preloadedRef.current.has(mediumUrl)) {
-        imagesToPreload.push(mediumUrl);
-        if (shouldLoad2x) {
-          imagesToPreload.push(getMedium2xUrl(mediumUrl));
-        }
-      }
-    }
-
-    // Add previous image
-    if (prevImage?.thumbnail_url) {
-      const mediumUrl = thumbnailToMediumUrl(prevImage.thumbnail_url);
-      if (!preloadedRef.current.has(mediumUrl)) {
-        imagesToPreload.push(mediumUrl);
-        if (shouldLoad2x) {
-          imagesToPreload.push(getMedium2xUrl(mediumUrl));
-        }
-      }
-    }
-
-    // Preload images
-    if (imagesToPreload.length > 0) {
-      console.log('[Preload] Loading adjacent images:', imagesToPreload);
-
-      imagesToPreload.forEach(url => {
-        const img = new Image();
-        img.onload = () => {
-          console.log('[Preload] Loaded:', url);
-        };
-        img.onerror = () => {
-          console.warn('[Preload] Failed to load:', url);
-        };
-        img.src = url;
+    for (const image of images) {
+      if (!image?.thumbnail_url) continue;
+      const mediumUrl = thumbnailToMediumUrl(image.thumbnail_url);
+      const urls = shouldLoad2x ? [mediumUrl, getMedium2xUrl(mediumUrl)] : [mediumUrl];
+      for (const url of urls) {
+        if (preloadedRef.current.has(url)) continue;
         preloadedRef.current.add(url);
-      });
+        const img = new Image();
+        img.src = url;
+      }
     }
-  }, [prevImage?.thumbnail_url, nextImage?.thumbnail_url, shouldLoad2x]);
+  }, [key, shouldLoad2x]);
 }

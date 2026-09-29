@@ -35,6 +35,8 @@ interface PinchZoomState {
   translateY: number;
   isZoomed: boolean;
   isTransitioning: boolean;
+  /** False while the zoom view grows out of, or shrinks back into, the page image */
+  backdrop?: boolean;
 }
 
 // Check if device supports touch
@@ -405,9 +407,30 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     };
   };
 
+  // Where the page image sits, expressed in the zoom view's own terms
+  // (centered base image, translated and scaled), so the zoom view can grow
+  // out of it and shrink back into it
+  const zoomOriginRef = useRef<{ scale: number; translateX: number; translateY: number } | null>(null);
+  const measureZoomOrigin = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    const imgAspect = tileConfig
+      ? tileConfig.tiled_width / tileConfig.tiled_height
+      : image.dimensions[0] / image.dimensions[1];
+    const viewAspect = window.innerWidth / window.innerHeight;
+    const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
+    return {
+      scale: rect.width / baseImgWidth,
+      translateX: rect.left + rect.width / 2 - window.innerWidth / 2,
+      translateY: rect.top + rect.height / 2 - window.innerHeight / 2,
+    };
+  };
+
   // Open the zoom modal
   const openZoomModal = (initialScale: number = 2, centerX?: number, centerY?: number) => {
     currentScaleRef.current = initialScale;
+    const origin = measureZoomOrigin();
+    zoomOriginRef.current = origin;
 
     // Calculate initial translate to center on tap point if provided
     let translateX = 0;
@@ -419,13 +442,21 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       translateY = (viewCenterY - centerY) * (initialScale - 1) / initialScale;
     }
 
-    setPinchZoom({
+    const target = {
       scale: initialScale,
       translateX,
       translateY,
       isZoomed: true,
-      isTransitioning: true
-    });
+      isTransitioning: true,
+      backdrop: true,
+    };
+    if (origin) {
+      // Start exactly over the page image, then grow on the next frame
+      setPinchZoom({ ...origin, isZoomed: true, isTransitioning: false, backdrop: false });
+      requestAnimationFrame(() => requestAnimationFrame(() => setPinchZoom(target)));
+    } else {
+      setPinchZoom(target);
+    }
 
     // End transition after animation
     setTimeout(() => {
@@ -435,7 +466,12 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
   // Close the zoom modal
   const closeZoomModal = () => {
-    setPinchZoom(prev => ({ ...prev, isTransitioning: true }));
+    const origin = zoomOriginRef.current;
+    setPinchZoom(prev =>
+      origin
+        ? { ...prev, ...origin, isTransitioning: true, backdrop: false }
+        : { ...prev, isTransitioning: true },
+    );
 
     setTimeout(() => {
       currentScaleRef.current = 1;
@@ -950,10 +986,10 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'black',
+            backgroundColor: pinchZoom.backdrop === false ? 'rgba(0, 0, 0, 0)' : 'black',
             zIndex: 9999,
-            opacity: pinchZoom.isTransitioning ? (pinchZoom.isZoomed ? 1 : 0) : 1,
-            transition: pinchZoom.isTransitioning ? 'opacity 0.3s ease-out' : 'none',
+            opacity: pinchZoom.isTransitioning && !zoomOriginRef.current ? (pinchZoom.isZoomed ? 1 : 0) : 1,
+            transition: pinchZoom.isTransitioning ? 'opacity 0.3s ease-out, background-color 0.3s ease-out' : 'none',
             touchAction: 'none',
             overflow: 'hidden'
           }}

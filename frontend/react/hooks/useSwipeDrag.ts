@@ -8,6 +8,10 @@ interface SwipeDragOptions {
   /** Image shown beside the current one while dragging toward it */
   prevUrl?: string;
   nextUrl?: string;
+  /** A single tap that did not become a drag or a double tap */
+  onTap?: () => void;
+  /** Dragging the image down past the threshold */
+  onSwipeDown?: () => void;
   disabled?: boolean;
   /** Changes when a new image is shown; puts the element back in place */
   resetKey?: string;
@@ -22,6 +26,10 @@ const PEEK_GAP_PX = 16;
 const SETTLE_MS = 200;
 const EXIT_MS = 180;
 const HANDOFF_MAX_MS = 1500;
+const TAP_MAX_MS = 300;
+const DOUBLE_TAP_WINDOW_MS = 280;
+const DISMISS_FRACTION = 0.18;
+const DISMISS_MIN_SCALE = 0.85;
 const RESET_FALLBACK_MS = 3000;
 
 function retinaUrl(url: string): string {
@@ -77,17 +85,28 @@ export function useSwipeDrag(
     let start: { x: number; y: number; t: number } | null = null;
     let axis: 'x' | 'y' | null = null;
     let offset = 0;
+    let drop = 0;
     let fallback: number | undefined;
+    let tapTimer: number | undefined;
 
     const setOffset = (px: number, ms = 0) => {
       el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
       el.style.transform = px ? `translate3d(${px}px, 0, 0)` : '';
     };
 
+    // Dragging down shrinks the image as it follows the finger
+    const setDrop = (px: number, ms = 0) => {
+      const height = el.getBoundingClientRect().height || window.innerHeight;
+      const scale = Math.max(DISMISS_MIN_SCALE, 1 - px / height / 2);
+      el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
+      el.style.transform = px ? `translate3d(0, ${px}px, 0) scale(${scale})` : '';
+    };
+
     const settle = () => {
       start = null;
       axis = null;
       offset = 0;
+      drop = 0;
       el.style.willChange = '';
       setOffset(0, SETTLE_MS);
     };
@@ -104,7 +123,10 @@ export function useSwipeDrag(
     handoff.current.finish = snapHome;
 
     const onStart = (e: TouchEvent) => {
-      if (handoff.current.pending) return;
+      // A second tap cancels the single-tap action (it is a double tap)
+      window.clearTimeout(tapTimer);
+      // Swiping again before the last image finished decoding moves on
+      if (handoff.current.pending) snapHome();
       if (e.touches.length !== 1) {
         if (axis === 'x') settle();
         start = null;
@@ -123,13 +145,22 @@ export function useSwipeDrag(
       if (!axis) {
         if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
         axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        if (axis === 'y' && dy > 0 && opts.current.onSwipeDown) {
+          el.style.willChange = 'transform';
+        }
         if (axis === 'x') {
           el.style.willChange = 'transform';
           loadPeek(peeks.prev, opts.current.canPrev ? opts.current.prevUrl : undefined);
           loadPeek(peeks.next, opts.current.canNext ? opts.current.nextUrl : undefined);
         }
       }
-      if (axis !== 'x') return;
+      if (axis === 'y') {
+        if (!opts.current.onSwipeDown) return;
+        e.preventDefault();
+        drop = Math.max(0, dy);
+        setDrop(drop);
+        return;
+      }
       e.preventDefault();
       const allowed = dx < 0 ? opts.current.canNext : opts.current.canPrev;
       offset = allowed ? dx : dx * EDGE_RESISTANCE;
@@ -137,6 +168,31 @@ export function useSwipeDrag(
     };
 
     const onEnd = () => {
+      if (start && !axis) {
+        const quick = performance.now() - start.t < TAP_MAX_MS;
+        start = null;
+        if (quick && opts.current.onTap) {
+          tapTimer = window.setTimeout(() => opts.current.onTap?.(), DOUBLE_TAP_WINDOW_MS);
+        }
+        return;
+      }
+      if (start && axis === 'y') {
+        const elapsed = Math.max(1, performance.now() - start.t);
+        const height = el.getBoundingClientRect().height || window.innerHeight;
+        const dismiss =
+          drop > height * DISMISS_FRACTION ||
+          (drop > FLICK_MIN_PX && drop / elapsed > FLICK_VELOCITY);
+        start = null;
+        axis = null;
+        if (dismiss && opts.current.onSwipeDown) {
+          opts.current.onSwipeDown();
+          return;
+        }
+        drop = 0;
+        el.style.willChange = '';
+        setDrop(0, SETTLE_MS);
+        return;
+      }
       if (!start || axis !== 'x') {
         start = null;
         return;
@@ -173,6 +229,7 @@ export function useSwipeDrag(
     el.addEventListener('touchcancel', settle);
     return () => {
       window.clearTimeout(fallback);
+      window.clearTimeout(tapTimer);
       handoff.current = { pending: false, finish: () => {} };
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);

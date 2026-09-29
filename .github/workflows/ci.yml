@@ -198,8 +198,8 @@ jobs:
     - name: Build server (no AVIF/HEIF)
       run: cargo build --no-default-features
 
-    - name: Install Playwright browser
-      run: npx playwright install --with-deps chromium
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium webkit
 
     - name: Run Playwright E2E tests
       run: npm run test:e2e
