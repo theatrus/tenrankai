@@ -1602,6 +1602,46 @@ async fn test_older_version_has_navigation_unique_id_mode() {
 }
 
 #[tokio::test]
+async fn test_filename_url_has_navigation_in_unique_id_mode() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = create_test_config(&temp_dir);
+    if let Some(ref mut galleries) = config.galleries {
+        galleries[0].image_indexing = ImageIndexingMode::UniqueId;
+    }
+    let photos_dir = std::path::Path::new(&config.galleries.as_ref().unwrap()[0].source_directory);
+
+    use image::{ImageBuffer, Rgb};
+    for (name, shade) in [
+        ("AAA_0001.jpg", 50u8),
+        ("BBB_0002.jpg", 100),
+        ("CCC_0003.jpg", 150),
+    ] {
+        let img = ImageBuffer::from_fn(100, 100, |_, _| Rgb([shade, shade, shade]));
+        img.save(photos_dir.join(name)).unwrap();
+    }
+
+    let app = create_app(config, None).await;
+    let server = TestServer::new(app);
+
+    // Old and shared links name the file rather than its unique id
+    let response = server.get("/api/gallery/main/image/BBB_0002.jpg").await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    let json = response.json::<serde_json::Value>();
+
+    assert!(
+        json["prev_image"].is_object() && json["next_image"].is_object(),
+        "An image opened by filename should still get prev/next navigation: {}",
+        serde_json::to_string_pretty(&json).unwrap()
+    );
+    assert_ne!(
+        json["next_image"]["path"], "CCC_0003.jpg",
+        "Navigation targets use unique ids, not filenames"
+    );
+    assert_eq!(json["prev_images"].as_array().unwrap().len(), 1);
+    assert_eq!(json["next_images"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn test_hidden_folder_not_shown_in_gallery() {
     let temp_dir = TempDir::new().unwrap();
     let config = create_test_config(&temp_dir);
