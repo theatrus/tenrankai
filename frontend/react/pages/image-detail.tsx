@@ -25,6 +25,7 @@ import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { MobileTray, TrayThumbnails } from '../components/ImageDetail/MobileTray.tsx';
 import { useMediaQuery } from '../hooks/useMediaQuery.ts';
+import { formatHours } from '../utils/format-hours.ts';
 import { EditModal } from '../components/Editor/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
 
@@ -66,13 +67,6 @@ function createMountErrorFallback(): HTMLElement {
 
   fallback.append(title, message, reloadButton);
   return fallback;
-}
-
-function formatHours(hours: number): string {
-  const whole = Math.floor(hours);
-  const minutes = Math.round((hours - whole) * 60);
-  if (minutes === 60) return `${whole + 1}h`;
-  return minutes ? `${whole}h ${minutes}m` : `${whole}h`;
 }
 
 /** One short line for the phone tray: integration and optics for astro
