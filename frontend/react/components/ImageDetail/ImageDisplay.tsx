@@ -417,6 +417,17 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     viewport: string;
   } | null>(null);
   const viewportKey = () => `${window.innerWidth}x${window.innerHeight}`;
+
+  // Pending open/close animation steps; a newer zoom action cancels them so
+  // a stale step cannot cut a later animation short
+  const zoomTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const zoomFrameRef = useRef<number | undefined>(undefined);
+  const cancelZoomSteps = () => {
+    clearTimeout(zoomTimerRef.current);
+    if (zoomFrameRef.current !== undefined) cancelAnimationFrame(zoomFrameRef.current);
+    zoomTimerRef.current = undefined;
+    zoomFrameRef.current = undefined;
+  };
   const measureZoomOrigin = () => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return null;
@@ -457,20 +468,23 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       isTransitioning: true,
       backdrop: true,
     };
-    const endTransition = () =>
-      setTimeout(() => {
+    cancelZoomSteps();
+    const endTransition = () => {
+      zoomTimerRef.current = setTimeout(() => {
         setPinchZoom(prev => ({ ...prev, isTransitioning: false }));
       }, 300);
+    };
     if (origin) {
       // Start exactly over the page image, then grow on the next frame
       const { scale, translateX: x, translateY: y } = origin;
       setPinchZoom({ scale, translateX: x, translateY: y, isZoomed: true, isTransitioning: false, backdrop: false });
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
+      zoomFrameRef.current = requestAnimationFrame(() => {
+        zoomFrameRef.current = requestAnimationFrame(() => {
+          zoomFrameRef.current = undefined;
           setPinchZoom(target);
           endTransition();
-        }),
-      );
+        });
+      });
     } else {
       setPinchZoom(target);
       endTransition();
@@ -479,6 +493,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
   // Close the zoom modal
   const closeZoomModal = () => {
+    cancelZoomSteps();
     // The page image is unmounted while zoomed, so it cannot be measured
     // again; if the window changed (e.g. rotation), just fade out instead
     const saved = zoomOriginRef.current;
@@ -497,7 +512,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
         : { ...prev, isTransitioning: true },
     );
 
-    setTimeout(() => {
+    zoomTimerRef.current = setTimeout(() => {
+      zoomTimerRef.current = undefined;
       currentScaleRef.current = 1;
       zoomOriginRef.current = null;
       setPinchZoom({
@@ -684,6 +700,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
   // Reset pinch zoom when image changes
   useEffect(() => {
+    cancelZoomSteps();
     currentScaleRef.current = 1;
     zoomOriginRef.current = null;
     initialPinchScale.current = 1;
