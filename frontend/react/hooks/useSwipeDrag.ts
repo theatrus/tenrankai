@@ -10,8 +10,9 @@ interface SwipeDragOptions {
   nextUrl?: string;
   /** A single tap that did not become a drag or a double tap */
   onTap?: () => void;
-  /** Dragging the image down past the threshold */
-  onSwipeDown?: () => void;
+  /** Dragging the image down past the threshold. Return true when the page
+   * stays (e.g. it only closed a panel), so the image springs back. */
+  onSwipeDown?: () => boolean | void;
   disabled?: boolean;
   /** Changes when a new image is shown; puts the element back in place */
   resetKey?: string;
@@ -144,7 +145,7 @@ export function useSwipeDrag(
     const viewport = window.visualViewport;
     const pageZoomed = () => (viewport?.scale ?? 1) > 1.01;
     const syncTouchAction = () => {
-      el.style.touchAction = pageZoomed() ? 'manipulation' : '';
+      el.classList.toggle('page-zoomed', pageZoomed());
     };
     syncTouchAction();
     viewport?.addEventListener('resize', syncTouchAction);
@@ -224,8 +225,8 @@ export function useSwipeDrag(
         start = null;
         axis = null;
         if (dismiss && opts.current.onSwipeDown) {
-          opts.current.onSwipeDown();
-          return;
+          const stayed = opts.current.onSwipeDown();
+          if (!stayed) return;
         }
         drop = 0;
         el.style.willChange = '';
@@ -279,7 +280,7 @@ export function useSwipeDrag(
       window.clearTimeout(tapTimer);
       window.removeEventListener('pageshow', onPageShow);
       viewport?.removeEventListener('resize', syncTouchAction);
-      el.style.touchAction = '';
+      el.classList.remove('page-zoomed');
       // Keep counting generations so an older decode can never match a new swipe
       handoff.current = {
         pending: false,

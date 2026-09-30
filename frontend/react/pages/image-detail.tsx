@@ -169,13 +169,17 @@ export function ImageDetailPage({
   useEffect(() => {
     document.body.classList.toggle('image-detail-phone-menu', isPhone && siteMenuOpen);
     if (!siteMenuOpen) return;
+    // Capture phase on document, so Escape closes the menu before keyboard
+    // navigation (which treats Escape as "back to the folder") sees it
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSiteMenuOpen(false);
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      setSiteMenuOpen(false);
     };
-    window.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
       document.body.classList.remove('image-detail-phone-menu');
-      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
     };
   }, [isPhone, siteMenuOpen]);
 
@@ -358,8 +362,11 @@ export function ImageDetailPage({
       else setImmersive(!immersive);
     },
     onSwipeDown: () => {
-      if (trayExpanded) setTrayExpanded(false);
-      else window.location.href = folderHref;
+      if (trayExpanded) {
+        setTrayExpanded(false);
+        return true;
+      }
+      window.location.href = folderHref;
     },
     disabled: !isPhone || isImageZoomed,
     resetKey: currentData?.image.path,

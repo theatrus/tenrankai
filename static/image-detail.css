@@ -1073,9 +1073,16 @@ body.image-detail-phone.image-detail-phone-menu > header {
 }
 
 /* The drag hook handles every one-finger move on the image; it hands
-   panning back to the browser only while the page is pinch-zoomed */
+   panning back to the browser only while the page is pinch-zoomed.
+   !important overrides the inline touch-action ImageDisplay sets on the
+   image, since browsers only allow what every ancestor allows. */
 .phone-stage .swipeable-image-area {
     touch-action: none;
+}
+
+.phone-stage .swipeable-image-area.page-zoomed,
+.phone-stage .swipeable-image-area.page-zoomed * {
+    touch-action: manipulation !important;
 }
 
 /* Neighboring images that slide in beside the current one while swiping;

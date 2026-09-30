@@ -93,6 +93,12 @@ test.describe('phone image detail', () => {
     await menu.click();
     await page.locator('.phone-menu-backdrop').click({ position: { x: 20, y: 300 } });
     await expect(page.locator('body > header')).toBeHidden();
+
+    // Escape closes the menu without leaving the page
+    await menu.click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('body > header')).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`${DETAIL}$`));
   });
 
   test('a tap on the image hides and restores the bars', async ({ page }) => {
@@ -134,6 +140,21 @@ test.describe('phone image detail', () => {
     // A long drag to the left moves to the next image
     await drag(page, [stage.x + stage.width * 0.9, y], [stage.x + stage.width * 0.1, y]);
     await expect(page).toHaveURL(/04-delta\.png$/);
+    await expect
+      .poll(() => page.evaluate(() => document.querySelector<HTMLElement>('.phone-stage .swipeable-image-area')!.style.transform))
+      .toBe('');
+  });
+
+  test('dragging down with the tray open closes the tray and stays', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'WebKit cannot synthesize touch drags');
+    await openPhoneDetail(page);
+    await page.locator('.phone-tray-toggle').click();
+    await expect(page.locator('.phone-tray.expanded')).toHaveCount(1);
+    const stage = (await page.locator('.phone-stage').boundingBox())!;
+    const x = stage.x + stage.width / 2;
+    await drag(page, [x, stage.y + 20], [x, stage.y + stage.height * 0.6]);
+    await expect(page.locator('.phone-tray.expanded')).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`${DETAIL}$`));
     await expect
       .poll(() => page.evaluate(() => document.querySelector<HTMLElement>('.phone-stage .swipeable-image-area')!.style.transform))
       .toBe('');
