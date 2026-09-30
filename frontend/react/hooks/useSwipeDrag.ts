@@ -263,7 +263,13 @@ export function useSwipeDrag(
       window.clearTimeout(fallback);
       window.clearTimeout(tapTimer);
       window.removeEventListener('pageshow', onPageShow);
-      handoff.current = { pending: false, navigated: false, generation: 0, finish: () => {} };
+      // Keep counting generations so an older decode can never match a new swipe
+      handoff.current = {
+        pending: false,
+        navigated: false,
+        generation: handoff.current.generation + 1,
+        finish: () => {},
+      };
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
@@ -301,6 +307,9 @@ export function useSwipeDrag(
     } else {
       finish();
     }
-    return () => window.clearTimeout(timer);
+    return () => {
+      done = true;
+      window.clearTimeout(timer);
+    };
   }, [elementRef, options.resetKey]);
 }
