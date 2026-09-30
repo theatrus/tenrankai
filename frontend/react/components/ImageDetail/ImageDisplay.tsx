@@ -532,7 +532,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     if (!canUseZoom || !isMobile) return;
 
     if (e.touches.length === 2) {
-      // Starting pinch gesture
+      // Starting pinch gesture; it takes over from any pending zoom animation
+      cancelZoomSteps();
       e.preventDefault();
       isPinchingRef.current = true;
       lastTouchDistance.current = getTouchDistance(e.touches);

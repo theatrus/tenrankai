@@ -117,9 +117,12 @@ export function useSwipeDrag(
       el.style.transform = px ? `translate3d(${px}px, 0, 0)` : '';
     };
 
+    // Height measured when a downward drag starts, before it shrinks the image
+    let dragHeight = window.innerHeight;
+
     // Dragging down shrinks the image as it follows the finger
     const setDrop = (px: number, ms = 0) => {
-      const height = el.getBoundingClientRect().height || window.innerHeight;
+      const height = dragHeight;
       const scale = Math.max(DISMISS_MIN_SCALE, 1 - px / height / 2);
       el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
       el.style.transform = px ? `translate3d(0, ${px}px, 0) scale(${scale})` : '';
@@ -193,6 +196,7 @@ export function useSwipeDrag(
         // A drag is not a tap: drop any tap still waiting to run
         cancelTap();
         if (axis === 'y' && dy > 0 && opts.current.onSwipeDown) {
+          dragHeight = el.getBoundingClientRect().height || window.innerHeight;
           el.style.willChange = 'transform';
         }
         if (axis === 'x') {
@@ -243,9 +247,8 @@ export function useSwipeDrag(
       }
       if (start && axis === 'y') {
         const elapsed = Math.max(1, performance.now() - start.t);
-        const height = el.getBoundingClientRect().height || window.innerHeight;
         const dismiss =
-          drop > height * DISMISS_FRACTION ||
+          drop > dragHeight * DISMISS_FRACTION ||
           (drop > FLICK_MIN_PX && drop / elapsed > FLICK_VELOCITY);
         start = null;
         axis = null;
