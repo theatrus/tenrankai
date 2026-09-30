@@ -138,7 +138,22 @@ export function useSwipeDrag(
     };
     handoff.current.finish = snapHome;
 
+    // If the page itself is pinch-zoomed with the browser's own zoom, one
+    // finger should pan the page, not drag the image. The stage claims all
+    // touch input otherwise, so drags get every move and can cancel them.
+    const viewport = window.visualViewport;
+    const pageZoomed = () => (viewport?.scale ?? 1) > 1.01;
+    const syncTouchAction = () => {
+      el.style.touchAction = pageZoomed() ? 'pan-x pan-y' : '';
+    };
+    syncTouchAction();
+    viewport?.addEventListener('resize', syncTouchAction);
+
     const onStart = (e: TouchEvent) => {
+      if (pageZoomed()) {
+        start = null;
+        return;
+      }
       // A second tap cancels the single-tap action (it is a double tap)
       window.clearTimeout(tapTimer);
       if (handoff.current.pending) {
@@ -263,6 +278,8 @@ export function useSwipeDrag(
       window.clearTimeout(fallback);
       window.clearTimeout(tapTimer);
       window.removeEventListener('pageshow', onPageShow);
+      viewport?.removeEventListener('resize', syncTouchAction);
+      el.style.touchAction = '';
       // Keep counting generations so an older decode can never match a new swipe
       handoff.current = {
         pending: false,
