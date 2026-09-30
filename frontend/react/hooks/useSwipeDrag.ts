@@ -28,9 +28,10 @@ const SETTLE_MS = 200;
 const EXIT_MS = 180;
 const HANDOFF_MAX_MS = 1500;
 const TAP_MAX_MS = 300;
-// Must not be shorter than ImageDisplay's double-tap window (300 ms), or a
-// slow double tap would also fire the single-tap action
+// Same rule as ImageDisplay's double-tap zoom: two taps whose touchends are
+// under 300 ms apart and under 50 px apart on each axis
 const DOUBLE_TAP_WINDOW_MS = 300;
+const DOUBLE_TAP_SLOP_PX = 50;
 const DISMISS_FRACTION = 0.18;
 const DISMISS_MIN_SCALE = 0.85;
 const RESET_FALLBACK_MS = 3000;
@@ -104,10 +105,12 @@ export function useSwipeDrag(
     let drop = 0;
     let fallback: number | undefined;
     let tapTimer: number | undefined;
-    let tapPending = false;
-    // This gesture began while a single tap was still pending: it is the
-    // second tap of a double tap, so neither tap runs the single-tap action
-    let secondTap = false;
+    // The last tap still waiting to run the single-tap action
+    let pendingTap: { x: number; y: number; t: number } | null = null;
+    const cancelTap = () => {
+      window.clearTimeout(tapTimer);
+      pendingTap = null;
+    };
 
     const setOffset = (px: number, ms = 0) => {
       el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
@@ -159,9 +162,6 @@ export function useSwipeDrag(
         start = null;
         return;
       }
-      secondTap = tapPending;
-      tapPending = false;
-      window.clearTimeout(tapTimer);
       if (handoff.current.pending) {
         // Still waiting for the new image's data: ignore the touch
         if (!handoff.current.navigated) {
@@ -190,6 +190,8 @@ export function useSwipeDrag(
       if (!axis) {
         if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
         axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        // A drag is not a tap: drop any tap still waiting to run
+        cancelTap();
         if (axis === 'y' && dy > 0 && opts.current.onSwipeDown) {
           el.style.willChange = 'transform';
         }
@@ -212,17 +214,31 @@ export function useSwipeDrag(
       setOffset(offset);
     };
 
-    const onEnd = () => {
+    const onEnd = (e: TouchEvent) => {
       if (start && !axis) {
-        const quick = performance.now() - start.t < TAP_MAX_MS;
+        const now = performance.now();
+        const quick = now - start.t < TAP_MAX_MS;
         start = null;
-        if (quick && !secondTap && opts.current.onTap) {
-          tapPending = true;
-          tapTimer = window.setTimeout(() => {
-            tapPending = false;
-            opts.current.onTap?.();
-          }, DOUBLE_TAP_WINDOW_MS);
+        if (!quick || !opts.current.onTap) return;
+        const touch = e.changedTouches[0];
+        const tap = { x: touch?.clientX ?? 0, y: touch?.clientY ?? 0, t: now };
+        const prev = pendingTap;
+        if (
+          prev &&
+          tap.t - prev.t < DOUBLE_TAP_WINDOW_MS &&
+          Math.abs(tap.x - prev.x) < DOUBLE_TAP_SLOP_PX &&
+          Math.abs(tap.y - prev.y) < DOUBLE_TAP_SLOP_PX
+        ) {
+          // A double tap (zoom, when allowed): neither tap toggles the bars
+          cancelTap();
+          return;
         }
+        window.clearTimeout(tapTimer);
+        pendingTap = tap;
+        tapTimer = window.setTimeout(() => {
+          pendingTap = null;
+          opts.current.onTap?.();
+        }, DOUBLE_TAP_WINDOW_MS);
         return;
       }
       if (start && axis === 'y') {

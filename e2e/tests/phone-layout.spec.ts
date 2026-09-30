@@ -122,28 +122,34 @@ test.describe('phone image detail', () => {
     await openPhoneDetail(page);
     // Taps dispatched on the drag area never reach ImageDisplay's zoom
     // handlers, so this behaves like a viewer without zoom permission
-    const tapTwice = (gapMs: number) =>
-      page.evaluate(async (gapMs) => {
-        const el = document.querySelector('.phone-stage .swipeable-image-area')!;
-        const tap = () => {
-          const t = new Touch({ identifier: 1, target: el, clientX: 200, clientY: 300 });
-          el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [t], targetTouches: [t], changedTouches: [t] }));
-          el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], targetTouches: [], changedTouches: [t] }));
-        };
-        tap();
-        if (gapMs >= 0) {
-          await new Promise((r) => setTimeout(r, gapMs));
-          tap();
-        }
-      }, gapMs);
+    const taps = (points: [number, number][], gapMs: number) =>
+      page.evaluate(
+        async ({ points, gapMs }) => {
+          const el = document.querySelector('.phone-stage .swipeable-image-area')!;
+          for (const [i, [x, y]] of points.entries()) {
+            if (i > 0) await new Promise((r) => setTimeout(r, gapMs));
+            const t = new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+            el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [t], targetTouches: [t], changedTouches: [t] }));
+            el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], targetTouches: [], changedTouches: [t] }));
+          }
+        },
+        { points, gapMs },
+      );
+    const immersive = page.locator('.phone-detail.immersive');
 
-    await tapTwice(120);
+    // Two quick taps in the same spot are a double tap: no toggle
+    await taps([[200, 300], [205, 305]], 120);
     await page.waitForTimeout(600);
-    await expect(page.locator('.phone-detail.immersive')).toHaveCount(0);
+    await expect(immersive).toHaveCount(0);
 
-    // A single tap still hides them
-    await tapTwice(-1);
-    await expect(page.locator('.phone-detail.immersive')).toHaveCount(1);
+    // A single tap hides the bars
+    await taps([[200, 300]], 0);
+    await expect(immersive).toHaveCount(1);
+
+    // Two quick taps far apart are not a double tap (ImageDisplay's rule
+    // too), so they count as one tap and bring the bars back
+    await taps([[60, 300], [320, 300]], 120);
+    await expect(immersive).toHaveCount(0);
   });
 
   test('the thumbnail strip navigates in place', async ({ page }) => {
