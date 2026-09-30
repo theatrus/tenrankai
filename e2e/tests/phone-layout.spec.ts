@@ -117,6 +117,35 @@ test.describe('phone image detail', () => {
     await expect(page.locator('.phone-tray')).toBeVisible();
   });
 
+  test('a double tap does not also hide the bars', async ({ page, browserName }) => {
+    test.skip(browserName === 'webkit', 'WebKit cannot synthesize touches');
+    await openPhoneDetail(page);
+    // Taps dispatched on the drag area never reach ImageDisplay's zoom
+    // handlers, so this behaves like a viewer without zoom permission
+    const tapTwice = (gapMs: number) =>
+      page.evaluate(async (gapMs) => {
+        const el = document.querySelector('.phone-stage .swipeable-image-area')!;
+        const tap = () => {
+          const t = new Touch({ identifier: 1, target: el, clientX: 200, clientY: 300 });
+          el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [t], targetTouches: [t], changedTouches: [t] }));
+          el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], targetTouches: [], changedTouches: [t] }));
+        };
+        tap();
+        if (gapMs >= 0) {
+          await new Promise((r) => setTimeout(r, gapMs));
+          tap();
+        }
+      }, gapMs);
+
+    await tapTwice(120);
+    await page.waitForTimeout(600);
+    await expect(page.locator('.phone-detail.immersive')).toHaveCount(0);
+
+    // A single tap still hides them
+    await tapTwice(-1);
+    await expect(page.locator('.phone-detail.immersive')).toHaveCount(1);
+  });
+
   test('the thumbnail strip navigates in place', async ({ page }) => {
     await openPhoneDetail(page);
     const strip = page.locator('.phone-tray-strip');

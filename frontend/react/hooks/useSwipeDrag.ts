@@ -104,6 +104,10 @@ export function useSwipeDrag(
     let drop = 0;
     let fallback: number | undefined;
     let tapTimer: number | undefined;
+    let tapPending = false;
+    // This gesture began while a single tap was still pending: it is the
+    // second tap of a double tap, so neither tap runs the single-tap action
+    let secondTap = false;
 
     const setOffset = (px: number, ms = 0) => {
       el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
@@ -155,7 +159,8 @@ export function useSwipeDrag(
         start = null;
         return;
       }
-      // A second tap cancels the single-tap action (it is a double tap)
+      secondTap = tapPending;
+      tapPending = false;
       window.clearTimeout(tapTimer);
       if (handoff.current.pending) {
         // Still waiting for the new image's data: ignore the touch
@@ -211,8 +216,12 @@ export function useSwipeDrag(
       if (start && !axis) {
         const quick = performance.now() - start.t < TAP_MAX_MS;
         start = null;
-        if (quick && opts.current.onTap) {
-          tapTimer = window.setTimeout(() => opts.current.onTap?.(), DOUBLE_TAP_WINDOW_MS);
+        if (quick && !secondTap && opts.current.onTap) {
+          tapPending = true;
+          tapTimer = window.setTimeout(() => {
+            tapPending = false;
+            opts.current.onTap?.();
+          }, DOUBLE_TAP_WINDOW_MS);
         }
         return;
       }
