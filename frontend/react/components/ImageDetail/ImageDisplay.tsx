@@ -410,7 +410,13 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
   // Where the page image sits, expressed in the zoom view's own terms
   // (centered base image, translated and scaled), so the zoom view can grow
   // out of it and shrink back into it
-  const zoomOriginRef = useRef<{ scale: number; translateX: number; translateY: number } | null>(null);
+  const zoomOriginRef = useRef<{
+    scale: number;
+    translateX: number;
+    translateY: number;
+    viewport: string;
+  } | null>(null);
+  const viewportKey = () => `${window.innerWidth}x${window.innerHeight}`;
   const measureZoomOrigin = () => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return null;
@@ -423,6 +429,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       scale: rect.width / baseImgWidth,
       translateX: rect.left + rect.width / 2 - window.innerWidth / 2,
       translateY: rect.top + rect.height / 2 - window.innerHeight / 2,
+      viewport: viewportKey(),
     };
   };
 
@@ -456,7 +463,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       }, 300);
     if (origin) {
       // Start exactly over the page image, then grow on the next frame
-      setPinchZoom({ ...origin, isZoomed: true, isTransitioning: false, backdrop: false });
+      const { scale, translateX: x, translateY: y } = origin;
+      setPinchZoom({ scale, translateX: x, translateY: y, isZoomed: true, isTransitioning: false, backdrop: false });
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
           setPinchZoom(target);
@@ -471,10 +479,21 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
   // Close the zoom modal
   const closeZoomModal = () => {
-    const origin = zoomOriginRef.current;
+    // The page image is unmounted while zoomed, so it cannot be measured
+    // again; if the window changed (e.g. rotation), just fade out instead
+    const saved = zoomOriginRef.current;
+    const origin = saved && saved.viewport === viewportKey() ? saved : null;
+    if (!origin) zoomOriginRef.current = null;
     setPinchZoom(prev =>
       origin
-        ? { ...prev, ...origin, isTransitioning: true, backdrop: false }
+        ? {
+            ...prev,
+            scale: origin.scale,
+            translateX: origin.translateX,
+            translateY: origin.translateY,
+            isTransitioning: true,
+            backdrop: false,
+          }
         : { ...prev, isTransitioning: true },
     );
 
