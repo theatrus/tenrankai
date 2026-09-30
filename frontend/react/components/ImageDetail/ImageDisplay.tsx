@@ -35,6 +35,10 @@ interface PinchZoomState {
   translateY: number;
   isZoomed: boolean;
   isTransitioning: boolean;
+  /** False while the zoom view grows out of, or shrinks back into, the page image */
+  backdrop?: boolean;
+  /** Closing without a page origin to shrink into: fade the view out */
+  fadeOut?: boolean;
 }
 
 // Check if device supports touch
@@ -405,9 +409,48 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     };
   };
 
+  // Where the page image sits, expressed in the zoom view's own terms
+  // (centered base image, translated and scaled), so the zoom view can grow
+  // out of it and shrink back into it
+  const zoomOriginRef = useRef<{
+    scale: number;
+    translateX: number;
+    translateY: number;
+    viewport: string;
+  } | null>(null);
+  const viewportKey = () => `${window.innerWidth}x${window.innerHeight}`;
+
+  // Pending open/close animation steps; a newer zoom action cancels them so
+  // a stale step cannot cut a later animation short
+  const zoomTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const zoomFrameRef = useRef<number | undefined>(undefined);
+  const cancelZoomSteps = () => {
+    clearTimeout(zoomTimerRef.current);
+    if (zoomFrameRef.current !== undefined) cancelAnimationFrame(zoomFrameRef.current);
+    zoomTimerRef.current = undefined;
+    zoomFrameRef.current = undefined;
+  };
+  const measureZoomOrigin = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    const imgAspect = tileConfig
+      ? tileConfig.tiled_width / tileConfig.tiled_height
+      : image.dimensions[0] / image.dimensions[1];
+    const viewAspect = window.innerWidth / window.innerHeight;
+    const baseImgWidth = imgAspect > viewAspect ? window.innerWidth : window.innerHeight * imgAspect;
+    return {
+      scale: rect.width / baseImgWidth,
+      translateX: rect.left + rect.width / 2 - window.innerWidth / 2,
+      translateY: rect.top + rect.height / 2 - window.innerHeight / 2,
+      viewport: viewportKey(),
+    };
+  };
+
   // Open the zoom modal
   const openZoomModal = (initialScale: number = 2, centerX?: number, centerY?: number) => {
     currentScaleRef.current = initialScale;
+    const origin = measureZoomOrigin();
+    zoomOriginRef.current = origin;
 
     // Calculate initial translate to center on tap point if provided
     let translateX = 0;
@@ -419,26 +462,62 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       translateY = (viewCenterY - centerY) * (initialScale - 1) / initialScale;
     }
 
-    setPinchZoom({
+    const target = {
       scale: initialScale,
       translateX,
       translateY,
       isZoomed: true,
-      isTransitioning: true
-    });
-
-    // End transition after animation
-    setTimeout(() => {
-      setPinchZoom(prev => ({ ...prev, isTransitioning: false }));
-    }, 300);
+      isTransitioning: true,
+      backdrop: true,
+    };
+    cancelZoomSteps();
+    const endTransition = () => {
+      zoomTimerRef.current = setTimeout(() => {
+        setPinchZoom(prev => ({ ...prev, isTransitioning: false }));
+      }, 300);
+    };
+    if (origin) {
+      // Start exactly over the page image, then grow on the next frame
+      const { scale, translateX: x, translateY: y } = origin;
+      setPinchZoom({ scale, translateX: x, translateY: y, isZoomed: true, isTransitioning: false, backdrop: false });
+      zoomFrameRef.current = requestAnimationFrame(() => {
+        zoomFrameRef.current = requestAnimationFrame(() => {
+          zoomFrameRef.current = undefined;
+          setPinchZoom(target);
+          endTransition();
+        });
+      });
+    } else {
+      setPinchZoom(target);
+      endTransition();
+    }
   };
 
   // Close the zoom modal
   const closeZoomModal = () => {
-    setPinchZoom(prev => ({ ...prev, isTransitioning: true }));
+    cancelZoomSteps();
+    // The page image is unmounted while zoomed, so it cannot be measured
+    // again; if the window changed (e.g. rotation), just fade out instead
+    const saved = zoomOriginRef.current;
+    const origin = saved && saved.viewport === viewportKey() ? saved : null;
+    if (!origin) zoomOriginRef.current = null;
+    setPinchZoom(prev =>
+      origin
+        ? {
+            ...prev,
+            scale: origin.scale,
+            translateX: origin.translateX,
+            translateY: origin.translateY,
+            isTransitioning: true,
+            backdrop: false,
+          }
+        : { ...prev, isTransitioning: true, fadeOut: true },
+    );
 
-    setTimeout(() => {
+    zoomTimerRef.current = setTimeout(() => {
+      zoomTimerRef.current = undefined;
       currentScaleRef.current = 1;
+      zoomOriginRef.current = null;
       setPinchZoom({
         scale: 1,
         translateX: 0,
@@ -453,7 +532,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
     if (!canUseZoom || !isMobile) return;
 
     if (e.touches.length === 2) {
-      // Starting pinch gesture
+      // Starting pinch gesture; it takes over from any pending zoom animation
+      cancelZoomSteps();
       e.preventDefault();
       isPinchingRef.current = true;
       lastTouchDistance.current = getTouchDistance(e.touches);
@@ -505,6 +585,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       newTranslateY = Math.max(-maxPanY, Math.min(maxPanY, newTranslateY));
 
       const shouldBeZoomed = newScale > 1.05;
+      // A pinch opens the zoom view from where it is; it has no page origin
+      if (shouldBeZoomed && !pinchZoom.isZoomed) zoomOriginRef.current = null;
 
       setPinchZoom(prev => ({
         scale: newScale,
@@ -621,7 +703,9 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
   // Reset pinch zoom when image changes
   useEffect(() => {
+    cancelZoomSteps();
     currentScaleRef.current = 1;
+    zoomOriginRef.current = null;
     initialPinchScale.current = 1;
     initialTranslateRef.current = { x: 0, y: 0 };
     setPinchZoom({
@@ -950,10 +1034,10 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'black',
+            backgroundColor: pinchZoom.backdrop === false ? 'rgba(0, 0, 0, 0)' : 'black',
             zIndex: 9999,
-            opacity: pinchZoom.isTransitioning ? (pinchZoom.isZoomed ? 1 : 0) : 1,
-            transition: pinchZoom.isTransitioning ? 'opacity 0.3s ease-out' : 'none',
+            opacity: pinchZoom.fadeOut ? 0 : 1,
+            transition: pinchZoom.isTransitioning ? 'opacity 0.3s ease-out, background-color 0.3s ease-out' : 'none',
             touchAction: 'none',
             overflow: 'hidden'
           }}

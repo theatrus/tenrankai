@@ -389,6 +389,37 @@ export function CatalogMenu({
     e.preventDefault();
     e.stopPropagation();
   };
+  // Embeds sit inside a link, so their clicks are cancelled to keep the link
+  // from following. A cancelled click also undoes a native checkbox toggle,
+  // so in embeds the row is the control: it toggles the state itself, and the
+  // box only displays it (it takes no pointer or keyboard input of its own).
+  const rowProps = (checked: boolean, toggle: () => void) =>
+    compact
+      ? {
+          role: 'menuitemcheckbox',
+          'aria-checked': checked,
+          tabIndex: 0,
+          onClick: (e: React.MouseEvent) => {
+            stop(e);
+            toggle();
+          },
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+              stop(e);
+              toggle();
+            }
+          },
+        }
+      : {};
+  const boxProps = (toggle: () => void) =>
+    compact
+      ? {
+          tabIndex: -1,
+          'aria-hidden': true,
+          style: { pointerEvents: 'none' as const },
+          onChange: () => {},
+        }
+      : { onChange: toggle };
 
   return (
     <span
@@ -426,11 +457,15 @@ export function CatalogMenu({
       {menuOpen && (
         <span className="astro-catalog-menu" role="menu">
           {availableGroups.map(([id, label]) => (
-            <label key={id} className="astro-catalog-item">
+            <label
+              key={id}
+              className="astro-catalog-item"
+              {...rowProps(!hiddenGroups.includes(id), () => toggleGroup(id))}
+            >
               <input
                 type="checkbox"
                 checked={!hiddenGroups.includes(id)}
-                onChange={() => toggleGroup(id)}
+                {...boxProps(() => toggleGroup(id))}
               />
               <span>
                 {label} ({groupCounts.get(id)})
@@ -441,11 +476,14 @@ export function CatalogMenu({
             <label
               className="astro-catalog-item astro-outline-item"
               title="Draw catalog brightness contours instead of ellipses where available"
+              {...rowProps(preciseOutlines !== false, () =>
+                onPreciseOutlinesChange(preciseOutlines === false),
+              )}
             >
               <input
                 type="checkbox"
                 checked={preciseOutlines !== false}
-                onChange={() => onPreciseOutlinesChange(preciseOutlines === false)}
+                {...boxProps(() => onPreciseOutlinesChange(preciseOutlines === false))}
               />
               <span>Precise outlines ({outlined})</span>
             </label>

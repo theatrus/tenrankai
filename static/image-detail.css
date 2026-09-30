@@ -19,8 +19,7 @@ body {
 }
 
 /* Breadcrumbs stay in flow so long names push content down, not over it */
-.image-detail-container .gallery-nav,
-.phone-detail .gallery-nav {
+.image-detail-container .gallery-nav {
     margin-bottom: 0;
     padding: 1rem var(--spacing-xl) 0.5rem;
     position: static;
@@ -780,33 +779,6 @@ dd {
         box-shadow: none;
     }
 
-    /* Breadcrumbs sit in flow on one line; long names truncate */
-    .image-detail-container .gallery-nav,
-    .phone-detail .gallery-nav {
-        font-size: 0.75rem;
-        padding: 0.75rem var(--spacing-md) 0.5rem;
-        flex-wrap: nowrap;
-        align-items: baseline;
-        white-space: nowrap;
-        overflow: hidden;
-    }
-
-    .phone-detail .gallery-nav .nav-link,
-    .phone-detail .gallery-nav .nav-current {
-        flex: 0 1 auto;
-        min-width: 2.5em;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .phone-detail .gallery-nav .nav-current {
-        flex-shrink: 0.3;
-    }
-
-    .phone-detail .gallery-nav .nav-separator {
-        flex-shrink: 0;
-        margin: 0 0.35rem;
-    }
     
     /* Fix technical details overflow on mobile */
     dl {
@@ -977,18 +949,112 @@ body.image-detail-phone .image-detail-container {
 
 .phone-detail {
     position: fixed;
+    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
+    /* Keep clear of the notch and rounded corners, including sideways */
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
     display: flex;
     flex-direction: column;
     background-color: var(--bg-primary);
     z-index: 50;
 }
 
-.phone-detail .gallery-nav {
+.phone-topbar {
     flex: none;
-    z-index: auto;
+    position: relative;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 0 0.25rem;
+    background-color: var(--header-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.phone-topbar-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 0.5rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.phone-topbar-back svg {
+    flex: none;
+}
+
+.phone-topbar-back span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.phone-topbar-menu {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+/* The site header is replaced by the top bar; its menu button shows it */
+body.image-detail-phone > header {
+    display: none;
+}
+
+/* It drops down below the top bar so the menu button stays reachable */
+body.image-detail-phone.image-detail-phone-menu > header {
+    display: block;
+    position: fixed;
+    top: calc(45px + env(safe-area-inset-top, 0px));
+    left: 0;
+    right: 0;
+}
+
+/* Sits under the top bar (z-index 45) so the menu button can close it */
+.phone-menu-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.25);
+}
+
+/* A tap on the image hides the bars so the image fills the screen */
+.phone-detail.immersive {
+    background-color: #000;
+}
+
+.phone-detail.immersive .phone-topbar,
+.phone-detail.immersive .phone-tray {
+    display: none;
+}
+
+.phone-stage .image-container {
+    max-width: 100%;
+    max-height: none;
+    box-shadow: none;
+    background-color: transparent;
+}
+
+.phone-stage .image-container .image-display {
+    box-shadow: none;
+    border-radius: 0;
+    background-color: transparent;
 }
 
 .phone-stage {
@@ -1004,6 +1070,19 @@ body.image-detail-phone .image-detail-container {
 .phone-stage .image-container-outer {
     height: 100%;
     max-height: none;
+}
+
+/* The drag hook handles every one-finger move on the image; it hands
+   panning back to the browser only while the page is pinch-zoomed.
+   !important overrides the inline touch-action ImageDisplay sets on the
+   image, since browsers only allow what every ancestor allows. */
+.phone-stage .swipeable-image-area {
+    touch-action: none;
+}
+
+.phone-stage .swipeable-image-area.page-zoomed,
+.phone-stage .swipeable-image-area.page-zoomed * {
+    touch-action: manipulation !important;
 }
 
 /* Neighboring images that slide in beside the current one while swiping;
@@ -1117,9 +1196,21 @@ body.image-detail-phone .image-detail-container {
     min-height: 40px;
 }
 
-.phone-tray-title {
+.phone-tray-heading {
     flex: 1 1 auto;
     min-width: 0;
+}
+
+.phone-tray-summary {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.phone-tray-title {
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
@@ -1197,6 +1288,16 @@ body.image-detail-phone .image-detail-container {
     margin-top: 0.4rem;
 }
 
+.phone-tray .astro-controls {
+    flex-wrap: wrap;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.phone-tray .astro-controls .btn {
+    white-space: nowrap;
+}
+
 .phone-tray-body .astro-controls {
     margin: 0.25rem 0 0.75rem;
 }
@@ -1209,9 +1310,39 @@ body.image-detail-phone .image-detail-container {
 .phone-tray .astro-controls .astro-catalog-menu {
     position: static;
     flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+    padding: 0.4rem;
     transform: none;
     min-width: 0;
     box-shadow: none;
+}
+
+.phone-tray .astro-controls .astro-catalog-item {
+    min-height: 36px;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    white-space: normal;
+}
+
+.phone-tray .astro-controls .astro-catalog-item input {
+    width: 1rem;
+    height: 1rem;
+}
+
+.phone-tray .astro-controls .astro-outline-item {
+    grid-column: 1 / -1;
+    margin-top: 0;
+}
+
+/* Phones held sideways: keep the tray to one row so the image has room */
+@media (orientation: landscape) and (max-height: 500px) {
+    .phone-tray-head > .phone-tray-strip {
+        display: none;
+    }
 }
 
 .phone-tray-body .metadata-grid {

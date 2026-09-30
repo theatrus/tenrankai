@@ -25,6 +25,7 @@ import { UserMetadata } from '../components/ImageDetail/UserMetadata.tsx';
 import { ImageControls } from '../components/ImageDetail/ImageControls.tsx';
 import { MobileTray, TrayThumbnails } from '../components/ImageDetail/MobileTray.tsx';
 import { useMediaQuery } from '../hooks/useMediaQuery.ts';
+import { formatHours } from '../utils/format-hours.ts';
 import { EditModal } from '../components/Editor/index.ts';
 import { contentEditorApi } from '../api/content-editor.ts';
 
@@ -66,6 +67,21 @@ function createMountErrorFallback(): HTMLElement {
 
   fallback.append(title, message, reloadButton);
   return fallback;
+}
+
+/** One short line for the phone tray: integration and optics for astro
+ * images, otherwise the capture date and camera */
+function imageSummary(image: ImageDetailData['image']): string {
+  const camera = image.camera_info;
+  const parts: string[] = [];
+  if (camera?.total_exposure_time) parts.push(formatHours(camera.total_exposure_time));
+  if (camera?.telescope) {
+    parts.push(camera.telescope);
+  } else {
+    if (image.capture_date) parts.push(image.capture_date.replace(/ at .*$/, ''));
+    if (camera?.camera_model) parts.push(camera.camera_model);
+  }
+  return parts.join(' · ');
 }
 
 function Breadcrumbs({ breadcrumbs, galleryUrl, currentImageTitle, imagePath }: {
@@ -118,6 +134,13 @@ export function ImageDetailPage({
   
   // Use initialData immediately if no other data is available
   const currentData = imageData || initialData;
+
+  // The folder this image belongs to, scrolled to this image
+  const folderCrumb = Array.isArray(currentData?.breadcrumbs)
+    ? currentData.breadcrumbs[currentData.breadcrumbs.length - 1]
+    : undefined;
+  const folderName = folderCrumb?.display_name || 'Gallery';
+  const folderHref = `${galleryUrl}${folderCrumb?.path ? `/${folderCrumb.path}` : ''}#${currentData?.image.path || ''}`;
   
   // Only show loading after 500ms delay
   const showLoading = useDelayedLoading(loading && !currentData);
@@ -128,30 +151,42 @@ export function ImageDetailPage({
   // Track zoom state to disable swipe navigation when zoomed
   const [isImageZoomed, setIsImageZoomed] = useState(false);
 
-  // Phones get a fixed layout: header, an image that fits the screen, and a
-  // bottom tray that slides up over the image with everything else
-  const isPhone = useMediaQuery('(max-width: 768px)');
+  // Phones (and phones held sideways) get a fixed layout: a slim top bar, an
+  // image that fits the screen, and a bottom tray with everything else
+  const isPhone = useMediaQuery('(max-width: 768px), (pointer: coarse) and (max-height: 500px)');
   const [trayExpanded, setTrayExpanded] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const [siteMenuOpen, setSiteMenuOpen] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageBox, setStageBox] = useState<{ width: number; height: number } | null>(null);
-  const [siteHeaderBottom, setSiteHeaderBottom] = useState(0);
 
   useEffect(() => {
     if (!isPhone) return;
     document.body.classList.add('image-detail-phone');
-    const header = document.querySelector('body > header');
-    const measureHeader = () =>
-      setSiteHeaderBottom(Math.max(0, header?.getBoundingClientRect().bottom ?? 0));
-    measureHeader();
-    const headerObserver = header ? new ResizeObserver(measureHeader) : null;
-    if (header) headerObserver?.observe(header);
-    window.addEventListener('resize', measureHeader);
-    return () => {
-      document.body.classList.remove('image-detail-phone');
-      headerObserver?.disconnect();
-      window.removeEventListener('resize', measureHeader);
-    };
+    return () => document.body.classList.remove('image-detail-phone');
   }, [isPhone]);
+
+  useEffect(() => {
+    document.body.classList.toggle('image-detail-phone-menu', isPhone && siteMenuOpen);
+    if (!isPhone || !siteMenuOpen) return;
+    // Capture phase on document, so Escape closes the menu before keyboard
+    // navigation (which treats Escape as "back to the folder") sees it
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      setSiteMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.body.classList.remove('image-detail-phone-menu');
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [isPhone, siteMenuOpen]);
+
+  // Moving to another image, or leaving the phone layout, closes the menu
+  useEffect(() => {
+    setSiteMenuOpen(false);
+  }, [currentData?.image.path, isPhone]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -267,12 +302,7 @@ export function ImageDetailPage({
     imagePath: currentData?.image.path || '',
     onNavigate: (direction) => {
       if (direction === 'back') {
-        // Navigate back to gallery with anchor to scroll to this image
-        const imagePath = currentData?.image.path || '';
-        const pathParts = imagePath.split('/');
-        const folderPath = pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : '';
-        const anchor = `#${imagePath}`;
-        window.location.href = folderPath ? `${galleryUrl}/${folderPath}${anchor}` : `${galleryUrl}${anchor}`;
+        window.location.href = folderHref;
       } else {
         handleNavigation(direction);
       }
@@ -296,8 +326,14 @@ export function ImageDetailPage({
     return () => window.removeEventListener('popstate', handlePopState);
   }, [galleryUrl, loadImage, currentData?.image.path]);
 
-  // Preload previous and next images for faster navigation
-  useImagePreload(currentData?.prev_image, currentData?.next_image);
+  // Preload the next two images each way for faster navigation
+  useImagePreload([
+    currentData?.next_images?.[0],
+    currentData?.prev_images?.[0],
+    currentData?.next_images?.[1],
+    currentData?.prev_images?.[1],
+  ]);
+
 
   // Tablets and larger touch screens: navigate on a completed swipe
   useSwipeGestures(imageContainerRef, {
@@ -321,6 +357,17 @@ export function ImageDetailPage({
     onNext: () => handleNavigation('next'),
     prevUrl: currentData?.prev_image?.thumbnail_url.replace(/\/thumbnail$/, '/medium'),
     nextUrl: currentData?.next_image?.thumbnail_url.replace(/\/thumbnail$/, '/medium'),
+    onTap: () => {
+      if (trayExpanded) setTrayExpanded(false);
+      else setImmersive(!immersive);
+    },
+    onSwipeDown: () => {
+      if (trayExpanded) {
+        setTrayExpanded(false);
+        return true;
+      }
+      window.location.href = folderHref;
+    },
     disabled: !isPhone || isImageZoomed,
     resetKey: currentData?.image.path,
   });
@@ -499,12 +546,36 @@ export function ImageDetailPage({
       />
     );
     const hasStrip = (currentData.prev_images?.length || 0) + (currentData.next_images?.length || 0) > 0;
+    const summary = imageSummary(currentData.image);
 
     // Portaled to <body>: iOS Safari gives the page container a transform,
     // which would pin this fixed layout to that container instead of the screen
     return createPortal(
-      <div className="phone-detail" style={{ top: siteHeaderBottom }}>
-        {breadcrumbs}
+      <div className={`phone-detail${immersive ? ' immersive' : ''}`}>
+        <div className="phone-topbar">
+          <a className="phone-topbar-back" href={folderHref} aria-label={`Back to ${folderName}`}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <polyline points="15,18 9,12 15,6" />
+            </svg>
+            <span>{folderName}</span>
+          </a>
+          <button
+            type="button"
+            className="phone-topbar-menu"
+            aria-label="Site menu"
+            aria-expanded={siteMenuOpen}
+            onClick={() => setSiteMenuOpen(!siteMenuOpen)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
+        </div>
+        {siteMenuOpen && (
+          <div className="phone-menu-backdrop" onClick={() => setSiteMenuOpen(false)} aria-hidden="true" />
+        )}
         <div ref={stageRef} className="phone-stage">
           <div ref={imageContainerRef} className="swipeable-image-area">
             {imageDisplay}
@@ -512,6 +583,7 @@ export function ImageDetailPage({
         </div>
         <MobileTray
           title={title}
+          summary={summary}
           expanded={trayExpanded}
           onExpandedChange={setTrayExpanded}
           quickActions={

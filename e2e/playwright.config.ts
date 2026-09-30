@@ -31,12 +31,18 @@ export default defineConfig({
 
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    // Touch-device pass for the astro overlay controls (tap targets and
-    // gesture interception regressions surface only with touch events)
+    // Touch-device passes for the astro overlay controls and the phone image
+    // layout (tap targets and gesture regressions surface only with touch)
     {
       name: 'mobile',
       use: { ...devices['Pixel 7'] },
-      testMatch: /astro-overlay/,
+      testMatch: /astro-overlay|phone-layout/,
+    },
+    // Safari's engine on an iPhone-sized screen
+    {
+      name: 'iphone',
+      use: { ...devices['iPhone 13'] },
+      testMatch: /astro-overlay|phone-layout/,
     },
   ],
 

@@ -8,6 +8,11 @@ interface SwipeDragOptions {
   /** Image shown beside the current one while dragging toward it */
   prevUrl?: string;
   nextUrl?: string;
+  /** A single tap that did not become a drag or a double tap */
+  onTap?: () => void;
+  /** Dragging the image down past the threshold. Return true when the page
+   * stays (e.g. it only closed a panel), so the image springs back. */
+  onSwipeDown?: () => boolean | void;
   disabled?: boolean;
   /** Changes when a new image is shown; puts the element back in place */
   resetKey?: string;
@@ -22,6 +27,13 @@ const PEEK_GAP_PX = 16;
 const SETTLE_MS = 200;
 const EXIT_MS = 180;
 const HANDOFF_MAX_MS = 1500;
+const TAP_MAX_MS = 300;
+// Same rule as ImageDisplay's double-tap zoom: two taps whose touchends are
+// under 300 ms apart and under 50 px apart on each axis
+const DOUBLE_TAP_WINDOW_MS = 300;
+const DOUBLE_TAP_SLOP_PX = 50;
+const DISMISS_FRACTION = 0.18;
+const DISMISS_MIN_SCALE = 0.85;
 const RESET_FALLBACK_MS = 3000;
 
 function retinaUrl(url: string): string {
@@ -41,8 +53,21 @@ export function useSwipeDrag(
 ) {
   const opts = useRef(options);
   opts.current = options;
-  const handoff = useRef<{ pending: boolean; finish: () => void }>({
+  // pending: a committed swipe is sliding the neighbor in.
+  // navigated: the new image's data has arrived; only then may another
+  // touch cut the hand-off short (before that, a swipe would navigate
+  // again from the old image).
+  // generation: bumped on each committed swipe, so a decode that resolves
+  // late cannot finish a newer hand-off or reset a drag already under way
+  const handoff = useRef<{
+    pending: boolean;
+    navigated: boolean;
+    generation: number;
+    finish: () => void;
+  }>({
     pending: false,
+    navigated: false,
+    generation: 0,
     finish: () => {},
   });
 
@@ -77,17 +102,37 @@ export function useSwipeDrag(
     let start: { x: number; y: number; t: number } | null = null;
     let axis: 'x' | 'y' | null = null;
     let offset = 0;
+    let drop = 0;
     let fallback: number | undefined;
+    let tapTimer: number | undefined;
+    // The last tap still waiting to run the single-tap action
+    let pendingTap: { x: number; y: number; t: number } | null = null;
+    const cancelTap = () => {
+      window.clearTimeout(tapTimer);
+      pendingTap = null;
+    };
 
     const setOffset = (px: number, ms = 0) => {
       el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
       el.style.transform = px ? `translate3d(${px}px, 0, 0)` : '';
     };
 
+    // Height measured when a downward drag starts, before it shrinks the image
+    let dragHeight = window.innerHeight;
+
+    // Dragging down shrinks the image as it follows the finger
+    const setDrop = (px: number, ms = 0) => {
+      const height = dragHeight;
+      const scale = Math.max(DISMISS_MIN_SCALE, 1 - px / height / 2);
+      el.style.transition = ms ? `transform ${ms}ms ease-out` : 'none';
+      el.style.transform = px ? `translate3d(0, ${px}px, 0) scale(${scale})` : '';
+    };
+
     const settle = () => {
       start = null;
       axis = null;
       offset = 0;
+      drop = 0;
       el.style.willChange = '';
       setOffset(0, SETTLE_MS);
     };
@@ -95,6 +140,7 @@ export function useSwipeDrag(
     const snapHome = () => {
       window.clearTimeout(fallback);
       handoff.current.pending = false;
+      handoff.current.navigated = false;
       offset = 0;
       el.style.willChange = '';
       setOffset(0);
@@ -103,10 +149,34 @@ export function useSwipeDrag(
     };
     handoff.current.finish = snapHome;
 
+    // If the page itself is pinch-zoomed with the browser's own zoom, one
+    // finger should pan the page, not drag the image. The stage claims all
+    // touch input otherwise, so drags get every move and can cancel them.
+    const viewport = window.visualViewport;
+    const pageZoomed = () => (viewport?.scale ?? 1) > 1.01;
+    const syncTouchAction = () => {
+      el.classList.toggle('page-zoomed', pageZoomed());
+    };
+    syncTouchAction();
+    viewport?.addEventListener('resize', syncTouchAction);
+
     const onStart = (e: TouchEvent) => {
-      if (handoff.current.pending) return;
+      if (pageZoomed()) {
+        start = null;
+        return;
+      }
+      if (handoff.current.pending) {
+        // Still waiting for the new image's data: ignore the touch
+        if (!handoff.current.navigated) {
+          start = null;
+          return;
+        }
+        // Data is in but the image is still decoding: move on anyway
+        snapHome();
+      }
       if (e.touches.length !== 1) {
-        if (axis === 'x') settle();
+        // A second finger ends any drag, sideways or down
+        if (axis) settle();
         start = null;
         return;
       }
@@ -123,20 +193,74 @@ export function useSwipeDrag(
       if (!axis) {
         if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
         axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        // A drag is not a tap: drop any tap still waiting to run
+        cancelTap();
+        if (axis === 'y' && dy > 0 && opts.current.onSwipeDown) {
+          dragHeight = el.getBoundingClientRect().height || window.innerHeight;
+          el.style.willChange = 'transform';
+        }
         if (axis === 'x') {
           el.style.willChange = 'transform';
           loadPeek(peeks.prev, opts.current.canPrev ? opts.current.prevUrl : undefined);
           loadPeek(peeks.next, opts.current.canNext ? opts.current.nextUrl : undefined);
         }
       }
-      if (axis !== 'x') return;
+      if (axis === 'y') {
+        if (!opts.current.onSwipeDown) return;
+        e.preventDefault();
+        drop = Math.max(0, dy);
+        setDrop(drop);
+        return;
+      }
       e.preventDefault();
       const allowed = dx < 0 ? opts.current.canNext : opts.current.canPrev;
       offset = allowed ? dx : dx * EDGE_RESISTANCE;
       setOffset(offset);
     };
 
-    const onEnd = () => {
+    const onEnd = (e: TouchEvent) => {
+      if (start && !axis) {
+        const now = performance.now();
+        const quick = now - start.t < TAP_MAX_MS;
+        start = null;
+        if (!quick || !opts.current.onTap) return;
+        const touch = e.changedTouches[0];
+        const tap = { x: touch?.clientX ?? 0, y: touch?.clientY ?? 0, t: now };
+        const prev = pendingTap;
+        if (
+          prev &&
+          tap.t - prev.t < DOUBLE_TAP_WINDOW_MS &&
+          Math.abs(tap.x - prev.x) < DOUBLE_TAP_SLOP_PX &&
+          Math.abs(tap.y - prev.y) < DOUBLE_TAP_SLOP_PX
+        ) {
+          // A double tap (zoom, when allowed): neither tap toggles the bars
+          cancelTap();
+          return;
+        }
+        window.clearTimeout(tapTimer);
+        pendingTap = tap;
+        tapTimer = window.setTimeout(() => {
+          pendingTap = null;
+          opts.current.onTap?.();
+        }, DOUBLE_TAP_WINDOW_MS);
+        return;
+      }
+      if (start && axis === 'y') {
+        const elapsed = Math.max(1, performance.now() - start.t);
+        const dismiss =
+          drop > dragHeight * DISMISS_FRACTION ||
+          (drop > FLICK_MIN_PX && drop / elapsed > FLICK_VELOCITY);
+        start = null;
+        axis = null;
+        if (dismiss && opts.current.onSwipeDown) {
+          const stayed = opts.current.onSwipeDown();
+          if (!stayed) return;
+        }
+        drop = 0;
+        el.style.willChange = '';
+        setDrop(0, SETTLE_MS);
+        return;
+      }
       if (!start || axis !== 'x') {
         start = null;
         return;
@@ -157,6 +281,7 @@ export function useSwipeDrag(
       }
 
       handoff.current.pending = true;
+      handoff.current.generation += 1;
       const travel = width + PEEK_GAP_PX;
       setOffset(goingNext ? -travel : travel, EXIT_MS);
       window.setTimeout(() => {
@@ -167,13 +292,30 @@ export function useSwipeDrag(
       }, EXIT_MS);
     };
 
+    // Safari can restore this page from its back/forward cache exactly as it
+    // was left, e.g. still shrunk from dragging down to the folder
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) snapHome();
+    };
+    window.addEventListener('pageshow', onPageShow);
+
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: false });
     el.addEventListener('touchend', onEnd);
     el.addEventListener('touchcancel', settle);
     return () => {
       window.clearTimeout(fallback);
-      handoff.current = { pending: false, finish: () => {} };
+      window.clearTimeout(tapTimer);
+      window.removeEventListener('pageshow', onPageShow);
+      viewport?.removeEventListener('resize', syncTouchAction);
+      el.classList.remove('page-zoomed');
+      // Keep counting generations so an older decode can never match a new swipe
+      handoff.current = {
+        pending: false,
+        navigated: false,
+        generation: handoff.current.generation + 1,
+        finish: () => {},
+      };
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
@@ -196,9 +338,11 @@ export function useSwipeDrag(
       el.style.transform = '';
       return;
     }
+    handoff.current.navigated = true;
     let done = false;
+    const generation = handoff.current.generation;
     const finish = () => {
-      if (done) return;
+      if (done || !handoff.current.pending || handoff.current.generation !== generation) return;
       done = true;
       handoff.current.finish();
     };
@@ -209,6 +353,9 @@ export function useSwipeDrag(
     } else {
       finish();
     }
-    return () => window.clearTimeout(timer);
+    return () => {
+      done = true;
+      window.clearTimeout(timer);
+    };
   }, [elementRef, options.resetKey]);
 }
