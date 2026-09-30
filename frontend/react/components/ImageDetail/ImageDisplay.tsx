@@ -37,6 +37,8 @@ interface PinchZoomState {
   isTransitioning: boolean;
   /** False while the zoom view grows out of, or shrinks back into, the page image */
   backdrop?: boolean;
+  /** Closing without a page origin to shrink into: fade the view out */
+  fadeOut?: boolean;
 }
 
 // Check if device supports touch
@@ -509,7 +511,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             isTransitioning: true,
             backdrop: false,
           }
-        : { ...prev, isTransitioning: true },
+        : { ...prev, isTransitioning: true, fadeOut: true },
     );
 
     zoomTimerRef.current = setTimeout(() => {
@@ -1033,7 +1035,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
             inset: 0,
             backgroundColor: pinchZoom.backdrop === false ? 'rgba(0, 0, 0, 0)' : 'black',
             zIndex: 9999,
-            opacity: pinchZoom.isTransitioning && !zoomOriginRef.current ? (pinchZoom.isZoomed ? 1 : 0) : 1,
+            opacity: pinchZoom.fadeOut ? 0 : 1,
             transition: pinchZoom.isTransitioning ? 'opacity 0.3s ease-out, background-color 0.3s ease-out' : 'none',
             touchAction: 'none',
             overflow: 'hidden'
