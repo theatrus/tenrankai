@@ -168,7 +168,7 @@ export function ImageDetailPage({
 
   useEffect(() => {
     document.body.classList.toggle('image-detail-phone-menu', isPhone && siteMenuOpen);
-    if (!siteMenuOpen) return;
+    if (!isPhone || !siteMenuOpen) return;
     // Capture phase on document, so Escape closes the menu before keyboard
     // navigation (which treats Escape as "back to the folder") sees it
     const onKey = (e: KeyboardEvent) => {
@@ -183,10 +183,10 @@ export function ImageDetailPage({
     };
   }, [isPhone, siteMenuOpen]);
 
-  // Moving to another image closes the site menu
+  // Moving to another image, or leaving the phone layout, closes the menu
   useEffect(() => {
     setSiteMenuOpen(false);
-  }, [currentData?.image.path]);
+  }, [currentData?.image.path, isPhone]);
 
   useEffect(() => {
     const stage = stageRef.current;
