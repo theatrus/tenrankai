@@ -953,7 +953,10 @@ body.image-detail-phone .image-detail-container {
     left: 0;
     right: 0;
     bottom: 0;
+    /* Keep clear of the notch and rounded corners, including sideways */
     padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
     display: flex;
     flex-direction: column;
     background-color: var(--bg-primary);
