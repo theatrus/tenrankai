@@ -27,7 +27,9 @@ const SETTLE_MS = 200;
 const EXIT_MS = 180;
 const HANDOFF_MAX_MS = 1500;
 const TAP_MAX_MS = 300;
-const DOUBLE_TAP_WINDOW_MS = 280;
+// Must not be shorter than ImageDisplay's double-tap window (300 ms), or a
+// slow double tap would also fire the single-tap action
+const DOUBLE_TAP_WINDOW_MS = 300;
 const DISMISS_FRACTION = 0.18;
 const DISMISS_MIN_SCALE = 0.85;
 const RESET_FALLBACK_MS = 3000;
@@ -141,7 +143,8 @@ export function useSwipeDrag(
         snapHome();
       }
       if (e.touches.length !== 1) {
-        if (axis === 'x') settle();
+        // A second finger ends any drag, sideways or down
+        if (axis) settle();
         start = null;
         return;
       }
