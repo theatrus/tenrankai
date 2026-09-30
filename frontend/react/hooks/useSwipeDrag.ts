@@ -49,8 +49,13 @@ export function useSwipeDrag(
 ) {
   const opts = useRef(options);
   opts.current = options;
-  const handoff = useRef<{ pending: boolean; finish: () => void }>({
+  // pending: a committed swipe is sliding the neighbor in.
+  // navigated: the new image's data has arrived; only then may another
+  // touch cut the hand-off short (before that, a swipe would navigate
+  // again from the old image).
+  const handoff = useRef<{ pending: boolean; navigated: boolean; finish: () => void }>({
     pending: false,
+    navigated: false,
     finish: () => {},
   });
 
@@ -114,6 +119,7 @@ export function useSwipeDrag(
     const snapHome = () => {
       window.clearTimeout(fallback);
       handoff.current.pending = false;
+      handoff.current.navigated = false;
       offset = 0;
       el.style.willChange = '';
       setOffset(0);
@@ -125,8 +131,15 @@ export function useSwipeDrag(
     const onStart = (e: TouchEvent) => {
       // A second tap cancels the single-tap action (it is a double tap)
       window.clearTimeout(tapTimer);
-      // Swiping again before the last image finished decoding moves on
-      if (handoff.current.pending) snapHome();
+      if (handoff.current.pending) {
+        // Still waiting for the new image's data: ignore the touch
+        if (!handoff.current.navigated) {
+          start = null;
+          return;
+        }
+        // Data is in but the image is still decoding: move on anyway
+        snapHome();
+      }
       if (e.touches.length !== 1) {
         if (axis === 'x') settle();
         start = null;
@@ -223,6 +236,13 @@ export function useSwipeDrag(
       }, EXIT_MS);
     };
 
+    // Safari can restore this page from its back/forward cache exactly as it
+    // was left, e.g. still shrunk from dragging down to the folder
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) snapHome();
+    };
+    window.addEventListener('pageshow', onPageShow);
+
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: false });
     el.addEventListener('touchend', onEnd);
@@ -230,7 +250,8 @@ export function useSwipeDrag(
     return () => {
       window.clearTimeout(fallback);
       window.clearTimeout(tapTimer);
-      handoff.current = { pending: false, finish: () => {} };
+      window.removeEventListener('pageshow', onPageShow);
+      handoff.current = { pending: false, navigated: false, finish: () => {} };
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
@@ -253,6 +274,7 @@ export function useSwipeDrag(
       el.style.transform = '';
       return;
     }
+    handoff.current.navigated = true;
     let done = false;
     const finish = () => {
       if (done) return;

@@ -174,8 +174,21 @@ export function ImageDetailPage({
 
   useEffect(() => {
     document.body.classList.toggle('image-detail-phone-menu', isPhone && siteMenuOpen);
-    return () => document.body.classList.remove('image-detail-phone-menu');
+    if (!siteMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSiteMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('image-detail-phone-menu');
+      window.removeEventListener('keydown', onKey);
+    };
   }, [isPhone, siteMenuOpen]);
+
+  // Moving to another image closes the site menu
+  useEffect(() => {
+    setSiteMenuOpen(false);
+  }, [currentData?.image.path]);
 
   useEffect(() => {
     const stage = stageRef.current;

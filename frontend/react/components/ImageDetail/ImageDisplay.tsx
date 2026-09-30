@@ -450,18 +450,23 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       isTransitioning: true,
       backdrop: true,
     };
+    const endTransition = () =>
+      setTimeout(() => {
+        setPinchZoom(prev => ({ ...prev, isTransitioning: false }));
+      }, 300);
     if (origin) {
       // Start exactly over the page image, then grow on the next frame
       setPinchZoom({ ...origin, isZoomed: true, isTransitioning: false, backdrop: false });
-      requestAnimationFrame(() => requestAnimationFrame(() => setPinchZoom(target)));
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          setPinchZoom(target);
+          endTransition();
+        }),
+      );
     } else {
       setPinchZoom(target);
+      endTransition();
     }
-
-    // End transition after animation
-    setTimeout(() => {
-      setPinchZoom(prev => ({ ...prev, isTransitioning: false }));
-    }, 300);
   };
 
   // Close the zoom modal
@@ -475,6 +480,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
 
     setTimeout(() => {
       currentScaleRef.current = 1;
+      zoomOriginRef.current = null;
       setPinchZoom({
         scale: 1,
         translateX: 0,
@@ -541,6 +547,8 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
       newTranslateY = Math.max(-maxPanY, Math.min(maxPanY, newTranslateY));
 
       const shouldBeZoomed = newScale > 1.05;
+      // A pinch opens the zoom view from where it is; it has no page origin
+      if (shouldBeZoomed && !pinchZoom.isZoomed) zoomOriginRef.current = null;
 
       setPinchZoom(prev => ({
         scale: newScale,
@@ -658,6 +666,7 @@ export function ImageDisplay({ image, canUseZoom = false, canSeeAiAltText = fals
   // Reset pinch zoom when image changes
   useEffect(() => {
     currentScaleRef.current = 1;
+    zoomOriginRef.current = null;
     initialPinchScale.current = 1;
     initialTranslateRef.current = { x: 0, y: 0 };
     setPinchZoom({

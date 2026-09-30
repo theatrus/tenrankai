@@ -80,8 +80,17 @@ test.describe('phone image detail', () => {
 
   test('the menu button shows the site header', async ({ page }) => {
     await openPhoneDetail(page);
-    await page.locator('.phone-topbar-menu').click();
+    const menu = page.locator('.phone-topbar-menu');
+    await menu.click();
     await expect(page.locator('body > header')).toBeVisible();
+    // The header drops down below the top bar, so the button can close it
+    const header = (await page.locator('body > header').boundingBox())!;
+    const bar = (await page.locator('.phone-topbar').boundingBox())!;
+    expect(header.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
+    await menu.click();
+    await expect(page.locator('body > header')).toBeHidden();
+
+    await menu.click();
     await page.locator('.phone-menu-backdrop').click({ position: { x: 20, y: 300 } });
     await expect(page.locator('body > header')).toBeHidden();
   });

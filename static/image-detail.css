@@ -962,6 +962,8 @@ body.image-detail-phone .image-detail-container {
 
 .phone-topbar {
     flex: none;
+    position: relative;
+    z-index: 45;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1012,14 +1014,16 @@ body.image-detail-phone > header {
     display: none;
 }
 
+/* It drops down below the top bar so the menu button stays reachable */
 body.image-detail-phone.image-detail-phone-menu > header {
     display: block;
     position: fixed;
-    top: 0;
+    top: calc(45px + env(safe-area-inset-top, 0px));
     left: 0;
     right: 0;
 }
 
+/* Sits under the top bar (z-index 45) so the menu button can close it */
 .phone-menu-backdrop {
     position: absolute;
     inset: 0;
