@@ -144,7 +144,7 @@ export function useSwipeDrag(
     const viewport = window.visualViewport;
     const pageZoomed = () => (viewport?.scale ?? 1) > 1.01;
     const syncTouchAction = () => {
-      el.style.touchAction = pageZoomed() ? 'pan-x pan-y' : '';
+      el.style.touchAction = pageZoomed() ? 'manipulation' : '';
     };
     syncTouchAction();
     viewport?.addEventListener('resize', syncTouchAction);

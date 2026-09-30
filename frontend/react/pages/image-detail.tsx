@@ -358,7 +358,8 @@ export function ImageDetailPage({
       else setImmersive(!immersive);
     },
     onSwipeDown: () => {
-      window.location.href = folderHref;
+      if (trayExpanded) setTrayExpanded(false);
+      else window.location.href = folderHref;
     },
     disabled: !isPhone || isImageZoomed,
     resetKey: currentData?.image.path,
