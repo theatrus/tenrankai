@@ -1324,8 +1324,7 @@ body.image-detail-phone.image-detail-phone-menu > header {
 
 /* Phones held sideways: keep the tray to one row so the image has room */
 @media (orientation: landscape) and (max-height: 500px) {
-    .phone-tray-head > .phone-tray-strip,
-    .phone-tray-head > .version-picker {
+    .phone-tray-head > .phone-tray-strip {
         display: none;
     }
 }

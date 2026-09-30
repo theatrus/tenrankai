@@ -55,9 +55,17 @@ export function useSwipeDrag(
   // navigated: the new image's data has arrived; only then may another
   // touch cut the hand-off short (before that, a swipe would navigate
   // again from the old image).
-  const handoff = useRef<{ pending: boolean; navigated: boolean; finish: () => void }>({
+  // generation: bumped on each committed swipe, so a decode that resolves
+  // late cannot finish a newer hand-off or reset a drag already under way
+  const handoff = useRef<{
+    pending: boolean;
+    navigated: boolean;
+    generation: number;
+    finish: () => void;
+  }>({
     pending: false,
     navigated: false,
+    generation: 0,
     finish: () => {},
   });
 
@@ -229,6 +237,7 @@ export function useSwipeDrag(
       }
 
       handoff.current.pending = true;
+      handoff.current.generation += 1;
       const travel = width + PEEK_GAP_PX;
       setOffset(goingNext ? -travel : travel, EXIT_MS);
       window.setTimeout(() => {
@@ -254,7 +263,7 @@ export function useSwipeDrag(
       window.clearTimeout(fallback);
       window.clearTimeout(tapTimer);
       window.removeEventListener('pageshow', onPageShow);
-      handoff.current = { pending: false, navigated: false, finish: () => {} };
+      handoff.current = { pending: false, navigated: false, generation: 0, finish: () => {} };
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
@@ -279,8 +288,9 @@ export function useSwipeDrag(
     }
     handoff.current.navigated = true;
     let done = false;
+    const generation = handoff.current.generation;
     const finish = () => {
-      if (done) return;
+      if (done || !handoff.current.pending || handoff.current.generation !== generation) return;
       done = true;
       handoff.current.finish();
     };

@@ -390,15 +390,36 @@ export function CatalogMenu({
     e.stopPropagation();
   };
   // Embeds sit inside a link, so their clicks are cancelled to keep the link
-  // from following. In Safari that also cancels a label's checkbox toggle, so
-  // compact rows cancel the click themselves and toggle directly.
-  const rowClick = (toggle: () => void) =>
+  // from following. A cancelled click also undoes a native checkbox toggle,
+  // so in embeds the row is the control: it toggles the state itself, and the
+  // box only displays it (it takes no pointer or keyboard input of its own).
+  const rowProps = (checked: boolean, toggle: () => void) =>
     compact
-      ? (e: React.MouseEvent) => {
-          stop(e);
-          toggle();
+      ? {
+          role: 'menuitemcheckbox',
+          'aria-checked': checked,
+          tabIndex: 0,
+          onClick: (e: React.MouseEvent) => {
+            stop(e);
+            toggle();
+          },
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+              stop(e);
+              toggle();
+            }
+          },
         }
-      : undefined;
+      : {};
+  const boxProps = (toggle: () => void) =>
+    compact
+      ? {
+          tabIndex: -1,
+          'aria-hidden': true,
+          style: { pointerEvents: 'none' as const },
+          onChange: () => {},
+        }
+      : { onChange: toggle };
 
   return (
     <span
@@ -436,11 +457,15 @@ export function CatalogMenu({
       {menuOpen && (
         <span className="astro-catalog-menu" role="menu">
           {availableGroups.map(([id, label]) => (
-            <label key={id} className="astro-catalog-item" onClick={rowClick(() => toggleGroup(id))}>
+            <label
+              key={id}
+              className="astro-catalog-item"
+              {...rowProps(!hiddenGroups.includes(id), () => toggleGroup(id))}
+            >
               <input
                 type="checkbox"
                 checked={!hiddenGroups.includes(id)}
-                onChange={compact ? () => {} : () => toggleGroup(id)}
+                {...boxProps(() => toggleGroup(id))}
               />
               <span>
                 {label} ({groupCounts.get(id)})
@@ -451,14 +476,14 @@ export function CatalogMenu({
             <label
               className="astro-catalog-item astro-outline-item"
               title="Draw catalog brightness contours instead of ellipses where available"
-              onClick={rowClick(() => onPreciseOutlinesChange(preciseOutlines === false))}
+              {...rowProps(preciseOutlines !== false, () =>
+                onPreciseOutlinesChange(preciseOutlines === false),
+              )}
             >
               <input
                 type="checkbox"
                 checked={preciseOutlines !== false}
-                onChange={
-                  compact ? () => {} : () => onPreciseOutlinesChange(preciseOutlines === false)
-                }
+                {...boxProps(() => onPreciseOutlinesChange(preciseOutlines === false))}
               />
               <span>Precise outlines ({outlined})</span>
             </label>

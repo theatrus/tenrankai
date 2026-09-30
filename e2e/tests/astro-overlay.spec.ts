@@ -463,9 +463,20 @@ test.describe('post embed overlay geometry and menus', () => {
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
 
     await tapOrClick(embed.getByRole('button', { name: /Catalogs/ }));
-    await tapOrClick(page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' }));
+    const ngcRow = page.locator('.astro-catalog-item', { hasText: 'NGC / IC / Messier' });
+    await tapOrClick(ngcRow);
     await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toHaveCount(0);
     await expect(svg.getByText(/WR 134/)).toBeVisible();
+    await expect(ngcRow).toHaveAttribute('aria-checked', 'false');
+    await expect(ngcRow.locator('input')).not.toBeChecked();
+
+    // Tapping right on the checkbox toggles too, and the box shows the result
+    const box = (await ngcRow.locator('input').boundingBox())!;
+    const [bx, by] = [box.x + box.width / 2, box.y + box.height / 2];
+    if (isMobile) await page.touchscreen.tap(bx, by);
+    else await page.mouse.click(bx, by);
+    await expect(svg.getByText('NGC 224 · Andromeda Galaxy')).toBeVisible();
+    await expect(ngcRow.locator('input')).toBeChecked();
     // Still on the post page (controls never follow the embed link)
     await expect(page).toHaveURL(/\/blog\/camera-bag/);
   });
