@@ -767,21 +767,36 @@ pub async fn download_folder_handler(
     // Tuple: (file_path, display_name, capture_date)
     let mut all_images: Vec<(String, String, Option<SystemTime>)> = Vec::new();
     let include_versions = query.include_versions;
-    let can_see_hidden = user_permissions.permissions.can_see_hidden;
 
     // Helper to recursively collect images with their capture dates,
     // using the gallery's sorted listing for consistent display names.
     async fn collect_images_recursive(
+        app_state: &crate::AppState,
+        gallery_name: &str,
         gallery: &super::SharedGallery,
         folder_path: &str,
         images: &mut Vec<(String, String, Option<SystemTime>)>,
         include_versions: bool,
-        can_see_hidden: bool,
+        username: Option<&str>,
     ) {
+        let Ok(permissions) = crate::permissions::resolve_permissions_for_path(
+            app_state,
+            gallery_name,
+            folder_path,
+            username,
+        )
+        .await
+        else {
+            return;
+        };
+        if !permissions.permissions.can_view || !permissions.permissions.can_download_gallery {
+            return;
+        }
+        let can_see_hidden = permissions.permissions.can_see_hidden;
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
             // Use the gallery's sorted listing for display names
             let sorted_items = gallery
-                .scan_directory_with_user(folder_path, None)
+                .scan_directory_with_user(folder_path, username)
                 .await
                 .unwrap_or_default();
 
@@ -830,7 +845,9 @@ pub async fn download_folder_handler(
                     let display_name = {
                         let base_name = get_display_name(image_path);
                         let filename = image_path.rsplit('/').next().unwrap_or(image_path);
-                        if let Some(version_num) = super::grouping::extract_version_number(filename)
+                        if !tenrankai_video::is_video_path(image_path)
+                            && let Some(version_num) =
+                                super::grouping::extract_version_number(filename)
                         {
                             format!("{}_v{}", base_name, version_num)
                         } else {
@@ -867,6 +884,9 @@ pub async fn download_folder_handler(
                 }
             }
 
+            // Do not retain a parent cache read lock across recursive reads:
+            // a pending worker update would block children behind the writer.
+            drop(metadata_cache);
             // Recursively process subdirectories
             for subdir in &cached.subdirectories {
                 let subdir_path = if folder_path.is_empty() {
@@ -875,11 +895,13 @@ pub async fn download_folder_handler(
                     format!("{}/{}", folder_path, subdir)
                 };
                 Box::pin(collect_images_recursive(
+                    app_state,
+                    gallery_name,
                     gallery,
                     &subdir_path,
                     images,
                     include_versions,
-                    can_see_hidden,
+                    username,
                 ))
                 .await;
             }
@@ -887,11 +909,13 @@ pub async fn download_folder_handler(
     }
 
     collect_images_recursive(
+        &app_state,
+        &gallery_name,
         gallery,
         &path,
         &mut all_images,
         include_versions,
-        can_see_hidden,
+        auth.username(),
     )
     .await;
 
@@ -907,6 +931,18 @@ pub async fn download_folder_handler(
     };
     let zip_filename = format!("{}.zip", folder_name);
 
+    // Streaming ZIPs can keep a blocking thread occupied for the duration of
+    // a download. Use the existing pool before spawning, rather than allowing
+    // arbitrary requests to exhaust Tokio's blocking threads.
+    let permit = tokio::select! {
+        biased;
+        _ = gallery.shutdown_token.cancelled() => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        permit = gallery.image_processing_semaphore.clone().acquire_owned() => match permit {
+            Ok(permit) => permit,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        },
+    };
+
     // Create a channel for streaming the zip
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(4);
 
@@ -917,6 +953,7 @@ pub async fn download_folder_handler(
     let download_root = path.clone();
     let runtime = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
+        let _permit = permit;
         let sender = tx.clone();
         let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let mut zip = zip::ZipWriter::new_stream(ZipChannelWriter { sender });
@@ -954,7 +991,14 @@ pub async fn download_folder_handler(
                     .rfind('.')
                     .map(|pos| &original_filename[pos..])
                     .unwrap_or("");
-                let filename = format!("{}{}{}", folder_prefix, display_name, extension);
+                let filename = if display_name
+                    .to_ascii_lowercase()
+                    .ends_with(&extension.to_ascii_lowercase())
+                {
+                    format!("{folder_prefix}{display_name}")
+                } else {
+                    format!("{folder_prefix}{display_name}{extension}")
+                };
 
                 let mut source = runtime.block_on(storage.read_stream(image_path))?;
                 zip.start_file(&filename, options)?;

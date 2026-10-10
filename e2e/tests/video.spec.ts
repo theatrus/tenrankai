@@ -69,6 +69,14 @@ test.describe('short video gallery', () => {
     expect(detail.video.codec).toBeUndefined();
     expect(detail.location_info).toBeNull();
     expect(detail.capture_date).not.toContain(' at ');
+    const archive = await request.get('/v/_download/archives');
+    expect(archive.status()).toBe(200);
+    const zip = await archive.body();
+    expect(zip.subarray(0, 2).toString()).toBe('PK');
+    expect(zip.includes(Buffer.from('visible.mov'))).toBe(true);
+    expect(zip.includes(Buffer.from('visible.mov.mov'))).toBe(false);
+    expect(zip.includes(Buffer.from('secret.mov'))).toBe(false);
+    expect(zip.includes(Buffer.from('hidden.mov'))).toBe(false);
   });
 
   test('handles portrait and failed clips without image controls', async ({ page }) => {

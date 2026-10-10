@@ -130,9 +130,9 @@ Environment=TENRANKAI_VIDEO_TEMP_DIR=/mnt/tenrankai-video/main
 ```
 
 The second service uses `/mnt/tenrankai-video/docs`. Directories should be owned
-by `atrus:atrus` and mode 0700. Budget for one active clip per enabled gallery;
-video work shares each gallery's existing image-processing pool. The two server
-processes have independent resource budgets.
+by `atrus:atrus` and mode 0700. Discovery processes one clip per gallery at a time;
+when the optional cache queue is enabled, budget scratch for the gallery's pool
+concurrency. The two server processes have independent resource budgets.
 
 The idempotent [`prepare-video-host.sh`](../../scripts/prepare-video-host.sh)
 script installed the directories and drop-ins and ran `systemctl daemon-reload`.
@@ -175,7 +175,7 @@ and Debian Bookworm (matching the Docker runtime).
 
 ## Gallery validation
 
-All 18 video browser scenarios pass against the rebuilt server, covering
+Video browser scenarios pass against the rebuilt server, covering
 desktop Chromium, mobile Chromium, and iPhone-sized WebKit (admin settings
 use the existing desktop layout). A real restart reused all eight prepared
 playback files unchanged. The gallery UI has been exercised with generated
@@ -183,7 +183,7 @@ camera-style MOV (MPEG-4/PCM), portrait/silent MKV, and invalid clips. Playback,
 seeking, mixed grids/type filters, permission checks, failures, and UI uploads
 pass in desktop Chromium, mobile Chromium, and iPhone-sized WebKit. Admin
 video enable/disable, image display/sorting, and phone image navigation checks
-also pass. All 336 affected Rust library tests and 95 frontend tests pass,
+also pass. The affected Rust library tests and 95 frontend tests pass,
 as do Clippy with warnings denied, type/CSS checks, and public/admin builds.
 Three library tests are ignored by default; the S3 integration test was run
 separately against the emulator. All 22 processing tests pass with real FFmpeg,
@@ -198,8 +198,9 @@ Enable video per gallery in admin settings or by adding `[video]` with
 `reencode = "auto"` to the gallery TOML. Existing galleries remain image-only by
 default. Source discovery and uploads wake background work. Video staging and
 encoding acquire the gallery's existing image-processing pool permit, sharing its
-CPU and memory budget with image jobs. Each gallery prepares one clip at a time;
-the optional cache queue also dispatches video jobs through this pool and resolves
+CPU and memory budget with image jobs and streaming ZIP downloads. Discovery
+processes clips serially per gallery; the optional cache queue also dispatches
+video jobs through this pool and resolves
 current galleries after configuration reloads. Persistent manifests
 reuse finished derivatives after restart; source identity, settings, or pipeline
 changes invalidate them. Processing failures retry up to three times with backoff.

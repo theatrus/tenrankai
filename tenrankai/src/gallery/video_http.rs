@@ -474,6 +474,20 @@ mod tests {
                 .status(),
             StatusCode::ACCEPTED
         );
+        std::fs::File::open(source.path().join("clip.mov"))
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH - std::time::Duration::from_secs(1))
+            .unwrap();
+        let original = gallery
+            .serve_video_asset(
+                "clip.mov",
+                VideoAsset::Original,
+                &HeaderMap::new(),
+                &Method::HEAD,
+            )
+            .await;
+        assert_eq!(original.status(), StatusCode::OK);
+        assert!(!original.headers().contains_key(header::LAST_MODIFIED));
         gallery.source_storage.delete("clip.mov").await.unwrap();
         assert_eq!(
             gallery

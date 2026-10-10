@@ -9,6 +9,8 @@ use crate::gallery::Gallery;
 
 /// SiteManager holds all active sites and handles routing dispatch by hostname
 pub struct SiteManager {
+    /// Serialize lifecycle changes while retired media jobs drain.
+    lifecycle: tokio::sync::Mutex<()>,
     /// Map of site name to Site instance
     sites: RwLock<HashMap<String, Arc<Site>>>,
     /// Map of exact hostname to site name for O(1) lookup
@@ -23,6 +25,7 @@ impl SiteManager {
     /// Create a new empty SiteManager
     pub fn new() -> Self {
         Self {
+            lifecycle: tokio::sync::Mutex::new(()),
             sites: RwLock::new(HashMap::new()),
             hostname_index: RwLock::new(HashMap::new()),
             glob_patterns: RwLock::new(Vec::new()),
@@ -49,6 +52,10 @@ impl SiteManager {
 
     /// Add a site with its hostname mappings
     pub async fn add_site(&self, site: Arc<Site>, hostnames: Vec<String>) {
+        self.replace_site(&site.name.clone(), site, hostnames).await;
+    }
+
+    async fn install_site(&self, site: Arc<Site>, hostnames: Vec<String>) {
         let site_name = site.name.clone();
 
         // Take routing locks before the sites lock, matching get_site. Publish
@@ -189,6 +196,7 @@ impl SiteManager {
 
     /// Remove a site by name
     pub async fn remove_site(&self, name: &str) {
+        let _lifecycle = self.lifecycle.lock().await;
         // Remove from sites map
         let old_site = {
             let mut sites = self.sites.write().await;
@@ -227,14 +235,15 @@ impl SiteManager {
 
     /// Replace a site with a new version (for hot-swapping)
     pub async fn replace_site(&self, name: &str, new_site: Arc<Site>, hostnames: Vec<String>) {
+        let _lifecycle = self.lifecycle.lock().await;
         // Keep serving the old site while its jobs drain. New video workers are
-        // started by add_site only after this shutdown and the routing swap.
+        // started by install_site only after this shutdown and the routing swap.
         if let Some(old_site) = self.get_site_by_name(name).await {
             for gallery in old_site.galleries().values() {
                 gallery.shutdown().await;
             }
         }
-        self.add_site(new_site, hostnames).await;
+        self.install_site(new_site, hostnames).await;
     }
 
     /// Check if a site exists

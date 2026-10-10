@@ -1278,7 +1278,7 @@ async fn run_server(
     #[cfg(unix)]
     let reload_token = tokio_util::sync::CancellationToken::new();
     #[cfg(unix)]
-    {
+    let reload_task = {
         let (storage, storage_url) = config_storage_for_reload;
         let config_reloader = Arc::new(
             ConfigReloader::new(storage, config.app.cookie_secret.clone(), storage_url)
@@ -1338,8 +1338,8 @@ async fn run_server(
                     }
                 }
             }
-        });
-    }
+        })
+    };
 
     let addr = SocketAddr::from((host.parse::<std::net::IpAddr>()?, port));
     info!("Server listening on {}", addr);
@@ -1372,7 +1372,11 @@ async fn run_server(
 
     // Cancel SIGHUP handler
     #[cfg(unix)]
-    reload_token.cancel();
+    {
+        reload_token.cancel();
+        // An in-flight reload must finish before enumerating live galleries.
+        let _ = reload_task.await;
+    }
 
     // Query the live sites: configuration reloads replace gallery instances.
     for site in site_manager.sites().await {
