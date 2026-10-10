@@ -18,7 +18,7 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
          adduser,
          ca-certificates
-Recommends: nginx | apache2 | httpd
+Recommends: nginx | apache2 | httpd, ffmpeg
 Suggests: logrotate
 Description: Dynamic gallery server with image resizing and templating
  DynServer is a high-performance web server designed for photo galleries

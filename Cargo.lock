@@ -5174,6 +5174,7 @@ dependencies = [
  "tenrankai-metadata",
  "tenrankai-storage",
  "tenrankai-users",
+ "tenrankai-video",
  "thiserror 2.0.20",
  "tokio",
  "tokio-stream",
@@ -5307,6 +5308,20 @@ dependencies = [
  "tracing",
  "uuid",
  "webauthn-rs",
+]
+
+[[package]]
+name = "tenrankai-video"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "fs2",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -5512,6 +5527,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",

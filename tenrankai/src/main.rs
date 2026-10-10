@@ -70,6 +70,10 @@ enum Commands {
     #[command(subcommand)]
     Cache(CacheCommands),
 
+    /// Check video prerequisites, inspect clips, or prepare playback files
+    #[command(subcommand)]
+    Video(commands::video::VideoCommands),
+
     /// Astrometry maintenance (regenerate persisted overlays)
     #[command(subcommand)]
     Astro(AstroCommands),
@@ -420,6 +424,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::User(user_cmd) => handle_user_command(user_cmd).await,
         Commands::Cache(cache_cmd) => handle_cache_command(cache_cmd, config).await,
+        Commands::Video(command) => commands::video::handle(command).await,
         #[cfg(feature = "avif")]
         Commands::AvifDebug {
             image_path,

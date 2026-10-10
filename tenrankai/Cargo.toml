@@ -36,6 +36,7 @@ tenrankai-metadata.workspace = true
 seiza.workspace = true
 tenrankai-storage.workspace = true
 tenrankai-users.workspace = true
+tenrankai-video.workspace = true
 
 # Shared workspace dependencies
 async-trait.workspace = true

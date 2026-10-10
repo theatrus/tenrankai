@@ -6,3 +6,4 @@ pub mod astro;
 pub mod cache;
 pub mod clear_analysis;
 pub mod config;
+pub mod video;

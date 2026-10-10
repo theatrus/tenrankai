@@ -1,0 +1,17 @@
+[package]
+name = "tenrankai-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bounded FFmpeg video probing and web playback preparation"
+
+[dependencies]
+chrono.workspace = true
+fs2 = "0.4.3"
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }

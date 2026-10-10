@@ -508,6 +508,39 @@ cargo run -- admin list
 
 ## Gallery Features
 
+### Video processing tools (gallery integration in progress)
+
+The first video milestone provides inspection and playback preparation commands
+for phone/camera clips up to five minutes. These commands preserve originals;
+video browsing in the gallery is still under development. The implementation and
+rollout plan is in [Video support](docs/design/video-support.md).
+
+Install FFmpeg **5.1 or later** with `libx264`, AAC, `zscale`, `tonemap`, and the
+`filter_units` bitstream filter. Ubuntu 24.04's `ffmpeg` package provides these.
+Video tools are optional for existing image-only galleries; Docker includes them.
+
+```sh
+tenrankai video doctor --smoke-test
+tenrankai video probe /path/to/clip.mov
+tenrankai video prepare /path/to/clip.mov --output /path/to/new-preview-directory
+```
+
+The default playback target is a faststart H.264/AAC MP4, fitting within 1920 by
+1080 (or 1080 by 1920 for portrait clips). Compatible streams are copied without
+lossy encoding. HDR with a supported PQ/HLG base layer is tone-mapped to SDR.
+`--reencode never` allows lossless repackaging only; `--reencode always` prepares
+all selected streams. `--poster-time SECONDS` overrides the automatic poster.
+
+Set `TENRANKAI_FFMPEG`, `TENRANKAI_FFPROBE`, and `TENRANKAI_VIDEO_TEMP_DIR` to
+override executable paths and the existing writable scratch directory. Each
+command also accepts `--ffmpeg`, `--ffprobe`, and `--temp-directory`.
+
+Preparation defaults to one job with two threads, a five-minute duration cap,
+512 MiB source and 256 MiB output budgets, and a 1 GiB free-space reserve. The
+output directory contains `playback.mp4`, `poster.jpg`, and `manifest.json`.
+The manifest includes private source metadata and is intended for operator
+inspection, not public serving.
+
 ### Multiple Galleries
 
 Tenrankai supports multiple independent gallery instances, each with its own:

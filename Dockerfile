@@ -79,6 +79,7 @@ FROM debian:bookworm-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    ffmpeg \
     libssl3 \
     # libheif runtime dependencies
     libde265-0 \

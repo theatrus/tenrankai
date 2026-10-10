@@ -18,6 +18,28 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
+  video:
+    name: Video processing (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ubuntu:24.04, debian:bookworm-slim]
+    container: ${{ matrix.image }}
+    env:
+      TENRANKAI_VIDEO_TESTS_REQUIRED: "1"
+    steps:
+    - name: Install video runtime tools
+      run: |
+        apt-get update
+        apt-get install -y ca-certificates curl git gcc libc6-dev ffmpeg
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@1.97.1
+    - name: Test video processing with real codecs
+      run: cargo test --locked -p tenrankai-video
+    - name: Check video prerequisite smoke test
+      run: cargo run --locked -p tenrankai-video --example doctor -- --smoke-test
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
