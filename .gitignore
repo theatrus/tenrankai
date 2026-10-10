@@ -48,6 +48,3 @@ test-results/
 
 # Generated video originals for the browser integration suite
 e2e/fixtures/video-photos/
-
-# Runtime audit records written by the admin browser tests.
-e2e/fixtures/config.d/.audit/

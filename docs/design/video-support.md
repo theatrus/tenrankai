@@ -172,7 +172,10 @@ and Debian Bookworm (matching the Docker runtime).
 
 ## Gallery validation
 
-The gallery UI has been exercised against the actual server with generated
+All 18 video browser scenarios pass against the rebuilt server, covering
+desktop Chromium, mobile Chromium, and iPhone-sized WebKit (admin settings
+use the existing desktop layout). A real restart reused all eight prepared
+playback files unchanged. The gallery UI has been exercised with generated
 camera-style MOV (MPEG-4/PCM), portrait/silent MKV, and invalid clips. Playback,
 seeking, mixed grids/type filters, permission checks, failures, and UI uploads
 pass in desktop Chromium, mobile Chromium, and iPhone-sized WebKit. Admin
