@@ -59,6 +59,26 @@ impl Gallery {
             warn!("Failed to load folder metadata cache: {}", e);
         }
 
+        // Disabling video changes discovery even when the binary version has
+        // not changed. Do not restore video entries from the previous config.
+        let disabled_video_cached = if self.config.video.is_none() {
+            let image_video = self
+                .image_cache
+                .read_all()
+                .await
+                .keys()
+                .any(|path| tenrankai_video::is_video_path(path));
+            let folder_video = self.folder_cache.read_all().await.values().any(|folder| {
+                folder
+                    .images
+                    .iter()
+                    .any(|path| tenrankai_video::is_video_path(path))
+            });
+            image_video || folder_video
+        } else {
+            false
+        };
+
         // Load cache version metadata
         let loaded_cache_metadata =
             crate::cache::load_cache_version_metadata(&self.cache_storage).await;
@@ -73,11 +93,11 @@ impl Gallery {
                 // No cache metadata found, needs refresh
                 true
             }
-        };
+        } || disabled_video_cached;
 
         if needs_refresh {
             info!(
-                "Version change detected ({}), refreshing metadata cache for gallery '{}'",
+                "Cache version or media configuration changed ({}), refreshing gallery '{}'",
                 current_version, self.config.name
             );
 

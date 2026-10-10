@@ -508,6 +508,9 @@ impl Gallery {
         relative_path: &str,
         user: Option<&str>,
     ) -> Result<ImageInfo, GalleryError> {
+        if self.config.video.is_none() && tenrankai_video::is_video_path(relative_path) {
+            return Err(GalleryError::NotFound(relative_path.to_string()));
+        }
         // Security check - prevent path traversal attacks
         if relative_path.contains("..") || relative_path.starts_with('/') {
             return Err(GalleryError::InvalidPath);
@@ -903,7 +906,21 @@ impl Gallery {
         &self,
         folder_path: &str,
     ) -> Option<super::CachedFolderMetadata> {
-        self.folder_cache.get(folder_path).await
+        let mut cached = self.folder_cache.get(folder_path).await?;
+        if self.config.video.is_none() {
+            // Also guard callers against a cache written by a retired worker
+            // during reload, before the full discovery refresh completes.
+            cached
+                .images
+                .retain(|path| !tenrankai_video::is_video_path(path));
+            cached
+                .image_groups
+                .retain(|group| !tenrankai_video::is_video_path(&group.primary_path));
+            cached
+                .preview_items
+                .retain(|preview| !tenrankai_video::is_video_path(&preview.path));
+        }
+        Some(cached)
     }
 
     /// Read folder metadata directly from storage (bypasses cache)

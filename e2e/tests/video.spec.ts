@@ -128,6 +128,9 @@ test.describe('short video gallery', () => {
       const response = await request.get('/api/gallery/video/data/clips');
       return (await response.json()).video_enabled;
     }).toBe(false);
+    const disabled = await (await request.get('/api/gallery/video/data/clips')).json();
+    expect(disabled.images.every((image: { media_kind: string }) => image.media_kind !== 'video')).toBe(true);
+    expect((await request.get('/api/gallery/video/image/clips/scene.mov')).status()).toBe(404);
     expect((await request.get('/v/_video/clips/scene.mov')).status()).toBe(404);
     await enabled.check();
     await page.getByRole('button', { name: 'Save Settings' }).click();
