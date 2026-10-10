@@ -104,8 +104,11 @@ test.describe('short video gallery', () => {
     await shot(page, 'video-uploaded');
   });
 
-  test('enables and disables video through gallery settings', async ({ page, context, request }) => {
+  test('enables and disables video through desktop gallery settings', async ({ page, context, request }) => {
     test.setTimeout(90_000);
+    // The existing admin app uses a desktop layout. Keep device-sized viewing
+    // and upload coverage in the other scenarios, and exercise settings here.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await bootstrapSession(context);
     await page.goto('/_admin/galleries/video');
     const enabled = page.getByRole('checkbox', { name: 'Enable video clips' });
@@ -124,7 +127,8 @@ test.describe('short video gallery', () => {
       const response = await request.get('/api/gallery/video/image/clips/scene.mov');
       return response.ok() ? (await response.json()).image.video?.state : response.status();
     }, { timeout: 60_000 }).toBe('ready');
-    const photoGallery = await request.get('/api/gallery/test/data/asc');
+    const photoGallery = await request.get('/api/gallery/test/data/by-filename-desc');
+    expect(photoGallery.ok()).toBeTruthy();
     expect((await photoGallery.json()).video_enabled).toBe(false);
   });
 

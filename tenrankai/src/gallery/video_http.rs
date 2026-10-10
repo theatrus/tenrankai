@@ -246,16 +246,26 @@ impl Gallery {
             Ok(m) => m,
             Err(_) => return ApiResponse::NotFound.into_response(),
         };
+        // Include the published object's validator: a regenerated rendition
+        // can have different bytes even when its original source is unchanged.
+        let etag = format!(
+            "\"{}\"",
+            self.video_identity(
+                &format!("{key}\0{etag}"),
+                &metadata,
+                self.config.video.as_ref().unwrap()
+            )
+        );
         let mut response_headers = HeaderMap::new();
         response_headers.insert(header::CACHE_CONTROL, "private, no-store".parse().unwrap());
         response_headers.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
         response_headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
         response_headers.insert(header::ETAG, etag.parse().unwrap());
         response_headers.insert("x-content-type-options", "nosniff".parse().unwrap());
-        if let Some(modified) = metadata.last_modified {
-            if let Ok(value) = httpdate::fmt_http_date(modified).parse() {
-                response_headers.insert(header::LAST_MODIFIED, value);
-            }
+        if let Some(modified) = metadata.last_modified
+            && let Ok(value) = httpdate::fmt_http_date(modified).parse()
+        {
+            response_headers.insert(header::LAST_MODIFIED, value);
         }
         if matches!(asset, VideoAsset::Original) {
             let filename = urlencoding::encode(path.rsplit('/').next().unwrap_or("video"));
@@ -413,7 +423,7 @@ mod tests {
             StatusCode::OK
         );
         headers.remove(header::IF_RANGE);
-        headers.insert(header::IF_NONE_MATCH, etag);
+        headers.insert(header::IF_NONE_MATCH, etag.clone());
         assert_eq!(
             gallery
                 .serve_video_asset("clip.mov", VideoAsset::Playback, &headers, &Method::GET)
@@ -428,6 +438,21 @@ mod tests {
             .await;
         assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
         assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+        gallery
+            .cache_storage
+            .write(
+                "video/test/playback.mp4",
+                bytes::Bytes::from_static(b"regenerated rendition"),
+            )
+            .await
+            .unwrap();
+        let mut validators = HeaderMap::new();
+        validators.insert(header::IF_NONE_MATCH, etag.clone());
+        let recreated = gallery
+            .serve_video_asset("clip.mov", VideoAsset::Playback, &validators, &Method::GET)
+            .await;
+        assert_eq!(recreated.status(), StatusCode::OK);
+        assert_ne!(recreated.headers()[header::ETAG], etag);
         gallery
             .source_storage
             .write("clip.mov", bytes::Bytes::from_static(b"changed source"))

@@ -43,48 +43,48 @@ is a later milestone.
 
 ### 2. Storage, gallery model, and recoverable processing — implemented
 
-- Add media kind and video-specific metadata with image defaults for old caches.
+- [x] Add media kind and video-specific metadata with image defaults for old caches.
   Preserve existing image URLs and API compatibility while generalizing internals.
-- Add streamed range reads and file/stream writes for filesystem/S3. Stage remote
+- [x] Add streamed range reads and file/stream writes for filesystem/S3. Stage remote
   sources once into bounded seekable files under the shared worker permit.
-- Add per-gallery opt-in delivery configuration; preserve fields through the
+- [x] Add per-gallery opt-in delivery configuration; preserve fields through the
   admin UI/API and ConfigStorage conversions. Do not inject unknown TOML keys
   into an older running server.
-- Persist processing manifests with pending/processing/ready/failed states and probe metadata,
+- [x] Persist processing manifests with pending/processing/ready/failed states and probe metadata,
   bounded retries, and operator-readable failures. Reconstruct pending work on
   restart using the existing in-memory queue as a dispatch mechanism.
-- Derivative identity includes site/gallery/path, source ETag or size+mtime,
+- [x] Derivative identity includes site/gallery/path, source ETag or size+mtime,
   delivery settings, and pipeline version. Re-check source identity before
   publication; publish completed objects before marking the manifest ready.
-- Detect settled synced files and completed uploads. Avoid long processing in
+- [x] Detect settled synced files and completed uploads. Avoid long processing in
   startup scans and upload request handlers.
-- Store video artifacts under their own cache prefix. Update orphan cleanup so
+- [x] Store video artifacts under their own cache prefix. Update orphan cleanup so
   the image cache sweeper cannot delete video manifests or in-flight outputs.
-- Keep same-stem photos and videos separate. Use extension-qualified video
+- [x] Keep same-stem photos and videos separate. Use extension-qualified video
   sidecars (`clip.mov.md`, `clip.mov.toml`, `clip.mov.xmp`). Keep image version/RAW grouping from absorbing video files.
-- Preserve capture-date sidecar/XMP precedence. Restrict technical/location/date
+- [x] Preserve capture-date sidecar/XMP precedence. Restrict technical/location/date
   metadata in API responses using existing permissions.
 
 ### 3. Playback, uploads, and UI — implemented
 
-- Authorized GET/HEAD playback endpoints with bounded streaming, Range/206/416,
+- [x] Authorized GET/HEAD playback endpoints with bounded streaming, Range/206/416,
   Content-Range, ETag/Last-Modified, conditional requests, and If-Range handling.
   Authorize against the current source/folder before serving a cached artifact.
-- Viewing permits access to the sanitized playback bytes. Original downloads use
+- [x] Viewing permits access to the sanitized playback bytes. Original downloads use
   `can_download_original`; metadata visibility also applies to previews/sharing.
   Protected responses must not enter shared public caches.
-- Mixed grids, capture-date sorting, counts, duration/play badges, type filtering,
+- [x] Mixed grids, capture-date sorting, counts, duration/play badges, type filtering,
   poster-based folder covers and previews, and visible preparation/failure states.
-- Native accessible player (`controls`, `playsInline`, conservative preload),
+- [x] Native accessible player (`controls`, `playsInline`, conservative preload),
   fullscreen, seeking, poster, and keyboard handling that respects player focus.
   Suppress image-specific zoom/astro controls for videos.
-- Reuse captions, tags, picks, comments, navigation, hiding, sharing, and
+- [x] Reuse captions, tags, picks, comments, navigation, hiding, sharing, and
   move/copy/delete. Update gallery/post pickers and template fallbacks.
-- Extend TUS allowlists and configurable size limits on client and server; enforce
+- [x] Extend TUS allowlists and configurable size limits on client and server; enforce
   actual duration/type after probing. Upload completion must not await encoding.
   The initial 512 MiB source limit can reject large 4K originals even below five
   minutes; operators may raise it deliberately when scratch/cache budgets allow.
-- Replace memory-buffered folder ZIP construction before including video files.
+- [x] Replace memory-buffered folder ZIP construction before including video files.
 
 ### 4. Release and rollout
 
@@ -169,6 +169,22 @@ TENRANKAI_VIDEO_TEMP_DIR=/mnt/tenrankai-video/main \
 
 The dedicated CI job tests real encoding on Ubuntu 24.04 (matching production)
 and Debian Bookworm (matching the Docker runtime).
+
+## Gallery validation
+
+The gallery UI has been exercised against the actual server with generated
+camera-style MOV (MPEG-4/PCM), portrait/silent MKV, and invalid clips. Playback,
+seeking, mixed grids/type filters, permission checks, failures, and UI uploads
+pass in desktop Chromium, mobile Chromium, and iPhone-sized WebKit. Admin
+video enable/disable, image display/sorting, and phone image navigation checks
+also pass. All 336 affected Rust library tests and 95 frontend tests pass,
+as do Clippy with warnings denied, type/CSS checks, and public/admin builds.
+Three library tests are ignored by default; the S3 integration test was run
+separately against the emulator. All 22 processing tests pass with real FFmpeg,
+and the Ubuntu 24.04 and Debian Bookworm codec CI jobs are green.
+Filesystem persistence/range/ZIP tests and an S3 upload/range/server-copy test
+against a local Moto emulator cover the storage changes. Real phone/camera
+samples and the production reverse proxy remain rollout checks.
 
 ## Gallery operation
 

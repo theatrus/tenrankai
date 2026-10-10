@@ -1618,6 +1618,13 @@ pub async fn analyze_image_handler(
         return response;
     }
 
+    if tenrankai_video::is_video_path(&resolved_path) {
+        let mut response =
+            ApiResponse::UnsupportedMediaType.with_message("Video analysis is not supported");
+        response.headers_mut().extend(no_cache_headers());
+        return response;
+    }
+
     // Get or generate a medium-sized version of the image for API efficiency
     let image_data = match get_image_for_analysis(gallery.as_ref(), &resolved_path).await {
         Ok(data) => data,
@@ -1695,6 +1702,9 @@ async fn get_image_for_analysis(
     gallery: &crate::gallery::Gallery,
     relative_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    if tenrankai_video::is_video_path(relative_path) {
+        return Err("video analysis is not supported".into());
+    }
     // Try to get cached medium-sized image first (more efficient for API)
     let cache_filename = gallery.generate_cache_filename(relative_path, "medium", "jpg", false);
 
@@ -1870,6 +1880,9 @@ pub async fn analyze_folder_handler(
     // Filter images that need analysis
     let mut images_to_analyze = Vec::new();
     for image in images {
+        if image.media_kind == "video" {
+            continue;
+        }
         if images_to_analyze.len() >= request.limit {
             break;
         }
