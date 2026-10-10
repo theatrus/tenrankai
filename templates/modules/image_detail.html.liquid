@@ -35,6 +35,18 @@
          data-authenticated="{{ is_authenticated }}"
          data-current-user="{{ current_user }}"></div>
 
+    <noscript>
+    {% if image.media_kind == "video" %}
+      {% if image.video.playback_url %}
+        <video controls playsinline preload="metadata" poster="{{ image.medium_url | escape }}" src="{{ image.video.playback_url | escape }}" aria-label="{{ image.name | escape }}" style="max-width:100%"></video>
+      {% else %}
+        <p>Preparing video for playback. Reload this page to check progress.</p>
+      {% endif %}
+    {% else %}
+      <img src="{{ image.medium_url | escape }}" alt="{{ image.name | escape }}" style="max-width:100%">
+    {% endif %}
+    </noscript>
+
     <!-- Embedded JSON data for React component -->
     <script type="application/json" id="image-detail-data">
     {{ image_detail_json }}

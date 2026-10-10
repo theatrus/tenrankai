@@ -175,7 +175,7 @@ jobs:
   # End-to-end browser tests (gallery display + image ordering)
   e2e:
     name: E2E (Playwright)
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v7
 
@@ -215,7 +215,10 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-e2e-target-${{ hashFiles('**/Cargo.lock') }}
 
-    # E2E uses PNG fixtures only, so build without AVIF/HEIF to skip the heavy
+    - name: Install video runtime tools
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    # E2E uses PNG and video fixtures; build without AVIF/HEIF to skip the heavy
     # system dependencies and keep the job fast.
     - name: Build server (no AVIF/HEIF)
       run: cargo build --no-default-features

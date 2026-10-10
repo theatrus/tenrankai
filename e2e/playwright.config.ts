@@ -36,13 +36,13 @@ export default defineConfig({
     {
       name: 'mobile',
       use: { ...devices['Pixel 7'] },
-      testMatch: /astro-overlay|phone-layout/,
+      testMatch: /astro-overlay|phone-layout|video/,
     },
     // Safari's engine on an iPhone-sized screen
     {
       name: 'iphone',
       use: { ...devices['iPhone 13'] },
-      testMatch: /astro-overlay|phone-layout/,
+      testMatch: /astro-overlay|phone-layout|video/,
     },
   ],
 

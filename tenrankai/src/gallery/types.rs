@@ -168,6 +168,9 @@ impl std::str::FromStr for ImageSize {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GalleryItem {
+    pub media_kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<super::video::VideoInfo>,
     pub name: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
@@ -222,6 +225,9 @@ pub struct ImageVersion {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ImageInfo {
+    pub media_kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video: Option<super::video::VideoInfo>,
     pub name: String,
     pub title: Option<String>,
     pub path: String,

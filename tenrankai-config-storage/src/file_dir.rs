@@ -551,6 +551,7 @@ mod tests {
         cache: &str,
     ) -> StoredGalleryConfig {
         StoredGalleryConfig {
+            video: None,
             name: name.to_string(),
             url_prefix: url_prefix.to_string(),
             source_directory: source.to_string(),

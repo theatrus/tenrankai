@@ -597,7 +597,7 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             .route("/_upload", axum::routing::options(upload::options_handler))
             .route(
                 "/_upload/{gallery}",
-                axum::routing::options(upload::options_handler).post(upload::create_upload),
+                axum::routing::options(upload::gallery_options_handler).post(upload::create_upload),
             )
             .route(
                 "/_upload/{gallery}/{upload_id}",
@@ -664,6 +664,22 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
                         state,
                         Path((name, image_path)),
                         query,
+                        headers,
+                        auth,
+                    )
+                }
+            }),
+        );
+
+        router = router.route(
+            &format!("{}/_video/{{*path}}", prefix),
+            axum::routing::get({
+                let name = name.clone();
+                move |state, path: Path<String>, method, headers, auth| {
+                    gallery::video_handler_for_named(
+                        state,
+                        Path((name, path.0)),
+                        method,
                         headers,
                         auth,
                     )
@@ -761,12 +777,16 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             &format!("/api/gallery/{}/composite/{{*path}}", name),
             axum::routing::get({
                 let name = name.clone();
-                move |state, path: Path<String>, headers: axum::http::HeaderMap| {
+                move |state,
+                      path: Path<String>,
+                      headers: axum::http::HeaderMap,
+                      auth: crate::login::OptionalAuth| {
                     let composite_path = path.0;
                     api::gallery_composite_preview_handler_for_named(
                         state,
                         Path((name, composite_path)),
                         headers,
+                        auth,
                     )
                 }
             }),

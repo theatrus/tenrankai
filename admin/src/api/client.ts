@@ -100,7 +100,20 @@ export interface ImageWatermarkConfig {
   apply_to_large: boolean;
 }
 
+export interface VideoSettings {
+  reencode?: 'auto' | 'never' | 'always';
+  max_duration_seconds?: number;
+  max_source_bytes?: number;
+  max_output_bytes?: number;
+  max_long_edge?: number;
+  max_short_edge?: number;
+  max_frame_rate?: number;
+  max_video_bitrate?: number;
+  crf?: number;
+}
+
 export interface SiteGalleryInfo {
+  video?: VideoSettings | null;
   name: string;
   url_prefix: string;
   source_directory: string;
@@ -117,6 +130,8 @@ export interface SiteGalleryListResponse {
 }
 
 export interface CreateGalleryRequest {
+  enable_video?: boolean;
+  video?: VideoSettings | null;
   name: string;
   url_prefix: string;
   source_directory: string;

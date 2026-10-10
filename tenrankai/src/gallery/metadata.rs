@@ -282,7 +282,7 @@ impl Gallery {
                 total_size += entry.metadata.as_ref().map(|m| m.size).unwrap_or(0);
 
                 let ext = super::grouping::get_extension(name).map(|e| e.to_lowercase());
-                let is_displayable_image = self.is_image(name);
+                let is_displayable_image = self.is_media(name);
                 let is_raw = ext
                     .as_ref()
                     .is_some_and(|e| super::grouping::is_raw_extension(e));
@@ -678,7 +678,7 @@ impl Gallery {
 
             // Extract filename and check if it's an image
             let file_name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
-            if !self.is_image(file_name) {
+            if !self.is_media(file_name) {
                 continue;
             }
 
@@ -780,7 +780,7 @@ impl Gallery {
 
             // Extract filename and check if it's an image
             let file_name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
-            if !self.is_image(file_name) {
+            if !self.is_media(file_name) {
                 continue;
             }
 
@@ -978,7 +978,7 @@ impl Gallery {
 
             // Get extension for checking file type
             let ext = super::grouping::get_extension(name).map(|e| e.to_lowercase());
-            let is_displayable_image = self.is_image(name);
+            let is_displayable_image = self.is_media(name);
             let is_raw = ext
                 .as_ref()
                 .map(|e| super::grouping::is_raw_extension(e))
@@ -1428,6 +1428,13 @@ impl Gallery {
         relative_path: &str,
         modification_date: Option<SystemTime>,
     ) -> Result<ImageMetadata, super::GalleryError> {
+        if tenrankai_video::is_video_path(relative_path) {
+            self.video_wakeup.notify_one();
+            return Ok(self
+                .video_image_metadata(relative_path, modification_date)
+                .await);
+        }
+
         // Get file extension
         let ext = FileExtension::from_path(relative_path);
 

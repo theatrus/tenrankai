@@ -1,0 +1,9 @@
+name = "video"
+url_prefix = "/v"
+source_directory = "video-photos"
+cache_directory = "video"
+image_indexing = "filename"
+grid_mode = "square"
+
+[video]
+max_duration_seconds = 300

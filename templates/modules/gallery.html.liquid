@@ -110,7 +110,7 @@
                                         {{ dir.name }}
                                     {% endif %}
                                 </div>
-                                <div class="folder-count">{{ dir.item_count }} images</div>
+                                <div class="folder-count">{{ dir.item_count }} items</div>
                                 {% if dir.description %}
                                     <div class="folder-description-preview">{{ dir.description | strip_html | truncate: 100 }}</div>
                                 {% endif %}
@@ -129,7 +129,7 @@
 
         {% endif %}
     {% else %}
-        <p class="empty-gallery">No images found in this directory.</p>
+        <p class="empty-gallery">No photos or videos found in this directory.</p>
     {% endif %}
 </div>
 

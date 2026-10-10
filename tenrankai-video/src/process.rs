@@ -685,8 +685,9 @@ mod tests {
         let pid = tokio::fs::read_to_string(scratch.path().join("sleep-tool.pid"))
             .await
             .unwrap();
-        let status = Command::new("kill")
-            .args(["-0", pid.trim()])
+        // Minimal Debian images provide kill as a shell builtin.
+        let status = Command::new("/bin/sh")
+            .args(["-c", "kill -0 \"$1\"", "reap-check", pid.trim()])
             .stderr(Stdio::null())
             .status()
             .await

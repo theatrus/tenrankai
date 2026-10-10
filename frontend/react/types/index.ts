@@ -84,7 +84,20 @@ export interface ImageVersion {
   thumbnail_url: string;
 }
 
+export interface VideoInfo {
+  state: 'pending' | 'processing' | 'ready' | 'failed';
+  duration_seconds?: number;
+  playback_url?: string;
+  poster_url?: string;
+  codec?: string;
+  frame_rate?: number;
+  has_audio?: boolean;
+  hdr?: boolean;
+}
+
 export interface ImageInfo {
+  media_kind?: 'image' | 'video';
+  video?: VideoInfo;
   path: string;
   name: string;
   title?: string;
@@ -175,6 +188,8 @@ export interface ImageDetailData {
 }
 
 export interface GalleryItem {
+  media_kind?: 'image' | 'video' | 'directory';
+  video?: VideoInfo;
   path: string;
   name: string;
   title?: string;
@@ -191,6 +206,8 @@ export interface GalleryItem {
 }
 
 export interface GalleryData {
+  video_enabled?: boolean;
+  max_video_upload_bytes?: number;
   site_name: string;
   gallery_name: string;
   gallery_path: string;

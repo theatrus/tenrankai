@@ -58,7 +58,7 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const filter = params.get('filter');
-      if (filter && ['all', 'picks', 'rejects', 'highlighted', 'commented'].includes(filter)) {
+      if (filter && ['all', 'picks', 'rejects', 'highlighted', 'commented', 'photos', 'videos'].includes(filter)) {
         return filter as FilterType;
       }
     }
@@ -84,6 +84,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   const filterCounts = React.useMemo(() => {
     const counts = {
       all: images.length,
+      photos: images.filter(i => i.media_kind !== 'video').length,
+      videos: images.filter(i => i.media_kind === 'video').length,
       picks: 0,
       rejects: 0,
       highlighted: 0,
@@ -108,6 +110,8 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   }, [images, permissions]);
 
   const filteredImages = React.useMemo(() => {
+    if (activeFilter === 'videos') return images.filter(image => image.media_kind === 'video');
+    if (activeFilter === 'photos') return images.filter(image => image.media_kind !== 'video');
     if (!permissions?.can_read_metadata || activeFilter === 'all') {
       return images;
     }
@@ -134,13 +138,14 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   const filterRootRef = React.useRef<Root | null>(null);
 
   React.useEffect(() => {
-    if (filterMount && permissions?.can_read_metadata && !filterRootRef.current) {
+    if (filterMount && (permissions?.can_read_metadata || images.some(image => image.media_kind === 'video')) && !filterRootRef.current) {
       filterRootRef.current = createRoot(filterMount);
       filterRootRef.current.render(
         <FilterBar
           activeFilter={activeFilter}
           onFilterChange={handleFilterChange}
           counts={filterCounts}
+          canReadMetadata={!!permissions?.can_read_metadata}
         />
       );
     }
@@ -156,12 +161,13 @@ export const GalleryWithFilter: React.FC<GalleryWithFilterProps> = ({
   }, [filterMount, permissions?.can_read_metadata]);
 
   React.useEffect(() => {
-    if (filterRootRef.current && permissions?.can_read_metadata) {
+    if (filterRootRef.current && (permissions?.can_read_metadata || images.some(image => image.media_kind === 'video'))) {
       filterRootRef.current.render(
         <FilterBar
           activeFilter={activeFilter}
           onFilterChange={handleFilterChange}
           counts={filterCounts}
+          canReadMetadata={!!permissions?.can_read_metadata}
         />
       );
     }

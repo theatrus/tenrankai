@@ -134,6 +134,7 @@ pub fn default_watermark_padding() -> u32 {
 impl Default for GallerySystemConfig {
     fn default() -> Self {
         Self {
+            video: None,
             name: "default".to_string(),
             url_prefix: "/gallery".to_string(),
             source_directory: "photos".to_string(),

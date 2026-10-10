@@ -125,6 +125,9 @@ impl StorageMetadataBackend {
 
     /// Get the .toml sidecar file path for an image
     fn get_toml_path(image_path: &str) -> String {
+        if tenrankai_video::is_video_path(image_path) {
+            return format!("{image_path}.toml");
+        }
         if let Some(dot_pos) = image_path.rfind('.') {
             format!("{}.toml", &image_path[..dot_pos])
         } else {
@@ -134,6 +137,10 @@ impl StorageMetadataBackend {
 
     /// Get the .md sidecar file path for an image (tries IMAGE.jpg.md first, then IMAGE.md)
     fn get_md_paths(image_path: &str) -> (String, String) {
+        if tenrankai_video::is_video_path(image_path) {
+            let path = format!("{image_path}.md");
+            return (path.clone(), path);
+        }
         let extension = image_path.rsplit('.').next().unwrap_or("");
         let stem = if let Some(dot_pos) = image_path.rfind('.') {
             &image_path[..dot_pos]
@@ -595,6 +602,43 @@ mod tests {
         let (full, simple) = StorageMetadataBackend::get_md_paths("photos/beach.jpg");
         assert_eq!(full, "photos/beach.jpg.md");
         assert_eq!(simple, "photos/beach.md");
+    }
+
+    #[tokio::test]
+    async fn same_stem_photo_and_video_keep_independent_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = StorageMetadataBackend::new(create_test_storage(dir.path()));
+        let mut photo = ImageUserMetadata::new();
+        photo.title = Some("Photo caption".into());
+        photo.pick_status = Some(PickStatus::Pick);
+        let mut video = ImageUserMetadata::new();
+        video.title = Some("Video caption".into());
+        video.pick_status = Some(PickStatus::NoPick);
+        backend.save("scene.jpg", &photo).await.unwrap();
+        backend.save("scene.mov", &video).await.unwrap();
+        backend.clear_cache();
+        assert_eq!(
+            backend.load("scene.jpg").await.unwrap().unwrap().title,
+            photo.title
+        );
+        assert_eq!(
+            backend
+                .load("scene.mov")
+                .await
+                .unwrap()
+                .unwrap()
+                .pick_status,
+            video.pick_status
+        );
+        backend.delete("scene.mov").await.unwrap();
+        backend.clear_cache();
+        assert!(backend.load("scene.mov").await.unwrap().is_none());
+        assert_eq!(
+            backend.load("scene.jpg").await.unwrap().unwrap().title,
+            photo.title
+        );
+        assert!(dir.path().join("scene.md").exists());
+        assert!(!dir.path().join("scene.mov.md").exists());
     }
 
     #[tokio::test]

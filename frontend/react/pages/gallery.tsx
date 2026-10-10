@@ -143,6 +143,25 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       });
   }, [galleryData.gallery_name, galleryData.gallery_path]);
 
+  useEffect(() => {
+    if (!images.some(image => image.media_kind === 'video' && image.video?.state !== 'ready')) return;
+    const controller = new AbortController();
+    const timer = window.setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const path = galleryData.gallery_path ? '/' + galleryData.gallery_path : '';
+        const response = await fetch(`/api/gallery/${encodeURIComponent(galleryData.gallery_name)}/data${path}`, {
+          credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+        });
+        if (response.ok) {
+          const data: GalleryData = await response.json();
+          setImages(data.images || []);
+        }
+      } catch { /* Try again on the next tick while preparation is pending. */ }
+    }, 5000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [images, galleryData.gallery_name, galleryData.gallery_path]);
+
   return (
     <GalleryWithFilter
       images={images}
@@ -206,9 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Find the gallery URL from the page
   const galleryUrlElement = document.querySelector('[data-gallery-url]');
-  const galleryUrl = galleryData?.gallery_path
-    ? galleryUrlElement?.getAttribute('data-gallery-url') || '/gallery'
-    : '/gallery';
+  const galleryUrl = galleryUrlElement?.getAttribute('data-gallery-url') || '/gallery';
 
   // Find the container for React - use the parent gallery-images div
   const galleryImages = document.querySelector('.gallery-images');
@@ -554,6 +571,8 @@ function mountNewDropdown(galleryData: GalleryData | null) {
         />
         {showUploadModal && (
           <UploadModal
+            videoEnabled={galleryData?.video_enabled}
+            maxVideoBytes={galleryData?.max_video_upload_bytes}
             galleryName={galleryName}
             folderPath={galleryPath}
             onClose={() => setShowUploadModal(false)}

@@ -9,6 +9,7 @@ description = "Pluggable image metadata storage abstraction with sidecar file su
 [dependencies]
 # Internal crates
 tenrankai-storage.workspace = true
+tenrankai-video.workspace = true
 
 # Async
 async-trait.workspace = true

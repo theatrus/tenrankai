@@ -134,6 +134,22 @@ impl S3Storage {
 
 #[async_trait]
 impl Storage for S3Storage {
+    async fn copy(&self, source: &str, destination: &str) -> Result<(), StorageError> {
+        let copy_source = format!(
+            "{}/{}",
+            self.bucket,
+            urlencoding::encode(&self.build_key(source)?)
+        );
+        self.client
+            .copy_object()
+            .bucket(&self.bucket)
+            .key(self.build_key(destination)?)
+            .copy_source(copy_source)
+            .send()
+            .await
+            .map_err(|error| StorageError::Other(format!("S3 object copy failed: {error}")))?;
+        Ok(())
+    }
     async fn read(&self, path: &str) -> Result<Bytes, StorageError> {
         let key = self.build_key(path)?;
         debug!("S3 read: bucket={}, key={}", self.bucket, key);
@@ -477,6 +493,55 @@ impl Storage for S3Storage {
                 }
             }
         }
+    }
+
+    async fn read_range_stream(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<ByteStream, StorageError> {
+        if length == 0 {
+            return Ok(Box::pin(futures::stream::empty()));
+        }
+        let end = offset
+            .checked_add(length - 1)
+            .ok_or_else(|| StorageError::Other("range overflow".into()))?;
+        let output = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(self.build_key(path)?)
+            .range(format!("bytes={offset}-{end}"))
+            .send()
+            .await
+            .map_err(|error| StorageError::Other(format!("S3 range GET failed: {error}")))?;
+        let stream = ReaderStream::new(output.body.into_async_read())
+            .map(|result| result.map_err(StorageError::Io));
+        Ok(Box::pin(stream))
+    }
+
+    async fn write_file(&self, path: &str, source: &std::path::Path) -> Result<(), StorageError> {
+        let body = aws_sdk_s3::primitives::ByteStream::from_path(source)
+            .await
+            .map_err(|error| StorageError::Other(format!("cannot stream source file: {error}")))?;
+        let content_type = if path.ends_with(".mp4") {
+            "video/mp4"
+        } else if path.ends_with(".jpg") {
+            "image/jpeg"
+        } else {
+            "application/octet-stream"
+        };
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(self.build_key(path)?)
+            .body(body)
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|error| StorageError::Other(format!("S3 file upload failed: {error}")))?;
+        Ok(())
     }
 
     async fn read_range(
@@ -1124,5 +1189,90 @@ impl ChunkedUpload for S3Storage {
         }
 
         Ok(cleaned)
+    }
+}
+
+#[cfg(test)]
+mod video_storage_tests {
+    use super::*;
+
+    /// Run against a disposable local S3 server (MinIO or Moto), with test AWS credentials supplied
+    /// in the environment. Creates and removes its own uniquely named bucket.
+    #[tokio::test]
+    #[ignore = "requires TENRANKAI_TEST_S3_ENDPOINT and disposable S3 credentials"]
+    async fn streams_video_file_ranges_and_server_side_copy() {
+        let endpoint = std::env::var("TENRANKAI_TEST_S3_ENDPOINT").unwrap();
+        assert!(
+            endpoint.starts_with("http://127.0.0.1:"),
+            "use a local disposable server"
+        );
+        let bucket = format!("tenrankai-video-{}", std::process::id());
+        let storage = S3Storage::new(
+            bucket.clone(),
+            "video-tests".into(),
+            Some("us-east-1".into()),
+            Some(endpoint),
+        )
+        .await
+        .unwrap();
+        storage
+            .client
+            .create_bucket()
+            .bucket(&bucket)
+            .send()
+            .await
+            .unwrap();
+        let source = tempfile::NamedTempFile::new().unwrap();
+        let original: Vec<_> = (0..1_048_576).map(|n| (n % 251) as u8).collect();
+        tokio::fs::write(source.path(), &original).await.unwrap();
+        storage
+            .write_file("camera clip.mp4", source.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            storage.metadata("camera clip.mp4").await.unwrap().size,
+            original.len() as u64
+        );
+        let mut range = storage
+            .read_range_stream("camera clip.mp4", 256_000, 65_537)
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = range.next().await {
+            bytes.extend_from_slice(&chunk.unwrap());
+        }
+        assert_eq!(bytes, original[256_000..321_537]);
+        storage
+            .copy("camera clip.mp4", "copied clip.mp4")
+            .await
+            .unwrap();
+        assert_eq!(
+            storage.read("copied clip.mp4").await.unwrap().as_ref(),
+            original.as_slice()
+        );
+        assert!(
+            storage
+                .read_range_stream("camera clip.mp4", 0, 0)
+                .await
+                .unwrap()
+                .next()
+                .await
+                .is_none()
+        );
+        assert!(
+            storage
+                .read_range_stream("camera clip.mp4", u64::MAX, 2)
+                .await
+                .is_err()
+        );
+        storage.delete("camera clip.mp4").await.unwrap();
+        storage.delete("copied clip.mp4").await.unwrap();
+        storage
+            .client
+            .delete_bucket()
+            .bucket(bucket)
+            .send()
+            .await
+            .unwrap();
     }
 }

@@ -122,6 +122,8 @@ pub struct GalleryPreviewResponse {
 
 #[derive(Serialize, Debug)]
 pub struct GalleryApiResponse {
+    pub video_enabled: bool,
+    pub max_video_upload_bytes: u64,
     pub site_name: String,
     pub gallery_name: String,
     pub gallery_path: String,
@@ -209,6 +211,7 @@ pub async fn gallery_composite_preview_handler_for_named(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     headers: axum::http::HeaderMap,
+    auth: crate::login::OptionalAuth,
 ) -> Result<Response, StatusCode> {
     let gallery = app_state.galleries().get(&gallery_name).ok_or_else(|| {
         tracing::error!("Gallery '{}' not found", gallery_name);
@@ -218,12 +221,26 @@ pub async fn gallery_composite_preview_handler_for_named(
     // Handle special case for root gallery
     let gallery_path = if path == "_root" { String::new() } else { path };
 
+    let permissions = crate::permissions::resolve_permissions_for_path(
+        &app_state,
+        &gallery_name,
+        &gallery_path,
+        auth.username(),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !permissions.permissions.can_view {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
     // Generate composite cache key and filename using the new enhanced system
     let composite_cache_key = gallery.generate_composite_cache_key_with_context(&gallery_path);
     let cache_filename = gallery.generate_composite_cache_filename(&gallery_path);
 
     // Try to serve from cache first (with conditional request support)
-    if let Ok(cached_response) = gallery.serve_cached_image(&cache_filename, &headers).await {
+    if gallery.config.video.is_none()
+        && let Ok(cached_response) = gallery.serve_cached_image(&cache_filename, &headers).await
+    {
         // Only return if it's not a 404 (i.e., cache exists)
         if cached_response.status() != StatusCode::NOT_FOUND {
             return Ok(cached_response);
@@ -233,13 +250,53 @@ pub async fn gallery_composite_preview_handler_for_named(
 
     // Not in cache, need to generate it
     // List directory to get images
-    let (_, images) = gallery.list_directory(&gallery_path).await.map_err(|e| {
-        tracing::error!("Failed to list directory: {}", e);
-        StatusCode::NOT_FOUND
-    })?;
+    let (_, images) = gallery
+        .list_directory_with_user(&gallery_path, auth.username())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list directory: {}", e);
+            StatusCode::NOT_FOUND
+        })?;
 
     // Take up to 4 images for a 2x2 grid
-    let preview_images: Vec<_> = images.into_iter().take(4).collect();
+    let scratch = tempfile::tempdir().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut preview_images = Vec::new();
+    for mut item in images {
+        if preview_images.len() == 4 {
+            break;
+        }
+        let path = item.file_path.as_ref().unwrap_or(&item.path);
+        if tenrankai_video::is_video_path(path) {
+            let Some(record) = gallery.video_record(path).await else {
+                continue;
+            };
+            if !record.poster_ready {
+                continue;
+            }
+            let source = gallery
+                .source_storage
+                .metadata(path)
+                .await
+                .map_err(|_| StatusCode::NOT_FOUND)?;
+            if record.identity
+                != gallery.video_identity(path, &source, gallery.config.video.as_ref().unwrap())
+            {
+                continue;
+            }
+            let key = format!("{}/poster.jpg", record.artifact_prefix);
+            let poster = gallery
+                .cache_storage
+                .read(&key)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let local = scratch.path().join(format!("{}.jpg", preview_images.len()));
+            tokio::fs::write(&local, poster)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            item.file_path = Some(local.display().to_string());
+        }
+        preview_images.push(item);
+    }
 
     if preview_images.is_empty() {
         return Err(ApiResponse::NotFound.status_code());
@@ -248,6 +305,7 @@ pub async fn gallery_composite_preview_handler_for_named(
     // Create composite image in a blocking task
     let source_dir = gallery.source_directory().to_path_buf();
     let composite_result = tokio::task::spawn_blocking(move || {
+        let _scratch = scratch;
         crate::composite::create_composite_preview(source_dir, preview_images)
     })
     .await
@@ -262,13 +320,17 @@ pub async fn gallery_composite_preview_handler_for_named(
     })?;
 
     // Store in cache and serve
-    gallery
+    let mut response = gallery
         .store_and_serve_composite(&composite_cache_key, composite_image)
         .await
         .map_err(|e| {
             tracing::error!("Failed to store composite in cache: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })
+        })?;
+    if gallery.config.video.is_some() {
+        response.headers_mut().extend(no_cache_headers());
+    }
+    Ok(response)
 }
 
 #[derive(Debug, Serialize)]
@@ -420,6 +482,13 @@ pub async fn gallery_api_handler_for_named(
     };
 
     Ok(Json(GalleryApiResponse {
+        video_enabled: gallery.config.video.is_some(),
+        max_video_upload_bytes: gallery
+            .config
+            .video
+            .as_ref()
+            .map(|v| v.max_source_bytes)
+            .unwrap_or(0),
         site_name: app_state.site.name.clone(),
         gallery_name,
         gallery_path: path,
@@ -456,9 +525,14 @@ pub async fn gallery_api_handler_for_named_http(
     )
     .await?;
 
+    let json_has_video = json_response.video_enabled;
     let mut response = json_response.into_response();
-    // Add short cache headers (60 seconds)
-    response.headers_mut().extend(short_cache_headers(60));
+    // Video preparation changes asynchronously; polling must see current state.
+    if json_has_video {
+        response.headers_mut().extend(no_cache_headers());
+    } else {
+        response.headers_mut().extend(short_cache_headers(60));
+    }
     Ok(response)
 }
 
@@ -675,37 +749,38 @@ pub async fn image_detail_api_handler_for_named(
     };
 
     // Include tile configuration if tile zoom is allowed and tiles are configured
-    let tile_config = if user_permissions.permissions.can_use_tile_zoom {
-        gallery.config.tiles.as_ref().map(|tc| {
-            // Calculate the actual dimensions of the tiled image
-            // The backend scales proportionally if max dimension > 8192
-            let max_dimension = image_info.dimensions.0.max(image_info.dimensions.1);
-            let (tiled_width, tiled_height) = if max_dimension > 8192 {
-                // Scale proportionally
-                let scale = 8192.0 / max_dimension as f32;
-                let new_width = (image_info.dimensions.0 as f32 * scale).round() as u32;
-                let new_height = (image_info.dimensions.1 as f32 * scale).round() as u32;
-                (new_width, new_height)
-            } else {
-                // No scaling needed
-                (image_info.dimensions.0, image_info.dimensions.1)
-            };
+    let tile_config =
+        if image_info.video.is_none() && user_permissions.permissions.can_use_tile_zoom {
+            gallery.config.tiles.as_ref().map(|tc| {
+                // Calculate the actual dimensions of the tiled image
+                // The backend scales proportionally if max dimension > 8192
+                let max_dimension = image_info.dimensions.0.max(image_info.dimensions.1);
+                let (tiled_width, tiled_height) = if max_dimension > 8192 {
+                    // Scale proportionally
+                    let scale = 8192.0 / max_dimension as f32;
+                    let new_width = (image_info.dimensions.0 as f32 * scale).round() as u32;
+                    let new_height = (image_info.dimensions.1 as f32 * scale).round() as u32;
+                    (new_width, new_height)
+                } else {
+                    // No scaling needed
+                    (image_info.dimensions.0, image_info.dimensions.1)
+                };
 
-            // Calculate grid size based on tiled dimensions and fixed tile size
-            let grid_width = tiled_width.div_ceil(tc.tile_size);
-            let grid_height = tiled_height.div_ceil(tc.tile_size);
+                // Calculate grid size based on tiled dimensions and fixed tile size
+                let grid_width = tiled_width.div_ceil(tc.tile_size);
+                let grid_height = tiled_height.div_ceil(tc.tile_size);
 
-            TileConfigInfo {
-                tile_size: tc.tile_size, // Always the configured tile size
-                grid_width,
-                grid_height,
-                tiled_width,
-                tiled_height,
-            }
-        })
-    } else {
-        None
-    };
+                TileConfigInfo {
+                    tile_size: tc.tile_size, // Always the configured tile size
+                    grid_width,
+                    grid_height,
+                    tiled_width,
+                    tiled_height,
+                }
+            })
+        } else {
+            None
+        };
 
     // Check if image is hidden (only relevant for users who can see hidden)
     let is_hidden = if user_permissions.permissions.can_see_hidden {
@@ -757,9 +832,13 @@ pub async fn image_detail_api_handler_for_named_http(
     )
     .await?;
 
+    let is_video = json_response.image.video.is_some();
     let mut response = json_response.into_response();
-    // Add short cache headers (60 seconds) - metadata can change
-    response.headers_mut().extend(short_cache_headers(60));
+    if is_video {
+        response.headers_mut().extend(no_cache_headers());
+    } else {
+        response.headers_mut().extend(short_cache_headers(60));
+    }
     Ok(response)
 }
 

@@ -170,6 +170,9 @@ pub struct StaticConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GallerySystemConfig {
+    /// Enable automatic video preparation by adding a [gallery.video] table.
+    #[serde(default)]
+    pub video: Option<tenrankai_video::VideoSettings>,
     pub name: String,
     pub url_prefix: String,
     /// Source directory for gallery images (filesystem path or S3 URL)

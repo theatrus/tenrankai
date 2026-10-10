@@ -11,6 +11,9 @@ pub mod metadata_sources;
 pub mod path_utils;
 mod task_deduplicator;
 mod types;
+pub(crate) mod video;
+mod video_http;
+pub use video_http::video_handler_for_named;
 
 // Re-export public items
 pub use cache::generate_tile_cache_filename;
@@ -80,6 +83,9 @@ pub struct Gallery {
     pub(crate) image_watermark_hash: Option<String>,
     /// Notifies listeners when metadata refresh completes (for shortcode index rebuild)
     pub(crate) metadata_generation: Arc<tokio::sync::Notify>,
+    pub(crate) video_records: RwLock<std::collections::HashMap<String, video::VideoRecord>>,
+    pub(crate) video_wakeup: tokio::sync::Notify,
+    pub(crate) video_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Gallery {
@@ -122,6 +128,9 @@ impl Gallery {
         );
 
         Self {
+            video_records: RwLock::new(std::collections::HashMap::new()),
+            video_wakeup: tokio::sync::Notify::new(),
+            video_task: Mutex::new(None),
             config,
             source_path,
             source_storage,
@@ -259,6 +268,11 @@ impl Gallery {
 
     pub(crate) fn is_image(&self, file_name: &str) -> bool {
         grouping::get_extension(file_name).is_some_and(grouping::is_image_extension)
+    }
+
+    pub(crate) fn is_media(&self, file_name: &str) -> bool {
+        self.is_image(file_name)
+            || (self.config.video.is_some() && tenrankai_video::is_video_path(file_name))
     }
 
     /// Returns the source directory path for filesystem-based sources.
@@ -431,6 +445,10 @@ impl Gallery {
         self.shutdown_token.cancel();
         // Also cancel any running pre-generation tasks
         self.pregeneration_token.lock().await.cancel();
+
+        if let Some(task) = self.video_task.lock().await.take() {
+            let _ = task.await;
+        }
 
         // Wait for active blocking tasks to complete
         let mut wait_count = 0;

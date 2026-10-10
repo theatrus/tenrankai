@@ -19,7 +19,7 @@ export function useKeyboardNavigation({
   useEffect(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       // Don't interfere when user is typing in an input
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, button, video, [contenteditable="true"]')) {
         return;
       }
 

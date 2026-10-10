@@ -25,6 +25,10 @@ async fn find_existing_sidecars(storage: &DynStorage, image_path: &str) -> Vec<S
     let sidecars = SidecarPaths::for_image(image_path);
     let mut existing = Vec::new();
 
+    if storage.exists(&sidecars.toml).await.unwrap_or(false) {
+        existing.push(sidecars.toml);
+    }
+
     // Check XMP sidecar
     if storage.exists(&sidecars.xmp).await.unwrap_or(false) {
         existing.push(sidecars.xmp);
@@ -46,6 +50,8 @@ async fn find_existing_sidecars(storage: &DynStorage, image_path: &str) -> Vec<S
         existing.push(sidecars.markdown_replaced);
     }
 
+    existing.sort();
+    existing.dedup();
     existing
 }
 
@@ -62,7 +68,9 @@ fn transform_sidecar_paths(
     source_sidecars
         .iter()
         .filter_map(|src| {
-            if *src == source_sidecars_template.xmp {
+            if *src == source_sidecars_template.toml {
+                Some((src.clone(), dest_sidecars_template.toml.clone()))
+            } else if *src == source_sidecars_template.xmp {
                 Some((src.clone(), dest_sidecars_template.xmp.clone()))
             } else if *src == source_sidecars_template.markdown_full {
                 Some((src.clone(), dest_sidecars_template.markdown_full.clone()))
@@ -85,6 +93,9 @@ async fn find_version_files(
     folder_path: &str,
     filename: &str,
 ) -> Vec<(String, String)> {
+    if tenrankai_video::is_video_path(filename) {
+        return Vec::new();
+    }
     let stem = path_utils::filename(filename);
     let base_name = crate::gallery::grouping::extract_base_name(stem);
 
@@ -1137,6 +1148,7 @@ pub async fn list_site_galleries(
         if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
             let grid_mode_str = config.grid_mode.as_str();
             let mut info = SiteGalleryInfo {
+                video: config.video.clone(),
                 name,
                 url_prefix: config.url_prefix,
                 source_directory: config.source_directory,
@@ -1182,6 +1194,7 @@ pub async fn get_site_gallery(
     let grid_mode_str = config.grid_mode.as_str();
 
     let mut info = SiteGalleryInfo {
+        video: config.video.clone(),
         name,
         url_prefix: config.url_prefix,
         source_directory: config.source_directory,
@@ -1358,10 +1371,31 @@ async fn save_gallery_config(
         _ => tenrankai_config_storage::StoredGridMode::Masonry,
     };
 
+    let video_settings = match request.enable_video {
+        Some(false) => None,
+        Some(true) => Some(
+            request
+                .video
+                .clone()
+                .or_else(|| existing_config.as_ref().and_then(|c| c.video.clone()))
+                .unwrap_or_default(),
+        ),
+        None => request
+            .video
+            .clone()
+            .or_else(|| existing_config.as_ref().and_then(|c| c.video.clone())),
+    };
+    if let Some(settings) = &video_settings {
+        settings
+            .validate()
+            .map_err(|e| AdminError::BadRequest(e.to_string()))?;
+    }
+
     // Create the stored config, preserving existing settings where appropriate
     let stored_config = if let Some(existing) = existing_config {
         // Update only the fields exposed via the API, preserve everything else
         tenrankai_config_storage::StoredGalleryConfig {
+            video: video_settings.clone(),
             name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
@@ -1398,6 +1432,7 @@ async fn save_gallery_config(
     } else if let Some(proto) = prototype_config {
         // New gallery - use prototype config as template
         tenrankai_config_storage::StoredGalleryConfig {
+            video: video_settings.clone(),
             name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
@@ -1434,6 +1469,7 @@ async fn save_gallery_config(
     } else {
         // New gallery - use hardcoded defaults (no prototype available)
         tenrankai_config_storage::StoredGalleryConfig {
+            video: video_settings.clone(),
             name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
             source_directory: request.source_directory.clone(),
@@ -1488,6 +1524,7 @@ async fn save_gallery_config(
     let response_grid_mode = stored_config.grid_mode.as_str();
 
     let mut info = SiteGalleryInfo {
+        video: stored_config.video.clone(),
         name: name.to_string(),
         url_prefix: request.url_prefix,
         source_directory: request.source_directory,
@@ -3892,9 +3929,7 @@ pub async fn rename_gallery_folder(
             };
 
             // Move the file
-            if let Ok(data) = storage.read(&entry.path).await
-                && storage.write(&dest_path, data).await.is_ok()
-            {
+            if storage.copy(&entry.path, &dest_path).await.is_ok() {
                 let _ = storage.delete(&entry.path).await;
             }
         }
@@ -4077,15 +4112,7 @@ pub async fn move_gallery_images(
         }
 
         // Move main image file
-        let data = match storage.read(&source_path).await {
-            Ok(data) => data,
-            Err(e) => {
-                errors.push(format!("Failed to read {}: {}", filename, e));
-                continue;
-            }
-        };
-
-        if let Err(e) = storage.write(&dest_path, data).await {
+        if let Err(e) = storage.copy(&source_path, &dest_path).await {
             errors.push(format!("Failed to write {}: {}", filename, e));
             continue;
         }
@@ -4335,15 +4362,7 @@ pub async fn copy_gallery_images(
         }
 
         // Copy main image file
-        let data = match storage.read(&source_path).await {
-            Ok(data) => data,
-            Err(e) => {
-                errors.push(format!("Failed to read {}: {}", filename, e));
-                continue;
-            }
-        };
-
-        if let Err(e) = storage.write(&dest_path, data).await {
+        if let Err(e) = storage.copy(&source_path, &dest_path).await {
             errors.push(format!("Failed to write {}: {}", filename, e));
             continue;
         }

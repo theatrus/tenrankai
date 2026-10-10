@@ -48,7 +48,7 @@ impl Gallery {
                 Some(
                     cache
                         .iter()
-                        .filter(|(_, m)| m.preview_ready)
+                        .filter(|(path, m)| m.preview_ready || tenrankai_video::is_video_path(path))
                         .map(|(k, _)| k.clone())
                         .collect(),
                 )
@@ -120,6 +120,8 @@ impl Gallery {
                 .unwrap_or_default();
 
             items.push(GalleryItem {
+                media_kind: "directory",
+                video: None,
                 name: subdir_name.clone(),
                 display_name,
                 description,
@@ -156,7 +158,7 @@ impl Gallery {
         let image_paths: Vec<&str> = if let Some(ref ready) = ready_images {
             image_paths
                 .into_iter()
-                .filter(|path| ready.contains(*path))
+                .filter(|path| tenrankai_video::is_video_path(path) || ready.contains(*path))
                 .collect()
         } else {
             image_paths
@@ -250,6 +252,12 @@ impl Gallery {
             };
 
             items.push(GalleryItem {
+                media_kind: if tenrankai_video::is_video_path(image_path) {
+                    "video"
+                } else {
+                    "image"
+                },
+                video: self.video_info(image_path, &url_identifier, false).await,
                 name: display_name,
                 display_name: None,
                 description: None,
@@ -282,8 +290,32 @@ impl Gallery {
             let mut image_num = 1u64;
             for item in items.iter_mut() {
                 if !item.is_directory {
-                    item.name = format!("Image {}", image_num);
+                    item.name = format!(
+                        "{} {}",
+                        if item.media_kind == "video" {
+                            "Video"
+                        } else {
+                            "Image"
+                        },
+                        image_num
+                    );
                     image_num += 1;
+                }
+            }
+        }
+
+        let resolver = crate::permissions::PermissionResolver::new(
+            &self.config.permissions,
+            cached.metadata.as_ref().map(|m| &m.config.permissions),
+        );
+        if !resolver
+            .resolve_user_permissions(user)
+            .unwrap_or_default()
+            .can_see_exact_dates
+        {
+            for item in &mut items {
+                if item.media_kind == "video" {
+                    item.capture_date = None;
                 }
             }
         }
@@ -489,7 +521,9 @@ impl Gallery {
         // Extract title and description from user metadata and XMP
         let (title, description) = {
             // Build XMP sidecar path (replace extension with .xmp)
-            let xmp_path = if let Some(dot_pos) = relative_path.rfind('.') {
+            let xmp_path = if tenrankai_video::is_video_path(relative_path) {
+                format!("{relative_path}.xmp")
+            } else if let Some(dot_pos) = relative_path.rfind('.') {
                 format!("{}.xmp", &relative_path[..dot_pos])
             } else {
                 format!("{}.xmp", relative_path)
@@ -738,6 +772,18 @@ impl Gallery {
             };
 
         Ok(ImageInfo {
+            media_kind: if tenrankai_video::is_video_path(relative_path) {
+                "video"
+            } else {
+                "image"
+            },
+            video: self
+                .video_info(
+                    relative_path,
+                    &url_identifier,
+                    permissions.can_see_technical_details,
+                )
+                .await,
             name: StdPath::new(relative_path)
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -1012,6 +1058,12 @@ impl Gallery {
             let mut items: Vec<GalleryItem> = preview_items
                 .iter()
                 .map(|p| GalleryItem {
+                    media_kind: if tenrankai_video::is_video_path(&p.path) {
+                        "video"
+                    } else {
+                        "image"
+                    },
+                    video: None,
                     name: p.path.rsplit('/').next().unwrap_or(&p.path).to_string(),
                     display_name: None,
                     description: None,

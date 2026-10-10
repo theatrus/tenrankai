@@ -11,6 +11,7 @@ default = []
 dynamodb = ["dep:aws-sdk-dynamodb", "dep:aws-config", "dep:uuid"]
 
 [dependencies]
+tenrankai-video.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 serde.workspace = true

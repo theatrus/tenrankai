@@ -184,8 +184,13 @@ impl SiteManager {
             sites.remove(name)
         };
 
-        if old_site.is_none() {
+        let Some(old_site) = old_site else {
             return;
+        };
+        // Retired galleries must stop processing before a replacement can use
+        // the same cache; otherwise each admin reload leaves another worker.
+        for gallery in old_site.galleries().values() {
+            gallery.shutdown().await;
         }
 
         // Clean up hostname mappings
@@ -324,8 +329,9 @@ impl SiteManager {
         // Trigger refresh and/or pre-generation on startup
         let metadata_empty = gallery.is_metadata_cache_empty().await;
         let pregenerate = gallery_config.pregenerate.is_some();
+        let video_enabled = gallery_config.video.is_some();
 
-        if (metadata_empty || pregenerate)
+        if (metadata_empty || pregenerate || video_enabled)
             && let Err(e) = gallery
                 .clone()
                 .refresh_metadata_and_pregenerate_cache(pregenerate)
@@ -347,6 +353,8 @@ impl SiteManager {
             );
             Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
         }
+
+        Gallery::start_video_worker(gallery.clone()).await;
 
         // Start periodic cache save (every 5 minutes)
         Gallery::start_periodic_cache_save(gallery.clone(), 5);
@@ -414,6 +422,30 @@ mod tests {
             webauthn: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
+    }
+
+    #[tokio::test]
+    async fn removing_site_stops_its_video_worker() {
+        let source = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let gallery = Arc::new(Gallery::new(
+            crate::GallerySystemConfig {
+                video: Some(Default::default()),
+                ..Default::default()
+            },
+            Arc::new(crate::storage::FilesystemStorage::new(source.path())),
+            Arc::new(crate::storage::FilesystemStorage::new(cache.path())),
+        ));
+        Gallery::start_video_worker(gallery.clone()).await;
+        let mut site = create_test_site("video-test");
+        Arc::get_mut(&mut site).unwrap().resources.galleries =
+            Arc::new([("video".into(), gallery.clone())].into_iter().collect());
+        let manager = SiteManager::new();
+        manager.add_site(site, vec!["*".into()]).await;
+        manager.remove_site("video-test").await;
+        assert!(gallery.shutdown_token.is_cancelled());
+        assert!(gallery.video_task.lock().await.is_none());
+        assert!(!manager.has_site("video-test").await);
     }
 
     #[test]

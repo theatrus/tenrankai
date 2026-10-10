@@ -41,7 +41,7 @@ is a later milestone.
 - [x] Prepare production scratch directories and next-restart service environment.
 - [x] Include FFmpeg in Docker and recommend it for Debian installation.
 
-### 2. Storage, gallery model, and recoverable processing
+### 2. Storage, gallery model, and recoverable processing — implemented
 
 - Add media kind and video-specific metadata with image defaults for old caches.
   Preserve existing image URLs and API compatibility while generalizing internals.
@@ -50,7 +50,7 @@ is a later milestone.
 - Add per-gallery opt-in delivery configuration; preserve fields through the
   admin UI/API and ConfigStorage conversions. Do not inject unknown TOML keys
   into an older running server.
-- Persist processing manifests with independent probe/poster/playback states,
+- Persist processing manifests with pending/processing/ready/failed states and probe metadata,
   bounded retries, and operator-readable failures. Reconstruct pending work on
   restart using the existing in-memory queue as a dispatch mechanism.
 - Derivative identity includes site/gallery/path, source ETag or size+mtime,
@@ -61,12 +61,11 @@ is a later milestone.
 - Store video artifacts under their own cache prefix. Update orphan cleanup so
   the image cache sweeper cannot delete video manifests or in-flight outputs.
 - Keep same-stem photos and videos separate. Use extension-qualified video
-  sidecars (`clip.mov.md`, `clip.mov.toml`, `clip.mov.xmp`) with deliberate legacy
-  fallback. Keep image version/RAW grouping from absorbing video files.
+  sidecars (`clip.mov.md`, `clip.mov.toml`, `clip.mov.xmp`). Keep image version/RAW grouping from absorbing video files.
 - Preserve capture-date sidecar/XMP precedence. Restrict technical/location/date
   metadata in API responses using existing permissions.
 
-### 3. Playback, uploads, and UI
+### 3. Playback, uploads, and UI — implemented
 
 - Authorized GET/HEAD playback endpoints with bounded streaming, Range/206/416,
   Content-Range, ETag/Last-Modified, conditional requests, and If-Range handling.
@@ -83,8 +82,8 @@ is a later milestone.
   move/copy/delete. Update gallery/post pickers and template fallbacks.
 - Extend TUS allowlists and configurable size limits on client and server; enforce
   actual duration/type after probing. Upload completion must not await encoding.
-  The initial 512 MiB source limit follows the existing upload budget; revisit it
-  for larger 4K phone/camera originals once streamed storage is in place.
+  The initial 512 MiB source limit can reject large 4K originals even below five
+  minutes; operators may raise it deliberately when scratch/cache budgets allow.
 - Replace memory-buffered folder ZIP construction before including video files.
 
 ### 4. Release and rollout
@@ -147,7 +146,7 @@ features and Clippy checks pass. CI now requires real codec tests on Ubuntu
 
 Do not change current bootstrap TOML to include future video configuration: it
 rejects unknown fields. Installing prerequisites and staging environment is safe
-before the new binary arrives; enabling gallery discovery waits for milestone 2.
+before the new binary arrives; enable video only after upgrading the binary.
 
 ## Operator commands
 
@@ -170,6 +169,29 @@ TENRANKAI_VIDEO_TEMP_DIR=/mnt/tenrankai-video/main \
 
 The dedicated CI job tests real encoding on Ubuntu 24.04 (matching production)
 and Debian Bookworm (matching the Docker runtime).
+
+## Gallery operation
+
+Enable video per gallery in admin settings or by adding `[video]` with
+`reencode = "auto"` to the gallery TOML. Existing galleries remain image-only by
+default. Source discovery and uploads enqueue background work. One worker permit
+per process bounds staging and encoding across galleries. Persistent manifests
+reuse finished derivatives after restart; source identity, settings, or pipeline
+changes invalidate them. Processing failures retry up to three times with backoff.
+Inspect the service log and `video doctor` for persistent failures; replacing the
+source or changing preparation settings creates a new attempt generation.
+
+Video cache objects live under `video/`, independently of image cache sweeping.
+Replacement removes the prior generation; detected source deletion removes loaded
+artifacts. Deletions that happened while the server was offline can leave unused
+cache artifacts; comprehensive offline garbage collection is follow-up work.
+Folder ZIP downloads and media copy/move operations stream or use server-side S3
+copy. Full originals are never loaded into memory for video processing or playback.
+
+The first rendition is sanitized SDR H.264/AAC, and source technical metadata is
+stored privately. Video watermarking is deferred: image watermark settings do not
+apply to playback or posters. Viewing grants access to the playback bytes; original
+download permissions control the unsanitized source.
 
 ## Deferred work
 

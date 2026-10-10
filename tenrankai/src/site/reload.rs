@@ -306,8 +306,9 @@ impl ConfigReloader {
         // Trigger refresh and/or pre-generation on startup
         let metadata_empty = gallery.is_metadata_cache_empty().await;
         let pregenerate = gallery_config.pregenerate.is_some();
+        let video_enabled = gallery_config.video.is_some();
 
-        if (metadata_empty || pregenerate)
+        if (metadata_empty || pregenerate || video_enabled)
             && let Err(e) = gallery
                 .clone()
                 .refresh_metadata_and_pregenerate_cache(pregenerate)
@@ -329,6 +330,8 @@ impl ConfigReloader {
             );
             Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
         }
+
+        Gallery::start_video_worker(gallery.clone()).await;
 
         // Start periodic cache save (every 5 minutes)
         Gallery::start_periodic_cache_save(gallery.clone(), 5);

@@ -428,6 +428,12 @@ impl Gallery {
                 .all(|format| !allowed_formats.contains(&format))
         });
 
+        if tenrankai_video::is_video_path(relative_path) {
+            return self
+                .video_record(relative_path)
+                .await
+                .is_some_and(|r| r.poster_ready);
+        }
         let mut cache = self.image_cache.write_all().await;
         if let Some(metadata) = cache.get_mut(relative_path)
             && metadata.preview_ready != is_ready
@@ -857,7 +863,11 @@ impl Gallery {
         };
 
         // Files to keep (metadata files, composites handled separately)
-        let protected_files = ["metadata_cache.json", "cache_metadata.json"];
+        let protected_files = [
+            "metadata_cache.json",
+            "cache_metadata.json",
+            "folder_cache.json",
+        ];
         let composite_prefix = format!("composite_{}_", self.config.name);
 
         let mut removed_count = 0;
@@ -880,7 +890,7 @@ impl Gallery {
             }
 
             // Skip protected files
-            if protected_files.contains(&filename.as_str()) {
+            if filename.starts_with("video/") || protected_files.contains(&filename.as_str()) {
                 continue;
             }
 

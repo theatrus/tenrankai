@@ -454,6 +454,8 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
     if (!gallerySettings) return;
     const request: CreateGalleryRequest = {
       name: gallerySettings.name,
+      enable_video: !!gallerySettings.video,
+      video: gallerySettings.video,
       url_prefix: gallerySettings.url_prefix,
       source_directory: gallerySettings.source_directory,
       cache_directory: gallerySettings.cache_directory,
@@ -698,6 +700,25 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
                 </small>
               </div>
             </div>
+          </div>
+
+          <div className="form-group" style={{ marginTop: '1rem' }}>
+            <label className="form-label">
+              <input type="checkbox" checked={!!gallerySettings.video}
+                onChange={(e) => updateGallerySettings({ video: e.target.checked ? {} : null })} />{' '}
+              Enable video clips
+            </label>
+            <p>Prepare short clips for playback alongside photos. Originals are preserved.</p>
+            {gallerySettings.video && <>
+              <label className="form-label" htmlFor="video-reencode">Playback preparation</label>
+              <select id="video-reencode" className="form-select" value={gallerySettings.video.reencode || 'auto'}
+                onChange={(e) => updateGallerySettings({ video: { ...gallerySettings.video, reencode: e.target.value as 'auto' | 'never' | 'always' } })}>
+                <option value="auto">Automatic — copy compatible streams, convert others</option>
+                <option value="always">Always re-encode</option>
+                <option value="never">Compatible originals only — no re-encoding</option>
+              </select>
+              <small>Default limits: five minutes, 512 MiB per original, and 1080p playback.</small>
+            </>}
           </div>
 
           {/* Tile Zoom Toggle */}

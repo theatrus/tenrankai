@@ -1136,7 +1136,7 @@ async fn run_server(
                 );
             }
 
-            if metadata_empty || pregenerate {
+            if metadata_empty || pregenerate || gallery_config.video.is_some() {
                 if pregenerate {
                     info!(
                         "Cache pre-generation enabled for gallery '{}' (site '{}')",
@@ -1171,6 +1171,7 @@ async fn run_server(
                 "Starting periodic cache save for gallery '{}' (site '{}')",
                 gallery_name, site_name
             );
+            Gallery::start_video_worker(gallery.clone()).await;
             Gallery::start_periodic_cache_save(gallery.clone(), 5);
 
             galleries_for_shutdown.push(gallery.clone());

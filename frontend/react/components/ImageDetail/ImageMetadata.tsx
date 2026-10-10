@@ -1,3 +1,4 @@
+import { formatVideoDuration } from './VideoDisplay';
 import { ImageInfo, RolePermissions } from '../../types/index.ts';
 
 interface ImageMetadataProps {
@@ -17,7 +18,7 @@ export function ImageMetadata({ image, hideMetadata, permissions }: ImageMetadat
 
   return (
     <div className="image-metadata card">
-      <h3>Image Information</h3>
+      <h3>{image.media_kind === 'video' ? 'Video Information' : 'Image Information'}</h3>
       <dl>
         <dt>Filename</dt>
         <dd>{image.name}</dd>
@@ -35,6 +36,15 @@ export function ImageMetadata({ image, hideMetadata, permissions }: ImageMetadat
           {megapixels > 0 && ` (${megapixels} MP)`}
         </dd>
         
+        {image.video?.duration_seconds != null && <>
+          <dt>Duration</dt><dd>{formatVideoDuration(image.video.duration_seconds)}</dd>
+        </>}
+        {permissions.can_see_technical_details && image.video?.codec && <>
+          <dt>Source Codec</dt><dd>{image.video.codec}</dd>
+          {image.video.frame_rate != null && <><dt>Frame Rate</dt><dd>{image.video.frame_rate.toFixed(2)} fps</dd></>}
+          <dt>Audio</dt><dd>{image.video.has_audio ? 'Yes' : 'No'}</dd>
+          <dt>Source Color</dt><dd>{image.video.hdr ? 'HDR' : 'SDR'}</dd>
+        </>}
         <dt>File Size</dt>
         <dd>{fileSizeMB} MB</dd>
         

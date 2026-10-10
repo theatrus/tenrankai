@@ -593,6 +593,17 @@ pub async fn image_handler_for_named(
         }
     }
 
+    if tenrankai_video::is_video_path(&resolved_path) {
+        let asset = if query.size.is_none() {
+            super::video_http::VideoAsset::Original
+        } else {
+            super::video_http::VideoAsset::Poster
+        };
+        return gallery
+            .serve_video_asset(&resolved_path, asset, &headers, &axum::http::Method::GET)
+            .await;
+    }
+
     // Extract Accept header for format negotiation
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
@@ -684,6 +695,24 @@ pub struct DownloadFolderQuery {
     /// Include all versions of images (default: false, only primary images)
     #[serde(default)]
     pub include_versions: bool,
+}
+
+struct ZipChannelWriter {
+    sender: tokio::sync::mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+}
+
+impl std::io::Write for ZipChannelWriter {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        for chunk in buffer.chunks(64 * 1024) {
+            self.sender.blocking_send(Ok(chunk.to_vec())).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "download disconnected")
+            })?;
+        }
+        Ok(buffer.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 pub async fn download_folder_handler(
@@ -878,17 +907,18 @@ pub async fn download_folder_handler(
     // Create a channel for streaming the zip
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(4);
 
-    // Spawn a task to build and stream the zip
+    // ZipWriter's streaming mode emits data descriptors, so neither a whole
+    // archive nor a whole video needs to be buffered. The bounded channel applies
+    // backpressure and stops work when the client disconnects.
     let storage = gallery.source_storage().clone();
     let download_root = path.clone();
-    tokio::spawn(async move {
-        let mut zip_buffer = std::io::Cursor::new(Vec::new());
-        {
-            let mut zip = zip::ZipWriter::new(&mut zip_buffer);
-            // Base options: no compression for faster streaming
+    let runtime = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || {
+        let sender = tx.clone();
+        let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            let mut zip = zip::ZipWriter::new_stream(ZipChannelWriter { sender });
             let base_options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored);
-
             for (image_path, display_name, capture_date) in &all_images {
                 // Create options with the file's capture date if available
                 let options = if let Some(date) = capture_date {
@@ -923,33 +953,18 @@ pub async fn download_folder_handler(
                     .unwrap_or("");
                 let filename = format!("{}{}{}", folder_prefix, display_name, extension);
 
-                match storage.read(image_path).await {
-                    Ok(data) => {
-                        if let Err(e) = zip.start_file(&filename, options) {
-                            tracing::error!("Failed to start zip file entry '{}': {}", filename, e);
-                            continue;
-                        }
-                        if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
-                            tracing::error!("Failed to write image '{}' to zip: {}", filename, e);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to read image '{}' for zip: {}", image_path, e);
-                    }
+                let mut source = runtime.block_on(storage.read_stream(image_path))?;
+                zip.start_file(&filename, options)?;
+                while let Some(chunk) = runtime.block_on(futures::StreamExt::next(&mut source)) {
+                    std::io::Write::write_all(&mut zip, &chunk?)?;
                 }
             }
-
-            if let Err(e) = zip.finish() {
-                tracing::error!("Failed to finish zip file: {}", e);
-            }
-        }
-
-        // Send the completed zip in chunks
-        let data = zip_buffer.into_inner();
-        for chunk in data.chunks(64 * 1024) {
-            if tx.send(Ok(chunk.to_vec())).await.is_err() {
-                break; // Client disconnected
-            }
+            zip.finish()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            tracing::warn!(%error, "Folder archive interrupted");
+            let _ = tx.blocking_send(Err(std::io::Error::other(error.to_string())));
         }
     });
 
@@ -1108,6 +1123,44 @@ pub async fn raw_download_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn streaming_zip_is_readable_and_stops_on_disconnect() {
+        use std::io::{Read, Write};
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        let writer = tokio::task::spawn_blocking(move || {
+            let mut zip = zip::ZipWriter::new_stream(ZipChannelWriter { sender });
+            zip.start_file(
+                "clip.mov",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+            for _ in 0..20 {
+                zip.write_all(&[42; 64 * 1024]).unwrap();
+            }
+            zip.finish().unwrap();
+        });
+        let mut bytes = Vec::new();
+        while let Some(chunk) = receiver.recv().await {
+            bytes.extend(chunk.unwrap());
+        }
+        writer.await.unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut clip = zip.by_name("clip.mov").unwrap();
+        let mut original = Vec::new();
+        clip.read_to_end(&mut original).unwrap();
+        assert_eq!(original, vec![42; 20 * 64 * 1024]);
+
+        let (sender, receiver) = tokio::sync::mpsc::channel(4);
+        drop(receiver);
+        let error = tokio::task::spawn_blocking(move || {
+            ZipChannelWriter { sender }.write_all(b"data").unwrap_err()
+        })
+        .await
+        .unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
 
     #[test]
     fn test_systemtime_to_zip_datetime_converts_correctly() {

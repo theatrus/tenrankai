@@ -508,12 +508,30 @@ cargo run -- admin list
 
 ## Gallery Features
 
-### Video processing tools (gallery integration in progress)
+### Videos
 
-The first video milestone provides inspection and playback preparation commands
-for phone/camera clips up to five minutes. These commands preserve originals;
-video browsing in the gallery is still under development. The implementation and
-rollout plan is in [Video support](docs/design/video-support.md).
+Galleries can mix photos and short videos, with poster thumbnails, duration badges,
+photo/video filters, and an inline player with seeking and fullscreen controls.
+MP4, MOV, M4V, WebM, and MKV originals are preserved. A background worker prepares
+web playback and shows progress or failure without blocking uploads or browsing.
+The implementation and rollout plan is in [Video support](docs/design/video-support.md).
+
+Enable **Enable video clips** in the gallery's admin settings, or add the following to
+its gallery TOML after upgrading the server:
+
+```toml
+[video]
+reencode = "auto" # auto, never, always
+max_duration_seconds = 300
+max_source_bytes = 536870912
+max_output_bytes = 268435456
+```
+
+Galleries without `[video]` retain their existing image behavior. Playback and
+posters follow folder visibility; original downloads require the original-download
+permission. Technical details, exact dates, and GPS follow the existing metadata
+permissions. Captions and picks use extension-qualified video sidecars such as
+`clip.mov.md` and `clip.mov.toml`, keeping same-stem photos independent.
 
 Install FFmpeg **5.1 or later** with `libx264`, AAC, `zscale`, `tonemap`, and the
 `filter_units` bitstream filter. Ubuntu 24.04's `ffmpeg` package provides these.
@@ -1298,7 +1316,6 @@ Visit http://localhost:5173/ during development. Before committing, run
 
 - Additional email providers (SendGrid, SMTP, etc.)
 - Full-text search across galleries and posts
-- Video file support with thumbnail generation
 - Tag-based filtering and organization
 
 ### Contributing

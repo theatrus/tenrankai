@@ -275,6 +275,7 @@ impl ConfigStorageLoader {
         });
 
         Ok(GallerySystemConfig {
+            video: stored.video,
             name: stored.name,
             url_prefix: stored.url_prefix,
             source_directory,

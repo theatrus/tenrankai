@@ -263,6 +263,7 @@ pub async fn handle_add_gallery_command(
     let cache_dir = format!("cache/{}", name);
 
     let gallery_config = StoredGalleryConfig {
+        video: None,
         name: name.to_string(),
         url_prefix: url_prefix.clone(),
         source_directory: source_dir.clone(),
