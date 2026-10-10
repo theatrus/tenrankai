@@ -1045,8 +1045,6 @@ async fn run_server(
         config_storage_url
     );
 
-    // Track all galleries for shutdown across all sites
-    let mut galleries_for_shutdown: Vec<Arc<Gallery>> = Vec::new();
     // Track all galleries for background analysis (combined from all sites)
     let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
 
@@ -1171,10 +1169,7 @@ async fn run_server(
                 "Starting periodic cache save for gallery '{}' (site '{}')",
                 gallery_name, site_name
             );
-            Gallery::start_video_worker(gallery.clone()).await;
             Gallery::start_periodic_cache_save(gallery.clone(), 5);
-
-            galleries_for_shutdown.push(gallery.clone());
             all_galleries_map.insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
         }
 
@@ -1246,7 +1241,7 @@ async fn run_server(
 
         let worker = Arc::new(CacheQueueWorker::new(
             queue.clone(),
-            (*galleries_arc).clone(),
+            site_manager.clone(),
             cache_queue_shutdown_token.clone(),
             concurrency,
         ));
@@ -1379,18 +1374,21 @@ async fn run_server(
     #[cfg(unix)]
     reload_token.cancel();
 
-    for gallery in galleries_for_shutdown {
-        // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
-        gallery.shutdown().await;
+    // Query the live sites: configuration reloads replace gallery instances.
+    for site in site_manager.sites().await {
+        for gallery in site.galleries().values() {
+            // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
+            gallery.shutdown().await;
 
-        // Save caches
-        if let Err(e) = gallery.save_caches().await {
-            tracing::error!("Failed to save metadata cache on shutdown: {}", e);
-        } else {
-            info!(
-                "Metadata cache saved successfully for gallery '{}'",
-                gallery.get_config().name
-            );
+            // Save caches
+            if let Err(e) = gallery.save_caches().await {
+                tracing::error!("Failed to save metadata cache on shutdown: {}", e);
+            } else {
+                info!(
+                    "Metadata cache saved successfully for gallery '{}'",
+                    gallery.get_config().name
+                );
+            }
         }
     }
 

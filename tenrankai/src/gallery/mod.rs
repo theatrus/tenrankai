@@ -73,9 +73,9 @@ pub struct Gallery {
     pub(crate) pregeneration_token: Arc<Mutex<CancellationToken>>,
     /// Atomic flag for synchronous cancellation checks (e.g., in spawn_blocking)
     pub(crate) shutdown_flag: Arc<AtomicBool>,
-    /// Semaphore to limit concurrent image processing operations (prevents memory exhaustion)
+    /// Shared processing pool for images and videos (prevents resource exhaustion)
     pub(crate) image_processing_semaphore: Arc<Semaphore>,
-    /// Counter for active blocking tasks (for graceful shutdown)
+    /// Counter for active processing tasks, including async video jobs (for shutdown)
     pub(crate) active_blocking_tasks: Arc<AtomicUsize>,
     /// Loaded image watermark (if configured)
     pub(crate) image_watermark: Option<Arc<tenrankai_image::ImageWatermark>>,
@@ -450,7 +450,7 @@ impl Gallery {
             let _ = task.await;
         }
 
-        // Wait for active blocking tasks to complete
+        // Wait for blocking image tasks and queue-dispatched video jobs to complete
         let mut wait_count = 0;
         loop {
             let active = self
@@ -462,24 +462,24 @@ impl Gallery {
             wait_count += 1;
             if wait_count == 1 {
                 info!(
-                    "Waiting for {} active image processing task(s) to complete...",
+                    "Waiting for {} active media processing task(s) to complete...",
                     active
                 );
             } else if wait_count % 20 == 0 {
                 // Log every 2 seconds
                 info!(
-                    "Still waiting for {} active image processing task(s)...",
+                    "Still waiting for {} active media processing task(s)...",
                     active
                 );
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
         if wait_count > 0 {
-            info!("All image processing tasks completed");
+            info!("All media processing tasks completed");
         }
     }
 
-    /// Create a guard that tracks an active blocking task.
+    /// Create a guard that tracks an active image or video processing task.
     /// The counter is incremented when created and decremented when dropped.
     pub(crate) fn track_blocking_task(&self) -> BlockingTaskGuard {
         self.active_blocking_tasks

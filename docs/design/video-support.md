@@ -20,8 +20,9 @@ is a later milestone.
   a supported base layer; unsupported HDR is explicit rather than guessed.
 - Strip global and per-stream personal metadata and chapters from derivatives.
   Keep technical source metadata separate from playback metadata.
-- Share a processor across all galleries in a server process: initially one job,
-  two FFmpeg threads, 30-minute encode timeout, 1 GiB free-space reserve.
+- Share each gallery's existing bounded image-processing pool: one background
+  clip per gallery, two FFmpeg threads per job, 30-minute encode timeout,
+  1 GiB free-space reserve.
 - FFmpeg/FFprobe 5.1 or later are external runtime tools, with configurable executable paths.
   Keep image-only operation available without FFmpeg installed.
 
@@ -52,7 +53,8 @@ is a later milestone.
   into an older running server.
 - [x] Persist processing manifests with pending/processing/ready/failed states and probe metadata,
   bounded retries, and operator-readable failures. Reconstruct pending work on
-  restart using the existing in-memory queue as a dispatch mechanism.
+  restart by scanning gallery metadata; the optional existing cache queue also
+  dispatches completed uploads and moved/copied clips.
 - [x] Derivative identity includes site/gallery/path, source ETag or size+mtime,
   delivery settings, and pipeline version. Re-check source identity before
   publication; publish completed objects before marking the manifest ready.
@@ -128,8 +130,9 @@ Environment=TENRANKAI_VIDEO_TEMP_DIR=/mnt/tenrankai-video/main
 ```
 
 The second service uses `/mnt/tenrankai-video/docs`. Directories should be owned
-by `atrus:atrus` and mode 0700. Allow for a worker in each server process; the
-concurrency bound is per process, not shared between the two services.
+by `atrus:atrus` and mode 0700. Budget for one active clip per enabled gallery;
+video work shares each gallery's existing image-processing pool. The two server
+processes have independent resource budgets.
 
 The idempotent [`prepare-video-host.sh`](../../scripts/prepare-video-host.sh)
 script installed the directories and drop-ins and ran `systemctl daemon-reload`.
@@ -193,8 +196,11 @@ samples and the production reverse proxy remain rollout checks.
 
 Enable video per gallery in admin settings or by adding `[video]` with
 `reencode = "auto"` to the gallery TOML. Existing galleries remain image-only by
-default. Source discovery and uploads enqueue background work. One worker permit
-per process bounds staging and encoding across galleries. Persistent manifests
+default. Source discovery and uploads wake background work. Video staging and
+encoding acquire the gallery's existing image-processing pool permit, sharing its
+CPU and memory budget with image jobs. Each gallery prepares one clip at a time;
+the optional cache queue also dispatches video jobs through this pool and resolves
+current galleries after configuration reloads. Persistent manifests
 reuse finished derivatives after restart; source identity, settings, or pipeline
 changes invalidate them. Processing failures retry up to three times with backoff.
 Inspect the service log and `video doctor` for persistent failures; replacing the

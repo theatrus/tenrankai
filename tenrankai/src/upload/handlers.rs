@@ -356,6 +356,20 @@ pub async fn patch_upload(
         "Receiving chunk"
     );
 
+    if upload_offset != info.current_offset {
+        return Err(UploadError::OffsetMismatch {
+            expected: info.current_offset,
+            actual: upload_offset,
+        });
+    }
+    let end = upload_offset.saturating_add(body.len() as u64);
+    if end > info.total_size {
+        return Err(UploadError::FileTooLarge {
+            size: end,
+            max: info.total_size,
+        });
+    }
+
     let new_offset = chunked_storage
         .append_chunk(&upload_id, upload_offset, body)
         .await?;

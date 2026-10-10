@@ -132,4 +132,31 @@ test.describe('short video gallery', () => {
     expect((await photoGallery.json()).video_enabled).toBe(false);
   });
 
+  test('rejects upload overruns without corrupting the resumable offset, and handles original HEAD', async ({ context }) => {
+    await bootstrapSession(context);
+    const request = context.request;
+    const filename = `bounds-${Date.now()}.mov`;
+    const created = await request.post('/_upload/video', { headers: {
+      'Tus-Resumable': '1.0.0', 'Upload-Length': '2',
+      'Upload-Metadata': `filename ${Buffer.from(filename).toString('base64')},folderPath ${Buffer.from('uploads').toString('base64')}`,
+    } });
+    expect(created.status()).toBe(201);
+    const location = created.headers().location;
+    try {
+      const overrun = await request.patch(location, { headers: {
+        'Tus-Resumable': '1.0.0', 'Upload-Offset': '0', 'Content-Type': 'application/offset+octet-stream',
+      }, data: Buffer.from('abc') });
+      expect(overrun.status()).toBe(413);
+      const state = await request.head(location, { headers: { 'Tus-Resumable': '1.0.0' } });
+      expect(state.headers()['upload-offset']).toBe('0');
+    } finally {
+      await request.delete(location, { headers: { 'Tus-Resumable': '1.0.0' } });
+    }
+    const original = await request.head('/v/_image/clips/scene.mov', { headers: { Range: 'bytes=0-3' } });
+    expect(original.status()).toBe(200);
+    expect(original.headers()['content-range']).toBeUndefined();
+    expect(Number(original.headers()['content-length'])).toBeGreaterThan(4);
+    expect((await original.body()).length).toBe(0);
+  });
+
 });

@@ -4,14 +4,9 @@ use crate::storage::ObjectMetadata;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    sync::OnceLock,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 use tenrankai_video::{VideoMetadata, VideoProcessor, VideoSettings, VideoTools};
 use tokio::io::AsyncWriteExt;
-
-static VIDEO_SLOT: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -81,7 +76,14 @@ impl Gallery {
                 self.video_namespace(),
                 path,
                 metadata.size,
-                metadata.last_modified,
+                metadata.last_modified.map(|time| {
+                    let (before_epoch, elapsed) = match time.duration_since(SystemTime::UNIX_EPOCH)
+                    {
+                        Ok(elapsed) => (false, elapsed),
+                        Err(error) => (true, error.duration()),
+                    };
+                    (before_epoch, elapsed.as_secs(), elapsed.subsec_nanos())
+                }),
                 &metadata.etag,
                 settings,
             ))
@@ -290,6 +292,28 @@ impl Gallery {
         &self,
         path: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let task = self
+            .task_deduplicator
+            .should_execute(format!("video:{path}"))
+            .await;
+        if !task.is_executor() {
+            return Ok(());
+        }
+        // Queue-dispatched jobs also need to drain before a reload starts the
+        // next worker; joining the gallery's discovery task alone is insufficient.
+        let _task_guard = self.track_blocking_task();
+        if self.shutdown_token.is_cancelled() {
+            return Ok(());
+        }
+        let result = self.prepare_gallery_video_inner(path).await;
+        task.complete().await;
+        result
+    }
+
+    async fn prepare_gallery_video_inner(
+        &self,
+        path: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let settings = self.config.video.as_ref().ok_or("video disabled")?;
         settings.validate()?;
         let original = self.source_storage.metadata(path).await?;
@@ -353,7 +377,9 @@ impl Gallery {
         // Synced files must be settled. Upload completion wakes the worker, and
         // the next tick will prepare files younger than this small quiet period.
         if original.last_modified.is_some_and(|t| {
-            SystemTime::now().duration_since(t).unwrap_or_default() < Duration::from_secs(3)
+            SystemTime::now()
+                .duration_since(t)
+                .is_ok_and(|age| age < Duration::from_secs(3))
         }) {
             self.video_records
                 .write()
@@ -361,11 +387,12 @@ impl Gallery {
                 .insert(path.to_string(), record);
             return Ok(());
         }
-        let slot = VIDEO_SLOT.get_or_init(|| tokio::sync::Semaphore::new(1));
+        // Share the existing gallery processing budget with image work. Acquire
+        // before staging so queued clips cannot exhaust scratch space either.
         let _permit = tokio::select! {
             biased;
             _ = self.shutdown_token.cancelled() => return Ok(()),
-            permit = slot.acquire() => permit?,
+            permit = self.image_processing_semaphore.acquire() => permit?,
         };
         record.state = VideoState::Processing;
         record.attempts += 1;
@@ -510,6 +537,56 @@ mod tests {
             Arc::new(crate::storage::FilesystemStorage::new(source)),
             Arc::new(crate::storage::FilesystemStorage::new(cache)),
         )
+    }
+
+    #[test]
+    fn identity_supports_pre_epoch_source_timestamps() {
+        let source = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let settings = VideoSettings::default();
+        let gallery = gallery(source.path(), cache.path(), settings.clone());
+        let mut metadata = ObjectMetadata {
+            size: 100,
+            last_modified: Some(SystemTime::UNIX_EPOCH - Duration::from_secs(1)),
+            content_type: None,
+            etag: None,
+        };
+        let before = gallery.video_identity("clip.mov", &metadata, &settings);
+        metadata.last_modified = Some(SystemTime::UNIX_EPOCH + Duration::from_secs(1));
+        assert_ne!(
+            before,
+            gallery.video_identity("clip.mov", &metadata, &settings)
+        );
+    }
+
+    #[tokio::test]
+    async fn video_uses_existing_processing_pool_and_cancels_while_waiting() {
+        let source = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let mut gallery = gallery(source.path(), cache.path(), VideoSettings::default());
+        gallery.image_processing_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        std::fs::write(source.path().join("clip.mov"), b"original").unwrap();
+        std::fs::File::open(source.path().join("clip.mov"))
+            .unwrap()
+            .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1))
+            .unwrap();
+        let permit = gallery.image_processing_semaphore.acquire().await.unwrap();
+        let preparation = gallery.prepare_gallery_video("clip.mov");
+        tokio::pin!(preparation);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut preparation)
+                .await
+                .is_err()
+        );
+        // No record is marked processing, staged, or encoded without a pool slot.
+        assert!(gallery.video_record("clip.mov").await.is_none());
+        gallery.shutdown_token.cancel();
+        tokio::time::timeout(Duration::from_secs(1), preparation)
+            .await
+            .unwrap()
+            .unwrap();
+        drop(permit);
+        assert_eq!(gallery.image_processing_semaphore.available_permits(), 1);
     }
 
     #[tokio::test]

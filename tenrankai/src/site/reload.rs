@@ -331,8 +331,6 @@ impl ConfigReloader {
             Gallery::start_background_cache_refresh(gallery.clone(), interval_minutes);
         }
 
-        Gallery::start_video_worker(gallery.clone()).await;
-
         // Start periodic cache save (every 5 minutes)
         Gallery::start_periodic_cache_save(gallery.clone(), 5);
 

@@ -658,12 +658,13 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             &format!("{}/image/{{*path}}", prefix),
             axum::routing::get({
                 let name = name.clone();
-                move |state, path: Path<String>, query, headers, auth| {
+                move |state, path: Path<String>, query, method, headers, auth| {
                     let image_path = path.0;
                     gallery::image_handler_for_named(
                         state,
                         Path((name, image_path)),
                         query,
+                        method,
                         headers,
                         auth,
                     )
@@ -692,11 +693,12 @@ fn create_router(app_state: AppState, built_site: Arc<site::Site>) -> axum::Rout
             &format!("{}/_image/{{*path}}", prefix),
             axum::routing::get({
                 let name = name.clone();
-                move |state, path: Path<String>, headers, auth| {
+                move |state, path: Path<String>, method, headers, auth| {
                     let full_path = path.0;
                     gallery::image_handler_for_named_v2(
                         state,
                         Path((name, full_path)),
+                        method,
                         headers,
                         auth,
                     )

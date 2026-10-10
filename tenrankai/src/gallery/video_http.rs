@@ -262,8 +262,12 @@ impl Gallery {
         response_headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
         response_headers.insert(header::ETAG, etag.parse().unwrap());
         response_headers.insert("x-content-type-options", "nosniff".parse().unwrap());
-        if let Some(modified) = metadata.last_modified
-            && let Ok(value) = httpdate::fmt_http_date(modified).parse()
+        if let Some(modified) = metadata.last_modified.filter(|time| {
+            // httpdate supports dates from 1970 through 9999; older filesystem
+            // timestamps must not panic the serving task.
+            time.duration_since(std::time::UNIX_EPOCH)
+                .is_ok_and(|elapsed| elapsed.as_secs() < 253_402_300_800)
+        }) && let Ok(value) = httpdate::fmt_http_date(modified).parse()
         {
             response_headers.insert(header::LAST_MODIFIED, value);
         }

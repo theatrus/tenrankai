@@ -468,6 +468,7 @@ pub async fn image_handler_for_named(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
+    method: axum::http::Method,
     headers: axum::http::HeaderMap,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
@@ -600,7 +601,7 @@ pub async fn image_handler_for_named(
             super::video_http::VideoAsset::Poster
         };
         return gallery
-            .serve_video_asset(&resolved_path, asset, &headers, &axum::http::Method::GET)
+            .serve_video_asset(&resolved_path, asset, &headers, &method)
             .await;
     }
 
@@ -625,6 +626,7 @@ pub async fn image_handler_for_named(
 pub async fn image_handler_for_named_v2(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, full_path)): Path<(String, String)>,
+    method: axum::http::Method,
     headers: axum::http::HeaderMap,
     auth: crate::login::OptionalAuth,
 ) -> Response {
@@ -667,6 +669,7 @@ pub async fn image_handler_for_named_v2(
         ResolvedState(app_state),
         Path((gallery_name, actual_identifier)),
         Query(query),
+        method,
         headers,
         auth,
     )

@@ -709,6 +709,7 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
               Enable video clips
             </label>
             <p>Prepare short clips for playback alongside photos. Originals are preserved.</p>
+            <p>Image watermarks do not apply to video playback or posters.</p>
             {gallerySettings.video && <>
               <label className="form-label" htmlFor="video-reencode">Playback preparation</label>
               <select id="video-reencode" className="form-select" value={gallerySettings.video.reencode || 'auto'}
