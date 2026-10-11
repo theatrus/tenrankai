@@ -61,14 +61,20 @@ describe('VideoDisplay', () => {
   });
 
   it('leaves focused controls and editable content to handle Space', () => {
-    const { player, play, container } = renderReadyVideo();
+    const { play, container } = renderReadyVideo();
     const controls = document.createElement('div');
     controls.innerHTML = '<input><textarea></textarea><select></select><button>Action</button><a href="#">Link</a><div role="button">Action</div><div role="slider"></div><div contenteditable="true"><span>Text</span></div><div contenteditable="plaintext-only">Text</div>';
     container.appendChild(controls);
-    for (const target of [player, ...controls.querySelectorAll('*')]) {
+    for (const target of controls.querySelectorAll('*')) {
       expect(fireEvent.keyDown(target, { key: ' ' })).toBe(true);
     }
     expect(play).not.toHaveBeenCalled();
+  });
+
+  it('handles Space on the video host once and prevents the native default toggle', () => {
+    const { player, play } = renderReadyVideo();
+    expect(fireEvent.keyDown(player, { key: ' ' })).toBe(false);
+    expect(play).toHaveBeenCalledOnce();
   });
 
   it('ignores modified, composing, and already handled Space events and open dialogs', () => {

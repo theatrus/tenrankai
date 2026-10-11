@@ -21,9 +21,10 @@ export function VideoDisplay({ image, onRefresh }: { image: ImageInfo; onRefresh
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== ' ' || event.defaultPrevented || event.isComposing
         || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      // Focused controls own their keys, including the native video controls.
+      // Inputs and buttons own their keys. Handle the video host as well so
+      // Space works in Safari; preventDefault avoids a second native toggle.
       if (event.target instanceof Element && event.target.closest(
-        'input, textarea, select, button, a, video, [role="button"], [role="slider"], [contenteditable]:not([contenteditable="false"])',
+        'input, textarea, select, button, a, [role="button"], [role="slider"], [contenteditable]:not([contenteditable="false"])',
       )) return;
       if (document.querySelector('dialog[open], [aria-modal="true"], .edit-modal-overlay, .share-modal-overlay, .modal-overlay')) return;
       const player = playerRef.current;
