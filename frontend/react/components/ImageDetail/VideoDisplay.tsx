@@ -30,6 +30,7 @@ export function VideoDisplay({ image, onRefresh }: { image: ImageInfo; onRefresh
       const player = playerRef.current;
       if (!player) return;
       event.preventDefault();
+      event.stopPropagation();
       if (event.repeat) return;
       if (player.paused) {
         void player.play().catch((error: unknown) => {
@@ -41,8 +42,9 @@ export function VideoDisplay({ image, onRefresh }: { image: ImageInfo; onRefresh
         player.pause();
       }
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    // Intercept before the browser's video controls arm their own Space action.
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [ready]);
 
   return (
