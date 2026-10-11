@@ -425,6 +425,27 @@ pub async fn image_detail_handler_for_named(
 
     let gallery_config = gallery.get_config();
 
+    let video_dimensions = if gallery_config.allow_video_embedding
+        && image_info
+            .video
+            .as_ref()
+            .is_some_and(|video| video.playback_url.is_some())
+    {
+        gallery
+            .video_record(&resolved_path)
+            .await
+            .and_then(|record| {
+                record.metadata.and_then(|metadata| {
+                    gallery_config
+                        .video
+                        .as_ref()
+                        .map(|settings| settings.output_dimensions(&metadata))
+                })
+            })
+    } else {
+        None
+    };
+
     // Technical details are now controlled by permissions, not a separate flag
 
     // Get the JSON data from the API endpoint to ensure consistency
@@ -445,6 +466,8 @@ pub async fn image_detail_handler_for_named(
 
     let liquid_context = liquid::object!({
         "gallery_url": gallery_config.url_prefix,
+        "allow_video_embedding": gallery_config.allow_video_embedding,
+        "video_dimensions": video_dimensions,
         "image": image_info,
         "image_detail_json": image_detail_json,
         "base_url": app_state.base_url(),

@@ -275,6 +275,7 @@ impl ConfigStorageLoader {
         });
 
         Ok(GallerySystemConfig {
+            allow_video_embedding: stored.allow_video_embedding,
             video: stored.video,
             name: stored.name,
             url_prefix: stored.url_prefix,

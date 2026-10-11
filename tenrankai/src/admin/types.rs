@@ -384,6 +384,7 @@ impl From<ImageWatermarkConfigDto> for tenrankai_config_storage::StoredImageWate
 
 #[derive(Debug, Serialize)]
 pub struct SiteGalleryInfo {
+    pub allow_video_embedding: bool,
     pub video: Option<tenrankai_video::VideoSettings>,
     pub name: String,
     pub url_prefix: String,
@@ -408,6 +409,8 @@ pub struct SiteGalleryListResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateGalleryRequest {
+    #[serde(default)]
+    pub allow_video_embedding: Option<bool>,
     #[serde(default)]
     pub video: Option<tenrankai_video::VideoSettings>,
     #[serde(default)]

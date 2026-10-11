@@ -170,6 +170,9 @@ pub struct StaticConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GallerySystemConfig {
+    /// Include prepared video playback in link previews (default: true).
+    #[serde(default = "super::defaults::default_true")]
+    pub allow_video_embedding: bool,
     /// Enable automatic video preparation by adding a [gallery.video] table.
     #[serde(default)]
     pub video: Option<tenrankai_video::VideoSettings>,

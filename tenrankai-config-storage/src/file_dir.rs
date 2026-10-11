@@ -551,6 +551,7 @@ mod tests {
         cache: &str,
     ) -> StoredGalleryConfig {
         StoredGalleryConfig {
+            allow_video_embedding: true,
             video: None,
             name: name.to_string(),
             url_prefix: url_prefix.to_string(),

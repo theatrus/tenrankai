@@ -454,6 +454,7 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
     if (!gallerySettings) return;
     const request: CreateGalleryRequest = {
       name: gallerySettings.name,
+      allow_video_embedding: gallerySettings.allow_video_embedding ?? true,
       enable_video: !!gallerySettings.video,
       video: gallerySettings.video,
       url_prefix: gallerySettings.url_prefix,
@@ -719,6 +720,12 @@ function GalleryDetail({ name, initialFolderPath, hostedMode }: { name: string; 
                 <option value="never">Compatible originals only — no re-encoding</option>
               </select>
               <small>Default limits: five minutes, 512 MiB per original, and 1080p playback.</small>
+              <label className="form-label" style={{ marginTop: '1rem' }}>
+                <input type="checkbox" checked={gallerySettings.allow_video_embedding ?? true}
+                  onChange={(e) => updateGallerySettings({ allow_video_embedding: e.target.checked })} />{' '}
+                Allow video embeds in link previews
+              </label>
+              <small>When disabled, shared links show a poster and ask viewers to click through to play.</small>
             </>}
           </div>
 

@@ -349,6 +349,9 @@ impl StoredGridMode {
 /// Stored gallery configuration (full gallery settings)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredGalleryConfig {
+    /// Include prepared video playback in link previews (default: true).
+    #[serde(default = "default_true")]
+    pub allow_video_embedding: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video: Option<tenrankai_video::VideoSettings>,
     pub name: String,
@@ -692,6 +695,25 @@ cache_directory = "cache"
 "#;
         let config: StoredGalleryConfig = toml_edit::de::from_str(toml).unwrap();
         assert_eq!(config.grid_mode, StoredGridMode::Masonry);
+    }
+
+    #[test]
+    fn video_embedding_defaults_on_and_opt_out_round_trips() {
+        let legacy_config = r#"
+name = "test"
+source_directory = "photos"
+cache_directory = "cache"
+[video]
+max_duration_seconds = 300
+"#;
+        let mut config: StoredGalleryConfig = toml_edit::de::from_str(legacy_config).unwrap();
+        assert!(config.allow_video_embedding);
+        let preparation_settings = config.video.clone();
+        config.allow_video_embedding = false;
+        let serialized = toml_edit::ser::to_string(&config).unwrap();
+        let restored: StoredGalleryConfig = toml_edit::de::from_str(&serialized).unwrap();
+        assert!(!restored.allow_video_embedding);
+        assert_eq!(restored.video, preparation_settings);
     }
 
     #[test]

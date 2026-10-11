@@ -3,25 +3,46 @@
 {% if image.user_metadata.ai_alt_text %}
     {% assign meta_description = image.user_metadata.ai_alt_text | strip_html | truncate: 160 %}
 {% else %}
-    {% assign default_image_description = "View this image on " | append: site_title | append: " gallery" %}
+    {% if image.media_kind == "video" %}
+        {% assign default_image_description = "Watch this video on " | append: site_title | append: " gallery" %}
+    {% else %}
+        {% assign default_image_description = "View this image on " | append: site_title | append: " gallery" %}
+    {% endif %}
         {% assign meta_description = image.description | default: default_image_description | strip_html | truncate: 160 %}
 {% endif %}
 
-{% comment %} Open Graph tags for image {% endcomment %}
+{% comment %} Open Graph metadata for photos and prepared video playback. {% endcomment %}
 {% assign og_title = image.name %}
 {% assign og_description = meta_description %}
 {% assign og_image = base_url | append: image.gallery_url %}
-{% if image.dimensions %}
+{% if image.dimensions and image.media_kind != "video" %}
     {% assign og_image_width = image.dimensions[0] %}
     {% assign og_image_height = image.dimensions[1] %}
 {% endif %}
 {% assign og_type = "article" %}
 {% assign og_url = base_url | append: gallery_url | append: "/detail/" | append: image.path %}
+{% if image.media_kind == "video" %}
+    {% assign og_type = "video.other" %}
+    {% if allow_video_embedding and image.video.playback_url %}
+        {% assign og_video = base_url | append: image.video.playback_url %}
+        {% assign og_video_type = "video/mp4" %}
+        {% assign base_url_scheme = base_url | slice: 0, 8 %}
+        {% if base_url_scheme == "https://" %}
+            {% assign og_video_secure_url = og_video %}
+        {% endif %}
+        {% if video_dimensions %}
+            {% assign og_video_width = video_dimensions[0] %}
+            {% assign og_video_height = video_dimensions[1] %}
+        {% endif %}
+    {% else %}
+        {% assign og_description = "Click to play this video on " | append: site_title | append: ". " | append: meta_description | truncate: 200 %}
+    {% endif %}
+{% endif %}
 
 {% comment %} Twitter Card tags {% endcomment %}
 {% assign twitter_card_type = "summary_large_image" %}
 {% assign twitter_title = image.name %}
-{% assign twitter_description = meta_description %}
+{% assign twitter_description = og_description %}
 {% assign twitter_image = og_image %}
 {% assign page_css = "image-detail.css,editor.css,share-modal.css" | split: "," %}
 

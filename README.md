@@ -520,6 +520,8 @@ Enable **Enable video clips** in the gallery's admin settings, or add the follow
 its gallery TOML after upgrading the server:
 
 ```toml
+allow_video_embedding = true # Set false for poster-only link previews with a click-to-play prompt.
+
 [video]
 reencode = "auto" # auto, never, always
 max_duration_seconds = 300
@@ -532,6 +534,14 @@ posters follow folder visibility; original downloads require the original-downlo
 permission. Technical details, exact dates, and GPS follow the existing metadata
 permissions. Captions and picks use extension-qualified video sidecars such as
 `clip.mov.md` and `clip.mov.toml`, keeping same-stem photos independent.
+
+Video detail links include Open Graph metadata for the prepared MP4 by default,
+with the poster retained for clients that show image previews. Disable **Allow
+video embeds in link previews** in the gallery's admin settings, or set
+`allow_video_embedding = false` at the top level of its gallery TOML, to show a
+poster and a "Click to play" prompt linking to the detail page. This setting does
+not require preparing the clip again. Link previews use the gallery's existing
+view permissions; private and hidden clips are not exposed to anonymous crawlers.
 
 Install FFmpeg **5.1 or later** with `libx264`, AAC, `zscale`, `tonemap`, and the
 `filter_units` bitstream filter. Ubuntu 24.04's `ffmpeg` package provides these.
