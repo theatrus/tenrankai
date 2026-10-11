@@ -8,6 +8,7 @@ import { useDelayedLoading } from '../hooks/useDelayedLoading.ts';
 import { useSwipeGestures } from '../hooks/useSwipeGestures.ts';
 import { useSwipeDrag } from '../hooks/useSwipeDrag.ts';
 import { useImagePreload } from '../hooks/useImagePreload.ts';
+import { VideoDisplay } from '../components/ImageDetail/VideoDisplay.tsx';
 import { ImageDisplay } from '../components/ImageDetail/ImageDisplay.tsx';
 import { ImageNavigation } from '../components/ImageDetail/ImageNavigation.tsx';
 import { MobileNavigation } from '../components/ImageDetail/MobileNavigation.tsx';
@@ -135,6 +136,15 @@ export function ImageDetailPage({
   // Use initialData immediately if no other data is available
   const currentData = imageData || initialData;
 
+  const isVideo = currentData?.image.media_kind === 'video';
+  useEffect(() => {
+    if (!isVideo || currentData.image.video?.state === 'ready') return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void loadImage(currentData.image.path);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [isVideo, currentData?.image.path, currentData?.image.video?.state, loadImage]);
+
   // The folder this image belongs to, scrolled to this image
   const folderCrumb = Array.isArray(currentData?.breadcrumbs)
     ? currentData.breadcrumbs[currentData.breadcrumbs.length - 1]
@@ -208,8 +218,8 @@ export function ImageDetailPage({
   // Plate solution for astro images (null when unsolved or unavailable).
   // Overlay state lives here so the zoomed views share it.
   const astroSolution = useAstroSolution(
-    currentData?.gallery_name || '',
-    currentData?.image?.path || '',
+    isVideo ? '' : currentData?.gallery_name || '',
+    isVideo ? '' : currentData?.image?.path || '',
   );
   const [astroVisible, setAstroVisible] = useState(false);
   const [astroAllTransients, setAstroAllTransients] = useState(false);
@@ -347,7 +357,7 @@ export function ImageDetailPage({
         handleNavigation('prev');
       }
     }
-  }, { disabled: isImageZoomed || isPhone });
+  }, { disabled: isVideo || isImageZoomed || isPhone });
 
   // Phones: the image follows the finger, so it is clear a swipe navigates
   useSwipeDrag(imageContainerRef, {
@@ -368,7 +378,7 @@ export function ImageDetailPage({
       }
       window.location.href = folderHref;
     },
-    disabled: !isPhone || isImageZoomed,
+    disabled: isVideo || !isPhone || isImageZoomed,
     resetKey: currentData?.image.path,
   });
 
@@ -399,7 +409,9 @@ export function ImageDetailPage({
     />
   );
 
-  const imageDisplay = (
+  const imageDisplay = isVideo ? (
+    <VideoDisplay image={currentData.image} onRefresh={() => void loadImage(currentData.image.path)} />
+  ) : (
     <ImageDisplay
       image={currentData.image}
       canUseZoom={currentData.permissions.can_use_zoom}
@@ -522,7 +534,7 @@ export function ImageDetailPage({
           currentUser={currentUser}
           permissions={currentData.permissions}
           onUpdate={(updatedMetadata) => updateMetadata(updatedMetadata)}
-          image={{
+          image={isVideo ? undefined : {
             medium_url: currentData.image.medium_url,
             dimensions: currentData.image.dimensions
           }}

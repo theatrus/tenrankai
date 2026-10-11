@@ -508,6 +508,57 @@ cargo run -- admin list
 
 ## Gallery Features
 
+### Videos
+
+Galleries can mix photos and short videos, with poster thumbnails, duration badges,
+photo/video filters, and an inline player with seeking and fullscreen controls.
+MP4, MOV, M4V, WebM, and MKV originals are preserved. A background worker prepares
+web playback and shows progress or failure without blocking uploads or browsing.
+The implementation and rollout plan is in [Video support](docs/design/video-support.md).
+
+Enable **Enable video clips** in the gallery's admin settings, or add the following to
+its gallery TOML after upgrading the server:
+
+```toml
+[video]
+reencode = "auto" # auto, never, always
+max_duration_seconds = 300
+max_source_bytes = 536870912
+max_output_bytes = 268435456
+```
+
+Galleries without `[video]` retain their existing image behavior. Playback and
+posters follow folder visibility; original downloads require the original-download
+permission. Technical details, exact dates, and GPS follow the existing metadata
+permissions. Captions and picks use extension-qualified video sidecars such as
+`clip.mov.md` and `clip.mov.toml`, keeping same-stem photos independent.
+
+Install FFmpeg **5.1 or later** with `libx264`, AAC, `zscale`, `tonemap`, and the
+`filter_units` bitstream filter. Ubuntu 24.04's `ffmpeg` package provides these.
+Video tools are optional for existing image-only galleries; Docker includes them.
+
+```sh
+tenrankai video doctor --smoke-test
+tenrankai video probe /path/to/clip.mov
+tenrankai video prepare /path/to/clip.mov --output /path/to/new-preview-directory
+```
+
+The default playback target is a faststart H.264/AAC MP4, fitting within 1920 by
+1080 (or 1080 by 1920 for portrait clips). Compatible streams are copied without
+lossy encoding. HDR with a supported PQ/HLG base layer is tone-mapped to SDR.
+`--reencode never` allows lossless repackaging only; `--reencode always` prepares
+all selected streams. `--poster-time SECONDS` overrides the automatic poster.
+
+Set `TENRANKAI_FFMPEG`, `TENRANKAI_FFPROBE`, and `TENRANKAI_VIDEO_TEMP_DIR` to
+override executable paths and the existing writable scratch directory. Each
+command also accepts `--ffmpeg`, `--ffprobe`, and `--temp-directory`.
+
+Preparation defaults to one job with two threads, a five-minute duration cap,
+512 MiB source and 256 MiB output budgets, and a 1 GiB free-space reserve. The
+output directory contains `playback.mp4`, `poster.jpg`, and `manifest.json`.
+The manifest includes private source metadata and is intended for operator
+inspection, not public serving.
+
 ### Multiple Galleries
 
 Tenrankai supports multiple independent gallery instances, each with its own:
@@ -1265,7 +1316,6 @@ Visit http://localhost:5173/ during development. Before committing, run
 
 - Additional email providers (SendGrid, SMTP, etc.)
 - Full-text search across galleries and posts
-- Video file support with thumbnail generation
 - Tag-based filtering and organization
 
 ### Contributing

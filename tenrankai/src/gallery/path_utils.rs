@@ -63,6 +63,7 @@ impl AsRef<str> for FileExtension {
 /// Paths to sidecar files for an image.
 #[derive(Debug, Clone)]
 pub struct SidecarPaths {
+    pub toml: String,
     /// XMP sidecar path (image.xmp, replacing extension).
     pub xmp: String,
     /// Markdown sidecar path format 1 (image.jpg.md, appending .md).
@@ -75,9 +76,22 @@ impl SidecarPaths {
     /// Generate sidecar paths for an image path.
     pub fn for_image(image_path: &str) -> Self {
         Self {
-            xmp: replace_extension(image_path, "xmp"),
+            toml: if tenrankai_video::is_video_path(image_path) {
+                format!("{image_path}.toml")
+            } else {
+                replace_extension(image_path, "toml")
+            },
+            xmp: if tenrankai_video::is_video_path(image_path) {
+                format!("{image_path}.xmp")
+            } else {
+                replace_extension(image_path, "xmp")
+            },
             markdown_full: format!("{}.md", image_path),
-            markdown_replaced: replace_extension(image_path, "md"),
+            markdown_replaced: if tenrankai_video::is_video_path(image_path) {
+                format!("{image_path}.md")
+            } else {
+                replace_extension(image_path, "md")
+            },
         }
     }
 

@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { copyFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -132,6 +134,36 @@ function prepareFixtures() {
   }
   // ...except manage/, whose config the sort API rewrites — regenerate it.
   writeFileSync(join(PHOTOS, 'manage', '_folder.md'), MANAGE_FOLDER_MD);
+
+  // Isolated mixed-media gallery: actual originals exercise automatic video
+  // preparation and browser playback through the same server as photo tests.
+  const videoRoot = join(HERE, 'fixtures', 'video-photos');
+  rmSync(videoRoot, { recursive: true, force: true });
+  const permissions = `[permissions]\npublic_role = "viewer"\n[permissions.roles.viewer]\nname = "viewer"\npermissions = { can_view = true, can_download_gallery = true }\n[permissions.roles.owner]\nname = "owner"\npermissions = { can_view = true, owner_access = true, can_manage_images = true, can_download_original = true, can_read_metadata = true, can_edit_content = true, can_set_picks = true, can_add_comments = true, can_see_technical_details = true, can_see_exact_dates = true, can_see_location = true }\n[[permissions.user_roles]]\nusername = "e2euser"\nroles = ["owner"]\n`;
+  for (const folder of ['clips', 'private', 'uploads', 'archives']) {
+    mkdirSync(join(videoRoot, folder), { recursive: true });
+    const folderPermissions = folder === 'private' ? permissions.replace('public_role = "viewer"', 'public_role = "none"') : permissions;
+    const hidden = (folder === 'clips' || folder === 'archives') ? 'hidden_images = ["hidden.mov"]\n' : '';
+    writeFileSync(join(videoRoot, folder, '_folder.md'), `+++\ntitle = "${folder}"\n${hidden}${folderPermissions}+++\n`);
+  }
+  writeFileSync(join(videoRoot, 'clips', 'scene.png'), solidPng(240, 160, [60, 100, 220]));
+  const ffmpeg = process.env.TENRANKAI_FFMPEG || 'ffmpeg';
+  const common = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-filter_threads', '1'];
+  execFileSync(ffmpeg, [...common, '-f', 'lavfi', '-i', 'testsrc2=size=240x160:rate=24',
+    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '4',
+    '-c:v', 'mpeg4', '-c:a', 'pcm_s16le', '-threads', '1',
+    '-metadata', 'creation_time=2026-09-19T12:30:00Z',
+    '-metadata', 'location=+37.7749-122.4194/', join(videoRoot, 'clips', 'scene.mov')]);
+  execFileSync(ffmpeg, [...common, '-f', 'lavfi', '-i', 'testsrc2=size=96x160:rate=24',
+    '-t', '2', '-c:v', 'mpeg4', '-threads', '1', join(videoRoot, 'clips', 'portrait.mkv')]);
+  copyFileSync(join(videoRoot, 'clips', 'scene.mov'), join(videoRoot, 'clips', 'hidden.mov'));
+  copyFileSync(join(videoRoot, 'clips', 'scene.mov'), join(videoRoot, 'private', 'secret.mov'));
+  copyFileSync(join(videoRoot, 'clips', 'scene.mov'), join(videoRoot, 'archives', 'visible.mov'));
+  copyFileSync(join(videoRoot, 'clips', 'scene.mov'), join(videoRoot, 'archives', 'hidden.mov'));
+  mkdirSync(join(videoRoot, 'archives', 'private'), { recursive: true });
+  copyFileSync(join(videoRoot, 'private', '_folder.md'), join(videoRoot, 'archives', 'private', '_folder.md'));
+  copyFileSync(join(videoRoot, 'clips', 'scene.mov'), join(videoRoot, 'archives', 'private', 'secret.mov'));
+  writeFileSync(join(videoRoot, 'clips', 'broken.mov'), 'This is not a video file.');
 
   // Seed the admin user with no passkeys; the passkey/interactive specs register
   // one through the UI. The TOML backend reloads this on change.

@@ -20,7 +20,8 @@ const TUS_MAX_SIZE: u64 = 500 * 1024 * 1024; // 500MB
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
     // Images
-    "jpg", "jpeg", "png", "webp", "avif", "heic", "heif", "gif", // RAW formats
+    "mp4", "mov", "m4v", "webm", "mkv", "jpg", "jpeg", "png", "webp", "avif", "heic", "heif",
+    "gif", // RAW formats
     "raw", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "pef",
     // Sidecar files
     "md", "xmp",
@@ -136,6 +137,21 @@ pub async fn options_handler() -> impl IntoResponse {
     (StatusCode::NO_CONTENT, headers)
 }
 
+pub async fn gallery_options_handler(
+    ResolvedState(state): ResolvedState,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let maximum = state
+        .galleries()
+        .get(&name)
+        .and_then(|g| g.config.video.as_ref())
+        .map(|v| v.max_source_bytes.max(TUS_MAX_SIZE))
+        .unwrap_or(TUS_MAX_SIZE);
+    let mut headers = tus_headers();
+    headers.insert("Tus-Max-Size", maximum.to_string().parse().unwrap());
+    (StatusCode::NO_CONTENT, headers)
+}
+
 pub async fn create_upload(
     ResolvedState(app_state): ResolvedState,
     OptionalAuth(auth): OptionalAuth,
@@ -151,13 +167,6 @@ pub async fn create_upload(
         .map_err(|_| UploadError::InvalidHeader("Upload-Length"))?
         .parse::<u64>()
         .map_err(|_| UploadError::InvalidHeader("Upload-Length"))?;
-
-    if upload_length > TUS_MAX_SIZE {
-        return Err(UploadError::FileTooLarge {
-            size: upload_length,
-            max: TUS_MAX_SIZE,
-        });
-    }
 
     let upload_metadata = headers
         .get("upload-metadata")
@@ -197,6 +206,25 @@ pub async fn create_upload(
         .galleries()
         .get(&gallery_name)
         .ok_or_else(|| UploadError::GalleryNotFound(gallery_name.clone()))?;
+
+    let limit = if tenrankai_video::is_video_path(&filename) {
+        gallery
+            .config
+            .video
+            .as_ref()
+            .ok_or_else(|| {
+                UploadError::InvalidFileType("video is disabled for this gallery".into())
+            })?
+            .max_source_bytes
+    } else {
+        TUS_MAX_SIZE
+    };
+    if upload_length > limit {
+        return Err(UploadError::FileTooLarge {
+            size: upload_length,
+            max: limit,
+        });
+    }
 
     let source_url = &gallery.config.source_directory;
     let chunked_storage = create_chunked_storage_from_url(source_url)
@@ -327,6 +355,20 @@ pub async fn patch_upload(
         chunk_size = body.len(),
         "Receiving chunk"
     );
+
+    if upload_offset != info.current_offset {
+        return Err(UploadError::OffsetMismatch {
+            expected: info.current_offset,
+            actual: upload_offset,
+        });
+    }
+    let end = upload_offset.saturating_add(body.len() as u64);
+    if end > info.total_size {
+        return Err(UploadError::FileTooLarge {
+            size: end,
+            max: info.total_size,
+        });
+    }
 
     let new_offset = chunked_storage
         .append_chunk(&upload_id, upload_offset, body)

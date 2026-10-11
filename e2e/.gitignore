@@ -17,3 +17,6 @@ screenshots/
 !fixtures/config.toml
 !fixtures/config.d/
 !fixtures/config.d/**
+
+# Runtime records generated when browser tests save admin settings.
+fixtures/config.d/.audit/

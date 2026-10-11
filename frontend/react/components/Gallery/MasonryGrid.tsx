@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import type { VideoInfo } from '../../types';
+import { formatVideoDuration } from '../ImageDetail/VideoDisplay';
 
 export type GridMode = 'masonry' | 'square';
 
 export interface GalleryImage {
+  media_kind?: 'image' | 'video' | 'directory';
+  video?: VideoInfo;
   path: string;
   name: string;
   thumbnail_url?: string;
@@ -177,6 +181,13 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
   const columns = gridMode === 'masonry' ? distributeImages() : [];
 
   // Function to render metadata badges
+  const renderVideoBadge = (image: GalleryImage) => image.media_kind === 'video' ? (
+    <span className={`video-badge video-${image.video?.state || 'pending'}`}>
+      <span aria-hidden="true">▶</span>{' '}
+      {image.video?.state === 'failed' ? 'Unavailable' : image.video?.state !== 'ready' ? 'Preparing…' : formatVideoDuration(image.video.duration_seconds) || 'Video'}
+    </span>
+  ) : null;
+
   const renderBadges = (image: GalleryImage) => {
     const badges = [];
     
@@ -310,6 +321,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
             />
             {renderBadges(image)}
           </a>
+          {renderVideoBadge(image)}
         </div>
       );
     }
@@ -363,6 +375,7 @@ export const MasonryGrid: React.FC<MasonryGridProps> = ({
           />
           {renderBadges(image)}
         </a>
+        {renderVideoBadge(image)}
       </div>
     );
   };

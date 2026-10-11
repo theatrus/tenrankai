@@ -468,6 +468,7 @@ pub async fn image_handler_for_named(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, path)): Path<(String, String)>,
     Query(query): Query<GalleryQuery>,
+    method: axum::http::Method,
     headers: axum::http::HeaderMap,
     auth: crate::login::OptionalAuth,
 ) -> impl IntoResponse {
@@ -593,6 +594,17 @@ pub async fn image_handler_for_named(
         }
     }
 
+    if tenrankai_video::is_video_path(&resolved_path) {
+        let asset = if query.size.is_none() {
+            super::video_http::VideoAsset::Original
+        } else {
+            super::video_http::VideoAsset::Poster
+        };
+        return gallery
+            .serve_video_asset(&resolved_path, asset, &headers, &method)
+            .await;
+    }
+
     // Extract Accept header for format negotiation
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
@@ -614,6 +626,7 @@ pub async fn image_handler_for_named(
 pub async fn image_handler_for_named_v2(
     ResolvedState(app_state): ResolvedState,
     Path((gallery_name, full_path)): Path<(String, String)>,
+    method: axum::http::Method,
     headers: axum::http::HeaderMap,
     auth: crate::login::OptionalAuth,
 ) -> Response {
@@ -656,6 +669,7 @@ pub async fn image_handler_for_named_v2(
         ResolvedState(app_state),
         Path((gallery_name, actual_identifier)),
         Query(query),
+        method,
         headers,
         auth,
     )
@@ -684,6 +698,24 @@ pub struct DownloadFolderQuery {
     /// Include all versions of images (default: false, only primary images)
     #[serde(default)]
     pub include_versions: bool,
+}
+
+struct ZipChannelWriter {
+    sender: tokio::sync::mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+}
+
+impl std::io::Write for ZipChannelWriter {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        for chunk in buffer.chunks(64 * 1024) {
+            self.sender.blocking_send(Ok(chunk.to_vec())).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "download disconnected")
+            })?;
+        }
+        Ok(buffer.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 pub async fn download_folder_handler(
@@ -735,21 +767,36 @@ pub async fn download_folder_handler(
     // Tuple: (file_path, display_name, capture_date)
     let mut all_images: Vec<(String, String, Option<SystemTime>)> = Vec::new();
     let include_versions = query.include_versions;
-    let can_see_hidden = user_permissions.permissions.can_see_hidden;
 
     // Helper to recursively collect images with their capture dates,
     // using the gallery's sorted listing for consistent display names.
     async fn collect_images_recursive(
+        app_state: &crate::AppState,
+        gallery_name: &str,
         gallery: &super::SharedGallery,
         folder_path: &str,
         images: &mut Vec<(String, String, Option<SystemTime>)>,
         include_versions: bool,
-        can_see_hidden: bool,
+        username: Option<&str>,
     ) {
+        let Ok(permissions) = crate::permissions::resolve_permissions_for_path(
+            app_state,
+            gallery_name,
+            folder_path,
+            username,
+        )
+        .await
+        else {
+            return;
+        };
+        if !permissions.permissions.can_view || !permissions.permissions.can_download_gallery {
+            return;
+        }
+        let can_see_hidden = permissions.permissions.can_see_hidden;
         if let Some(cached) = gallery.get_cached_folder_data(folder_path).await {
             // Use the gallery's sorted listing for display names
             let sorted_items = gallery
-                .scan_directory_with_user(folder_path, None)
+                .scan_directory_with_user(folder_path, username)
                 .await
                 .unwrap_or_default();
 
@@ -798,7 +845,9 @@ pub async fn download_folder_handler(
                     let display_name = {
                         let base_name = get_display_name(image_path);
                         let filename = image_path.rsplit('/').next().unwrap_or(image_path);
-                        if let Some(version_num) = super::grouping::extract_version_number(filename)
+                        if !tenrankai_video::is_video_path(image_path)
+                            && let Some(version_num) =
+                                super::grouping::extract_version_number(filename)
                         {
                             format!("{}_v{}", base_name, version_num)
                         } else {
@@ -835,6 +884,9 @@ pub async fn download_folder_handler(
                 }
             }
 
+            // Do not retain a parent cache read lock across recursive reads:
+            // a pending worker update would block children behind the writer.
+            drop(metadata_cache);
             // Recursively process subdirectories
             for subdir in &cached.subdirectories {
                 let subdir_path = if folder_path.is_empty() {
@@ -843,11 +895,13 @@ pub async fn download_folder_handler(
                     format!("{}/{}", folder_path, subdir)
                 };
                 Box::pin(collect_images_recursive(
+                    app_state,
+                    gallery_name,
                     gallery,
                     &subdir_path,
                     images,
                     include_versions,
-                    can_see_hidden,
+                    username,
                 ))
                 .await;
             }
@@ -855,11 +909,13 @@ pub async fn download_folder_handler(
     }
 
     collect_images_recursive(
+        &app_state,
+        &gallery_name,
         gallery,
         &path,
         &mut all_images,
         include_versions,
-        can_see_hidden,
+        auth.username(),
     )
     .await;
 
@@ -875,20 +931,34 @@ pub async fn download_folder_handler(
     };
     let zip_filename = format!("{}.zip", folder_name);
 
+    // Streaming ZIPs can keep a blocking thread occupied for the duration of
+    // a download. Use the existing pool before spawning, rather than allowing
+    // arbitrary requests to exhaust Tokio's blocking threads.
+    let permit = tokio::select! {
+        biased;
+        _ = gallery.shutdown_token.cancelled() => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        permit = gallery.image_processing_semaphore.clone().acquire_owned() => match permit {
+            Ok(permit) => permit,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        },
+    };
+
     // Create a channel for streaming the zip
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(4);
 
-    // Spawn a task to build and stream the zip
+    // ZipWriter's streaming mode emits data descriptors, so neither a whole
+    // archive nor a whole video needs to be buffered. The bounded channel applies
+    // backpressure and stops work when the client disconnects.
     let storage = gallery.source_storage().clone();
     let download_root = path.clone();
-    tokio::spawn(async move {
-        let mut zip_buffer = std::io::Cursor::new(Vec::new());
-        {
-            let mut zip = zip::ZipWriter::new(&mut zip_buffer);
-            // Base options: no compression for faster streaming
+    let runtime = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let sender = tx.clone();
+        let result = (|| -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            let mut zip = zip::ZipWriter::new_stream(ZipChannelWriter { sender });
             let base_options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored);
-
             for (image_path, display_name, capture_date) in &all_images {
                 // Create options with the file's capture date if available
                 let options = if let Some(date) = capture_date {
@@ -921,35 +991,27 @@ pub async fn download_folder_handler(
                     .rfind('.')
                     .map(|pos| &original_filename[pos..])
                     .unwrap_or("");
-                let filename = format!("{}{}{}", folder_prefix, display_name, extension);
+                let filename = if display_name
+                    .to_ascii_lowercase()
+                    .ends_with(&extension.to_ascii_lowercase())
+                {
+                    format!("{folder_prefix}{display_name}")
+                } else {
+                    format!("{folder_prefix}{display_name}{extension}")
+                };
 
-                match storage.read(image_path).await {
-                    Ok(data) => {
-                        if let Err(e) = zip.start_file(&filename, options) {
-                            tracing::error!("Failed to start zip file entry '{}': {}", filename, e);
-                            continue;
-                        }
-                        if let Err(e) = std::io::Write::write_all(&mut zip, &data) {
-                            tracing::error!("Failed to write image '{}' to zip: {}", filename, e);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to read image '{}' for zip: {}", image_path, e);
-                    }
+                let mut source = runtime.block_on(storage.read_stream(image_path))?;
+                zip.start_file(&filename, options)?;
+                while let Some(chunk) = runtime.block_on(futures::StreamExt::next(&mut source)) {
+                    std::io::Write::write_all(&mut zip, &chunk?)?;
                 }
             }
-
-            if let Err(e) = zip.finish() {
-                tracing::error!("Failed to finish zip file: {}", e);
-            }
-        }
-
-        // Send the completed zip in chunks
-        let data = zip_buffer.into_inner();
-        for chunk in data.chunks(64 * 1024) {
-            if tx.send(Ok(chunk.to_vec())).await.is_err() {
-                break; // Client disconnected
-            }
+            zip.finish()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            tracing::warn!(%error, "Folder archive interrupted");
+            let _ = tx.blocking_send(Err(std::io::Error::other(error.to_string())));
         }
     });
 
@@ -1108,6 +1170,44 @@ pub async fn raw_download_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn streaming_zip_is_readable_and_stops_on_disconnect() {
+        use std::io::{Read, Write};
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        let writer = tokio::task::spawn_blocking(move || {
+            let mut zip = zip::ZipWriter::new_stream(ZipChannelWriter { sender });
+            zip.start_file(
+                "clip.mov",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+            for _ in 0..20 {
+                zip.write_all(&[42; 64 * 1024]).unwrap();
+            }
+            zip.finish().unwrap();
+        });
+        let mut bytes = Vec::new();
+        while let Some(chunk) = receiver.recv().await {
+            bytes.extend(chunk.unwrap());
+        }
+        writer.await.unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let mut clip = zip.by_name("clip.mov").unwrap();
+        let mut original = Vec::new();
+        clip.read_to_end(&mut original).unwrap();
+        assert_eq!(original, vec![42; 20 * 64 * 1024]);
+
+        let (sender, receiver) = tokio::sync::mpsc::channel(4);
+        drop(receiver);
+        let error = tokio::task::spawn_blocking(move || {
+            ZipChannelWriter { sender }.write_all(b"data").unwrap_err()
+        })
+        .await
+        .unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
 
     #[test]
     fn test_systemtime_to_zip_datetime_converts_correctly() {

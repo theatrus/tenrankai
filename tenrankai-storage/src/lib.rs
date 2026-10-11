@@ -132,6 +132,18 @@ pub trait Storage: Send + Sync + 'static {
     /// * `data` - The data to write
     async fn write(&self, path: &str, data: Bytes) -> Result<(), StorageError>;
 
+    /// Upload a seekable file without buffering the whole object in memory.
+    async fn write_file(&self, _path: &str, _source: &std::path::Path) -> Result<(), StorageError> {
+        Err(StorageError::Other(
+            "streamed file writes are unsupported".into(),
+        ))
+    }
+
+    /// Copy an object within this backend without buffering media in memory.
+    async fn copy(&self, _source: &str, _destination: &str) -> Result<(), StorageError> {
+        Err(StorageError::Other("object copying is unsupported".into()))
+    }
+
     /// Check if object exists.
     ///
     /// # Arguments
@@ -207,6 +219,18 @@ pub trait Storage: Send + Sync + 'static {
     /// # Returns
     /// A stream of byte chunks.
     async fn read_stream(&self, path: &str) -> Result<ByteStream, StorageError>;
+
+    /// Stream a bounded byte range without allocating the requested length.
+    async fn read_range_stream(
+        &self,
+        _path: &str,
+        _offset: u64,
+        _length: u64,
+    ) -> Result<ByteStream, StorageError> {
+        Err(StorageError::Other(
+            "streamed range reads are unsupported".into(),
+        ))
+    }
 
     /// Read a range of bytes from an object.
     ///
@@ -532,6 +556,43 @@ pub async fn create_storages_from_urls(urls: &[String]) -> Result<Vec<DynStorage
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn streams_bounded_ranges_and_copies_files() {
+        use futures::TryStreamExt;
+        let temp = TempDir::new().unwrap();
+        let storage = FilesystemStorage::new(temp.path());
+        let input = temp.path().join("source.mp4");
+        tokio::fs::write(&input, b"0123456789").await.unwrap();
+        storage
+            .write_file("nested/video.mp4", &input)
+            .await
+            .unwrap();
+        let chunks = storage
+            .read_range_stream("nested/video.mp4", 3, 4)
+            .await
+            .unwrap()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(chunks.concat(), b"3456");
+        storage
+            .copy("nested/video.mp4", "copied.mp4")
+            .await
+            .unwrap();
+        assert_eq!(
+            storage.read("copied.mp4").await.unwrap().as_ref(),
+            b"0123456789"
+        );
+        let chunks = storage
+            .read_range_stream("copied.mp4", 9, u64::MAX)
+            .await
+            .unwrap()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(chunks.concat(), b"9");
+    }
 
     #[tokio::test]
     async fn test_filesystem_storage_basic_operations() {

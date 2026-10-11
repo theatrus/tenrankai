@@ -80,6 +80,9 @@ pub fn extract_version_number(filename: &str) -> Option<u32> {
 /// e.g., "folder/IMG_0001_v2.jpg" -> true
 /// e.g., "folder/IMG_0001.jpg" -> false
 pub fn is_version_file(path: &str) -> bool {
+    if tenrankai_video::is_video_path(path) {
+        return false;
+    }
     use std::path::Path;
     let filename = Path::new(path)
         .file_name()
@@ -93,6 +96,9 @@ pub fn is_version_file(path: &str) -> bool {
 /// e.g., "folder/IMG_0001.jpg" -> "folder/IMG_0001.jpg"
 /// This ensures all versions of an image share the same metadata.
 pub fn canonical_metadata_path(path: &str) -> String {
+    if tenrankai_video::is_video_path(path) {
+        return path.to_string();
+    }
     use std::path::Path;
 
     let p = Path::new(path);
@@ -140,14 +146,23 @@ impl FileEntry {
         let filename = path.rsplit('/').next().unwrap_or(path);
         let extension = get_extension(filename)?.to_lowercase();
         let is_raw = is_raw_extension(&extension);
-        let is_image = is_image_extension(&extension);
+        let is_video = tenrankai_video::is_video_path(path);
+        let is_image = is_image_extension(&extension) || is_video;
 
         if !is_raw && !is_image {
             return None;
         }
 
-        let base_name = extract_base_name(filename);
-        let version_number = extract_version_number(filename);
+        let base_name = if is_video {
+            filename.to_string()
+        } else {
+            extract_base_name(filename)
+        };
+        let version_number = if is_video {
+            None
+        } else {
+            extract_version_number(filename)
+        };
 
         // Check if this file is in a __versions folder
         let in_versions_folder = path.contains("/__versions/");
@@ -280,6 +295,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_video_stems_and_versions_separate_from_photos() {
+        let video = FileEntry::from_path("clip_v2.mov", None, 100).unwrap();
+        let photo = FileEntry::from_path("clip_v2.jpg", None, 100).unwrap();
+        assert_eq!(video.base_name, "clip_v2.mov");
+        assert_eq!(video.version_number, None);
+        assert_ne!(video.base_name, photo.base_name);
+        assert_eq!(canonical_metadata_path("clip_v2.mov"), "clip_v2.mov");
+    }
 
     #[test]
     fn test_extract_base_name_simple() {

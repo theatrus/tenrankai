@@ -8,6 +8,7 @@ members = [
     "tenrankai-metadata",
     "tenrankai-storage",
     "tenrankai-users",
+    "tenrankai-video",
 ]
 
 [workspace.package]
@@ -117,6 +118,7 @@ tenrankai-metadata = { path = "tenrankai-metadata" }
 seiza = "0.18.2"
 tenrankai-storage = { path = "tenrankai-storage" }
 tenrankai-users = { path = "tenrankai-users" }
+tenrankai-video = { path = "tenrankai-video" }
 
 [profile.dev]
 opt-level = 2

@@ -154,6 +154,14 @@ impl SiteBuilder {
             .map_or(&[][..], |v| v.as_slice());
 
         for gallery_config in gallery_configs {
+            if let Some(video) = &gallery_config.video {
+                video.validate().map_err(|error| {
+                    SiteBuilderError::Gallery(format!(
+                        "Invalid video settings for gallery '{}': {error}",
+                        gallery_config.name
+                    ))
+                })?;
+            }
             info!(
                 "Initializing gallery '{}' at {}",
                 gallery_config.name, gallery_config.url_prefix

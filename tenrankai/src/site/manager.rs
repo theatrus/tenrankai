@@ -9,6 +9,8 @@ use crate::gallery::Gallery;
 
 /// SiteManager holds all active sites and handles routing dispatch by hostname
 pub struct SiteManager {
+    /// Serialize lifecycle changes while retired media jobs drain.
+    lifecycle: tokio::sync::Mutex<()>,
     /// Map of site name to Site instance
     sites: RwLock<HashMap<String, Arc<Site>>>,
     /// Map of exact hostname to site name for O(1) lookup
@@ -23,6 +25,7 @@ impl SiteManager {
     /// Create a new empty SiteManager
     pub fn new() -> Self {
         Self {
+            lifecycle: tokio::sync::Mutex::new(()),
             sites: RwLock::new(HashMap::new()),
             hostname_index: RwLock::new(HashMap::new()),
             glob_patterns: RwLock::new(Vec::new()),
@@ -49,18 +52,24 @@ impl SiteManager {
 
     /// Add a site with its hostname mappings
     pub async fn add_site(&self, site: Arc<Site>, hostnames: Vec<String>) {
+        self.replace_site(&site.name.clone(), site, hostnames).await;
+    }
+
+    async fn install_site(&self, site: Arc<Site>, hostnames: Vec<String>) {
         let site_name = site.name.clone();
 
-        // Add site to sites map
-        {
-            let mut sites = self.sites.write().await;
-            sites.insert(site_name.clone(), site);
-        }
-
-        // Process hostnames
+        // Take routing locks before the sites lock, matching get_site. Publish
+        // the site and its mappings together so reloads cannot route to a gap.
         let mut hostname_index = self.hostname_index.write().await;
         let mut glob_patterns = self.glob_patterns.write().await;
         let mut default_site = self.default_site.write().await;
+        let mut sites = self.sites.write().await;
+        hostname_index.retain(|_, name| name != &site_name);
+        glob_patterns.retain(|(_, name)| name != &site_name);
+        if default_site.as_ref() == Some(&site_name) {
+            *default_site = None;
+        }
+        sites.insert(site_name.clone(), site.clone());
 
         for hostname in hostnames {
             if hostname == "*" {
@@ -82,6 +91,15 @@ impl SiteManager {
                     site_name, hostname
                 );
             }
+        }
+        drop(sites);
+        drop(default_site);
+        drop(glob_patterns);
+        drop(hostname_index);
+        // Replacement galleries must not start writing video manifests until
+        // the retired workers have exited (see replace_site).
+        for gallery in site.galleries().values() {
+            Gallery::start_video_worker(gallery.clone()).await;
         }
     }
 
@@ -178,14 +196,20 @@ impl SiteManager {
 
     /// Remove a site by name
     pub async fn remove_site(&self, name: &str) {
+        let _lifecycle = self.lifecycle.lock().await;
         // Remove from sites map
         let old_site = {
             let mut sites = self.sites.write().await;
             sites.remove(name)
         };
 
-        if old_site.is_none() {
+        let Some(old_site) = old_site else {
             return;
+        };
+        // Retired galleries must stop processing before a replacement can use
+        // the same cache; otherwise each admin reload leaves another worker.
+        for gallery in old_site.galleries().values() {
+            gallery.shutdown().await;
         }
 
         // Clean up hostname mappings
@@ -211,11 +235,15 @@ impl SiteManager {
 
     /// Replace a site with a new version (for hot-swapping)
     pub async fn replace_site(&self, name: &str, new_site: Arc<Site>, hostnames: Vec<String>) {
-        // Remove old site mappings
-        self.remove_site(name).await;
-
-        // Add new site with its hostname mappings
-        self.add_site(new_site, hostnames).await;
+        let _lifecycle = self.lifecycle.lock().await;
+        // Keep serving the old site while its jobs drain. New video workers are
+        // started by install_site only after this shutdown and the routing swap.
+        if let Some(old_site) = self.get_site_by_name(name).await {
+            for gallery in old_site.galleries().values() {
+                gallery.shutdown().await;
+            }
+        }
+        self.install_site(new_site, hostnames).await;
     }
 
     /// Check if a site exists
@@ -324,8 +352,9 @@ impl SiteManager {
         // Trigger refresh and/or pre-generation on startup
         let metadata_empty = gallery.is_metadata_cache_empty().await;
         let pregenerate = gallery_config.pregenerate.is_some();
+        let video_enabled = gallery_config.video.is_some();
 
-        if (metadata_empty || pregenerate)
+        if (metadata_empty || pregenerate || video_enabled)
             && let Err(e) = gallery
                 .clone()
                 .refresh_metadata_and_pregenerate_cache(pregenerate)
@@ -414,6 +443,102 @@ mod tests {
             webauthn: None,
         };
         Arc::new(Site::new(name.to_string(), resources))
+    }
+
+    #[tokio::test]
+    async fn removing_site_stops_its_video_worker() {
+        let source = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let gallery = Arc::new(Gallery::new(
+            crate::GallerySystemConfig {
+                video: Some(Default::default()),
+                ..Default::default()
+            },
+            Arc::new(crate::storage::FilesystemStorage::new(source.path())),
+            Arc::new(crate::storage::FilesystemStorage::new(cache.path())),
+        ));
+        Gallery::start_video_worker(gallery.clone()).await;
+        let mut site = create_test_site("video-test");
+        Arc::get_mut(&mut site).unwrap().resources.galleries =
+            Arc::new([("video".into(), gallery.clone())].into_iter().collect());
+        let manager = SiteManager::new();
+        manager.add_site(site, vec!["*".into()]).await;
+        manager.remove_site("video-test").await;
+        assert!(gallery.shutdown_token.is_cancelled());
+        assert!(gallery.video_task.lock().await.is_none());
+        assert!(!manager.has_site("video-test").await);
+    }
+
+    #[tokio::test]
+    async fn replacement_keeps_routing_live_and_starts_video_after_old_jobs_drain() {
+        let source = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let make_gallery = || {
+            Arc::new(Gallery::new(
+                crate::GallerySystemConfig {
+                    video: Some(Default::default()),
+                    ..Default::default()
+                },
+                Arc::new(crate::storage::FilesystemStorage::new(source.path())),
+                Arc::new(crate::storage::FilesystemStorage::new(cache.path())),
+            ))
+        };
+        let make_site = |gallery: Arc<Gallery>| {
+            let mut site = create_test_site("video-test");
+            Arc::get_mut(&mut site).unwrap().resources.galleries =
+                Arc::new([("video".into(), gallery)].into_iter().collect());
+            site
+        };
+        let old_gallery = make_gallery();
+        let new_gallery = make_gallery();
+        let old_site = make_site(old_gallery.clone());
+        let new_site = make_site(new_gallery.clone());
+        let manager = Arc::new(SiteManager::new());
+        manager
+            .add_site(old_site.clone(), vec!["old.example".into(), "*".into()])
+            .await;
+        let active_job = old_gallery.track_blocking_task();
+        let replacement = tokio::spawn({
+            let manager = manager.clone();
+            let new_site = new_site.clone();
+            async move {
+                manager
+                    .replace_site("video-test", new_site, vec!["new.example".into()])
+                    .await
+            }
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            old_gallery.shutdown_token.cancelled(),
+        )
+        .await
+        .unwrap();
+        assert!(Arc::ptr_eq(
+            &manager.get_site("old.example").await.unwrap(),
+            &old_site
+        ));
+        assert!(new_gallery.video_task.lock().await.is_none());
+        drop(active_job);
+        tokio::time::timeout(std::time::Duration::from_secs(2), replacement)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(old_gallery.video_task.lock().await.is_none());
+        assert!(new_gallery.video_task.lock().await.is_some());
+        assert!(manager.get_site("old.example").await.is_none());
+        assert!(Arc::ptr_eq(
+            &manager.get_site("new.example").await.unwrap(),
+            &new_site
+        ));
+        assert!(manager.get_default_site().await.is_none());
+        // Shutdown enumerates the current sites, including the replacement.
+        for site in manager.sites().await {
+            for gallery in site.galleries().values() {
+                gallery.shutdown().await;
+            }
+        }
+        assert!(new_gallery.shutdown_token.is_cancelled());
+        assert!(new_gallery.video_task.lock().await.is_none());
     }
 
     #[test]

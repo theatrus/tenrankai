@@ -45,3 +45,6 @@ static/admin/
 
 # Playwright artifacts from bare runs
 test-results/
+
+# Generated video originals for the browser integration suite
+e2e/fixtures/video-photos/

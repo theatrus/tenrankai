@@ -119,6 +119,8 @@ mod tests {
 
     fn create_test_gallery_item(name: &str, path: &str) -> GalleryItem {
         GalleryItem {
+            media_kind: "image",
+            video: None,
             name: name.to_string(),
             display_name: None,
             description: None,

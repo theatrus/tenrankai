@@ -11,6 +11,9 @@ pub mod metadata_sources;
 pub mod path_utils;
 mod task_deduplicator;
 mod types;
+pub(crate) mod video;
+mod video_http;
+pub use video_http::video_handler_for_named;
 
 // Re-export public items
 pub use cache::generate_tile_cache_filename;
@@ -70,9 +73,9 @@ pub struct Gallery {
     pub(crate) pregeneration_token: Arc<Mutex<CancellationToken>>,
     /// Atomic flag for synchronous cancellation checks (e.g., in spawn_blocking)
     pub(crate) shutdown_flag: Arc<AtomicBool>,
-    /// Semaphore to limit concurrent image processing operations (prevents memory exhaustion)
+    /// Shared processing pool for images and videos (prevents resource exhaustion)
     pub(crate) image_processing_semaphore: Arc<Semaphore>,
-    /// Counter for active blocking tasks (for graceful shutdown)
+    /// Counter for active processing tasks, including async video jobs (for shutdown)
     pub(crate) active_blocking_tasks: Arc<AtomicUsize>,
     /// Loaded image watermark (if configured)
     pub(crate) image_watermark: Option<Arc<tenrankai_image::ImageWatermark>>,
@@ -80,6 +83,9 @@ pub struct Gallery {
     pub(crate) image_watermark_hash: Option<String>,
     /// Notifies listeners when metadata refresh completes (for shortcode index rebuild)
     pub(crate) metadata_generation: Arc<tokio::sync::Notify>,
+    pub(crate) video_records: RwLock<std::collections::HashMap<String, video::VideoRecord>>,
+    pub(crate) video_wakeup: tokio::sync::Notify,
+    pub(crate) video_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Gallery {
@@ -122,6 +128,9 @@ impl Gallery {
         );
 
         Self {
+            video_records: RwLock::new(std::collections::HashMap::new()),
+            video_wakeup: tokio::sync::Notify::new(),
+            video_task: Mutex::new(None),
             config,
             source_path,
             source_storage,
@@ -259,6 +268,11 @@ impl Gallery {
 
     pub(crate) fn is_image(&self, file_name: &str) -> bool {
         grouping::get_extension(file_name).is_some_and(grouping::is_image_extension)
+    }
+
+    pub(crate) fn is_media(&self, file_name: &str) -> bool {
+        self.is_image(file_name)
+            || (self.config.video.is_some() && tenrankai_video::is_video_path(file_name))
     }
 
     /// Returns the source directory path for filesystem-based sources.
@@ -432,7 +446,11 @@ impl Gallery {
         // Also cancel any running pre-generation tasks
         self.pregeneration_token.lock().await.cancel();
 
-        // Wait for active blocking tasks to complete
+        if let Some(task) = self.video_task.lock().await.take() {
+            let _ = task.await;
+        }
+
+        // Wait for blocking image tasks and queue-dispatched video jobs to complete
         let mut wait_count = 0;
         loop {
             let active = self
@@ -444,24 +462,24 @@ impl Gallery {
             wait_count += 1;
             if wait_count == 1 {
                 info!(
-                    "Waiting for {} active image processing task(s) to complete...",
+                    "Waiting for {} active media processing task(s) to complete...",
                     active
                 );
             } else if wait_count % 20 == 0 {
                 // Log every 2 seconds
                 info!(
-                    "Still waiting for {} active image processing task(s)...",
+                    "Still waiting for {} active media processing task(s)...",
                     active
                 );
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
         if wait_count > 0 {
-            info!("All image processing tasks completed");
+            info!("All media processing tasks completed");
         }
     }
 
-    /// Create a guard that tracks an active blocking task.
+    /// Create a guard that tracks an active image or video processing task.
     /// The counter is incremented when created and decremented when dropped.
     pub(crate) fn track_blocking_task(&self) -> BlockingTaskGuard {
         self.active_blocking_tasks

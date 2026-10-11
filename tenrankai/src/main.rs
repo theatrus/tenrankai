@@ -70,6 +70,10 @@ enum Commands {
     #[command(subcommand)]
     Cache(CacheCommands),
 
+    /// Check video prerequisites, inspect clips, or prepare playback files
+    #[command(subcommand)]
+    Video(commands::video::VideoCommands),
+
     /// Astrometry maintenance (regenerate persisted overlays)
     #[command(subcommand)]
     Astro(AstroCommands),
@@ -420,6 +424,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::User(user_cmd) => handle_user_command(user_cmd).await,
         Commands::Cache(cache_cmd) => handle_cache_command(cache_cmd, config).await,
+        Commands::Video(command) => commands::video::handle(command).await,
         #[cfg(feature = "avif")]
         Commands::AvifDebug {
             image_path,
@@ -1040,8 +1045,6 @@ async fn run_server(
         config_storage_url
     );
 
-    // Track all galleries for shutdown across all sites
-    let mut galleries_for_shutdown: Vec<Arc<Gallery>> = Vec::new();
     // Track all galleries for background analysis (combined from all sites)
     let mut all_galleries_map: HashMap<String, Arc<Gallery>> = HashMap::new();
 
@@ -1131,7 +1134,7 @@ async fn run_server(
                 );
             }
 
-            if metadata_empty || pregenerate {
+            if metadata_empty || pregenerate || gallery_config.video.is_some() {
                 if pregenerate {
                     info!(
                         "Cache pre-generation enabled for gallery '{}' (site '{}')",
@@ -1167,8 +1170,6 @@ async fn run_server(
                 gallery_name, site_name
             );
             Gallery::start_periodic_cache_save(gallery.clone(), 5);
-
-            galleries_for_shutdown.push(gallery.clone());
             all_galleries_map.insert(format!("{}:{}", site_name, gallery_name), gallery.clone());
         }
 
@@ -1240,7 +1241,7 @@ async fn run_server(
 
         let worker = Arc::new(CacheQueueWorker::new(
             queue.clone(),
-            (*galleries_arc).clone(),
+            site_manager.clone(),
             cache_queue_shutdown_token.clone(),
             concurrency,
         ));
@@ -1277,7 +1278,7 @@ async fn run_server(
     #[cfg(unix)]
     let reload_token = tokio_util::sync::CancellationToken::new();
     #[cfg(unix)]
-    {
+    let reload_task = {
         let (storage, storage_url) = config_storage_for_reload;
         let config_reloader = Arc::new(
             ConfigReloader::new(storage, config.app.cookie_secret.clone(), storage_url)
@@ -1337,8 +1338,8 @@ async fn run_server(
                     }
                 }
             }
-        });
-    }
+        })
+    };
 
     let addr = SocketAddr::from((host.parse::<std::net::IpAddr>()?, port));
     info!("Server listening on {}", addr);
@@ -1371,20 +1372,27 @@ async fn run_server(
 
     // Cancel SIGHUP handler
     #[cfg(unix)]
-    reload_token.cancel();
+    {
+        reload_token.cancel();
+        // An in-flight reload must finish before enumerating live galleries.
+        let _ = reload_task.await;
+    }
 
-    for gallery in galleries_for_shutdown {
-        // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
-        gallery.shutdown().await;
+    // Query the live sites: configuration reloads replace gallery instances.
+    for site in site_manager.sites().await {
+        for gallery in site.galleries().values() {
+            // Trigger shutdown of background tasks (cancels both shutdown_token and pregeneration_token)
+            gallery.shutdown().await;
 
-        // Save caches
-        if let Err(e) = gallery.save_caches().await {
-            tracing::error!("Failed to save metadata cache on shutdown: {}", e);
-        } else {
-            info!(
-                "Metadata cache saved successfully for gallery '{}'",
-                gallery.get_config().name
-            );
+            // Save caches
+            if let Err(e) = gallery.save_caches().await {
+                tracing::error!("Failed to save metadata cache on shutdown: {}", e);
+            } else {
+                info!(
+                    "Metadata cache saved successfully for gallery '{}'",
+                    gallery.get_config().name
+                );
+            }
         }
     }
 

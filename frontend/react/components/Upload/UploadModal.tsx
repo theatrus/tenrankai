@@ -6,12 +6,15 @@ import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
 
 interface UploadModalProps {
+  videoEnabled?: boolean;
+  maxVideoBytes?: number;
   galleryName: string;
   folderPath: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'm4v', 'webm', 'mkv'];
 const ALLOWED_FILE_TYPES = [
   // Images
   '.jpg', '.jpeg', '.png', '.webp', '.avif', '.heic', '.heif', '.gif',
@@ -23,7 +26,7 @@ const ALLOWED_FILE_TYPES = [
 
 // Primary image extensions that should upload first
 const PRIMARY_EXTENSIONS = new Set([
-  'jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif', 'gif',
+  'jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif', 'gif', ...VIDEO_EXTENSIONS,
 ]);
 
 // Sidecar/RAW extensions that require a primary image
@@ -41,7 +44,8 @@ function getExtension(filename: string): string {
 // Get base name without extension
 function getBaseName(filename: string): string {
   const lastDot = filename.lastIndexOf('.');
-  return lastDot > 0 ? filename.substring(0, lastDot) : filename;
+  const stem = lastDot > 0 ? filename.substring(0, lastDot) : filename;
+  return ['md', 'xmp'].includes(getExtension(filename)) && VIDEO_EXTENSIONS.includes(getExtension(stem)) ? getBaseName(stem) : stem;
 }
 
 // Check if file is a primary image
@@ -59,6 +63,8 @@ const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 export const UploadModal: React.FC<UploadModalProps> = ({
   galleryName,
   folderPath,
+  videoEnabled = false,
+  maxVideoBytes = 512 * 1024 * 1024,
   onClose,
   onSuccess,
 }) => {
@@ -74,8 +80,17 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     const instance = new Uppy({
       id: 'gallery-uploader',
       restrictions: {
-        maxFileSize: MAX_FILE_SIZE,
-        allowedFileTypes: ALLOWED_FILE_TYPES,
+        maxFileSize: videoEnabled ? Math.max(MAX_FILE_SIZE, maxVideoBytes) : MAX_FILE_SIZE,
+        allowedFileTypes: videoEnabled ? [...ALLOWED_FILE_TYPES, ...VIDEO_EXTENSIONS.map(ext => '.' + ext)] : ALLOWED_FILE_TYPES,
+      },
+      onBeforeFileAdded: (file) => {
+        const isVideo = VIDEO_EXTENSIONS.includes(getExtension(file.name || ''));
+        const maximum = isVideo ? maxVideoBytes : MAX_FILE_SIZE;
+        if ((file.size || 0) > maximum) {
+          setError(`The file exceeds the ${Math.round(maximum / 1024 / 1024)} MiB limit.`);
+          return false;
+        }
+        return file;
       },
       autoProceed: false,
     });
@@ -102,7 +117,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     });
 
     return instance;
-  }, [galleryName, folderPath]);
+  }, [galleryName, folderPath, videoEnabled, maxVideoBytes]);
 
   useEffect(() => {
     if (dashboardRef.current) {
@@ -206,7 +221,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       >
         <div className="modal-header" style={{ marginBottom: '1rem' }}>
           <h3 style={{ margin: 0 }}>
-            Upload Images
+            {videoEnabled ? 'Upload Photos and Videos' : 'Upload Images'}
             {folderPath && (
               <span style={{ fontWeight: 'normal', fontSize: '0.9em', opacity: 0.7 }}>
                 {' '}to /{folderPath}

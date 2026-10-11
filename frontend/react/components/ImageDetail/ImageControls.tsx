@@ -15,9 +15,10 @@ export function ImageControls({ image, permissions, onEditClick, shareUrl, baseU
   const imageBaseUrl = image.medium_url.replace(/\/medium$/, '');
   const largeUrl = `${imageBaseUrl}/large`;
 
+  const isVideo = image.media_kind === 'video';
   const canDownloadOriginal = permissions.can_download_original;
-  const canDownloadLarge = permissions.can_download_large || canDownloadOriginal;
-  const canDownloadMedium = permissions.can_download_medium || canDownloadLarge;
+  const canDownloadLarge = !isVideo && (permissions.can_download_large || canDownloadOriginal);
+  const canDownloadMedium = canDownloadOriginal || (isVideo ? !!image.video?.playback_url && permissions.can_download_medium : permissions.can_download_medium || canDownloadLarge);
 
   // Determine best available download option
   let downloadUrl: string;
@@ -29,8 +30,8 @@ export function ImageControls({ image, permissions, onEditClick, shareUrl, baseU
     downloadUrl = largeUrl;
     downloadLabel = 'Download Large';
   } else {
-    downloadUrl = `${imageBaseUrl}/medium`;
-    downloadLabel = 'Download';
+    downloadUrl = isVideo ? image.video!.playback_url! : `${imageBaseUrl}/medium`;
+    downloadLabel = isVideo ? 'Download Video' : 'Download';
   }
 
   // Show edit button when user can edit and there's no title/description

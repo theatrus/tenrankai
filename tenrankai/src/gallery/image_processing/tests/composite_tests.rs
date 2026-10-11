@@ -388,6 +388,8 @@ async fn test_composite_with_avif_images() {
         .expect("Failed to save AVIF");
 
         images.push(crate::gallery::GalleryItem {
+            media_kind: "image",
+            video: None,
             name: format!("test_{:03}", i),
             display_name: Some(format!("Test {}", i)),
             description: None,

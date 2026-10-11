@@ -118,6 +118,10 @@ impl FilesystemStorage {
 
 #[async_trait]
 impl Storage for FilesystemStorage {
+    async fn copy(&self, source: &str, destination: &str) -> Result<(), StorageError> {
+        self.write_file(destination, &self.resolve_path(source)?)
+            .await
+    }
     async fn read(&self, path: &str) -> Result<Bytes, StorageError> {
         let full_path = self.resolve_path(path)?;
         match tokio::fs::read(&full_path).await {
@@ -298,6 +302,33 @@ impl Storage for FilesystemStorage {
         let stream = ReaderStream::new(file).map(|result| result.map_err(StorageError::Io));
 
         Ok(Box::pin(stream))
+    }
+
+    async fn read_range_stream(
+        &self,
+        path: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<ByteStream, StorageError> {
+        let mut file = tokio::fs::File::open(self.resolve_path(path)?).await?;
+        file.seek(std::io::SeekFrom::Start(offset)).await?;
+        let stream =
+            ReaderStream::new(file.take(length)).map(|result| result.map_err(StorageError::Io));
+        Ok(Box::pin(stream))
+    }
+
+    async fn write_file(&self, path: &str, source: &std::path::Path) -> Result<(), StorageError> {
+        let destination = self.resolve_path(path)?;
+        let parent = destination
+            .parent()
+            .ok_or_else(|| StorageError::Other("missing destination parent".into()))?;
+        tokio::fs::create_dir_all(parent).await?;
+        let staging = tempfile::NamedTempFile::new_in(parent)?;
+        tokio::fs::copy(source, staging.path()).await?;
+        staging
+            .persist(&destination)
+            .map_err(|error| StorageError::Io(error.error))?;
+        Ok(())
     }
 
     async fn read_range(

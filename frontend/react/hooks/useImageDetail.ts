@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { ImageDetailData, ImageUserMetadata } from '../types/index.ts';
 import { ImageDetailApiClient } from '../api/image-detail.ts';
 
@@ -21,22 +21,24 @@ export function useImageDetail({ galleryName, initialData }: UseImageDetailOptio
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const apiClient = new ImageDetailApiClient();
+  const apiClient = useMemo(() => new ImageDetailApiClient(), []);
+  const requestId = useRef(0);
 
-  const loadImage = async (imagePath: string) => {
+  const loadImage = useCallback(async (imagePath: string) => {
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     
     try {
       const imageData = await apiClient.fetchImageDetail(galleryName, imagePath);
-      setData(imageData);
+      if (id === requestId.current) setData(imageData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load image');
+      if (id === requestId.current) setError(err instanceof Error ? err.message : 'Failed to load image');
       console.error('Failed to load image detail:', err);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
-  };
+  }, [apiClient, galleryName]);
 
   const refetch = async () => {
     if (data?.image.path) {

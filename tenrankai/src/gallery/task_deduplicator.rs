@@ -82,7 +82,7 @@ impl TaskHandle {
 
     /// Mark the task as complete and notify waiters (for executors)
     /// This consumes the handle to ensure it can only be called once
-    pub async fn complete(self) {
+    pub async fn complete(mut self) {
         if self.is_executor {
             // Remove the task from pending and notify all waiters
             let mut tasks = self.deduplicator.pending_tasks.write().await;
@@ -90,6 +90,9 @@ impl TaskHandle {
                 // Notify all tasks waiting on this key
                 notify.notify_waiters();
             }
+            // Completion already removed this registration. Drop must not
+            // schedule cleanup that could remove a newer executor for the key.
+            self.is_executor = false;
         }
     }
 }
@@ -120,6 +123,28 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tokio::time::sleep;
+
+    #[tokio::test]
+    async fn completed_handle_does_not_remove_a_new_executor() {
+        let deduplicator = TaskDeduplicator::new();
+        let first = deduplicator.should_execute("clip.mov".into()).await;
+        first.complete().await;
+
+        let second = deduplicator.should_execute("clip.mov".into()).await;
+        assert!(second.is_executor());
+        // Allow any cleanup scheduled by the completed handle to run after the
+        // replacement registration has been created.
+        tokio::task::yield_now().await;
+        assert_eq!(deduplicator.pending_count().await, 1);
+        assert!(
+            !deduplicator
+                .should_execute("clip.mov".into())
+                .await
+                .is_executor()
+        );
+        second.complete().await;
+        assert_eq!(deduplicator.pending_count().await, 0);
+    }
 
     #[tokio::test]
     async fn test_single_task_execution() {
