@@ -277,7 +277,9 @@ mod tests {
         let source = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
         std::fs::write(source.path().join("clip.mov"), b"original").unwrap();
-        std::fs::File::open(source.path().join("clip.mov"))
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(source.path().join("clip.mov"))
             .unwrap()
             .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1))
             .unwrap();

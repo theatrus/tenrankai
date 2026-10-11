@@ -474,7 +474,9 @@ mod tests {
                 .status(),
             StatusCode::ACCEPTED
         );
-        std::fs::File::open(source.path().join("clip.mov"))
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(source.path().join("clip.mov"))
             .unwrap()
             .set_modified(std::time::UNIX_EPOCH - std::time::Duration::from_secs(1))
             .unwrap();

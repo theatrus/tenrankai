@@ -566,7 +566,9 @@ mod tests {
         let mut gallery = gallery(source.path(), cache.path(), VideoSettings::default());
         gallery.image_processing_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
         std::fs::write(source.path().join("clip.mov"), b"original").unwrap();
-        std::fs::File::open(source.path().join("clip.mov"))
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(source.path().join("clip.mov"))
             .unwrap()
             .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1))
             .unwrap();
