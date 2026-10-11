@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.94-bookworm AS builder
+FROM rust:1.97.1-bookworm AS builder
 
 # Install build dependencies for image processing libraries (AVIF and HEIF)
 RUN apt-get update && apt-get install -y \
@@ -30,7 +30,7 @@ RUN git clone --depth 1 --branch v1.23.4 https://github.com/strukturag/libheif.g
     && rm -rf /tmp/libheif
 
 # Install Node.js for frontend build
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs
 
 # Set working directory
@@ -46,6 +46,7 @@ COPY tenrankai-image/Cargo.toml ./tenrankai-image/
 COPY tenrankai-metadata/Cargo.toml ./tenrankai-metadata/
 COPY tenrankai-storage/Cargo.toml ./tenrankai-storage/
 COPY tenrankai-users/Cargo.toml ./tenrankai-users/
+COPY tenrankai-video/Cargo.toml ./tenrankai-video/
 
 # Copy all Rust source files
 COPY tenrankai/src ./tenrankai/src
@@ -56,6 +57,7 @@ COPY tenrankai-image/src ./tenrankai-image/src
 COPY tenrankai-metadata/src ./tenrankai-metadata/src
 COPY tenrankai-storage/src ./tenrankai-storage/src
 COPY tenrankai-users/src ./tenrankai-users/src
+COPY tenrankai-video/src ./tenrankai-video/src
 
 # Copy frontend source and config
 COPY frontend ./frontend
