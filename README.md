@@ -50,7 +50,7 @@ The name "Tenrankai" (展覧会) is Japanese for "exhibition" or "gallery show",
 ### Prerequisites
 
 - Rust 1.94 or later (automatically managed by rust-toolchain.toml)
-- Node.js and npm (for building the React/TypeScript frontend assets)
+- Node.js 24.15+ and npm (for building the React/TypeScript frontend assets; Node.js 22.22.2+ is also supported)
 - DejaVuSans.ttf font file (required for watermarking)
 
 ### Building from Source

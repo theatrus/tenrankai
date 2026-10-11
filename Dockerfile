@@ -30,7 +30,7 @@ RUN git clone --depth 1 --branch v1.23.4 https://github.com/strukturag/libheif.g
     && rm -rf /tmp/libheif
 
 # Install Node.js for frontend build
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs
 
 # Set working directory
