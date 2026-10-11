@@ -16,7 +16,7 @@ describe('VideoDisplay', () => {
 
   it('provides native controls and refreshes failed playback', () => {
     const refresh = vi.fn();
-    const image = createImageInfo({ media_kind: 'video', title: 'Camera clip', video: {
+    const image = createImageInfo({ media_kind: 'video', title: 'Camera clip', dimensions: [1080, 1920], video: {
       state: 'ready', playback_url: '/g/_video/clip.mov', poster_url: '/g/_image/clip.mov/medium',
     } });
     render(<VideoDisplay image={image} onRefresh={refresh} />);
@@ -24,6 +24,8 @@ describe('VideoDisplay', () => {
     expect(player).toHaveAttribute('controls');
     expect(player).toHaveAttribute('playsinline');
     expect(player).toHaveAttribute('preload', 'metadata');
+    expect(player).toHaveAttribute('width', '1080');
+    expect(player).toHaveAttribute('height', '1920');
     fireEvent.error(player);
     expect(screen.getByRole('alert')).toHaveTextContent('could not be played');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
