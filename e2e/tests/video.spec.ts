@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +6,20 @@ import { bootstrapSession } from './auth';
 import { openDetailsTray, shot } from './helpers';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+async function expectPlayerFits(page: Page) {
+  // Check the actual player frame, including controls, rather than only the
+  // decoded stream: object-fit can hide a portrait clip in a landscape frame.
+  await expect.poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => {
+    const frame = video.getBoundingClientRect();
+    const area = video.closest('.phone-stage, .image-container-wrapper')!.getBoundingClientRect();
+    return video.videoWidth > 0 && video.videoHeight > 0
+      && frame.width > 0 && frame.height > 0
+      && Math.abs(frame.width / frame.height - video.videoWidth / video.videoHeight) < 0.01
+      && frame.left >= area.left - 1 && frame.right <= area.right + 1
+      && frame.top >= area.top - 1 && frame.bottom <= area.bottom + 1;
+  })).toBe(true);
+}
 
 test.describe('short video gallery', () => {
   test('shows photos and videos separately and filters by media type', async ({ page }) => {
@@ -35,6 +49,7 @@ test.describe('short video gallery', () => {
     await expect(player).toHaveAttribute('playsinline', '');
     await expect(player).toHaveAttribute('preload', 'metadata');
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(1);
+    await expectPlayerFits(page);
     await player.evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
     await player.evaluate((video: HTMLVideoElement) => { video.pause(); video.currentTime = 2; });
@@ -79,7 +94,7 @@ test.describe('short video gallery', () => {
     expect(zip.includes(Buffer.from('hidden.mov'))).toBe(false);
   });
 
-  test('handles portrait and failed clips without image controls', async ({ page }) => {
+  test('fits portrait clips to the stage across resizes and handles failed clips', async ({ page, isMobile }) => {
     test.setTimeout(90_000);
     await page.goto('/v/detail/clips/portrait.mkv');
     await expect(page.locator('video')).toBeVisible({ timeout: 60_000 });
@@ -88,6 +103,18 @@ test.describe('short video gallery', () => {
       if (video.readyState >= 1) done(); else video.addEventListener('loadedmetadata', done, { once: true });
     }));
     expect(dimensions[1]).toBeGreaterThan(dimensions[0]);
+    await expectPlayerFits(page);
+    await shot(page, 'video-portrait-player');
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize(isMobile
+      ? { width: viewport.height, height: viewport.width }
+      : { width: 900, height: 700 });
+    await expectPlayerFits(page);
+    await page.setViewportSize(viewport);
+    if (isMobile) {
+      await openDetailsTray(page);
+      await expectPlayerFits(page);
+    }
     await page.goto('/v/detail/clips/broken.mov');
     await expect(page.getByText('This video could not be prepared for playback.')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('video')).toHaveCount(0);

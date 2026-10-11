@@ -22,6 +22,8 @@ export function VideoDisplay({ image, onRefresh }: { image: ImageInfo; onRefresh
           key={`${image.path}:${video.playback_url}:${playbackAttempt}`}
           src={video.playback_url}
           poster={video.poster_url || image.medium_url}
+          width={image.dimensions[0] || undefined}
+          height={image.dimensions[1] || undefined}
           controls
           playsInline
           preload="metadata"
