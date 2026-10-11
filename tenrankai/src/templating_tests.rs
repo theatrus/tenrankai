@@ -115,6 +115,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn real_video_preview_templates_handle_ready_fallback_and_escaped_metadata() {
+        let templates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../templates");
+        let engine = TemplateEngine::new(vec![Arc::new(FilesystemStorage::new(templates))]);
+        for (kind, allowed, playback, base_url, embeds) in [
+            (
+                "video",
+                true,
+                Some("/v/_video/clip.mov"),
+                "https://example.com",
+                true,
+            ),
+            (
+                "video",
+                false,
+                Some("/v/_video/clip.mov"),
+                "https://example.com",
+                false,
+            ),
+            ("video", true, None, "https://example.com", false),
+            ("image", true, None, "https://example.com", false),
+            (
+                "video",
+                true,
+                Some("/v/_video/clip.mov"),
+                "http://example.com",
+                true,
+            ),
+        ] {
+            let html = engine
+                .render_template(
+                    "modules/image_detail.html.liquid",
+                    liquid::object!({
+                        "gallery_url": "/v",
+                        "allow_video_embedding": allowed,
+                        "video_dimensions": [96, 160],
+                        "image": {
+                            "name": "A \"portrait\" & clip",
+                            "description": "A \"quoted\" description & more",
+                            "media_kind": kind,
+                            "path": "clip.mov",
+                            "gallery_url": "/v/_image/clip.mov/gallery",
+                            "medium_url": "/v/_image/clip.mov/medium",
+                            "dimensions": [1920, 1080],
+                            "video": { "playback_url": playback },
+                            "user_metadata": {},
+                        },
+                        "image_detail_json": "{}",
+                        "base_url": base_url,
+                        "is_authenticated": false,
+                        "current_user": "",
+                    }),
+                )
+                .await
+                .unwrap();
+            assert!(
+                html.contains(r#"property="og:title" content="A &quot;portrait&quot; &amp; clip""#)
+            );
+            assert!(html.contains(&format!(
+                r#"property="og:image" content="{base_url}/v/_image/clip.mov/gallery""#
+            )));
+            assert!(html.contains(&format!(
+                r#"property="og:url" content="{base_url}/v/detail/clip.mov""#
+            )));
+            assert_eq!(html.contains("property=\"og:video\""), embeds);
+            assert_eq!(
+                html.contains("property=\"og:video:secure_url\""),
+                embeds && base_url.starts_with("https://")
+            );
+            if embeds {
+                assert!(html.contains(&format!(
+                    r#"property="og:video" content="{base_url}/v/_video/clip.mov""#
+                )));
+                assert!(html.contains(r#"property="og:video:type" content="video/mp4""#));
+                assert!(html.contains(r#"property="og:video:width" content="96""#));
+                assert!(html.contains(r#"property="og:video:height" content="160""#));
+            } else {
+                assert!(!html.contains("property=\"og:video:"));
+            }
+            if kind == "video" {
+                assert!(html.contains(r#"property="og:type" content="video.other""#));
+                assert!(!html.contains("property=\"og:image:width\""));
+                assert_eq!(
+                    html.contains(r#"property="og:description" content="Click to play"#),
+                    !embeds
+                );
+                assert_eq!(
+                    html.contains(r#"name="twitter:description" content="Click to play"#),
+                    !embeds
+                );
+            } else {
+                assert!(html.contains(r#"property="og:type" content="article""#));
+                assert!(!html.contains("Click to play"));
+            }
+            assert!(html.contains("A &quot;quoted&quot; description &amp; more"));
+        }
+    }
+
+    #[tokio::test]
     async fn test_render_index_template() {
         let (_temp_dir, engine) = setup_test_templates().await;
 

@@ -6,21 +6,21 @@
     <meta name="format-detection" content="telephone=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>{% if page_title %}{{ page_title }} - {% endif %}{{ site_title }}</title>
+    <title>{% if page_title %}{{ page_title | escape }} - {% endif %}{{ site_title | escape }}</title>
     
     {% if meta_description %}
-    <meta name="description" content="{{ meta_description }}">
+    <meta name="description" content="{{ meta_description | escape }}">
     {% endif %}
     
     {% comment %} Open Graph meta tags {% endcomment %}
     {% if og_title %}
-    <meta property="og:title" content="{{ og_title }}">
+    <meta property="og:title" content="{{ og_title | escape }}">
     {% endif %}
     {% if og_description %}
-    <meta property="og:description" content="{{ og_description }}">
+    <meta property="og:description" content="{{ og_description | escape }}">
     {% endif %}
     {% if og_image %}
-    <meta property="og:image" content="{{ og_image }}">
+    <meta property="og:image" content="{{ og_image | escape }}">
     {% endif %}
     {% if og_image_width %}
     <meta property="og:image:width" content="{{ og_image_width }}">
@@ -28,11 +28,24 @@
     {% if og_image_height %}
     <meta property="og:image:height" content="{{ og_image_height }}">
     {% endif %}
+    {% if og_video %}
+    <meta property="og:video" content="{{ og_video | escape }}">
+    {% if og_video_secure_url %}
+    <meta property="og:video:secure_url" content="{{ og_video_secure_url | escape }}">
+    {% endif %}
+    <meta property="og:video:type" content="{{ og_video_type | escape }}">
+    {% if og_video_width %}
+    <meta property="og:video:width" content="{{ og_video_width }}">
+    {% endif %}
+    {% if og_video_height %}
+    <meta property="og:video:height" content="{{ og_video_height }}">
+    {% endif %}
+    {% endif %}
     <meta property="og:type" content="{% if og_type %}{{ og_type }}{% else %}website{% endif %}">
     {% if og_url %}
-    <meta property="og:url" content="{{ og_url }}">
+    <meta property="og:url" content="{{ og_url | escape }}">
     {% endif %}
-    <meta property="og:site_name" content="{{ site_title }}">
+    <meta property="og:site_name" content="{{ site_title | escape }}">
     
     {% comment %} Article meta tags (posts) {% endcomment %}
     {% if og_type == "article" %}
@@ -58,13 +71,13 @@
     {% comment %} Twitter Card meta tags {% endcomment %}
     <meta name="twitter:card" content="{% if twitter_card_type %}{{ twitter_card_type }}{% else %}summary_large_image{% endif %}">
     {% if twitter_title %}
-    <meta name="twitter:title" content="{{ twitter_title }}">
+    <meta name="twitter:title" content="{{ twitter_title | escape }}">
     {% endif %}
     {% if twitter_description %}
-    <meta name="twitter:description" content="{{ twitter_description }}">
+    <meta name="twitter:description" content="{{ twitter_description | escape }}">
     {% endif %}
     {% if twitter_image %}
-    <meta name="twitter:image" content="{{ twitter_image }}">
+    <meta name="twitter:image" content="{{ twitter_image | escape }}">
     {% endif %}
 
     {% if rss_feed_url %}

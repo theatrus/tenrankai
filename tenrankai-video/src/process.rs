@@ -666,7 +666,6 @@ mod tests {
 
     #[cfg(unix)]
     async fn sleeper(scratch: &TempDir) -> Command {
-        use std::os::unix::fs::PermissionsExt;
         let executable = scratch.path().join("sleep-tool");
         tokio::fs::write(
             &executable,
@@ -674,10 +673,11 @@ mod tests {
         )
         .await
         .unwrap();
-        tokio::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
-            .await
-            .unwrap();
-        Command::new(executable)
+        // Read the freshly written fixture through the shell instead of
+        // executing the temporary file, which can race filesystem write locks.
+        let mut command = Command::new("/bin/sh");
+        command.arg(executable);
+        command
     }
 
     #[cfg(unix)]
@@ -714,10 +714,8 @@ mod tests {
             }
             panic!("test process did not start");
         });
-        assert!(matches!(
-            processor.run(&mut command, 10, &token).await,
-            Err(VideoError::Cancelled)
-        ));
+        let result = processor.run(&mut command, 10, &token).await;
+        assert!(matches!(result, Err(VideoError::Cancelled)), "{result:?}");
         trigger.await.unwrap();
         assert_reaped(&scratch).await;
     }
@@ -728,12 +726,10 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         let processor = VideoProcessor::new(VideoTools::default()).unwrap();
         let mut command = sleeper(&scratch).await;
-        assert!(matches!(
-            processor
-                .run(&mut command, 1, &CancellationToken::new())
-                .await,
-            Err(VideoError::Timeout)
-        ));
+        let result = processor
+            .run(&mut command, 1, &CancellationToken::new())
+            .await;
+        assert!(matches!(result, Err(VideoError::Timeout)), "{result:?}");
         assert_reaped(&scratch).await;
     }
 }

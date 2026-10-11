@@ -113,6 +113,7 @@ export interface VideoSettings {
 }
 
 export interface SiteGalleryInfo {
+  allow_video_embedding?: boolean;
   video?: VideoSettings | null;
   name: string;
   url_prefix: string;
@@ -130,6 +131,7 @@ export interface SiteGalleryListResponse {
 }
 
 export interface CreateGalleryRequest {
+  allow_video_embedding?: boolean;
   enable_video?: boolean;
   video?: VideoSettings | null;
   name: string;

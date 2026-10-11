@@ -1148,6 +1148,7 @@ pub async fn list_site_galleries(
         if let Ok(Some(config)) = config_storage.get_gallery_full_config(&site, &name).await {
             let grid_mode_str = config.grid_mode.as_str();
             let mut info = SiteGalleryInfo {
+                allow_video_embedding: config.allow_video_embedding,
                 video: config.video.clone(),
                 name,
                 url_prefix: config.url_prefix,
@@ -1194,6 +1195,7 @@ pub async fn get_site_gallery(
     let grid_mode_str = config.grid_mode.as_str();
 
     let mut info = SiteGalleryInfo {
+        allow_video_embedding: config.allow_video_embedding,
         video: config.video.clone(),
         name,
         url_prefix: config.url_prefix,
@@ -1395,6 +1397,9 @@ async fn save_gallery_config(
     let stored_config = if let Some(existing) = existing_config {
         // Update only the fields exposed via the API, preserve everything else
         tenrankai_config_storage::StoredGalleryConfig {
+            allow_video_embedding: request
+                .allow_video_embedding
+                .unwrap_or(existing.allow_video_embedding),
             video: video_settings.clone(),
             name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
@@ -1432,6 +1437,9 @@ async fn save_gallery_config(
     } else if let Some(proto) = prototype_config {
         // New gallery - use prototype config as template
         tenrankai_config_storage::StoredGalleryConfig {
+            allow_video_embedding: request
+                .allow_video_embedding
+                .unwrap_or(proto.allow_video_embedding),
             video: video_settings.clone(),
             name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
@@ -1469,6 +1477,7 @@ async fn save_gallery_config(
     } else {
         // New gallery - use hardcoded defaults (no prototype available)
         tenrankai_config_storage::StoredGalleryConfig {
+            allow_video_embedding: request.allow_video_embedding.unwrap_or(true),
             video: video_settings.clone(),
             name: name.to_string(),
             url_prefix: request.url_prefix.clone(),
@@ -1524,6 +1533,7 @@ async fn save_gallery_config(
     let response_grid_mode = stored_config.grid_mode.as_str();
 
     let mut info = SiteGalleryInfo {
+        allow_video_embedding: stored_config.allow_video_embedding,
         video: stored_config.video.clone(),
         name: name.to_string(),
         url_prefix: request.url_prefix,

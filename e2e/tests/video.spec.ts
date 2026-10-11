@@ -62,6 +62,86 @@ test.describe('short video gallery', () => {
     await shot(page, 'video-player');
   });
 
+  test('advertises prepared video and portrait dimensions to link preview crawlers by default', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    for (const filename of ['scene.mov', 'portrait.mkv']) {
+      await expect.poll(async () => {
+        const response = await request.get(`/api/gallery/video/image/clips/${filename}`);
+        return response.ok() ? (await response.json()).image.video?.state : response.status();
+      }, { timeout: 60_000 }).toBe('ready');
+      const detailUrl = `/v/detail/clips/${filename}`;
+      // Crawlers see these tags in the server-rendered HTML without running JS.
+      const response = await request.get(detailUrl);
+      expect(await response.text()).toContain('property="og:video"');
+      await page.goto(detailUrl);
+      await expect(page.locator('meta[property="og:type"]')).toHaveAttribute('content', 'video.other');
+      await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', `http://localhost:4319${detailUrl}`);
+      await expect(page.locator('meta[property="og:video:type"]')).toHaveAttribute('content', 'video/mp4');
+      await expect(page.locator('meta[property="og:video:secure_url"]')).toHaveCount(0);
+      const streamUrl = await page.locator('meta[property="og:video"]').getAttribute('content');
+      expect(streamUrl).toBe(`http://localhost:4319/v/_video/clips/${filename}`);
+      const stream = await request.get(streamUrl!, { headers: { Range: 'bytes=0-31' } });
+      expect(stream.status()).toBe(206);
+      expect(stream.headers()['content-type']).toBe('video/mp4');
+      const posterUrl = await page.locator('meta[property="og:image"]').getAttribute('content');
+      expect((await request.get(posterUrl!)).status()).toBe(200);
+      await expect.poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(1);
+      const dimensions = await page.locator('video').evaluate((video: HTMLVideoElement) => [video.videoWidth, video.videoHeight]);
+      await expect(page.locator('meta[property="og:video:width"]')).toHaveAttribute('content', String(dimensions[0]));
+      await expect(page.locator('meta[property="og:video:height"]')).toHaveAttribute('content', String(dimensions[1]));
+    }
+    for (const filename of ['scene.png', 'broken.mov']) {
+      await page.goto(`/v/detail/clips/${filename}`);
+      await expect(page.locator('meta[property^="og:video"]')).toHaveCount(0);
+    }
+    for (const url of ['/v/detail/clips/hidden.mov', '/v/detail/private/secret.mov']) {
+      const response = await request.get(url, { maxRedirects: 0 });
+      expect(response.status()).not.toBe(200);
+      expect(await response.text()).not.toContain('property="og:video');
+    }
+  });
+
+  test('saves a gallery opt-out and keeps click-to-play previews without preparing the video again', async ({ page, context, request }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await bootstrapSession(context);
+    const settingsUrl = '/_admin/api/sites/default/galleries/video';
+    const original = await (await context.request.get(settingsUrl)).json();
+    expect(original.allow_video_embedding).toBe(true);
+    const etag = (await request.head('/v/_video/clips/scene.mov')).headers().etag;
+    expect(etag).toBeTruthy();
+    await page.goto('/_admin/galleries/video');
+    const embedding = page.getByRole('checkbox', { name: 'Allow video embeds in link previews' });
+    await expect(embedding).toBeChecked();
+    try {
+      await embedding.uncheck();
+      await page.getByRole('button', { name: 'Save Settings' }).click();
+      await expect(page.getByText('Gallery settings saved successfully')).toBeVisible();
+      await page.reload();
+      await expect(embedding).not.toBeChecked();
+      expect((await (await context.request.get(settingsUrl)).json()).allow_video_embedding).toBe(false);
+      // An older API client omitting the new setting must preserve the opt-out.
+      const { allow_video_embedding: _omitted, ...oldClientSettings } = original;
+      expect((await context.request.put(settingsUrl, { data: oldClientSettings })).ok()).toBe(true);
+      expect((await (await context.request.get(settingsUrl)).json()).allow_video_embedding).toBe(false);
+      await page.goto('/v/detail/clips/scene.mov');
+      await expect(page.locator('meta[property^="og:video"]')).toHaveCount(0);
+      await expect(page.locator('meta[property="og:description"]')).toHaveAttribute('content', /^Click to play/);
+      await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute('content', /^Click to play/);
+      await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', 'http://localhost:4319/v/detail/clips/scene.mov');
+      const posterUrl = await page.locator('meta[property="og:image"]').getAttribute('content');
+      expect((await request.get(posterUrl!)).status()).toBe(200);
+      await expect(page.locator('video')).toBeVisible();
+      const playback = await request.head('/v/_video/clips/scene.mov');
+      expect(playback.status()).toBe(200);
+      expect(playback.headers().etag).toBe(etag);
+    } finally {
+      expect((await context.request.put(settingsUrl, { data: original })).ok()).toBe(true);
+    }
+    await page.goto('/v/detail/clips/scene.mov');
+    await expect(page.locator('meta[property="og:video"]')).toHaveCount(1);
+  });
+
   test('toggles playback with Space without scrolling or overriding focused controls', async ({ page, context }) => {
     test.setTimeout(90_000);
     await bootstrapSession(context);
