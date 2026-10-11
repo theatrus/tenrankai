@@ -62,6 +62,42 @@ test.describe('short video gallery', () => {
     await shot(page, 'video-player');
   });
 
+  test('toggles playback with Space without scrolling or overriding focused controls', async ({ page, context }) => {
+    test.setTimeout(90_000);
+    await bootstrapSession(context);
+    await page.goto('/v/detail/clips/scene.mov');
+    const player = page.locator('video');
+    await expect(player).toBeVisible({ timeout: 60_000 });
+    await player.evaluate((video: HTMLVideoElement) => { video.muted = true; });
+    const scrollY = await page.evaluate(() => window.scrollY);
+    await page.keyboard.press('Space');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(false);
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
+    await page.keyboard.down('Space');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+    await page.keyboard.down('Space');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+    await page.keyboard.up('Space');
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollY);
+    await player.focus();
+    await page.keyboard.press('Space');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(false);
+    await page.keyboard.press('Space');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+    // A focused gallery button retains its usual Space activation behavior.
+    await openDetailsTray(page);
+    const button = page.getByRole('button', { name: '✓ Pick', exact: true });
+    await button.focus();
+    await page.keyboard.press('Space');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+    await page.getByRole('button', { name: 'Add a comment...' }).click();
+    const comment = page.getByPlaceholder('Write a comment...');
+    await comment.fill('Video');
+    await page.keyboard.press('Space');
+    await expect(comment).toHaveValue('Video ');
+    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+  });
+
   test('serves byte ranges and HEAD, and enforces visibility and original permissions', async ({ request }) => {
     const response = await request.get('/v/_video/clips/scene.mov', { headers: { Range: 'bytes=0-31' } });
     expect(response.status()).toBe(206);

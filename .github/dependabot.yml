@@ -1,5 +1,16 @@
 version: 2
 updates:
+  - package-ecosystem: npm
+    directories:
+      - /
+      - /admin
+    schedule:
+      interval: weekly
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: cargo
     directory: /
     schedule:

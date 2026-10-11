@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ImageInfo } from '../../types';
 
 export function formatVideoDuration(seconds?: number): string {
@@ -10,15 +10,48 @@ export function formatVideoDuration(seconds?: number): string {
 export function VideoDisplay({ image, onRefresh }: { image: ImageInfo; onRefresh?: () => void }) {
   const [playbackError, setPlaybackError] = useState(false);
   const [playbackAttempt, setPlaybackAttempt] = useState(0);
+  const playerRef = useRef<HTMLVideoElement>(null);
   useEffect(() => setPlaybackError(false), [image.path, image.video?.playback_url]);
   const video = image.video;
   const ready = video?.state === 'ready' && video.playback_url;
   const failed = video?.state === 'failed';
 
+  useEffect(() => {
+    if (!ready) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || event.defaultPrevented || event.isComposing
+        || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      // Inputs and buttons own their keys. Handle the video host as well so
+      // Space works in Safari; preventDefault avoids a second native toggle.
+      if (event.target instanceof Element && event.target.closest(
+        'input, textarea, select, button, a, [role="button"], [role="slider"], [contenteditable]:not([contenteditable="false"])',
+      )) return;
+      if (document.querySelector('dialog[open], [aria-modal="true"], .edit-modal-overlay, .share-modal-overlay, .modal-overlay')) return;
+      const player = playerRef.current;
+      if (!player) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      if (player.paused) {
+        void player.play().catch((error: unknown) => {
+          // A quick second press can pause before play() has finished starting.
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+          if (playerRef.current === player) setPlaybackError(true);
+        });
+      } else {
+        player.pause();
+      }
+    };
+    // Intercept before the browser's video controls arm their own Space action.
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [ready]);
+
   return (
     <div className="video-display" data-testid="video-display">
       {ready ? (
         <video
+          ref={playerRef}
           key={`${image.path}:${video.playback_url}:${playbackAttempt}`}
           src={video.playback_url}
           poster={video.poster_url || image.medium_url}
