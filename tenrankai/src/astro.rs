@@ -623,9 +623,13 @@ async fn solution_response(
 /// keeps an on-demand build to a couple of hundred MB instead of multiple
 /// GB on deep catalogs — at the cost of the fine-scale tiers.
 fn blind_build_params() -> seiza::blind::BlindParams {
+    // The ladder is ordered by how common each scale is, not by size, so
+    // its ends are not its extremes
+    let finest = SCALE_LADDER.iter().copied().fold(f64::INFINITY, f64::min);
+    let coarsest = SCALE_LADDER.iter().copied().fold(0.0, f64::max);
     seiza::blind::BlindParams {
-        min_scale_arcsec_px: SCALE_LADDER[0] * (1.0 - SCALE_TOLERANCE),
-        max_scale_arcsec_px: SCALE_LADDER[SCALE_LADDER.len() - 1] * (1.0 + SCALE_TOLERANCE),
+        min_scale_arcsec_px: finest * (1.0 - SCALE_TOLERANCE),
+        max_scale_arcsec_px: coarsest * (1.0 + SCALE_TOLERANCE),
         index_mag_limit: 11.8,
         ..Default::default()
     }
@@ -1117,5 +1121,23 @@ mod tests {
         let fine = SCALE_LADDER.iter().position(|&s| s <= 0.2).unwrap();
         let common = SCALE_LADDER.iter().position(|&s| s == 1.4).unwrap();
         assert!(common < fine, "fine scales must be tried after common ones");
+    }
+
+    /// The blind search must span every rung's window. Taking the ladder's
+    /// first and last entries as its bounds once gave a minimum of 1.82
+    /// and a maximum of 0.15 "/px, a range no scale fits, so every blind
+    /// solve failed with no hypothesis tried.
+    #[test]
+    fn blind_scale_range_spans_the_ladder() {
+        let params = blind_build_params();
+        assert!(params.min_scale_arcsec_px < params.max_scale_arcsec_px);
+        for &scale in SCALE_LADDER {
+            assert!(
+                (params.min_scale_arcsec_px..=params.max_scale_arcsec_px).contains(&scale),
+                "rung {scale} falls outside the blind range"
+            );
+        }
+        // A drizzled C925 close-up, the case that exposed the inverted range
+        assert!((params.min_scale_arcsec_px..=params.max_scale_arcsec_px).contains(&0.165));
     }
 }
