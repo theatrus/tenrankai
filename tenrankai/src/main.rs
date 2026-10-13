@@ -229,6 +229,9 @@ enum CacheCommands {
         /// Site name (for multi-site configurations)
         #[arg(short, long, default_value = "default")]
         site: String,
+        /// Dry run - show what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Invalidate cached files (removes from cache to force regeneration)
     Invalidate {
@@ -786,9 +789,10 @@ async fn handle_cache_command(
         CacheCommands::Cleanup {
             gallery: gallery_name,
             site,
+            dry_run,
         } => {
             let gallery_config = find_gallery(&site, &gallery_name).await?;
-            commands::cache::cleanup(&gallery_config).await?;
+            commands::cache::cleanup(&gallery_config, dry_run).await?;
         }
         CacheCommands::Invalidate {
             gallery: gallery_name,

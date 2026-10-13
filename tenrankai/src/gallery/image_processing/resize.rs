@@ -390,11 +390,8 @@ impl Gallery {
             .as_ref()
             .ok_or(GalleryError::InvalidPath)?;
 
-        // Tiles are always AVIF for best compression and quality
-        #[cfg(feature = "avif")]
-        let output_format = OutputFormat::Avif;
-        #[cfg(not(feature = "avif"))]
-        let output_format = OutputFormat::WebP; // Fallback to WebP if AVIF is disabled
+        // Tiles are always AVIF for best compression and quality (WebP if AVIF is disabled)
+        let output_format = crate::gallery::cache::TILE_FORMAT;
 
         // Generate cache filename for this specific tile
         let is_retina = false; // This function handles base tiles, not retina
@@ -572,8 +569,8 @@ fn process_all_tiles_from_storage(
     let (img_width, img_height) = loaded_image.dimensions();
 
     // Resize the image if it's too large - we don't want to serve full resolution tiles
-    // Cap the maximum dimension at 8192px for tile generation
-    let max_tile_dimension = 8192;
+    // Cap the maximum dimension for tile generation
+    let max_tile_dimension = crate::gallery::cache::MAX_TILE_DIMENSION;
     let max_dimension = img_width.max(img_height);
 
     if max_dimension > max_tile_dimension {

@@ -1,22 +1,34 @@
 use std::sync::Arc;
 
 use crate::GallerySystemConfig;
+use crate::admin::format_size;
 use crate::gallery::Gallery;
 use crate::gallery::ImageSize;
+use crate::gallery::{CacheFile, CacheFileKind};
 use crate::storage;
 
-/// Report format coverage for a gallery's image cache
-pub async fn report(
+async fn open_gallery(
     gallery_config: &GallerySystemConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Arc<Gallery>, Box<dyn std::error::Error>> {
     let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(
-        gallery_config.clone(),
-        source_storage,
-        cache_storage,
-    ));
+    let mut gallery = Gallery::new(gallery_config.clone(), source_storage, cache_storage);
 
+    gallery.load_image_watermark().await?;
+    if let Some(watermark) = &gallery_config.image_watermark
+        && gallery.get_image_watermark_hash().is_none()
+    {
+        return Err(format!(
+            "Image watermark '{}' could not be loaded, so cache filenames cannot be computed",
+            watermark.image
+        )
+        .into());
+    }
+
+    Ok(Arc::new(gallery))
+}
+
+async fn load_metadata(gallery: &Arc<Gallery>) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize gallery to load metadata cache
     if let Err(e) = gallery.initialize_and_check_version().await {
         eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
@@ -27,6 +39,74 @@ pub async fn report(
         println!("Metadata cache is empty, refreshing...");
         gallery.clone().refresh_all_metadata().await?;
     }
+
+    Ok(())
+}
+
+fn print_cache_files(files: &[CacheFile], dry_run: bool) {
+    if dry_run {
+        for file in files {
+            println!(
+                "  Would delete: {} ({})",
+                file.path,
+                format_size(file.size.unwrap_or(0))
+            );
+        }
+    }
+
+    let (tiles, resized): (Vec<&CacheFile>, Vec<&CacheFile>) = files
+        .iter()
+        .partition(|file| file.kind == CacheFileKind::Tile);
+    let bytes = |files: &[&CacheFile]| files.iter().filter_map(|file| file.size).sum();
+
+    println!(
+        "{} {} cache file(s), {}",
+        if dry_run { "Would delete" } else { "Deleted" },
+        files.len(),
+        format_size(bytes(&resized) + bytes(&tiles))
+    );
+    println!(
+        "  Resized images: {} ({})",
+        resized.len(),
+        format_size(bytes(&resized))
+    );
+    println!(
+        "  Zoom tiles: {} ({})",
+        tiles.len(),
+        format_size(bytes(&tiles))
+    );
+}
+
+async fn invalidate_images(
+    gallery: &Gallery,
+    image_paths: &[String],
+    size_filter: Option<&[ImageSize]>,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let entries = gallery.list_cache_entries().await?;
+    let (matched, _) = gallery.partition_cache_files(
+        entries,
+        image_paths,
+        size_filter.unwrap_or(ImageSize::ALL),
+        size_filter.is_none(),
+    );
+
+    let files = if dry_run {
+        matched
+    } else {
+        gallery.delete_cache_files(matched).await
+    };
+    print_cache_files(&files, dry_run);
+
+    Ok(())
+}
+
+/// Report format coverage for a gallery's image cache
+pub async fn report(
+    gallery_config: &GallerySystemConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gallery = open_gallery(gallery_config).await?;
+    load_metadata(&gallery).await?;
 
     // Run the coverage report
     gallery.report_format_coverage().await?;
@@ -37,28 +117,20 @@ pub async fn report(
 /// Validate and clean up outdated cache entries
 pub async fn cleanup(
     gallery_config: &GallerySystemConfig,
+    dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
-    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(
-        gallery_config.clone(),
-        source_storage,
-        cache_storage,
-    ));
+    let gallery = open_gallery(gallery_config).await?;
+    load_metadata(&gallery).await?;
 
-    // Initialize gallery to load metadata cache
-    if let Err(e) = gallery.initialize_and_check_version().await {
-        eprintln!("Warning: Failed to initialize gallery metadata: {}", e);
-    }
-
-    // If cache is empty, refresh metadata first
     if gallery.is_metadata_cache_empty().await {
-        println!("Metadata cache is empty, refreshing...");
-        gallery.clone().refresh_all_metadata().await?;
+        return Err(
+            "No images found in the gallery source; refusing to treat the whole cache as orphaned"
+                .into(),
+        );
     }
 
-    // Run cache validation and cleanup
-    gallery.validate_and_cleanup_cache().await?;
+    let files = gallery.remove_orphaned_cache_files(dry_run).await?;
+    print_cache_files(&files, dry_run);
 
     Ok(())
 }
@@ -135,18 +207,7 @@ pub async fn invalidate_image(
     size_filter: Option<&[ImageSize]>,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::gallery::generate_tile_cache_filename;
-    use std::collections::HashSet;
-
-    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
-    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(
-        gallery_config.clone(),
-        source_storage.clone(),
-        cache_storage.clone(),
-    ));
-
-    let sizes: &[ImageSize] = size_filter.unwrap_or(ImageSize::ALL);
+    let gallery = open_gallery(gallery_config).await?;
 
     if let Some(filter) = size_filter {
         let names: Vec<_> = filter.iter().map(|s| s.as_str()).collect();
@@ -159,173 +220,7 @@ pub async fn invalidate_image(
         println!("Looking for image cache files for '{}'...", path);
     }
 
-    // Generate all possible cache hashes for this image
-    // Use the same method as the serving code (generate_image_cache_key)
-    let mut hashes_to_delete: HashSet<String> = HashSet::new();
-    let mut tile_filenames_to_delete: HashSet<String> = HashSet::new();
-
-    // Standard sizes (thumbnail, gallery, medium, large + retina variants)
-    for size in sizes {
-        for format in &["jpg", "webp", "png", "avif"] {
-            // Non-watermarked variant
-            let hash = gallery.generate_image_cache_key(path, &size.as_str(), format, false);
-            hashes_to_delete.insert(hash);
-
-            // Watermarked variant (only for sizes that support it)
-            if size.supports_watermark() {
-                let hash_wm = gallery.generate_image_cache_key(path, &size.as_str(), format, true);
-                hashes_to_delete.insert(hash_wm);
-            }
-        }
-    }
-
-    // Handle tiles if configured (only when no size filter, since tiles are their own size class)
-    if size_filter.is_none()
-        && let Some(ref tile_config) = gallery_config.tiles
-    {
-        let tile_size = tile_config.tile_size;
-
-        // Try to get image dimensions from source to calculate tile coordinates
-        // Read the image to get dimensions (needed to know how many tiles exist)
-        match source_storage.read(path).await {
-            Ok(data) => {
-                if let Ok(reader) =
-                    image::ImageReader::new(std::io::Cursor::new(&data)).with_guessed_format()
-                    && let Ok((width, height)) = reader.into_dimensions()
-                {
-                    let max_tile_x = width.div_ceil(tile_size);
-                    let max_tile_y = height.div_ceil(tile_size);
-
-                    println!(
-                        "Image {}x{}, tile size {}, generating tile patterns for {}x{} grid",
-                        width, height, tile_size, max_tile_x, max_tile_y
-                    );
-
-                    for tile_y in 0..max_tile_y {
-                        for tile_x in 0..max_tile_x {
-                            for format in &["jpg", "webp", "png", "avif"] {
-                                // Standard tile
-                                let tile_filename = generate_tile_cache_filename(
-                                    path, tile_x, tile_y, tile_size, false, format,
-                                );
-                                tile_filenames_to_delete.insert(tile_filename);
-
-                                // Retina tile
-                                let tile_filename_retina = generate_tile_cache_filename(
-                                    path, tile_x, tile_y, tile_size, true, format,
-                                );
-                                tile_filenames_to_delete.insert(tile_filename_retina);
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!(
-                    "Warning: Could not read source image to determine tile count: {}",
-                    e
-                );
-                eprintln!("Tile cache files will not be invalidated for this image.");
-            }
-        }
-    }
-
-    println!(
-        "Generated {} standard cache keys and {} tile filenames to search for",
-        hashes_to_delete.len(),
-        tile_filenames_to_delete.len()
-    );
-
-    let mut deleted_count = 0;
-    let mut found_count = 0;
-
-    // List files from storage
-    let entries = cache_storage.list("").await?;
-    for entry in entries {
-        // Skip metadata files and composites
-        if entry.path.starts_with("composite_")
-            || entry.path == "metadata_cache.json"
-            || entry.path == "cache_metadata.json"
-        {
-            continue;
-        }
-
-        // Check for tile files (exact filename match)
-        if entry.path.starts_with("tile_") && tile_filenames_to_delete.contains(&entry.path) {
-            found_count += 1;
-            if dry_run {
-                println!("  Would delete tile: {}", entry.path);
-            } else {
-                match cache_storage.delete(&entry.path).await {
-                    Ok(_) => {
-                        println!("  Deleted tile: {}", entry.path);
-                        deleted_count += 1;
-                    }
-                    Err(e) => {
-                        eprintln!("  Failed to delete {}: {}", entry.path, e);
-                    }
-                }
-            }
-            continue;
-        }
-
-        // Check if the cache filename (without extension) matches any of our hashes
-        // Cache files are named: {hash}.{extension} or {hash}_watermarked.{extension}
-        let filename_without_ext = entry
-            .path
-            .rsplit('.')
-            .skip(1)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join(".");
-
-        // The hash is the first part before any underscore suffix
-        let base_filename =
-            if let Some(stripped) = filename_without_ext.strip_suffix("_watermarked") {
-                stripped
-            } else {
-                &filename_without_ext
-            };
-
-        // Check if this hash matches any of our target hashes
-        if hashes_to_delete.contains(base_filename)
-            || hashes_to_delete.contains(&filename_without_ext)
-        {
-            found_count += 1;
-            if dry_run {
-                println!("  Would delete: {}", entry.path);
-            } else {
-                match cache_storage.delete(&entry.path).await {
-                    Ok(_) => {
-                        println!("  Deleted: {}", entry.path);
-                        deleted_count += 1;
-                    }
-                    Err(e) => {
-                        eprintln!("  Failed to delete {}: {}", entry.path, e);
-                    }
-                }
-            }
-        }
-    }
-
-    if dry_run {
-        if found_count == 0 {
-            println!("No matching image cache files found");
-        } else {
-            println!(
-                "Dry run complete - {} file(s) would be deleted",
-                found_count
-            );
-        }
-    } else if deleted_count == 0 {
-        println!("No matching image cache files found");
-    } else {
-        println!("Deleted {} image cache file(s)", deleted_count);
-    }
-
-    Ok(())
+    invalidate_images(&gallery, &[path.to_string()], size_filter, dry_run).await
 }
 
 /// Invalidate all image cache files for a folder in the gallery
@@ -335,255 +230,54 @@ pub async fn invalidate_folder(
     size_filter: Option<&[ImageSize]>,
     dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::gallery::generate_tile_cache_filename;
-    use std::collections::HashSet;
-
-    let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
-    let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(
-        gallery_config.clone(),
-        source_storage.clone(),
-        cache_storage.clone(),
-    ));
+    let gallery = open_gallery(gallery_config).await?;
 
     // Normalize folder path (remove leading/trailing slashes)
     let folder_path = folder_path.trim_matches('/');
+    let folder_label = if folder_path.is_empty() {
+        "(root)"
+    } else {
+        folder_path
+    };
 
     println!(
         "Looking for images in folder '{}' for gallery '{}'...",
-        if folder_path.is_empty() {
-            "(root)"
-        } else {
-            folder_path
-        },
-        gallery_config.name
+        folder_label, gallery_config.name
     );
 
-    // List all files recursively in the source folder
-    let entries = source_storage.list_recursive(folder_path).await?;
-
-    // Filter to image files only
-    let image_extensions = ["jpg", "jpeg", "png", "webp", "avif", "gif", "heic", "heif"];
-    let image_files: Vec<_> = entries
+    // List all files recursively in the source folder (paths are relative to the folder)
+    let image_paths: Vec<String> = gallery
+        .source_storage()
+        .list_recursive(folder_path)
+        .await?
         .into_iter()
-        .filter(|e| !e.is_dir)
-        .filter(|e| {
-            e.path
-                .rsplit('.')
-                .next()
-                .map(|ext| image_extensions.contains(&ext.to_lowercase().as_str()))
-                .unwrap_or(false)
+        .filter(|entry| !entry.is_dir && gallery.is_media(&entry.path))
+        .map(|entry| {
+            if folder_path.is_empty() {
+                entry.path
+            } else {
+                format!("{}/{}", folder_path, entry.path)
+            }
         })
         .collect();
 
-    if image_files.is_empty() {
-        println!(
-            "No images found in '{}'",
-            if folder_path.is_empty() {
-                "gallery"
-            } else {
-                folder_path
-            }
-        );
+    if image_paths.is_empty() {
+        println!("No images found in '{}'", folder_label);
         return Ok(());
     }
-
-    let sizes: &[ImageSize] = size_filter.unwrap_or(ImageSize::ALL);
 
     if let Some(filter) = size_filter {
         let names: Vec<_> = filter.iter().map(|s| s.as_str()).collect();
         println!(
             "Found {} image(s) in folder (filtering sizes: {})",
-            image_files.len(),
+            image_paths.len(),
             names.join(", ")
         );
     } else {
-        println!("Found {} image(s) in folder", image_files.len());
+        println!("Found {} image(s) in folder", image_paths.len());
     }
 
-    // Generate all possible cache hashes for each image
-    let mut hashes_to_delete: HashSet<String> = HashSet::new();
-    let mut tile_filenames_to_delete: HashSet<String> = HashSet::new();
-
-    // Get tile config if present
-    let tile_config = gallery_config.tiles.as_ref();
-
-    for entry in &image_files {
-        // Construct full path (folder_path + filename)
-        // Storage.list() returns just filenames, not full paths
-        let full_path = if folder_path.is_empty() {
-            entry.path.clone()
-        } else {
-            format!("{}/{}", folder_path, entry.path)
-        };
-
-        // Generate hashes for all size/format/watermark combinations
-        // Use the same method as the serving code (generate_image_cache_key)
-        for size in sizes {
-            for format in &["jpg", "webp", "png", "avif"] {
-                // Non-watermarked variant
-                let hash =
-                    gallery.generate_image_cache_key(&full_path, &size.as_str(), format, false);
-                hashes_to_delete.insert(hash);
-
-                // Watermarked variant (only for sizes that support it)
-                if size.supports_watermark() {
-                    let hash_wm =
-                        gallery.generate_image_cache_key(&full_path, &size.as_str(), format, true);
-                    hashes_to_delete.insert(hash_wm);
-                }
-            }
-        }
-
-        // Handle tiles if configured (only when no size filter)
-        if size_filter.is_none()
-            && let Some(tc) = tile_config
-        {
-            let tile_size = tc.tile_size;
-
-            // Try to get image dimensions from source to calculate tile coordinates
-            match source_storage.read(&full_path).await {
-                Ok(data) => {
-                    if let Ok(reader) =
-                        image::ImageReader::new(std::io::Cursor::new(&data)).with_guessed_format()
-                        && let Ok((width, height)) = reader.into_dimensions()
-                    {
-                        let max_tile_x = width.div_ceil(tile_size);
-                        let max_tile_y = height.div_ceil(tile_size);
-
-                        for tile_y in 0..max_tile_y {
-                            for tile_x in 0..max_tile_x {
-                                for format in &["jpg", "webp", "png", "avif"] {
-                                    // Standard tile
-                                    let tile_filename = generate_tile_cache_filename(
-                                        &full_path, tile_x, tile_y, tile_size, false, format,
-                                    );
-                                    tile_filenames_to_delete.insert(tile_filename);
-
-                                    // Retina tile
-                                    let tile_filename_retina = generate_tile_cache_filename(
-                                        &full_path, tile_x, tile_y, tile_size, true, format,
-                                    );
-                                    tile_filenames_to_delete.insert(tile_filename_retina);
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Could not read '{}' for tile calculation: {}",
-                        full_path, e
-                    );
-                }
-            }
-        }
-    }
-
-    println!(
-        "Generated {} standard cache keys and {} tile filenames to search for",
-        hashes_to_delete.len(),
-        tile_filenames_to_delete.len()
-    );
-
-    // List all cache files and delete matching ones
-    let cache_entries = cache_storage.list("").await?;
-
-    let mut deleted_count = 0;
-    let mut found_count = 0;
-
-    for cache_entry in cache_entries {
-        // Skip metadata files and composites
-        if cache_entry.path.starts_with("composite_")
-            || cache_entry.path == "metadata_cache.json"
-            || cache_entry.path == "cache_metadata.json"
-        {
-            continue;
-        }
-
-        // Check for tile files (exact filename match)
-        if cache_entry.path.starts_with("tile_")
-            && tile_filenames_to_delete.contains(&cache_entry.path)
-        {
-            found_count += 1;
-            if dry_run {
-                println!("  Would delete tile: {}", cache_entry.path);
-            } else {
-                match cache_storage.delete(&cache_entry.path).await {
-                    Ok(_) => {
-                        println!("  Deleted tile: {}", cache_entry.path);
-                        deleted_count += 1;
-                    }
-                    Err(e) => {
-                        eprintln!("  Failed to delete {}: {}", cache_entry.path, e);
-                    }
-                }
-            }
-            continue;
-        }
-
-        // Check if the cache filename (without extension) matches any of our hashes
-        // Cache files are named: {hash}.{extension} or {hash}_watermarked.{extension}
-        let filename_without_ext = cache_entry
-            .path
-            .rsplit('.')
-            .skip(1)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join(".");
-
-        // The hash is the first part before any underscore suffix
-        let base_filename =
-            if let Some(stripped) = filename_without_ext.strip_suffix("_watermarked") {
-                stripped
-            } else {
-                &filename_without_ext
-            };
-
-        // Check if this hash matches any of our target hashes
-        if hashes_to_delete.contains(base_filename)
-            || hashes_to_delete.contains(&filename_without_ext)
-        {
-            found_count += 1;
-            if dry_run {
-                println!("  Would delete: {}", cache_entry.path);
-            } else {
-                match cache_storage.delete(&cache_entry.path).await {
-                    Ok(_) => {
-                        println!("  Deleted: {}", cache_entry.path);
-                        deleted_count += 1;
-                    }
-                    Err(e) => {
-                        eprintln!("  Failed to delete {}: {}", cache_entry.path, e);
-                    }
-                }
-            }
-        }
-    }
-
-    if dry_run {
-        if found_count == 0 {
-            println!("No matching cache files found for images in folder");
-        } else {
-            println!(
-                "Dry run complete - {} file(s) would be deleted for {} image(s)",
-                found_count,
-                image_files.len()
-            );
-        }
-    } else if deleted_count == 0 {
-        println!("No matching cache files found for images in folder");
-    } else {
-        println!(
-            "Deleted {} cache file(s) for {} image(s)",
-            deleted_count,
-            image_files.len()
-        );
-    }
-
-    Ok(())
+    invalidate_images(&gallery, &image_paths, size_filter, dry_run).await
 }
 
 /// List all composite cache files for a gallery
