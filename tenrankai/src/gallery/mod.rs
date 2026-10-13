@@ -16,7 +16,7 @@ mod video_http;
 pub use video_http::video_handler_for_named;
 
 // Re-export public items
-pub use cache::{OrphanedCacheFile, OrphanedCacheKind, generate_tile_cache_filename};
+pub use cache::{CacheFile, CacheFileKind, MAX_TILE_DIMENSION, generate_tile_cache_filename};
 pub use core::BreadcrumbItem;
 pub use error::GalleryError;
 pub use handlers::{

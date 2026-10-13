@@ -753,11 +753,12 @@ pub async fn image_detail_api_handler_for_named(
         if image_info.video.is_none() && user_permissions.permissions.can_use_tile_zoom {
             gallery.config.tiles.as_ref().map(|tc| {
                 // Calculate the actual dimensions of the tiled image
-                // The backend scales proportionally if max dimension > 8192
+                // The backend scales proportionally if max dimension > MAX_TILE_DIMENSION
+                let max_tile_dimension = crate::gallery::MAX_TILE_DIMENSION;
                 let max_dimension = image_info.dimensions.0.max(image_info.dimensions.1);
-                let (tiled_width, tiled_height) = if max_dimension > 8192 {
+                let (tiled_width, tiled_height) = if max_dimension > max_tile_dimension {
                     // Scale proportionally
-                    let scale = 8192.0 / max_dimension as f32;
+                    let scale = max_tile_dimension as f32 / max_dimension as f32;
                     let new_width = (image_info.dimensions.0 as f32 * scale).round() as u32;
                     let new_height = (image_info.dimensions.1 as f32 * scale).round() as u32;
                     (new_width, new_height)

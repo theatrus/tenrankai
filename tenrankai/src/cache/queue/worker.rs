@@ -176,49 +176,22 @@ impl CacheQueueWorker {
         gallery: &SharedGallery,
         image_path: &str,
     ) -> Result<(), crate::gallery::GalleryError> {
-        let formats = ["jpg", "webp", "png", "avif"];
+        let mut filenames: Vec<String> = gallery
+            .resized_cache_filenames(image_path, ImageSize::ALL)
+            .collect();
+        filenames.extend(gallery.tile_cache_filenames(image_path).await);
+
         let mut deleted_count = 0;
-
-        for size in ImageSize::ALL {
-            let size_str = size.as_str();
-            for format in &formats {
-                // Without watermark
-                let cache_filename =
-                    gallery.generate_cache_filename(image_path, &size_str, format, false);
-
-                if gallery
-                    .cache_storage()
-                    .exists(&cache_filename)
-                    .await
-                    .unwrap_or(false)
-                {
-                    if let Err(e) = gallery.cache_storage().delete(&cache_filename).await {
-                        debug!("Failed to delete cache file {}: {}", cache_filename, e);
-                    } else {
-                        deleted_count += 1;
-                    }
-                }
-
-                // With watermark (only for sizes that support it)
-                if size.supports_watermark() {
-                    let cache_filename_wm =
-                        gallery.generate_cache_filename(image_path, &size_str, format, true);
-
-                    if gallery
-                        .cache_storage()
-                        .exists(&cache_filename_wm)
-                        .await
-                        .unwrap_or(false)
-                    {
-                        if let Err(e) = gallery.cache_storage().delete(&cache_filename_wm).await {
-                            debug!(
-                                "Failed to delete watermarked cache file {}: {}",
-                                cache_filename_wm, e
-                            );
-                        } else {
-                            deleted_count += 1;
-                        }
-                    }
+        for filename in filenames {
+            if gallery
+                .cache_storage()
+                .exists(&filename)
+                .await
+                .unwrap_or(false)
+            {
+                match gallery.cache_storage().delete(&filename).await {
+                    Ok(_) => deleted_count += 1,
+                    Err(e) => debug!("Failed to delete cache file {}: {}", filename, e),
                 }
             }
         }
