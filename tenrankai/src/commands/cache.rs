@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use crate::GallerySystemConfig;
+use crate::admin::format_size;
 use crate::gallery::Gallery;
 use crate::gallery::ImageSize;
+use crate::gallery::{OrphanedCacheFile, OrphanedCacheKind};
 use crate::storage;
 
 /// Report format coverage for a gallery's image cache
@@ -37,14 +39,24 @@ pub async fn report(
 /// Validate and clean up outdated cache entries
 pub async fn cleanup(
     gallery_config: &GallerySystemConfig,
+    dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let source_storage = storage::create_storage_from_url(&gallery_config.source_directory).await?;
     let cache_storage = storage::create_storage_from_url(&gallery_config.cache_directory).await?;
-    let gallery = Arc::new(Gallery::new(
-        gallery_config.clone(),
-        source_storage,
-        cache_storage,
-    ));
+    let mut gallery = Gallery::new(gallery_config.clone(), source_storage, cache_storage);
+
+    gallery.load_image_watermark().await?;
+    if let Some(watermark) = &gallery_config.image_watermark
+        && gallery.get_image_watermark_hash().is_none()
+    {
+        return Err(format!(
+            "Image watermark '{}' could not be loaded, so watermarked cache files cannot be identified; refusing to clean up",
+            watermark.image
+        )
+        .into());
+    }
+
+    let gallery = Arc::new(gallery);
 
     // Initialize gallery to load metadata cache
     if let Err(e) = gallery.initialize_and_check_version().await {
@@ -58,7 +70,39 @@ pub async fn cleanup(
     }
 
     // Run cache validation and cleanup
-    gallery.validate_and_cleanup_cache().await?;
+    let orphaned = gallery.validate_and_cleanup_cache(dry_run).await?;
+
+    if dry_run {
+        for file in &orphaned {
+            println!(
+                "  Would delete: {} ({})",
+                file.path,
+                format_size(file.size.unwrap_or(0))
+            );
+        }
+    }
+
+    let (tiles, resized): (Vec<&OrphanedCacheFile>, Vec<&OrphanedCacheFile>) = orphaned
+        .iter()
+        .partition(|file| file.kind == OrphanedCacheKind::Tile);
+    let bytes = |files: &[&OrphanedCacheFile]| files.iter().filter_map(|file| file.size).sum();
+
+    println!(
+        "{} {} orphaned cache file(s), {}",
+        if dry_run { "Would delete" } else { "Deleted" },
+        orphaned.len(),
+        format_size(bytes(&resized) + bytes(&tiles))
+    );
+    println!(
+        "  Resized images: {} ({})",
+        resized.len(),
+        format_size(bytes(&resized))
+    );
+    println!(
+        "  Zoom tiles: {} ({})",
+        tiles.len(),
+        format_size(bytes(&tiles))
+    );
 
     Ok(())
 }

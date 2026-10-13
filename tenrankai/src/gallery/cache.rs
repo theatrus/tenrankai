@@ -45,6 +45,36 @@ pub fn generate_tile_cache_filename(
     )
 }
 
+fn parse_tile_cache_filename(filename: &str) -> Option<(u32, u32, bool, &str)> {
+    let mut parts = filename.split('.');
+    let spec = parts.next()?.strip_prefix("tile_")?;
+    parts.next()?;
+    let format = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    let (spec, is_retina) = match spec.strip_suffix("@2x") {
+        Some(spec) => (spec, true),
+        None => (spec, false),
+    };
+    let (x, y) = spec.split_once('_')?;
+    Some((x.parse().ok()?, y.parse().ok()?, is_retina, format))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrphanedCacheKind {
+    Resized,
+    Tile,
+}
+
+#[derive(Debug, Clone)]
+pub struct OrphanedCacheFile {
+    pub path: String,
+    pub kind: OrphanedCacheKind,
+    pub size: Option<u64>,
+}
+
 impl Gallery {
     pub async fn initialize_and_check_version(&self) -> Result<(), super::GalleryError> {
         let current_version = env!("CARGO_PKG_VERSION");
@@ -824,7 +854,10 @@ impl Gallery {
     }
 
     /// Validate and clean up outdated cache entries for all images
-    pub async fn validate_and_cleanup_cache(self: Arc<Self>) -> Result<(), super::GalleryError> {
+    pub async fn validate_and_cleanup_cache(
+        self: Arc<Self>,
+        dry_run: bool,
+    ) -> Result<Vec<OrphanedCacheFile>, super::GalleryError> {
         info!(
             "Starting cache validation and cleanup for gallery '{}'",
             self.config.name
@@ -832,57 +865,70 @@ impl Gallery {
 
         // Remove orphaned cache files (cache files for images that no longer exist)
         // Stale files (source newer than cache) are regenerated on-demand during serving
-        let orphaned_count = self.remove_orphaned_cache_files().await?;
-        if orphaned_count > 0 {
-            info!("Removed {} orphaned cache files", orphaned_count);
+        let orphaned = self.remove_orphaned_cache_files(dry_run).await?;
+        if !dry_run && !orphaned.is_empty() {
+            info!("Removed {} orphaned cache files", orphaned.len());
         }
 
         info!(
             "Completed cache validation and cleanup for gallery '{}'",
             self.config.name
         );
-        Ok(())
+        Ok(orphaned)
     }
 
     /// Remove cache files that don't belong to any current image in the metadata cache
-    async fn remove_orphaned_cache_files(&self) -> Result<usize, super::GalleryError> {
-        use std::collections::HashSet;
+    async fn remove_orphaned_cache_files(
+        &self,
+        dry_run: bool,
+    ) -> Result<Vec<OrphanedCacheFile>, super::GalleryError> {
+        let orphaned = self.find_orphaned_cache_files().await?;
+        if dry_run {
+            return Ok(orphaned);
+        }
 
-        // Build a set of all valid cache filename prefixes (hashes) for current images
-        let valid_prefixes: HashSet<String> = {
+        let mut removed = Vec::with_capacity(orphaned.len());
+        for file in orphaned {
+            match self.cache_storage.delete(&file.path).await {
+                Ok(_) => {
+                    debug!("Removed orphaned cache file: {}", file.path);
+                    removed.push(file);
+                }
+                Err(e) => {
+                    warn!("Failed to remove orphaned cache file {}: {}", file.path, e);
+                }
+            }
+        }
+
+        Ok(removed)
+    }
+
+    pub async fn find_orphaned_cache_files(
+        &self,
+    ) -> Result<Vec<OrphanedCacheFile>, super::GalleryError> {
+        let image_paths: Vec<String> = {
             let cache = self.image_cache.read_all().await;
-            let mut prefixes = HashSet::new();
+            cache.keys().cloned().collect()
+        };
 
-            for image_path in cache.keys() {
-                // Generate the base hash for this image (used as prefix for all cached versions)
-                let base_hash = self.generate_cache_key(image_path, "");
-                prefixes.insert(base_hash);
-
-                // Also generate hashes for each size variant
-                for size in ImageSize::ALL {
-                    for format in &["jpg", "webp", "png", "avif"] {
-                        let hash = self.generate_cache_key(
-                            image_path,
-                            &format!("{}_{}", size.as_str(), format),
+        let mut valid_hashes = HashSet::new();
+        for image_path in &image_paths {
+            valid_hashes.insert(self.generate_cache_key(image_path, ""));
+            for size in ImageSize::ALL {
+                let size_str = size.as_str();
+                for format in ["jpg", "webp", "png", "avif"] {
+                    valid_hashes.insert(
+                        self.generate_image_cache_key(image_path, &size_str, format, false),
+                    );
+                    if size.supports_watermark() {
+                        valid_hashes.insert(
+                            self.generate_image_cache_key(image_path, &size_str, format, true),
                         );
-                        prefixes.insert(hash);
-
-                        // Also watermarked variants
-                        if size.supports_watermark() {
-                            let hash_wm = self.generate_cache_key(
-                                image_path,
-                                &format!("{}_{}_watermarked", size.as_str(), format),
-                            );
-                            prefixes.insert(hash_wm);
-                        }
                     }
                 }
             }
+        }
 
-            prefixes
-        };
-
-        // Files to keep (metadata files, composites handled separately)
         let protected_files = [
             "metadata_cache.json",
             "cache_metadata.json",
@@ -890,58 +936,76 @@ impl Gallery {
         ];
         let composite_prefix = format!("composite_{}_", self.config.name);
 
-        let mut removed_count = 0;
-
-        // List files from cache storage
         let entries = match self.cache_storage.list("").await {
             Ok(entries) => entries,
-            Err(e) => {
-                debug!("Failed to list cache storage: {}", e);
-                return Ok(0);
-            }
+            Err(crate::storage::StorageError::NotFound(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
         };
 
+        let mut orphaned = Vec::new();
+        let mut tiles_by_position: HashMap<(u32, u32, bool, String), Vec<OrphanedCacheFile>> =
+            HashMap::new();
+
         for entry in entries {
-            let filename = &entry.path;
-
-            // Skip directories
-            if entry.is_dir {
+            if entry.is_dir
+                || entry.path.starts_with("video/")
+                || protected_files.contains(&entry.path.as_str())
+                || entry.path.starts_with(&composite_prefix)
+            {
                 continue;
             }
 
-            // Skip protected files
-            if filename.starts_with("video/") || protected_files.contains(&filename.as_str()) {
+            let size = entry.metadata.map(|metadata| metadata.size);
+
+            if let Some((x, y, is_retina, format)) = parse_tile_cache_filename(&entry.path) {
+                let position = (x, y, is_retina, format.to_string());
+                tiles_by_position
+                    .entry(position)
+                    .or_default()
+                    .push(OrphanedCacheFile {
+                        path: entry.path,
+                        kind: OrphanedCacheKind::Tile,
+                        size,
+                    });
                 continue;
             }
 
-            // Skip composite files (they have their own lifecycle)
-            if filename.starts_with(&composite_prefix) {
-                continue;
-            }
-
-            // Check if this is an image cache file (hash-based filename)
-            // Cache files are named: {hash}.{ext} or {hash}_watermarked.{ext}
-            let hash_part = filename
+            let hash = entry
+                .path
                 .split('.')
                 .next()
                 .unwrap_or("")
                 .trim_end_matches("_watermarked");
 
-            // If the hash doesn't match any valid prefix, it's orphaned
-            if !hash_part.is_empty() && !valid_prefixes.contains(hash_part) {
-                match self.cache_storage.delete(filename).await {
-                    Ok(_) => {
-                        debug!("Removed orphaned cache file: {}", filename);
-                        removed_count += 1;
-                    }
-                    Err(e) => {
-                        debug!("Failed to remove orphaned cache file {}: {}", filename, e);
-                    }
-                }
+            if !hash.is_empty() && !valid_hashes.contains(hash) {
+                orphaned.push(OrphanedCacheFile {
+                    path: entry.path,
+                    kind: OrphanedCacheKind::Resized,
+                    size,
+                });
             }
         }
 
-        Ok(removed_count)
+        let tile_size = self.config.tiles.as_ref().map(|tiles| tiles.tile_size);
+        for ((x, y, is_retina, format), tiles) in tiles_by_position {
+            let valid_tiles: HashSet<String> = match tile_size {
+                Some(tile_size) => image_paths
+                    .iter()
+                    .map(|path| {
+                        generate_tile_cache_filename(path, x, y, tile_size, is_retina, &format)
+                    })
+                    .collect(),
+                None => HashSet::new(),
+            };
+            orphaned.extend(
+                tiles
+                    .into_iter()
+                    .filter(|tile| !valid_tiles.contains(&tile.path)),
+            );
+        }
+
+        orphaned.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(orphaned)
     }
 
     /// Load all cache filenames into a HashSet for fast lookups.
@@ -1601,10 +1665,10 @@ Hidden folder
         assert!(composite.exists());
 
         // Call remove_orphaned_cache_files
-        let removed_count = gallery.remove_orphaned_cache_files().await.unwrap();
+        let removed = gallery.remove_orphaned_cache_files(false).await.unwrap();
 
         // Should have removed 2 orphaned files
-        assert_eq!(removed_count, 2);
+        assert_eq!(removed.len(), 2);
 
         // Verify valid cache file still exists
         assert!(valid_cache_file.exists(), "Valid cache file should remain");
@@ -1694,7 +1758,11 @@ Hidden folder
         }
 
         // Run cache validation which should remove orphaned cache files
-        gallery.clone().validate_and_cleanup_cache().await.unwrap();
+        gallery
+            .clone()
+            .validate_and_cleanup_cache(false)
+            .await
+            .unwrap();
 
         // The deleted image's cache file should now be orphaned and removed
         let deleted_cache_file = cache_dir.join(format!("{}.webp", deleted_hash));
@@ -1709,5 +1777,182 @@ Hidden folder
             real_cache_file.exists(),
             "Real image cache file should remain"
         );
+    }
+
+    #[test]
+    fn test_parse_tile_cache_filename() {
+        use super::{generate_tile_cache_filename, parse_tile_cache_filename};
+
+        for (x, y, is_retina, format) in [(0, 0, false, "avif"), (3, 12, true, "webp")] {
+            let filename = generate_tile_cache_filename("a/b.jpg", x, y, 1024, is_retina, format);
+            assert_eq!(
+                parse_tile_cache_filename(&filename),
+                Some((x, y, is_retina, format))
+            );
+        }
+
+        assert_eq!(parse_tile_cache_filename("3f9ae1.avif"), None);
+        assert_eq!(parse_tile_cache_filename("tile_0_0.avif"), None);
+        assert_eq!(parse_tile_cache_filename("tile_a_0.3f9ae1.avif"), None);
+    }
+
+    #[tokio::test]
+    async fn test_remove_orphaned_cache_files_keeps_current_tiles() {
+        use super::super::ImageMetadata;
+        use super::{OrphanedCacheKind, generate_tile_cache_filename};
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            tiles: Some(crate::config::TileConfig { tile_size: 512 }),
+            ..Default::default()
+        };
+
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let gallery = Gallery::new(config, source_storage, cache_storage);
+
+        let metadata = ImageMetadata {
+            dimensions: (1024, 768),
+            capture_date: None,
+            camera_info: None,
+            location_info: None,
+            modification_date: None,
+            color_profile: None,
+            preview_ready: false,
+        };
+        gallery
+            .image_cache
+            .write_all()
+            .await
+            .insert("current.jpg".to_string(), metadata);
+
+        let mut current_tiles = Vec::new();
+        for (x, y) in [(0, 0), (1, 1)] {
+            for is_retina in [false, true] {
+                current_tiles.push(generate_tile_cache_filename(
+                    "current.jpg",
+                    x,
+                    y,
+                    512,
+                    is_retina,
+                    "avif",
+                ));
+            }
+        }
+        let mut orphaned_tiles = vec![
+            generate_tile_cache_filename("deleted.jpg", 0, 0, 512, false, "avif"),
+            generate_tile_cache_filename("deleted.jpg", 1, 1, 512, true, "avif"),
+            generate_tile_cache_filename("current.jpg", 0, 0, 1024, false, "avif"),
+        ];
+        orphaned_tiles.sort();
+
+        for filename in current_tiles.iter().chain(&orphaned_tiles) {
+            std::fs::write(cache_dir.join(filename), b"tile").unwrap();
+        }
+
+        let would_remove = gallery.remove_orphaned_cache_files(true).await.unwrap();
+        let would_remove_paths: Vec<_> = would_remove.iter().map(|f| f.path.clone()).collect();
+        assert_eq!(would_remove_paths, orphaned_tiles);
+        assert!(
+            would_remove
+                .iter()
+                .all(|f| f.kind == OrphanedCacheKind::Tile && f.size == Some(4))
+        );
+        for filename in current_tiles.iter().chain(&orphaned_tiles) {
+            assert!(
+                cache_dir.join(filename).exists(),
+                "Dry run should not remove {}",
+                filename
+            );
+        }
+
+        let removed = gallery.remove_orphaned_cache_files(false).await.unwrap();
+        assert_eq!(removed.len(), orphaned_tiles.len());
+        for filename in &current_tiles {
+            assert!(
+                cache_dir.join(filename).exists(),
+                "Tile for current image should remain: {}",
+                filename
+            );
+        }
+        for filename in &orphaned_tiles {
+            assert!(
+                !cache_dir.join(filename).exists(),
+                "Orphaned tile should be removed: {}",
+                filename
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_remove_orphaned_cache_files_keeps_image_watermark_variants() {
+        use super::super::ImageMetadata;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("photos");
+        let cache_dir = temp_dir.path().join("cache");
+
+        let config = crate::GallerySystemConfig {
+            name: "test".to_string(),
+            source_directory: source_dir.to_string_lossy().to_string(),
+            cache_directory: cache_dir.to_string_lossy().to_string(),
+            gallery_template: "gallery.html".to_string(),
+            image_detail_template: "image.html".to_string(),
+            ..Default::default()
+        };
+
+        let source_storage = create_test_storage_from_path(&source_dir);
+        let cache_storage = create_test_storage(&config.cache_directory);
+        let mut gallery = Gallery::new(config, source_storage, cache_storage);
+        gallery.image_watermark_hash = Some("0123abcd".to_string());
+
+        let metadata = ImageMetadata {
+            dimensions: (100, 100),
+            capture_date: None,
+            camera_info: None,
+            location_info: None,
+            modification_date: None,
+            color_profile: None,
+            preview_ready: false,
+        };
+        gallery
+            .image_cache
+            .write_all()
+            .await
+            .insert("current.jpg".to_string(), metadata);
+
+        let current_files = [
+            gallery.generate_cache_filename("current.jpg", "thumbnail", "webp", false),
+            gallery.generate_cache_filename("current.jpg", "medium@2x", "jpg", true),
+        ];
+        let stale_file = format!(
+            "{}.webp",
+            gallery.generate_cache_key("current.jpg", "thumbnail_webp")
+        );
+
+        for filename in current_files.iter().chain([&stale_file]) {
+            std::fs::write(cache_dir.join(filename), b"cache").unwrap();
+        }
+
+        let removed = gallery.remove_orphaned_cache_files(false).await.unwrap();
+        let removed_paths: Vec<_> = removed.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(removed_paths, [stale_file.as_str()]);
+        for filename in &current_files {
+            assert!(
+                cache_dir.join(filename).exists(),
+                "Watermarked cache file should remain: {}",
+                filename
+            );
+        }
     }
 }
