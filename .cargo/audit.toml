@@ -3,19 +3,8 @@
 
 [advisories]
 ignore = [
-    # rsa crate vulnerability - no fixed upgrade available
-    # Dependency chain: sqlx-mysql -> rsa
-    # https://rustsec.org/advisories/RUSTSEC-2023-0071
-    "RUSTSEC-2023-0071",
-
     # paste crate unmaintained - no replacement available
     # Dependency chain: imageproc, rav1e -> paste
     # https://rustsec.org/advisories/RUSTSEC-2024-0436
     "RUSTSEC-2024-0436",
-
-    # rustls-webpki 0.101.7 - URI name constraint and wildcard issues
-    # Dependency chain: aws-smithy-http-client -> hyper-rustls 0.24 -> rustls 0.21 -> rustls-webpki 0.101
-    # No fix available: AWS SDK still depends on rustls 0.21
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
 ]
